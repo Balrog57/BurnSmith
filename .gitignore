@@ -1,0 +1,17 @@
+bin/
+obj/
+dist/
+.vs/
+*.user
+*.iso
+
+# xlet compiler output (assets/bdj/menu.jar is the committed build)
+bdj/build/
+
+# third-party programs live here but are not redistributed from this repo (see README)
+tools/*
+!tools/vlctest.ps1
+
+# scratch
+vlc-help.txt
+*_work/

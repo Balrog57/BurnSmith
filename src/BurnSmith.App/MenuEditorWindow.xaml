@@ -1,0 +1,114 @@
+<Window x:Class="BurnSmith.App.MenuEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Menu du disque" Width="1320" Height="780" MinWidth="1100" MinHeight="680"
+        Background="#1F1F1F" WindowStartupLocation="CenterOwner">
+  <Window.Resources>
+    <Style x:Key="Caption" TargetType="TextBlock">
+      <Setter Property="Opacity" Value="0.65"/>
+      <Setter Property="Margin" Value="0,12,0,3"/>
+    </Style>
+    <Style x:Key="Swatch" TargetType="Border">
+      <Setter Property="Width" Value="26"/>
+      <Setter Property="Height" Value="26"/>
+      <Setter Property="CornerRadius" Value="4"/>
+      <Setter Property="BorderBrush" Value="#55FFFFFF"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Margin" Value="0,0,8,0"/>
+      <Setter Property="DockPanel.Dock" Value="Left"/>
+    </Style>
+  </Window.Resources>
+
+  <Grid Margin="20">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="220"/>
+      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="310"/>
+    </Grid.ColumnDefinitions>
+
+    <TabControl>
+      <TabItem Header="Intégrés">
+        <ListBox x:Name="BuiltInList" DisplayMemberPath="Name" SelectionChanged="OnPick"/>
+      </TabItem>
+      <TabItem Header="Mes modèles">
+        <ListBox x:Name="CustomList" DisplayMemberPath="Name" SelectionChanged="OnPick"/>
+      </TabItem>
+    </TabControl>
+
+    <DockPanel Grid.Column="1" Margin="16,0">
+      <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+          <Button Content="◀" Width="40" Click="OnPrev"/>
+          <TextBlock x:Name="PageText" Margin="16,0" VerticalAlignment="Center"/>
+          <Button Content="▶" Width="40" Click="OnNext"/>
+        </StackPanel>
+      </DockPanel>
+      <TextBlock x:Name="Status" DockPanel.Dock="Bottom" Foreground="OrangeRed" TextWrapping="Wrap" Margin="0,8,0,0"/>
+      <Border Background="Black" CornerRadius="8">
+        <Image x:Name="Preview" Stretch="Uniform"/>
+      </Border>
+    </DockPanel>
+
+    <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+      <StackPanel x:Name="Props" Margin="0,0,8,0">
+        <TextBlock Text="Titre" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
+        <TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Bouton lecture" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding PlayLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Bouton scènes" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding ScenesLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Bouton accueil" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding HomeLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Mot « chapitre »" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding ChapterLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Police" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding Font, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Style des boutons" Style="{StaticResource Caption}"/>
+        <ComboBox SelectedValue="{Binding ButtonStyle}" SelectedValuePath="Tag" HorizontalAlignment="Stretch">
+          <ComboBoxItem Content="Capsules" Tag="Pill"/>
+          <ComboBoxItem Content="Texte seul" Tag="Text"/>
+        </ComboBox>
+
+        <TextBlock Text="Couleurs (#RRGGBB)" Style="{StaticResource Caption}"/>
+        <DockPanel Margin="0,2">
+          <Border Style="{StaticResource Swatch}" Background="{Binding Top}"/>
+          <TextBlock Text="Fond haut" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBox Text="{Binding Top, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+        <DockPanel Margin="0,2">
+          <Border Style="{StaticResource Swatch}" Background="{Binding Bottom}"/>
+          <TextBlock Text="Fond bas" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBox Text="{Binding Bottom, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+        <DockPanel Margin="0,2">
+          <Border Style="{StaticResource Swatch}" Background="{Binding TextColor}"/>
+          <TextBlock Text="Texte" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBox Text="{Binding TextColor, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+        <DockPanel Margin="0,2">
+          <Border Style="{StaticResource Swatch}" Background="{Binding Accent}"/>
+          <TextBlock Text="Sélection" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBox Text="{Binding Accent, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+
+        <TextBlock Text="Image de fond" Style="{StaticResource Caption}"/>
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="✕" Margin="4,0,0,0" Click="OnBgClear"/>
+          <Button DockPanel.Dock="Right" Content="Parcourir…" Margin="8,0,0,0" Click="OnBg"/>
+          <TextBox Text="{Binding BackgroundImage, Mode=OneWay}" IsReadOnly="True"/>
+        </DockPanel>
+        <CheckBox Content="Afficher l'aperçu du film" IsChecked="{Binding ShowPreview}" Margin="0,16,0,0"/>
+      </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+      <Button Content="Enregistrer le modèle…" Click="OnSave" Margin="0,0,16,0"/>
+      <Button Content="OK" IsDefault="True" Style="{DynamicResource AccentButtonStyle}" MinWidth="100" Margin="0,0,8,0" Click="OnOk"/>
+      <Button Content="Annuler" IsCancel="True" MinWidth="100"/>
+    </StackPanel>
+  </Grid>
+</Window>
