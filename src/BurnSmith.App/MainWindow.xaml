@@ -1,152 +1,254 @@
 <Window x:Class="BurnSmith.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="BurnSmith - Créateur" Width="1100" Height="1010" MinWidth="980" MinHeight="940"
-        Background="#1F1F1F" WindowStartupLocation="CenterScreen" AllowDrop="True" Drop="OnDrop">
+        Title="BurnSmith" Width="1480" Height="820" MinWidth="1240" MinHeight="700"
+        Background="#1A1A20" WindowStartupLocation="CenterScreen" AllowDrop="True" Drop="OnDrop">
   <Window.Resources>
+    <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
     <Style x:Key="Card" TargetType="Border">
-      <Setter Property="Background" Value="#14FFFFFF"/>
-      <Setter Property="BorderBrush" Value="#26FFFFFF"/>
+      <Setter Property="Background" Value="#23232B"/>
+      <Setter Property="BorderBrush" Value="#30303A"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="CornerRadius" Value="10"/>
-      <Setter Property="Padding" Value="20,16"/>
+      <Setter Property="Padding" Value="18,14"/>
     </Style>
-    <Style x:Key="Caption" TargetType="TextBlock">
-      <Setter Property="Opacity" Value="0.65"/>
-      <Setter Property="Margin" Value="0,12,0,4"/>
+    <Style x:Key="Nav" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="Padding" Value="16,11"/>
+      <Setter Property="Margin" Value="8,2"/>
+      <Setter Property="FontSize" Value="14"/>
     </Style>
-    <Style x:Key="Seg" TargetType="RadioButton" BasedOn="{StaticResource {x:Type ToggleButton}}">
-      <Setter Property="Padding" Value="18,8"/>
-      <Setter Property="MinWidth" Value="110"/>
-      <Setter Property="Margin" Value="0,0,6,0"/>
+    <Style x:Key="IconBtn" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="FontFamily" Value="{StaticResource Icons}"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Width" Value="30"/>
+      <Setter Property="Height" Value="32"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
     </Style>
-    <DataTemplate x:Key="TrackTemplate">
-      <CheckBox Content="{Binding Text}" IsChecked="{Binding Checked, Mode=TwoWay}" IsEnabled="{Binding Enabled}" Checked="OnTrack" Unchecked="OnTrack"/>
+    <Style x:Key="Drop" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="Padding" Value="10,5"/>
+      <Setter Property="Margin" Value="0,0,10,0"/>
+      <Setter Property="ContentStringFormat" Value="{}{0}   ▾"/>
+    </Style>
+    <Style x:Key="Head" TargetType="TextBlock">
+      <Setter Property="Opacity" Value="0.6"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <DataTemplate x:Key="FileRow">
+      <Grid Height="42">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" MinWidth="120"/>
+          <ColumnDefinition Width="70"/>
+          <ColumnDefinition Width="80"/>
+          <ColumnDefinition Width="145"/>
+          <ColumnDefinition Width="145"/>
+          <ColumnDefinition Width="124"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="{Binding Name}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <TextBlock Grid.Column="1" Text="{Binding DurationText}" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="2" Text="{Binding Hdr}" VerticalAlignment="Center"/>
+        <Button Grid.Column="3" Style="{StaticResource Drop}" Content="{Binding AudioText}" ToolTip="Pistes audio gardées" Click="OnAudioMenu"/>
+        <Button Grid.Column="4" Style="{StaticResource Drop}" Content="{Binding SubText}" ToolTip="Sous-titres gardés" Click="OnSubMenu"/>
+        <StackPanel Grid.Column="5" Orientation="Horizontal" HorizontalAlignment="Right">
+          <Button Style="{StaticResource IconBtn}" Content="&#xE768;" ToolTip="Prévisualisation (lecteur par défaut)" Click="OnRowPlay"/>
+          <Button Style="{StaticResource IconBtn}" Content="&#xE70F;" ToolTip="Renommer (le nom apparaît dans le menu)" Click="OnRowRename"/>
+          <Button Style="{StaticResource IconBtn}" Content="&#xE712;" ToolTip="Ordre des titres" Click="OnRowMore"/>
+          <Button Style="{StaticResource IconBtn}" Content="&#xE74D;" ToolTip="Supprimer le titre" Click="OnRowRemove"/>
+        </StackPanel>
+      </Grid>
     </DataTemplate>
   </Window.Resources>
 
-  <Grid Margin="28,22,28,24">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="*" MinHeight="90"/>
-    </Grid.RowDefinitions>
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="196"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
 
-    <DockPanel>
-      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-        <RadioButton x:Name="KindDvd" Content="DVD" Tag="dvd" Style="{StaticResource Seg}" GroupName="kind" Checked="OnKind"/>
-        <RadioButton x:Name="KindBd" Content="Blu-ray" Tag="bd" Style="{StaticResource Seg}" GroupName="kind" Checked="OnKind"/>
-        <RadioButton x:Name="KindUhd" Content="Blu-ray 4K" Tag="uhd" Style="{StaticResource Seg}" GroupName="kind" Checked="OnKind"/>
-      </StackPanel>
-      <StackPanel>
-        <TextBlock Text="Créateur" FontSize="30" FontWeight="SemiBold"/>
-        <TextBlock Text="Une ou plusieurs vidéos, un menu, un disque : DVD, Blu-ray ou Blu-ray 4K." Opacity="0.65"/>
-      </StackPanel>
-    </DockPanel>
-
-    <Grid Grid.Row="1" Margin="0,18,0,0">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="1.35*"/>
-        <ColumnDefinition Width="*"/>
-      </Grid.ColumnDefinitions>
-
-      <Border Style="{StaticResource Card}" Margin="0,0,8,0">
-        <DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="Vidéos" FontSize="16" FontWeight="SemiBold"/>
-          <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,10,0,0">
-            <Button Content="Ajouter…" Click="OnOpen" Margin="0,0,8,0"/>
-            <Button x:Name="RemoveButton" Content="Retirer" Click="OnRemove" Margin="0,0,8,0"/>
-            <Button x:Name="UpButton" Content="▲" Click="OnUp" Margin="0,0,8,0" ToolTip="Monter"/>
-            <Button x:Name="DownButton" Content="▼" Click="OnDown" ToolTip="Descendre"/>
-          </StackPanel>
-          <Grid Margin="0,10,0,0">
-            <ListBox x:Name="TitleList" MinHeight="110" DisplayMemberPath="Label" SelectionChanged="OnTitleSelected" MouseDoubleClick="OnRename"
-                     ToolTip="Double-clic : renommer (le nom apparaît dans le menu)"/>
-            <TextBlock x:Name="NoSource" Text="Glissez ici une ou plusieurs vidéos (une série : tous les épisodes)." Opacity="0.65"
-                       IsHitTestVisible="False" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="20,0"/>
-          </Grid>
-        </DockPanel>
-      </Border>
-
-      <Border Grid.Column="1" Style="{StaticResource Card}" Margin="8,0,0,0">
-        <StackPanel>
-          <TextBlock Text="Disque" FontSize="16" FontWeight="SemiBold"/>
-          <TextBlock Text="Nom du volume" Style="{StaticResource Caption}" Margin="0,8,0,4"/>
-          <TextBox x:Name="LabelBox" Text="MON_DISQUE" MaxLength="32" PreviewTextInput="OnLabelTyped"/>
-          <TextBlock Text="Support" Style="{StaticResource Caption}"/>
-          <ComboBox x:Name="CapacityBox" HorizontalAlignment="Stretch" SelectionChanged="OnChanged"/>
-          <TextBlock Text="Un chapitre toutes les" Style="{StaticResource Caption}"/>
-          <ComboBox x:Name="ChapterBox" HorizontalAlignment="Stretch" ItemStringFormat="{}{0} min" SelectionChanged="OnChanged"/>
-          <DockPanel Margin="0,14,0,0">
-            <Button x:Name="MenuButton" DockPanel.Dock="Right" Content="Modifier le menu…" Click="OnEditMenu"/>
-            <CheckBox x:Name="MenuCheck" Content="Créer un menu" IsChecked="True" Checked="OnMenuToggle" Unchecked="OnMenuToggle" VerticalAlignment="Center"/>
-          </DockPanel>
-          <TextBlock x:Name="MenuName" Margin="0,6,0,0" Opacity="0.65"/>
-        </StackPanel>
-      </Border>
-    </Grid>
-
-    <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,16,0,0">
+    <!-- left navigation, as in DVDFab -->
+    <Border Background="#121216">
       <DockPanel>
-        <DockPanel DockPanel.Dock="Top">
-          <Button x:Name="ApplyAllButton" DockPanel.Dock="Right" Content="Appliquer à toutes les vidéos" Click="OnApplyAll"/>
-          <TextBlock x:Name="TracksTitle" Text="Pistes" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
-        </DockPanel>
-        <Grid Margin="0,8,0,0">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <StackPanel Margin="0,0,8,0">
-            <TextBlock Text="Audio (la première cochée est celle par défaut)" Opacity="0.65" Margin="0,0,0,4"/>
-            <ListBox x:Name="AudioList" Height="116" ItemTemplate="{StaticResource TrackTemplate}"/>
-          </StackPanel>
-          <StackPanel Grid.Column="1" Margin="8,0,0,0">
-            <TextBlock Text="Sous-titres (désactivés par défaut)" Opacity="0.65" Margin="0,0,0,4"/>
-            <ListBox x:Name="SubList" Height="116" ItemTemplate="{StaticResource TrackTemplate}"/>
-          </StackPanel>
-        </Grid>
+        <StackPanel DockPanel.Dock="Top" Margin="22,26,16,24">
+          <TextBlock Text="BurnSmith" FontSize="22" FontWeight="Bold"/>
+          <TextBlock Text="Blu-ray, DVD, 4K" Opacity="0.55" FontSize="12"/>
+        </StackPanel>
+        <StackPanel>
+          <Button Style="{StaticResource Nav}" Background="#2B2B36">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE7C3;" Width="26" VerticalAlignment="Center"/>
+              <TextBlock Text="Créateur" FontWeight="SemiBold"/>
+            </StackPanel>
+          </Button>
+          <Button x:Name="BurnButton" Style="{StaticResource Nav}" IsEnabled="False" Click="OnBurnIso" ToolTip="Grave une image ISO existante sur le disque du graveur choisi">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE74E;" Width="26" VerticalAlignment="Center"/>
+              <TextBlock Text="Graver une image"/>
+            </StackPanel>
+          </Button>
+          <Button x:Name="EraseButton" Style="{StaticResource Nav}" IsEnabled="False" Click="OnErase" ToolTip="Efface un disque réinscriptible (BD-RE, DVD±RW)">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE894;" Width="26" VerticalAlignment="Center"/>
+              <TextBlock Text="Effacer un disque"/>
+            </StackPanel>
+          </Button>
+        </StackPanel>
       </DockPanel>
     </Border>
 
-    <StackPanel Grid.Row="3" Margin="0,18,0,0">
+    <Grid Grid.Column="1" Margin="28,22,28,16">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+
       <DockPanel>
-        <TextBlock x:Name="CapText" DockPanel.Dock="Right"/>
-        <TextBlock Text="Espace utilisé" Opacity="0.65"/>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="ModeButton" Background="#2F6FED" Foreground="White" Padding="18,8" Margin="0,0,10,0" Click="OnModeClick" ToolTip="Type de disque">
+            <Button.ContextMenu>
+              <ContextMenu Placement="Bottom">
+                <MenuItem Header="Blu-ray" Tag="bd" Click="OnMode"/>
+                <MenuItem Header="Blu-ray 4K" Tag="uhd" Click="OnMode"/>
+                <MenuItem Header="DVD" Tag="dvd" Click="OnMode"/>
+              </ContextMenu>
+            </Button.ContextMenu>
+            <TextBlock><Run x:Name="ModeText" Text="Blu-ray"/><Run Text="   ▾"/></TextBlock>
+          </Button>
+          <Button Content="+  Ajouter une source" Padding="18,8" Click="OnOpen"/>
+        </StackPanel>
+        <StackPanel>
+          <TextBlock Text="Créateur" FontSize="30" FontWeight="SemiBold"/>
+          <TextBlock Text="Créez un disque Blu-ray, Blu-ray 4K ou DVD à partir de vos vidéos, avec un menu." Opacity="0.6"/>
+        </StackPanel>
       </DockPanel>
-      <ProgressBar x:Name="CapBar" Height="10" Maximum="100" Margin="0,6,0,0"/>
-    </StackPanel>
 
-    <Grid Grid.Row="4" Margin="0,18,0,0">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="Auto"/>
-      </Grid.ColumnDefinitions>
-      <StackPanel>
-        <TextBlock Text="Dossier de sortie (BDMV ou VIDEO_TS y sera créé)" Opacity="0.65" Margin="0,0,0,4"/>
-        <TextBox x:Name="OutBox" PreviewTextInput="OnOutTyped"/>
-      </StackPanel>
-      <Button Grid.Column="1" Content="Parcourir…" VerticalAlignment="Bottom" Margin="8,0,0,0" Click="OnBrowseOut"/>
+      <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,18,0,0">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="190"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="40"/>
+            <ColumnDefinition Width="250"/>
+          </Grid.ColumnDefinitions>
+
+          <!-- the project: poster, title, size -->
+          <StackPanel Margin="0,0,16,0">
+            <Border Width="170" Height="96" Background="#14141A" CornerRadius="6" ClipToBounds="True" HorizontalAlignment="Left">
+              <Image x:Name="Poster" Stretch="UniformToFill"/>
+            </Border>
+            <TextBlock x:Name="ProjectTitle" FontSize="15" FontWeight="SemiBold" Margin="0,10,0,0" TextWrapping="Wrap"/>
+            <TextBlock x:Name="ProjectInfo" Opacity="0.6" Margin="0,2,0,0"/>
+          </StackPanel>
+
+          <!-- the videos -->
+          <Grid Grid.Column="1">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <DockPanel MinWidth="690">
+            <Grid DockPanel.Dock="Top" Margin="0,0,0,6">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="120"/>
+                <ColumnDefinition Width="70"/>
+                <ColumnDefinition Width="80"/>
+                <ColumnDefinition Width="145"/>
+                <ColumnDefinition Width="145"/>
+                <ColumnDefinition Width="124"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="Nom" Style="{StaticResource Head}"/>
+              <TextBlock Grid.Column="1" Text="Durée" Style="{StaticResource Head}"/>
+              <TextBlock Grid.Column="2" Text="HDR" Style="{StaticResource Head}"/>
+              <TextBlock Grid.Column="3" Text="Audio" Style="{StaticResource Head}"/>
+              <TextBlock Grid.Column="4" Text="Sous-titres" Style="{StaticResource Head}"/>
+            </Grid>
+            <ItemsControl x:Name="TitleList" ItemTemplate="{StaticResource FileRow}"/>
+            </DockPanel>
+            </ScrollViewer>
+            <StackPanel x:Name="NoSource" HorizontalAlignment="Center" VerticalAlignment="Center">
+              <TextBlock Text="Glissez ici une ou plusieurs vidéos (pour une série : tous les épisodes)." Opacity="0.6" TextWrapping="Wrap" TextAlignment="Center" Margin="20,0"/>
+              <Button Content="+  Ajouter une source" Click="OnOpen" HorizontalAlignment="Center" Margin="0,12,0,0" Padding="18,8"/>
+            </StackPanel>
+          </Grid>
+
+          <TextBlock Grid.Column="2" Text="&#xE72A;" FontFamily="{StaticResource Icons}" FontSize="26" Opacity="0.5"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+          <!-- the output: disc, size, menu, advanced -->
+          <Border Grid.Column="3" Background="#1C1C23" CornerRadius="8" Padding="16,14">
+            <StackPanel>
+              <TextBlock Text="Sortie" Style="{StaticResource Head}"/>
+              <ComboBox x:Name="CapacityBox" HorizontalAlignment="Stretch" Margin="0,4,0,0" SelectionChanged="OnChanged"/>
+              <TextBlock x:Name="CapText" Margin="0,8,0,0" TextWrapping="Wrap"/>
+              <ProgressBar x:Name="CapBar" Height="8" Maximum="100" Margin="0,6,0,0"/>
+              <Separator Margin="0,14"/>
+              <DockPanel>
+                <CheckBox x:Name="MenuCheck" DockPanel.Dock="Right" Content="Menu" IsChecked="True" Checked="OnMenuToggle" Unchecked="OnMenuToggle" MinWidth="0"/>
+                <TextBlock Text="Menu du disque" Style="{StaticResource Head}" VerticalAlignment="Center"/>
+              </DockPanel>
+              <Border Width="160" Height="90" Background="#14141A" CornerRadius="6" ClipToBounds="True" HorizontalAlignment="Left" Margin="0,6,0,0">
+                <Image x:Name="MenuThumb" Stretch="UniformToFill"/>
+              </Border>
+              <TextBlock x:Name="MenuName" Opacity="0.6" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
+              <Button x:Name="MenuButton" Content="Paramètres de menu" Click="OnEditMenu" HorizontalAlignment="Stretch" Margin="0,8,0,0"/>
+              <Button Content="Paramètres avancés" Click="OnAdvanced" HorizontalAlignment="Stretch" Margin="0,8,0,0"/>
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Border>
+
+      <Grid x:Name="ProgressPanel" Grid.Row="2" Margin="0,14,0,0" Visibility="Collapsed">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock x:Name="StatusText" MaxWidth="460" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,16,0"/>
+        <ProgressBar x:Name="Busy" Grid.Column="1" Maximum="100" VerticalAlignment="Center"/>
+        <Button x:Name="CancelButton" Grid.Column="2" Content="Annuler" Margin="16,0,0,0" Click="OnCancel"
+                ToolTip="Arrête après l'étape en cours ; pendant l'écriture du disque, la gravure s'arrête aussitôt"/>
+      </Grid>
+
+      <Grid Grid.Row="3" Margin="0,16,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="Enregistrer vers :" VerticalAlignment="Center" Margin="0,0,10,0" Opacity="0.75"/>
+        <TextBox x:Name="OutBox" Grid.Column="1" VerticalAlignment="Center" PreviewTextInput="OnOutTyped" TextChanged="OnOutChanged"
+                 ToolTip="Dossier du disque : BDMV (ou VIDEO_TS) y est créé"/>
+        <TextBlock x:Name="FreeText" Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.6"/>
+        <Button Grid.Column="3" Style="{StaticResource IconBtn}" Content="&#xE8B7;" Margin="6,0,0,0" Width="38" Height="34" Click="OnBrowseOut" ToolTip="Choisir le dossier"/>
+        <ToggleButton x:Name="IsoCheck" Grid.Column="4" Content="ISO" Margin="10,0,0,0" Padding="16,8" ToolTip="Créer aussi une image ISO (UDF) à côté du dossier"/>
+        <StackPanel Grid.Column="5" Orientation="Horizontal" Margin="10,0,0,0">
+          <ToggleButton x:Name="BurnCheck" Content="Graver" Padding="16,8" IsEnabled="False" ToolTip="Grave le disque sur le graveur choisi après la création (une ISO temporaire est utilisée)"/>
+          <ComboBox x:Name="DriveBox" MinWidth="120" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Graveur">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock><Run Text="{Binding Letter, Mode=OneWay}"/><Run Text="  "/><Run Text="{Binding Name, Mode=OneWay}" Foreground="Gray"/></TextBlock>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </StackPanel>
+        <Button x:Name="StartButton" Grid.Column="6" Content="Démarrer" Margin="16,0,0,0" Background="#7B4DFF" Foreground="White"
+                MinWidth="150" Padding="24,10" FontSize="16" FontWeight="SemiBold" Click="OnStart"/>
+      </Grid>
+
+      <Expander x:Name="LogExpander" Grid.Row="4" Header="Journal" Margin="0,10,0,0">
+        <TextBox x:Name="Log" Height="130" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
+                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap"/>
+      </Expander>
     </Grid>
-
-    <DockPanel Grid.Row="5" Margin="0,18,0,0">
-      <Button x:Name="StartButton" DockPanel.Dock="Right" Content="Démarrer" Style="{DynamicResource AccentButtonStyle}"
-              MinWidth="150" Padding="24,10" FontSize="16" Click="OnStart"/>
-      <Button x:Name="BurnButton" DockPanel.Dock="Right" Content="Graver une ISO…" IsEnabled="False" Margin="0,0,12,0" Padding="20,10" FontSize="16" Click="OnBurnIso"
-              ToolTip="Grave une image ISO existante sur le disque du graveur choisi"/>
-      <ComboBox x:Name="DriveBox" DockPanel.Dock="Right" MinWidth="80" Margin="0,0,12,0" VerticalAlignment="Center" ToolTip="Graveur"/>
-      <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,20,0">
-        <CheckBox x:Name="IsoCheck" Content="Créer une image ISO"/>
-        <CheckBox x:Name="BurnCheck" Content="Graver directement sur le disque" Margin="0,8,0,0" ToolTip="Après la création, grave sur le graveur choisi (une ISO temporaire est utilisée)"/>
-      </StackPanel>
-      <ProgressBar x:Name="Busy" Visibility="Hidden" VerticalAlignment="Center" Margin="0,0,20,0"/>
-    </DockPanel>
-
-    <TextBox x:Name="Log" Grid.Row="6" Margin="0,16,0,0" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
-             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap"/>
   </Grid>
 </Window>

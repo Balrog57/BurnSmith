@@ -1,9 +1,13 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media.Imaging;
 using BurnSmith.Core;
 using BurnSmith.Core.Menu;
 using Microsoft.Win32;
@@ -23,37 +27,42 @@ public partial class MainWindow : Window
     static readonly Cap[] Uhds = [new("BD-66", 66, 61), new("BD-100", 100, 93)];
 
     /// <summary>One video of the disc, with the tracks the user keeps (indexes into the source's own audio / subtitle lists).</summary>
-    sealed class Entry(string path, SourceInfo info)
+    sealed class Entry(string path, SourceInfo info) : INotifyPropertyChanged
     {
+        public event PropertyChangedEventHandler? PropertyChanged;
+        /// <summary>Redraws the row after Name, Audio or Subs changed.</summary>
+        public void Refresh() => PropertyChanged?.Invoke(this, new(string.Empty));
+
         public string Path { get; } = path;
         public SourceInfo Info { get; } = info;
         public string Name { get; set; } = System.IO.Path.GetFileNameWithoutExtension(path);
         public List<int> Audio { get; set; } = info.Audio.Take(1).Select(a => a.Index).ToList();
         public List<int> Subs { get; set; } = [];
-        public string Label
+
+        public string DurationText
         {
             get
             {
                 var t = TimeSpan.FromSeconds(Info.Duration);
-                return $"{Name}   ·   {(int)t.TotalHours} h {t.Minutes:00} min   ·   {Info.Width}×{Info.Height}   ·   {Info.Audio.Count} audio, {Info.Subtitles.Count} sous-titres";
+                return $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}";
             }
         }
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs);
-    }
+        public string Hdr => Info.Hdr;
+        public string AudioText => Summary(Audio.Select(i => Info.Audio.FirstOrDefault(a => a.Index == i)?.Name ?? "?").ToList());
+        public string SubText => Summary(Subs.Select(i => Info.Subtitles.FirstOrDefault(t => t.Index == i)?.Name ?? "?").ToList());
 
-    /// <summary>A checkbox line of the audio / subtitle lists.</summary>
-    sealed class TrackItem
-    {
-        public int Index { get; init; }
-        public string Text { get; init; } = "";
-        public bool Checked { get; set; }
-        public bool Enabled { get; init; }
+        static string Summary(List<string> names) => names.Count == 0 ? "Aucun" : names.Count == 1 ? names[0] : $"{names[0]} +{names.Count - 1}";
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs);
     }
 
     readonly ObservableCollection<Entry> titles = [];
     string kind = "bd"; // dvd | bd | uhd
+    string volume = "MON_DISQUE";
+    int chapterMinutes = 5;
     string? previewFrame, previewFor;
-    bool labelEdited, outEdited;
+    bool labelEdited, outEdited, busy, refreshingDrives;
+    int thumbVersion;
+    CancellationTokenSource? cancel;
     MenuDesign design = TemplateCatalog.Default().Clone();
 
     public MainWindow()
@@ -64,26 +73,34 @@ public partial class MainWindow : Window
         design.SubtitlesLabel = "Sous-titres"; design.OffLabel = "Désactivés"; design.BackLabel = "Retour";
         MenuName.Text = design.Name;
         TitleList.ItemsSource = titles;
-        ChapterBox.ItemsSource = new[] { 1, 2, 3, 5, 10, 15 };
-        ChapterBox.SelectedItem = 5;
-        KindBd.IsChecked = true;
+        SetKind("bd");
         RefreshDrives();
         Activated += (_, _) => RefreshDrives(); // a burner plugged in meanwhile shows up when the user comes back
         AfterTitlesChanged();
     }
 
-    void RefreshDrives()
+    /// <summary>Asks Windows (IMAPI2) for the burners off the UI thread: the first call can wait for a drive to spin up.</summary>
+    async void RefreshDrives()
     {
-        var drives = DriveInfo.GetDrives().Where(d => d.DriveType == DriveType.CDRom).Select(d => d.Name.TrimEnd('\\')).ToList();
-        if (!drives.SequenceEqual(DriveBox.Items.Cast<string>()))
+        if (busy || refreshingDrives) return;
+        refreshingDrives = true;
+        try
         {
-            DriveBox.ItemsSource = drives;
-            DriveBox.SelectedIndex = drives.Count > 0 ? 0 : -1;
+            var drives = await Task.Run(() =>
+            {
+                try { return Imapi.Drives().Where(d => d.Letter.Length > 0).ToList(); }
+                catch (Exception) { return new List<Imapi.Drive>(); } // IMAPI2 unavailable: no burning, creating still works
+            });
+            if (busy) return;
+            if (!drives.Select(d => d.Id).SequenceEqual(DriveBox.Items.Cast<Imapi.Drive>().Select(d => d.Id)))
+            {
+                DriveBox.ItemsSource = drives;
+                DriveBox.SelectedIndex = drives.Count > 0 ? 0 : -1;
+            }
+            BurnButton.IsEnabled = EraseButton.IsEnabled = BurnCheck.IsEnabled = drives.Count > 0;
+            if (drives.Count == 0) BurnCheck.IsChecked = false;
         }
-        var idle = Busy.Visibility != Visibility.Visible;
-        BurnButton.IsEnabled = drives.Count > 0 && idle;
-        BurnCheck.IsEnabled = drives.Count > 0;
-        if (drives.Count == 0) BurnCheck.IsChecked = false;
+        finally { refreshingDrives = false; }
     }
 
     public Window CreateEditor() => new MenuEditorWindow(design, previewFrame, EditorContent());
@@ -95,7 +112,7 @@ public partial class MainWindow : Window
             return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, 12).ToList(), null, ["Français 5.1", "English 5.1"], ["Français", "English"]);
         var disc = first.ToDisc();
         var series = titles.Count > 1;
-        var chapters = series ? 0 : BluRay.Chapters(first.Info.Duration, (int)ChapterBox.SelectedItem).Count;
+        var chapters = series ? 0 : BluRay.Chapters(first.Info.Duration, chapterMinutes).Count;
         return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, chapters).ToList(),
             series ? titles.Select((t, i) => new TitleEntry(t.Name, i + 1, null)).ToList() : null,
             disc.KeptAudio(first.Info).Select(a => a.Name).ToList(), disc.KeptSubtitles(first.Info).Where(SupportsSub).Select(s => s.Name).ToList());
@@ -107,25 +124,54 @@ public partial class MainWindow : Window
         Log.ScrollToEnd();
     }
 
+    /// <summary>A line the user must see: it opens the log.</summary>
+    void Warn(string line)
+    {
+        Append(line);
+        LogExpander.IsExpanded = true;
+    }
+
     void SyncOutput()
     {
         if (!outEdited)
-            OutBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "BurnSmith", LabelBox.Text.Trim());
+            OutBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "BurnSmith", volume);
     }
 
-    void OnLabelTyped(object s, TextCompositionEventArgs e) => labelEdited = true;
     void OnOutTyped(object s, TextCompositionEventArgs e) => outEdited = true;
+
+    void OnOutChanged(object s, TextChangedEventArgs e)
+    {
+        if (FreeText == null) return; // fires while the window is being built
+        try
+        {
+            var root = Path.GetPathRoot(Path.GetFullPath(OutBox.Text));
+            FreeText.Text = root == null ? "" : $"Espace libre : {new DriveInfo(root).AvailableFreeSpace / 1e9:0} Go";
+        }
+        catch (Exception) { FreeText.Text = ""; } // a path being typed
+    }
 
     // a DVD can only carry text subtitles (redrawn as bitmaps); a Blu-ray also takes PGS
     bool SupportsSub(SubtitleTrack s) => kind == "dvd" ? s.IsText : s.Supported;
 
-    void OnKind(object s, RoutedEventArgs e)
+    void OnModeClick(object s, RoutedEventArgs e)
     {
-        kind = (string)((RadioButton)s).Tag;
-        CapacityBox.ItemsSource = kind == "dvd" ? Dvds : kind == "uhd" ? Uhds : Bds;
+        ModeButton.ContextMenu.PlacementTarget = ModeButton;
+        ModeButton.ContextMenu.IsOpen = true;
+    }
+
+    void OnMode(object s, RoutedEventArgs e) => SetKind((string)((MenuItem)s).Tag);
+
+    void SetKind(string k)
+    {
+        kind = k;
+        ModeText.Text = k == "dvd" ? "DVD" : k == "uhd" ? "Blu-ray 4K" : "Blu-ray";
+        CapacityBox.ItemsSource = k == "dvd" ? Dvds : k == "uhd" ? Uhds : Bds;
         CapacityBox.SelectedIndex = 0;
-        foreach (var t in titles) t.Subs = t.Subs.Where(i => SupportsSub(t.Info.Subtitles.First(x => x.Index == i))).ToList();
-        ShowTracks();
+        foreach (var t in titles)
+        {
+            t.Subs = t.Subs.Where(i => SupportsSub(t.Info.Subtitles.First(x => x.Index == i))).ToList();
+            t.Refresh();
+        }
         Update();
     }
 
@@ -136,12 +182,12 @@ public partial class MainWindow : Window
     /// <summary>Several videos can only be chosen from a menu, and a series menu lists episodes instead of chapters.</summary>
     void UpdateMenuState()
     {
-        if (MenuButton == null || ChapterBox == null) return;
+        if (MenuButton == null) return;
         var series = titles.Count > 1;
         if (series) MenuCheck.IsChecked = true;
         MenuCheck.IsEnabled = !series;
         MenuButton.IsEnabled = MenuCheck.IsChecked == true;
-        ChapterBox.IsEnabled = !series;
+        MenuThumb.Opacity = MenuCheck.IsChecked == true ? 1 : 0.25;
     }
 
     void Update()
@@ -153,11 +199,12 @@ public partial class MainWindow : Window
         {
             // shortcut: Blu-ray size = source file sizes (exact when the video is copied, off when re-encoded or tracks are dropped)
             est = kind == "dvd" ? Dvd.EstimateGB(titles.Select(t => (t.Info, t.ToDisc())).ToList(), cap.Usable) : titles.Sum(t => new FileInfo(t.Path).Length) / 1e9;
-            if (est > cap.Usable) note = "  - trop grand pour ce support";
-            if (kind == "uhd" && titles.Any(t => t.Info.VideoCodec != "hevc" || t.Info.Height != 2160)) note = "  - les sources doivent être en HEVC 2160p";
+            if (est > cap.Usable) note = "\ntrop grand pour ce support";
+            if (kind == "uhd" && titles.Any(t => t.Info.VideoCodec != "hevc" || t.Info.Height != 2160)) note = "\nles sources doivent être en HEVC 2160p";
         }
         CapBar.Value = Math.Min(100, est / cap.Gb * 100);
-        CapText.Text = $"{est:0.00} Go / {cap.Gb:0.#} Go ({cap.Name}){note}";
+        CapText.Text = $"{est:0.00} Go / {cap.Usable:0.#} Go utilisables{note}";
+        ProjectInfo.Text = titles.Count == 0 ? "" : $"{titles.Count} vidéo{(titles.Count > 1 ? "s" : "")}  ·  {titles.Sum(t => new FileInfo(t.Path).Length) / 1e9:0.0} Go";
     }
 
     // ---- videos ----
@@ -199,7 +246,7 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                Append($"Impossible de lire {Path.GetFileName(path)} : {ex.Message.Split('\n')[0]}");
+                Warn($"Impossible de lire {Path.GetFileName(path)} : {ex.Message.Split('\n')[0]}");
             }
         }
         AfterTitlesChanged();
@@ -208,24 +255,61 @@ public partial class MainWindow : Window
             var first = titles[0];
             previewFor = first.Path;
             previewFrame = await Task.Run(() => ExtractPreview(first.Path, first.Info));
+            Poster.Source = LoadImage(previewFrame);
+            RefreshThumb();
         }
+    }
+
+    static BitmapImage? LoadImage(string? file)
+    {
+        if (file == null || !File.Exists(file)) return null;
+        var img = new BitmapImage();
+        img.BeginInit();
+        img.CacheOption = BitmapCacheOption.OnLoad;
+        img.CreateOptions = BitmapCreateOptions.IgnoreImageCache; // the preview file is overwritten for each new first video
+        img.UriSource = new Uri(file);
+        img.EndInit();
+        img.Freeze();
+        return img;
     }
 
     void AfterTitlesChanged()
     {
         NoSource.Visibility = titles.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (titles.Count == 0) { previewFrame = previewFor = null; }
+        if (titles.Count == 0) { previewFrame = previewFor = null; Poster.Source = null; }
         else
         {
             var name = titles[0].Name;
-            if (!labelEdited) LabelBox.Text = Regex.Replace(name.ToUpperInvariant(), "[^A-Z0-9_]+", "_").Trim('_') is { Length: > 0 } l ? l[..Math.Min(32, l.Length)] : "MON_DISQUE";
+            if (!labelEdited) volume = Regex.Replace(name.ToUpperInvariant(), "[^A-Z0-9_]+", "_").Trim('_') is { Length: > 0 } l ? l[..Math.Min(32, l.Length)] : "MON_DISQUE";
             if (design.Title == new MenuDesign().Title) design.Title = name;
         }
-        if (TitleList.SelectedItem == null && titles.Count > 0) TitleList.SelectedIndex = 0; // shows its tracks through OnTitleSelected
-        else ShowTracks();
+        ProjectTitle.Text = titles.Count == 0 ? "Aucune source" : design.Title;
         UpdateMenuState();
         SyncOutput();
         Update();
+        RefreshThumb();
+    }
+
+    /// <summary>The menu's first page, small, from the real menu builder (so it shows the chosen template).</summary>
+    async void RefreshThumb()
+    {
+        var mine = ++thumbVersion;
+        var d = design.Clone();
+        var content = EditorContent();
+        try
+        {
+            var jpeg = await Task.Run(() => MenuRenderer.Sta(() => MenuRenderer.Background(d, MenuBuilder.Build(d, content)[0])));
+            if (mine != thumbVersion) return; // a newer change is already rendering
+            var img = new BitmapImage();
+            img.BeginInit();
+            img.CacheOption = BitmapCacheOption.OnLoad;
+            img.StreamSource = new MemoryStream(jpeg);
+            img.DecodePixelWidth = 320;
+            img.EndInit();
+            img.Freeze();
+            MenuThumb.Source = img;
+        }
+        catch (Exception) { if (mine == thumbVersion) MenuThumb.Source = null; } // the thumbnail is cosmetic; the editor shows the error
     }
 
     /// <summary>One frame at 10% of the movie, used as the picture on the menu preview.</summary>
@@ -242,95 +326,116 @@ public partial class MainWindow : Window
         catch (Exception) { return null; } // the preview just shows an empty frame
     }
 
-    void OnRemove(object s, RoutedEventArgs e)
+    // ---- one row of the video table ----
+
+    static Entry? Row(object s) => (s as FrameworkElement)?.DataContext as Entry;
+
+    void OnRowRemove(object s, RoutedEventArgs e)
     {
-        if (TitleList.SelectedItem is not Entry entry) return;
-        var i = titles.IndexOf(entry);
+        if (Row(s) is not { } entry) return;
         titles.Remove(entry);
-        TitleList.SelectedIndex = Math.Min(i, titles.Count - 1);
         AfterTitlesChanged();
     }
 
-    void OnUp(object s, RoutedEventArgs e) => Move(-1);
-    void OnDown(object s, RoutedEventArgs e) => Move(1);
-
-    void Move(int step)
+    /// <summary>The "..." button: move the title up or down (the order is the order of the episodes in the menu).</summary>
+    void OnRowMore(object s, RoutedEventArgs e)
     {
-        if (TitleList.SelectedItem is not Entry entry) return;
+        var entry = Row(s);
+        var menu = new ContextMenu { PlacementTarget = (UIElement)s, Placement = PlacementMode.Bottom };
+        var up = new MenuItem { Header = "Monter", IsEnabled = titles.IndexOf(entry!) > 0 };
+        var down = new MenuItem { Header = "Descendre", IsEnabled = titles.IndexOf(entry!) < titles.Count - 1 };
+        up.Click += (_, _) => Move(entry, -1);
+        down.Click += (_, _) => Move(entry, 1);
+        menu.Items.Add(up);
+        menu.Items.Add(down);
+        menu.IsOpen = true;
+    }
+
+    void Move(Entry? entry, int step)
+    {
+        if (entry == null) return;
         var i = titles.IndexOf(entry);
         if (i + step < 0 || i + step >= titles.Count) return;
         titles.Move(i, i + step);
-        TitleList.SelectedIndex = i + step;
+        RefreshThumb(); // episode order changes the menu
     }
 
-    void OnRename(object s, MouseButtonEventArgs e)
+    void OnRowRename(object s, RoutedEventArgs e)
     {
-        if (TitleList.SelectedItem is not Entry entry) return;
+        if (Row(s) is not { } entry) return;
         var name = Prompt.Ask(this, "Nom affiché dans le menu", entry.Name)?.Trim();
         if (string.IsNullOrEmpty(name)) return;
         entry.Name = name;
-        var i = titles.IndexOf(entry);
-        titles[i] = entry; // re-assigning makes the list redraw its label
-        TitleList.SelectedIndex = i;
+        entry.Refresh();
+        RefreshThumb();
+    }
+
+    void OnRowPlay(object s, RoutedEventArgs e)
+    {
+        if (Row(s) is not { } entry) return;
+        try { Process.Start(new ProcessStartInfo(entry.Path) { UseShellExecute = true }); }
+        catch (Exception ex) { Warn("Impossible d'ouvrir la vidéo : " + ex.Message); }
     }
 
     // ---- tracks ----
 
-    void OnTitleSelected(object s, SelectionChangedEventArgs e) => ShowTracks();
+    void OnAudioMenu(object s, RoutedEventArgs e) => TrackMenu((Button)s, true);
+    void OnSubMenu(object s, RoutedEventArgs e) => TrackMenu((Button)s, false);
 
-    void ShowTracks()
+    /// <summary>The dropdown of a row: one checkable line per track of the source, ticking one updates just that video.</summary>
+    void TrackMenu(Button button, bool audio)
     {
-        var entry = TitleList.SelectedItem as Entry;
-        TracksTitle.Text = entry == null ? "Pistes" : $"Pistes de « {entry.Name} »";
-        ApplyAllButton.IsEnabled = entry != null && titles.Count > 1;
-        RemoveButton.IsEnabled = UpButton.IsEnabled = DownButton.IsEnabled = entry != null;
-        if (entry == null) { AudioList.ItemsSource = SubList.ItemsSource = null; return; }
-        AudioList.ItemsSource = entry.Info.Audio.Select(a => new TrackItem
+        if (Row(button) is not { } entry) return;
+        var kept = audio ? entry.Audio : entry.Subs;
+        IEnumerable<(int Index, string Text, bool Enabled)> tracks = audio
+            ? entry.Info.Audio.Select(a => (a.Index, $"{a.Name}  ({a.Codec})", true))
+            : entry.Info.Subtitles.Select(t => (t.Index, SupportsSub(t) ? $"{t.Name}  ({t.Codec})" : $"{t.Name}  ({t.Codec}, non pris en charge)", SupportsSub(t)));
+        var menu = new ContextMenu { PlacementTarget = button, Placement = PlacementMode.Bottom };
+        foreach (var (index, text, enabled) in tracks)
         {
-            Index = a.Index, Text = $"{a.Name}  ({a.Codec})", Checked = entry.Audio.Contains(a.Index), Enabled = true,
-        }).ToList();
-        SubList.ItemsSource = entry.Info.Subtitles.Select(t => new TrackItem
+            var item = new MenuItem { Header = text, IsCheckable = true, IsChecked = kept.Contains(index), IsEnabled = enabled, StaysOpenOnClick = true };
+            item.Click += (_, _) => ToggleTrack(entry, audio, index, item);
+            menu.Items.Add(item);
+        }
+        if (menu.Items.Count == 0) menu.Items.Add(new MenuItem { Header = audio ? "Aucune piste audio" : "Aucun sous-titre", IsEnabled = false });
+        if (titles.Count > 1)
         {
-            Index = t.Index, Text = SupportsSub(t) ? $"{t.Name}  ({t.Codec})" : $"{t.Name}  ({t.Codec}, non pris en charge)",
-            Checked = entry.Subs.Contains(t.Index), Enabled = SupportsSub(t),
-        }).ToList();
+            menu.Items.Add(new Separator());
+            var all = new MenuItem { Header = "Appliquer les pistes de cette vidéo aux autres" };
+            all.Click += (_, _) => ApplyToOthers(entry);
+            menu.Items.Add(all);
+        }
+        menu.IsOpen = true;
     }
 
-    /// <summary>
-    /// Ticking or unticking one line updates just that track of the selected video, so it can run at any time
-    /// (also while the lists are being filled, or when the box is toggled by an accessibility tool).
-    /// </summary>
-    void OnTrack(object s, RoutedEventArgs e)
+    void ToggleTrack(Entry entry, bool audio, int index, MenuItem item)
     {
-        var box = (CheckBox)s;
-        if (box.DataContext is not TrackItem item || TitleList.SelectedItem is not Entry entry) return;
-        var audio = AudioList.Items.Contains(item);
-        if (!audio && !SubList.Items.Contains(item)) return; // a line of a list that has been replaced meanwhile
         var kept = audio ? entry.Audio : entry.Subs;
-        if (box.IsChecked != true) kept.Remove(item.Index);
-        else if (!kept.Contains(item.Index))
+        if (item.IsChecked != true) kept.Remove(index);
+        else if (!kept.Contains(index))
         {
             var max = audio ? MenuBuilder.MaxAudio : MenuBuilder.MaxSubtitles;
             if (kept.Count >= max)
             {
-                box.IsChecked = false;
-                Append($"Au plus {MenuBuilder.MaxAudio} pistes audio et {MenuBuilder.MaxSubtitles} sous-titres (limite de la page Réglages du menu).");
+                item.IsChecked = false;
+                Warn($"Au plus {MenuBuilder.MaxAudio} pistes audio et {MenuBuilder.MaxSubtitles} sous-titres (limite de la page Réglages du menu).");
                 return;
             }
-            kept.Add(item.Index);
+            kept.Add(index);
             kept.Sort(); // disc order = source order; the first one is the default
         }
+        entry.Refresh();
         Update();
     }
 
-    /// <summary>Copies the selected video's choice to the others, by track number.</summary>
-    void OnApplyAll(object s, RoutedEventArgs e)
+    /// <summary>Copies one video's choice to the others, by track number.</summary>
+    void ApplyToOthers(Entry cur)
     {
-        if (TitleList.SelectedItem is not Entry cur) return;
         foreach (var other in titles.Where(t => t != cur))
         {
             other.Audio = cur.Audio.Where(i => other.Info.Audio.Any(a => a.Index == i)).ToList();
             other.Subs = cur.Subs.Where(i => other.Info.Subtitles.Any(t => t.Index == i && SupportsSub(t))).ToList();
+            other.Refresh();
         }
         Append("Pistes appliquées à toutes les vidéos (par numéro de piste).");
         Update();
@@ -344,6 +449,17 @@ public partial class MainWindow : Window
         if (editor.ShowDialog() != true) return;
         design = editor.Result;
         MenuName.Text = design.Name;
+        ProjectTitle.Text = titles.Count == 0 ? "Aucune source" : design.Title;
+        RefreshThumb();
+    }
+
+    void OnAdvanced(object s, RoutedEventArgs e)
+    {
+        var dlg = new AdvancedWindow(volume, chapterMinutes) { Owner = this };
+        if (dlg.ShowDialog() != true) return;
+        if (dlg.Volume != volume) { volume = dlg.Volume; labelEdited = true; SyncOutput(); }
+        chapterMinutes = dlg.ChapterMinutes;
+        RefreshThumb();
     }
 
     void OnBrowseOut(object s, RoutedEventArgs e)
@@ -354,27 +470,47 @@ public partial class MainWindow : Window
         outEdited = true;
     }
 
-    /// <summary>Runs one long job off the UI thread, with the busy state and a log line per step. Returns false when it failed.</summary>
-    async Task<bool> Work(Action<Action<string>> job)
+    void OnCancel(object s, RoutedEventArgs e)
     {
-        StartButton.IsEnabled = BurnButton.IsEnabled = false;
+        CancelButton.IsEnabled = false;
+        StatusText.Text = "Annulation…";
+        cancel?.Cancel();
+    }
+
+    /// <summary>
+    /// Runs one long job off the UI thread with its progress bar (indeterminate until the job reports a value) and a log line per step.
+    /// Returns false when it failed or was cancelled.
+    /// </summary>
+    async Task<bool> Work(string what, Action<Action<string>, IProgress<double>, CancellationToken> job)
+    {
+        busy = true;
+        StartButton.IsEnabled = BurnButton.IsEnabled = EraseButton.IsEnabled = false;
         Busy.IsIndeterminate = true;
-        Busy.Visibility = Visibility.Visible;
+        StatusText.Text = what;
+        ProgressPanel.Visibility = Visibility.Visible;
+        CancelButton.IsEnabled = true;
+        cancel = new CancellationTokenSource();
+        var token = cancel.Token;
+        var progress = new Progress<double>(v => { Busy.IsIndeterminate = false; Busy.Value = v * 100; });
+        void Log(string line) => Dispatcher.BeginInvoke(() => { Append(line); StatusText.Text = line; });
         try
         {
-            await Task.Run(() => job(line => Dispatcher.BeginInvoke(() => Append(line))));
+            await Task.Run(() => job(Log, progress, token));
             return true;
         }
+        catch (OperationCanceledException) { Warn("Annulé."); return false; }
         catch (Exception ex)
         {
-            Append("ERREUR : " + ex.Message);
+            Warn("ERREUR : " + ex.Message);
             return false;
         }
         finally
         {
+            busy = false;
             StartButton.IsEnabled = true;
-            Busy.IsIndeterminate = false;
-            Busy.Visibility = Visibility.Hidden;
+            ProgressPanel.Visibility = Visibility.Collapsed;
+            cancel.Dispose();
+            cancel = null;
             RefreshDrives();
         }
     }
@@ -385,30 +521,36 @@ public partial class MainWindow : Window
         var outDir = OutBox.Text.Trim();
         if (outDir.Length == 0) { MessageBox.Show(this, "Choisissez un dossier de sortie.", "BurnSmith"); return; }
         var cap = (Cap)CapacityBox.SelectedItem;
-        var label = LabelBox.Text.Trim();
-        var drive = DriveBox.SelectedItem as string;
+        var label = volume;
+        var drive = DriveBox.SelectedItem as Imapi.Drive;
         var burn = BurnCheck.IsChecked == true && drive != null;
         if (burn && MessageBox.Show(this,
-                $"Après la création, graver « {label} » sur {drive} ?\n\nInsérez un disque vierge adapté ({cap.Name}). Le disque sera écrit définitivement.",
+                $"Après la création, graver « {label} » sur {drive!.Letter} ?\n\nInsérez un disque vierge adapté ({cap.Name}). Le disque sera écrit définitivement.",
                 "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
 
         var discTitles = titles.Select(t => t.ToDisc()).ToList();
         var menu = MenuCheck.IsChecked == true || discTitles.Count > 1 ? design.Clone() : null;
-        var minutes = (int)ChapterBox.SelectedItem;
+        var minutes = chapterMinutes;
         var uhd = kind == "uhd";
         var dvd = kind == "dvd";
         var withIso = IsoCheck.IsChecked == true;
         Log.Clear();
 
-        var ok = await Work(log =>
+        var ok = await Work("Création du disque…", (log, progress, token) =>
         {
             if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable), log);
             else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes), log);
             var iso = IsoFile(outDir);
             File.Delete(iso); // an image of an earlier build must never be burnt by mistake
             if (!withIso && !burn) return;
-            Iso.Build(outDir, iso, label, dvd, log);
-            if (burn) Iso.Burn(iso, drive!, log);
+            token.ThrowIfCancellationRequested();
+            log("Création de l'image ISO…");
+            Iso.Build(outDir, iso, label, dvd, log, progress);
+            if (burn)
+            {
+                token.ThrowIfCancellationRequested();
+                Iso.Burn(iso, drive!.Letter, log, progress, token);
+            }
             if (!withIso) File.Delete(iso); // only made to burn
         });
         if (ok) Append("Terminé.");
@@ -420,14 +562,22 @@ public partial class MainWindow : Window
     /// <summary>Burns an image that already exists (made earlier, or downloaded) on a DVD / Blu-ray / Blu-ray 4K.</summary>
     async void OnBurnIso(object s, RoutedEventArgs e)
     {
-        if (DriveBox.SelectedItem is not string drive) { MessageBox.Show(this, "Aucun graveur détecté.", "BurnSmith"); return; }
+        if (DriveBox.SelectedItem is not Imapi.Drive drive) { MessageBox.Show(this, "Aucun graveur détecté.", "BurnSmith"); return; }
         var dlg = new OpenFileDialog { Title = "Image à graver", Filter = "Images disque|*.iso|Tous les fichiers|*.*" };
         if (dlg.ShowDialog(this) != true) return;
         var iso = dlg.FileName;
         var answer = MessageBox.Show(this,
-            $"Graver « {Path.GetFileName(iso)} » sur {drive} ?\n\nInsérez un disque vierge adapté à la taille de l'image. Le disque sera écrit définitivement.",
+            $"Graver « {Path.GetFileName(iso)} » sur {drive.Letter} ?\n\nInsérez un disque vierge adapté à la taille de l'image. Le disque sera écrit définitivement.",
             "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (answer != MessageBoxResult.Yes) return;
-        if (await Work(log => Iso.Burn(iso, drive, log))) Append("Terminé.");
+        if (await Work("Gravure…", (log, progress, token) => Iso.Burn(iso, drive.Letter, log, progress, token))) Append("Terminé.");
+    }
+
+    async void OnErase(object s, RoutedEventArgs e)
+    {
+        if (DriveBox.SelectedItem is not Imapi.Drive drive) { MessageBox.Show(this, "Aucun graveur détecté.", "BurnSmith"); return; }
+        if (MessageBox.Show(this, $"Effacer le disque réinscriptible de {drive.Letter} ?\n\nToutes les données du disque seront perdues.",
+                "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        if (await Work("Effacement…", (log, _, _) => Imapi.Erase(drive.Letter, log))) Append("Terminé.");
     }
 }
