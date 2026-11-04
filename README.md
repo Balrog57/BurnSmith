@@ -14,7 +14,7 @@ Créateur de DVD, Blu-ray et Blu-ray 4K pour Windows : on choisit une vidéo, on
 
 ## Utiliser
 
-1. Télécharger `BurnSmith.exe` (page *Releases*) et le lancer.
+1. Compiler `BurnSmith.exe` (voir *Compiler*) et le lancer ; un exe prêt à l'emploi sera publié dans *Releases*.
 2. Placer à côté les programmes tiers dans un dossier `tools\` (ou les mettre dans le `PATH`, ou définir `BURNSMITH_TOOLS`) :
 
 | Programme | Rôle | Obligatoire pour |
@@ -36,7 +36,7 @@ Prérequis : SDK .NET 10.
 
 Le menu Blu-ray est un xlet Java 1.3 (`bdj/`). `assets/bdj/menu.jar` est déjà compilé et embarqué dans l'exe ; `bdj\build.ps1` le reconstruit avec un JDK 8 (`tools\jdk8`).
 
-Ligne de commande : `burnsmith bd|dvd --video f.mkv --out dossier [--design NOM] [--title TEXTE] [--no-menu] [--chapters MIN] [--uhd]`.
+Ligne de commande : `burnsmith bd|dvd --video f.mkv --out dossier [--design NOM|DOSSIER_DU_MODELE] [--title TEXTE] [--no-menu] [--chapters MIN] [--uhd]` ; `burnsmith preview NOM|DOSSIER sortie [--picture image.jpg] [--episodes N]` dessine toutes les pages d'un modèle.
 
 ## Structure
 
@@ -50,7 +50,7 @@ Ligne de commande : `burnsmith bd|dvd --video f.mkv --out dossier [--design NOM]
 
 BurnSmith **ne contient aucun modèle** : il lit à l'exécution ceux que vous avez déjà installés (dossiers `MenuTemplate` de DVDFab, y compris ceux téléchargés depuis DVDFab, de Leawo Prof. Media, ou un dossier ajouté à la main dans `%APPDATA%\BurnSmith\template-folders.txt`). Rien n'est copié dans le dépôt ni dans l'exe ; sans DVDFab ni Leawo, l'éditeur propose seulement un dégradé uni personnalisable.
 
-- DVDFab Blu-ray / 4K (`template.bd.xml`) : 21 modèles lisibles, positions et images d'origine. Le modèle « Streaming » (tout-en-un) n'est pas géré.
+- DVDFab Blu-ray / 4K (`template.bd.xml`) : 21 modèles lisibles, avec les images et positions du modèle. Quand un modèle n'a pas de page de réglages (`none_setup`, ex. Birthday1), BurnSmith ajoute lui-même une pastille « Settings » et des panneaux sombres. Le modèle « Streaming » (tout-en-un) n'est pas géré.
 - DVDFab DVD (`template.xml`) : 5 modèles. Les surbrillances DVD restent un cadre générique à 4 couleurs, pas celui du modèle.
 - Leawo : fichiers de mise en page en 16:9. **Les positions sont une interprétation de BurnSmith**, approximative ; 8 modèles Leawo sans fichier de mise en page ne sont pas gérés.
 - Les libellés des boutons sont dans les images du modèle (souvent en anglais) ; certains PNG du modèle peuvent être corrompus et sont alors ignorés.
