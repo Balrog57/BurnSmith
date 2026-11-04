@@ -52,7 +52,7 @@ BurnSmith **ne contient aucun modèle** : il lit à l'exécution ceux que vous a
 
 - DVDFab Blu-ray / 4K (`template.bd.xml`) : 21 modèles lisibles, avec les images et positions du modèle. Quand un modèle n'a pas de page de réglages (`none_setup`, ex. Birthday1), BurnSmith ajoute lui-même une pastille « Settings » et des panneaux sombres. Le modèle « Streaming » (tout-en-un) n'est pas géré.
 - DVDFab DVD (`template.xml`) : 5 modèles. Les surbrillances DVD restent un cadre générique à 4 couleurs, pas celui du modèle.
-- Leawo : fichiers de mise en page en 16:9. **Les positions sont une interprétation de BurnSmith**, approximative ; 8 modèles Leawo sans fichier de mise en page ne sont pas gérés.
+- Leawo : seuls 6 modèles lisibles (childhood01, education01, holiday01, en 16:9 et 16:9-2, les seuls à avoir un fichier de mise en page) ; **les positions sont une interprétation de BurnSmith**, approximative (en 16:9-2, le titre d'education01 chevauche le cadre). Les 27 autres (versions 4:3 et modèles sans fichier de mise en page) ne sont pas gérés : leurs positions ne sont pas dans les dossiers de modèles.
 - Les libellés des boutons sont dans les images du modèle (souvent en anglais) ; certains PNG du modèle peuvent être corrompus et sont alors ignorés.
 
 ## Reste à faire

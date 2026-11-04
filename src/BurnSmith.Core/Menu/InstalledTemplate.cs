@@ -194,16 +194,17 @@ public sealed class InstalledTemplate
     static XNode Leawo(XNode def, XNode? reference)
     {
         string A(XNode? n, string name, string fallback = "") => n?.Attr(name, fallback) is { Length: > 0 } v ? v : fallback;
-        int I(XNode? n, string name) => int.TryParse(A(n, name), out var v) ? v : 0;
+        var k = def.Attr("Aspect") == "16-9-2" ? 0.5 : 1.0; // the "16-9-2" files are laid out on a 3840x2160 canvas
+        int I(XNode? n, string name) => int.TryParse(A(n, name), out var v) ? (int)(v * k) : 0;
         XNode El(string name, params (string Key, string Value)[] attrs) => new(name, attrs.ToDictionary(a => a.Key, a => a.Value));
         XNode Leaf(string name, string text) { var n = El(name); n.Content.Append(text); return n; }
         XNode Styled(string name, XNode? style, string rect, params (string, string)[] more) =>
-            El(name, [("rect", rect), ("font", A(style, "Type", "Tahoma")), ("font_size", A(style, "Size", "38")), ("color", A(style, "Color", "#FFFFFF")),
+            El(name, [("rect", rect), ("font", A(style, "Type", "Tahoma")), ("font_size", (I(style, "Size") is > 0 and var px ? px : 38).ToString()), ("color", A(style, "Color", "#FFFFFF")),
                 ("bold", A(style, "Bold") == "true" ? "1" : "0"), ("italic", A(style, "Italic") == "true" ? "1" : "0"), .. more]);
         string Rect(XNode? n) => $"{I(n, "Left")},{I(n, "Top")},{I(n, "Width")},{I(n, "Height")}";
         string Text(XNode? style, bool centred, int width = 480) // Left / Top place the text: its left edge, or its centre when centred
         {
-            var size = int.TryParse(A(style, "Size"), out var s) ? s : 38;
+            var size = I(style, "Size") is > 0 and var s ? s : 38;
             return $"{I(style, "Left") - (centred ? width / 2 : 0)},{I(style, "Top")},{width},{size * 3 / 2}";
         }
 

@@ -56,8 +56,9 @@ public partial class MenuEditorWindow : Window
         var (usable, skipped) = TemplateCatalog.Scan();
         BuiltInList.ItemsSource = usable;
         CatalogNote.Text = usable.Count == 0
-            ? "Aucun modèle trouvé. DVDFab n'est pas détecté : indiquez son dossier (ex. DVDFab13\\author)."
-            : $"{usable.Count} modèle(s) lus depuis votre installation DVDFab." + (skipped.Count > 0 ? $" {skipped.Count} non pris en charge : {string.Join(", ", skipped.Select(s => s.Name))}." : "");
+            ? "Aucun modèle trouvé. DVDFab / Leawo ne sont pas détectés : indiquez le dossier des modèles."
+            : $"{usable.Count} modèle(s) lus depuis vos installations DVDFab / Leawo." + (skipped.Count > 0 ? $" {skipped.Count} non pris en charge (détail au survol)." : "");
+        CatalogNote.ToolTip = skipped.Count == 0 ? null : string.Join("\n", skipped.Select(s => $"{s.Name} : {s.Why}"));
     }
 
     void OnAddFolder(object s, RoutedEventArgs e)
