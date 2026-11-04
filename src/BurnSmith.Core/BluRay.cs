@@ -132,8 +132,12 @@ public static class BluRay
         foreach (var (tw, th) in new[] { (416, 240), (640, 360) })
         {
             var jpg = $"thumbnail_{tw}x{th}.jpg";
-            Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", (sources[0].Duration * 0.1).ToString("0.###", Inv), "-i", muxed[0].Prepared, "-frames:v", "1", "-q:v", "3",
-                "-vf", $"scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}", Path.Combine(metaDir, jpg)]);
+            try // a picture for players and Windows is a bonus: a frame ffmpeg cannot decode must not cost the whole build
+            {
+                Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", (sources[0].Duration * 0.1).ToString("0.###", Inv), "-i", muxed[0].Prepared, "-frames:v", "1", "-q:v", "3",
+                    "-vf", $"scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}", Path.Combine(metaDir, jpg)]);
+            }
+            catch (InvalidOperationException) { log("warning: no thumbnail for the disc (ffmpeg could not read a frame)"); }
             if (File.Exists(Path.Combine(metaDir, jpg))) thumbnails += $"<di:thumbnail href=\"{jpg}\" />";
         }
         // one file per language: a player shows the one that matches its own language setting, bdmt_eng.xml being the fallback every disc carries
@@ -153,8 +157,12 @@ public static class BluRay
             string? Thumb(string name, int title, double t, int w, int h)
             {
                 var file = Path.Combine(thumbs, name + ".jpg");
-                Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, sources[title].Duration - 0.5)).ToString("0.###", Inv),
-                    "-i", muxed[title].Prepared, "-frames:v", "1", "-q:v", "2", "-vf", $"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}", file]);
+                try
+                {
+                    Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, sources[title].Duration - 0.5)).ToString("0.###", Inv),
+                        "-i", muxed[title].Prepared, "-frames:v", "1", "-q:v", "2", "-vf", $"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}", file]);
+                }
+                catch (InvalidOperationException) { log($"warning: no picture for {name} (ffmpeg could not read a frame)"); } // the menu then shows an empty frame
                 return File.Exists(file) ? file : null;
             }
             var series = job.Titles.Count > 1;

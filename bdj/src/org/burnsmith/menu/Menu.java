@@ -31,6 +31,7 @@ import javax.tv.xlet.XletStateChangeException;
 import org.bluray.media.PrimaryAudioControl;
 import org.bluray.media.SubtitlingControl;
 import org.bluray.net.BDLocator;
+import org.bluray.system.RegisterAccess;
 import org.dvb.event.EventManager;
 import org.dvb.event.UserEvent;
 import org.dvb.event.UserEventListener;
@@ -163,8 +164,21 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             }
         }
         tracker.waitForAll();
-        if (startFirst && titleCount > 0) startSequence();
+        if (startFirst && titleCount > 0 && firstPlayback()) startSequence();
         else showMenu();
+    }
+
+    /**
+     * The player's Top Menu key restarts this same xlet: the disc only starts on the first title the first time (title number register
+     * PSR4 is 0xFFFF in First Playback and 0 once the Top Menu is called), so the menu stays reachable.
+     */
+    private boolean firstPlayback() {
+        try {
+            return RegisterAccess.getInstance().getPSR(4) == 0xFFFF;
+        } catch (Throwable t) {
+            log("title number register unreadable: " + t);
+            return true;
+        }
     }
 
     /** "Start from the first title": no menu, the titles play one after the other. */

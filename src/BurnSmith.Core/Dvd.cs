@@ -152,8 +152,12 @@ public static class Dvd
         string? Thumb(string name, int title, double t, int tw, int th)
         {
             var file = Path.Combine(thumbs, name + ".jpg");
-            Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, sources[title].Duration - 0.5)).ToString("0.###", Inv),
-                "-i", movies[title].Mpg, "-frames:v", "1", "-q:v", "2", "-vf", $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}", file]);
+            try
+            {
+                Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, sources[title].Duration - 0.5)).ToString("0.###", Inv),
+                    "-i", movies[title].Mpg, "-frames:v", "1", "-q:v", "2", "-vf", $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}", file]);
+            }
+            catch (InvalidOperationException) { log($"warning: no picture for {name} (ffmpeg could not read a frame)"); } // the menu then shows an empty frame
             return File.Exists(file) ? file : null;
         }
         var series = job.Titles.Count > 1;

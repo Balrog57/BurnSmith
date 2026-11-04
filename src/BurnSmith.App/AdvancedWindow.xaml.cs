@@ -48,12 +48,12 @@ public partial class AdvancedWindow : Window
         DvdBitrateBox.Text = encode.DvdKbps > 0 ? encode.DvdKbps.ToString() : "0";
 
         QualityBox.ItemsSource = Rates.Select(r => r.Name).ToList();
-        QualityBox.SelectedIndex = encode.BdKbps > 0 ? Math.Max(2, Array.FindIndex(Rates, r => r.Kbps == encode.BdKbps) is var at && at >= 0 ? at : 5) : encode.FitDisc ? 0 : 1;
+        QualityBox.SelectedIndex = encode.BdKbps > 0 ? (Array.FindIndex(Rates, r => r.Kbps == encode.BdKbps) is var rate and >= 0 ? rate : 5) : encode.FitDisc ? 0 : 1;
         RateBox.Text = encode.BdKbps > 0 ? encode.BdKbps.ToString() : "15000";
         ModeBox.ItemsSource = new[] { "Automatique (copie si la vidéo convient)", "Toujours convertir" };
         ModeBox.SelectedIndex = encode.ForceReencode ? 1 : 0;
         SpeedBox.ItemsSource = Speeds.Select(q => q.Name).ToList();
-        SpeedBox.SelectedIndex = Math.Max(1, Array.FindIndex(Speeds, q => q.Crf == encode.Crf && q.Preset == encode.Preset));
+        SpeedBox.SelectedIndex = Array.FindIndex(Speeds, q => q.Crf == encode.Crf && q.Preset == encode.Preset) is var speed and >= 0 ? speed : 1;
 
         (Playback.Mode == 0 ? Mode0 : Playback.Mode == 1 ? Mode1 : Mode2).IsChecked = true;
         Rewind0.IsChecked = Rewind1.IsChecked = playback.Rewind;
