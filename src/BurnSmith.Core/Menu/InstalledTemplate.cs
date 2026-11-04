@@ -120,6 +120,10 @@ public sealed class InstalledTemplate
                     tree ?? DvdStylerTemplate.Failed(name), "DVDStyler " + System.IO.Path.GetFileName(folder), tree == null ? problem : null,
                     System.IO.Path.ChangeExtension(dir, ".png") is var png && File.Exists(png) ? png : null);
             }
+            else if (file == null && YuhanSkin.IsTheme(dir))
+                parsed = YuhanSkin.Build(dir) is { } yuhan
+                    ? new InstalledTemplate(dir, yuhan, "Yuhan", null, System.IO.Path.Combine(dir, "thumb_169.jpg"))
+                    : new InstalledTemplate(dir, new XNode("template", []), "Yuhan", "mise en page illisible (programme Yuhan absent ?)");
             else if (file != null)
             {
                 var text = File.ReadAllText(file);

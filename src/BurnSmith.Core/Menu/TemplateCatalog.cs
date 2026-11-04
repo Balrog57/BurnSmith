@@ -40,6 +40,8 @@ public static class TemplateCatalog
             foreach (var vendor in Children(Environment.GetFolderPath(parent), "Leawo"))
                 foreach (var app in Directory.EnumerateDirectories(vendor)) yield return Path.Combine(app, "MenuTemplate");
         yield return Path.Combine(AppData, "Leawo");
+        foreach (var parent in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 }) // Yuhan: <program>\PresetMenu\THEMExx
+            foreach (var dir in Children(Environment.GetFolderPath(parent), "Yuhan")) yield return Path.Combine(dir, "PresetMenu");
         if (File.Exists(FoldersFile))
             foreach (var line in File.ReadAllLines(FoldersFile).Select(l => l.Trim()).Where(l => l.Length > 0)) yield return line;
     }
@@ -52,7 +54,8 @@ public static class TemplateCatalog
     {
         if (depth < 0 || !Directory.Exists(root)) yield break;
         var isTemplate = new[] { "template.bd.xml", "template.xml", "template2.xml" }.Any(f => File.Exists(Path.Combine(root, f)))
-            || (Directory.Exists(Path.Combine(root, "Menu")) && Directory.Exists(Path.Combine(root, "Scene"))); // Leawo, with or without a layout file
+            || (Directory.Exists(Path.Combine(root, "Menu")) && Directory.Exists(Path.Combine(root, "Scene"))) // Leawo, with or without a layout file
+            || YuhanSkin.IsTheme(root);
         if (isTemplate) { yield return root; yield break; }
         string[] kids;
         try { kids = Directory.GetDirectories(root); } catch (Exception e) when (e is UnauthorizedAccessException or IOException) { yield break; }
@@ -76,7 +79,7 @@ public static class TemplateCatalog
     {
         var name = Path.GetFileName(dir);
         if (pack.Category == "Leawo") name += $" ({Path.GetFileName(Path.GetDirectoryName(dir))})";
-        if (pack.Category.StartsWith("DVDStyler")) name = pack.Name;
+        if (pack.Category.StartsWith("DVDStyler") || pack.Category == "Yuhan") name = pack.Name;
         var design = new MenuDesign { Name = name, Category = pack.Category, TemplateDir = dir };
         if (pack.Accent != null) design.Accent = pack.Accent;
         if (pack.Category.StartsWith("DVDStyler")) { design.TextColor = pack.UiColor ?? design.TextColor; design.Font = pack.UiFont ?? design.Font; }
@@ -152,12 +155,18 @@ public static class TemplateCatalog
             var prefix = pack.Category == "Leawo" ? $"Leawo/{Path.GetFileName(Path.GetDirectoryName(dir))}/{name}" : $"{pack.Category}/{name}";
             if (!done.Add(prefix)) continue;
             var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Where(f => keep.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase)).ToList();
+            if (pack.Category == "Yuhan") // the 1920x1080 pictures, the gallery thumbnail and the layout in clear text (config.dat is encrypted with the program's key)
+            {
+                files = files.Where(f => Path.GetRelativePath(dir, f).StartsWith("1920x1080") || Path.GetFileName(f) == "thumb_169.jpg").ToList();
+                using var w = new StreamWriter(archive.CreateEntry($"{prefix}/config.xml").Open());
+                w.Write(YuhanSkin.ReadConfig(dir));
+            }
             foreach (var f in files)
                 System.IO.Compression.ZipFileExtensions.CreateEntryFromFile(archive, f, $"{prefix}/{Path.GetRelativePath(dir, f).Replace('\\', '/')}", System.IO.Compression.CompressionLevel.Optimal);
             log?.Invoke($"{prefix}: {files.Count} fichiers");
         }
         using (var w = new StreamWriter(archive.CreateEntry("NOTICE.txt").Open()))
-            w.Write("Images and layout files of DVDFab and Leawo menu templates, kept as published by their owners.\nThey are not part of BurnSmith's GPL-licensed code and belong to their owners.\nNo program, font or interface of either product is included.\n");
+            w.Write("Images and layout files of DVDFab, Leawo and Yuhan menu templates, kept as published by their owners.\nThey are not part of BurnSmith's GPL-licensed code and belong to their owners.\nNo program, font or interface of these products is included.\n");
         return done.Count;
     }
 }

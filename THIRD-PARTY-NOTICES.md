@@ -53,10 +53,12 @@ published by the Free Software Foundation, so v3 is available. This is our readi
 
 ## Menu templates of other software (pictures and layout files only)
 
-The released `BurnSmith.exe` carries the **pictures and layout files** (PNG / JPEG / XML) of the menu templates of **DVDFab** and **Leawo Prof. Media**, copied
+The released `BurnSmith.exe` carries the **pictures and layout files** (PNG / JPEG / XML) of the menu templates of **DVDFab**, **Leawo Prof. Media** and **Yuhan Blu-ray DVD Creator**, copied
 from the PC that built the exe (`publish.ps1` runs `BurnSmith.Cli pack-templates`) and unpacked to `BurnSmith-data\templates` next to it. They are **not part of
 BurnSmith's GPL-licensed code**, **they are not in this repository** and they belong to their owners; the exe includes them because the project owner decided
 to reproduce the template artwork. **No program, code, interface or font of either product is included.** A template installed on the user's PC is read from
 there and wins over the carried copy of the same name. If an owner objects to the artwork travelling in the exe, it can be left out by publishing from a PC
 without those programs (the exe then simply offers the free templates), and the released file replaced.
-BurnSmith is independent of, and not affiliated with, DVDFab or Leawo.
+Yuhan keeps the layout of each theme in an encrypted `config.dat` (the key is in its own program file): BurnSmith reads it with the key of the user's installation at run time, and the exe
+carries the layout as plain `config.xml` next to the 1920x1080 pictures (no other resolution, no program, no code).
+BurnSmith is independent of, and not affiliated with, DVDFab, Leawo or Yuhan.

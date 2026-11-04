@@ -1,7 +1,7 @@
 # Builds the portable BurnSmith.exe (self-contained, one file, no install) into .\dist, with ffmpeg, ffprobe and tsMuxeR inside.
 # The tools are not in this repository: they are taken from this PC (a folder with ffmpeg.exe + ffprobe.exe, and tsMuxeR.exe) and zipped
 # into obj\payload\tools.zip, which the BurnSmith.Payload assembly embeds. Licences: see THIRD-PARTY-NOTICES.md (shipped in the zip).
-# Likewise the pictures and layout files of the DVDFab / Leawo menu templates found on this PC (no fonts, no programs) go into
+# Likewise the pictures and layout files of the DVDFab / Leawo / Yuhan menu templates found on this PC (no fonts, no programs) go into
 # obj\payload\templates.zip. The exe unpacks both into a BurnSmith-data folder next to itself the first time a build runs.
 param(
     [string]$FfmpegDir = (Split-Path (Get-Command ffmpeg -ErrorAction Stop).Source),
