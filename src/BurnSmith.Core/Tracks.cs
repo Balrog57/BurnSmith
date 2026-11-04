@@ -30,9 +30,12 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
     public static readonly string[] Extensions = [".srt", ".ass", ".ssa", ".vtt"];
 
     public SubtitleTrack Track(int index) => new(index, Path.GetExtension(File).ToLowerInvariant() switch { ".ass" => "ass", ".ssa" => "ssa", ".vtt" => "webvtt", _ => "subrip" },
-                                                  Lang, Path.GetFileName(File), Forced, File);
+                                                  Lang, Path.GetFileNameWithoutExtension(File), Forced, File); // the name stands in for the language the file does not say
 
-    /// <summary>A file as typed: "film.fr.srt" (language from its name) or "fra=film.srt" (language by hand).</summary>
+    /// <summary>
+    /// A file as typed: "fra=film.srt" (language by hand), else the language at the end of its name ("film.fr.srt", "Dr.No.1962.en.srt",
+    /// "2_English.srt"; a title that merely contains a language word, "Do It Now.srt", has none).
+    /// </summary>
     public static ExternalSubtitle Parse(string text)
     {
         var eq = text.IndexOf('=');
@@ -40,9 +43,23 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
         var file = Path.GetFullPath(lang == null ? text : text[(eq + 1)..]);
         if (!System.IO.File.Exists(file)) throw new FileNotFoundException($"subtitle file not found: {file}", file);
         var name = Path.GetFileNameWithoutExtension(file);
-        var found = Describe(file, name.Contains('.') ? name[name.IndexOf('.')..] : ""); // what follows the first dot: "film.fr" -> ".fr"
+        var found = Describe(file, name.IndexOfAny(Separators) is var cut and >= 0 ? name[cut..] : "", lastOnly: true); // what follows the first word of the name
         return lang == null ? found : found with { Lang = lang };
     }
+
+    /// <summary>A file chosen for <paramref name="video"/>: read the way <see cref="Near"/> does when it is named after it, else as <see cref="Parse"/>.</summary>
+    public static ExternalSubtitle For(string video, string file)
+    {
+        var stem = Path.GetFileNameWithoutExtension(video);
+        var name = Path.GetFileNameWithoutExtension(file);
+        return Sibling(stem, name) ? Describe(file, name[stem.Length..]) : Parse(file);
+    }
+
+    static readonly char[] Separators = ['.', '_', '-', ' '];
+
+    /// <summary>"film.fr" is a file of "film"; "film 2.fr" and "film10.fr" are not.</summary>
+    static bool Sibling(string stem, string name) =>
+        name.StartsWith(stem, StringComparison.OrdinalIgnoreCase) && (name.Length == stem.Length || Separators.Contains(name[stem.Length]));
 
     /// <summary>The subtitle files named after the video ("film.srt", "film.fr.srt", "film.English.forced.ass"), by name.</summary>
     public static List<ExternalSubtitle> Near(string video)
@@ -54,12 +71,10 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
             foreach (var file in Directory.EnumerateFiles(Path.GetDirectoryName(Path.GetFullPath(video))!).Order(StringComparer.OrdinalIgnoreCase))
             {
                 var name = Path.GetFileNameWithoutExtension(file);
-                if (!Extensions.Contains(Path.GetExtension(file).ToLowerInvariant()) || !name.StartsWith(stem, StringComparison.OrdinalIgnoreCase)) continue;
-                if (name.Length > stem.Length && !".-_ ".Contains(name[stem.Length])) continue; // "Episode 10.srt" is not for "Episode 1"
-                list.Add(Describe(file, name[stem.Length..]));
+                if (Extensions.Contains(Path.GetExtension(file).ToLowerInvariant()) && Sibling(stem, name)) list.Add(Describe(file, name[stem.Length..])); // "Episode 10.srt" is not for "Episode 1"
             }
         }
-        catch (IOException) { } // a folder that went away: no sidecar files
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // a folder that went away or cannot be listed: no sidecar files
         return list;
     }
 
@@ -89,15 +104,23 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
         return string.Join('\n', cues) + (cues.Count > 0 ? "\n" : ""); // a blank line after the last cue
     }
 
-    /// <summary>The language and "forced" flag spelled in what follows the video's name: ".fr", "_English.forced".</summary>
-    static ExternalSubtitle Describe(string file, string suffix)
+    /// <summary>
+    /// The language and "forced" flag spelled in <paramref name="suffix"/> (".fr", "_English.forced"): the last language word counts, since it
+    /// comes last, before "forced"; with <paramref name="lastOnly"/> only the last word that is not "forced" may be one.
+    /// </summary>
+    static ExternalSubtitle Describe(string file, string suffix, bool lastOnly = false)
     {
         var lang = "und";
         var forced = false;
-        foreach (var token in suffix.Split(['.', '_', '-', ' '], StringSplitOptions.RemoveEmptyEntries))
+        var decided = false;
+        foreach (var token in suffix.Split(Separators, StringSplitOptions.RemoveEmptyEntries).Reverse())
         {
             if (token.Equals("forced", StringComparison.OrdinalIgnoreCase) || token.Equals("forcé", StringComparison.OrdinalIgnoreCase) || token.Equals("forces", StringComparison.OrdinalIgnoreCase)) forced = true;
-            else if (lang == "und" && Languages.Code(token) is { } code) lang = code;
+            else if (!decided)
+            {
+                if (Languages.Code(token) is { } code) { lang = code; decided = true; }
+                else decided = lastOnly;
+            }
         }
         return new ExternalSubtitle(file, lang, forced);
     }

@@ -444,7 +444,7 @@ public partial class MainWindow : Window
         foreach (var file in dialog.FileNames.Where(f => !entry.Extra.Any(x => x.File.Equals(f, StringComparison.OrdinalIgnoreCase))))
         {
             if (!ExternalSubtitle.Extensions.Contains(Path.GetExtension(file).ToLowerInvariant())) { Warn($"{Path.GetFileName(file)} : seuls les sous-titres texte sont pris en charge (srt, ass, ssa, vtt)."); continue; }
-            entry.Extra = [.. entry.Extra, ExternalSubtitle.Parse(file)];
+            entry.Extra = [.. entry.Extra, ExternalSubtitle.For(entry.Path, file)];
             var index = entry.Info.Subtitles.Count + entry.Extra.Count - 1;
             if (entry.Subs.Count < MenuBuilder.MaxSubtitles) { entry.Subs.Add(index); entry.Subs.Sort(); }
         }
