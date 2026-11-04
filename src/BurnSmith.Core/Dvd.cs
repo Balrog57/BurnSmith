@@ -98,7 +98,9 @@ public static class Dvd
         {
             if (!s.IsText) { log($"subtitle '{s.Name}' skipped: {s.Codec} cannot be put on a DVD (text subtitles only)"); continue; }
             var file = Path.Combine(work, $"sub{number}_{subs.Count + 1}.srt");
-            args.AddRange(["-map", $"0:s:{s.Index}", "-c:s", "srt", "-f", "srt", file]);
+            args.AddRange(["-map", $"0:s:{s.Index}", "-c:s", "srt"]);
+            if (title.End != null) args.AddRange(["-t", src.Duration.ToString("0.###", Inv)]); // the input's -t lets later subtitle cues through
+            args.AddRange(["-f", "srt", file]);
             subs.Add((s, file));
         }
         log($"encode {number}: {title.DisplayName} (audio {audio.Count}, subtitles {subs.Count})");

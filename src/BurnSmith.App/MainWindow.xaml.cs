@@ -193,7 +193,7 @@ public partial class MainWindow : Window
         if (titles.Count > 0)
         {
             // shortcut: a 4K disc is sized by its source files (HEVC is kept), the audio dropped from them is not subtracted
-            est = kind == "dvd" ? Dvd.EstimateGB(titles.Select(t => (t.OnDisc, t.ToDisc())).ToList(), cap.Usable) : Estimate(cap, encode) ?? titles.Sum(t => new FileInfo(t.Path).Length) / 1e9;
+            est = kind == "dvd" ? Dvd.EstimateGB(titles.Select(t => (t.OnDisc, t.ToDisc())).ToList(), cap.Usable) : Estimate(cap, encode) ?? titles.Sum(t => new FileInfo(t.Path).Length * t.OnDisc.Duration / t.Info.Duration) / 1e9;
             if (est > cap.Usable) note = "\ntrop grand pour ce support";
             if (kind == "uhd" && titles.Any(t => t.Info.VideoCodec != "hevc" || t.Info.Height != 2160)) note = "\nles sources doivent être en HEVC 2160p";
         }

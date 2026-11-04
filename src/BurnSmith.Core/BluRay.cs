@@ -50,9 +50,12 @@ public sealed record BdProfile(string Name, double Gb, double UsableGb, bool Hd7
         || p.Name.Replace(" 1080p/i", "").Equals(name, StringComparison.OrdinalIgnoreCase)) ?? throw new ArgumentException("unknown output profile: " + name);
 }
 
-/// <summary><see cref="AudioCodec"/> / <see cref="AudioChannels"/> describe the first audio stream (empty when there is none).</summary>
+/// <summary>
+/// <see cref="AudioCodec"/> / <see cref="AudioChannels"/> describe the first audio stream (empty when there is none). <see cref="Duration"/> is what goes on the disc:
+/// after <see cref="DiscTitle.Cut"/> the part kept, with the whole file's length in <see cref="FileDuration"/> (0 = not cut).
+/// </summary>
 public sealed record SourceInfo(string VideoCodec, int Width, int Height, double Fps, string AudioCodec, int AudioChannels, double Duration,
-                                IReadOnlyList<AudioTrack> Audio, IReadOnlyList<SubtitleTrack> Subtitles, string Hdr = "SDR");
+                                IReadOnlyList<AudioTrack> Audio, IReadOnlyList<SubtitleTrack> Subtitles, string Hdr = "SDR", double FileDuration = 0);
 
 public static class BluRay
 {
@@ -196,8 +199,15 @@ public static class BluRay
     public static double EstimateGB(BluRayJob job, IReadOnlyList<SourceInfo> sources)
     {
         var kbps = TargetKbps(job, sources, _ => { });
-        return kbps == 0 ? job.Titles.Sum(t => new FileInfo(t.Video).Length) / 1e9 : (kbps * 125.0 * sources.Sum(s => s.Duration) + AudioAndMenuBytes(job, sources)) / 1e9;
+        return kbps == 0 ? FilesBytes(job, sources) / 1e9 : (kbps * 125.0 * sources.Sum(s => s.Duration) + AudioAndMenuBytes(job, sources)) / 1e9;
     }
+
+    /// <summary>
+    /// Bytes of the source files, a cut title counting for the part kept.
+    /// shortcut: proportional to the length, not to what that stretch really weighs; a cut that starts later is re-encoded at constant quality, so the size is approximate.
+    /// </summary>
+    static double FilesBytes(BluRayJob job, IReadOnlyList<SourceInfo> sources) =>
+        job.Titles.Select((t, i) => new FileInfo(t.Video).Length * (sources[i].FileDuration > 0 ? sources[i].Duration / sources[i].FileDuration : 1)).Sum();
 
     /// <summary>
     /// The video bit rate (kb/s) every title is re-encoded at, 0 = keep the source's own quality (copied when the disc accepts it, else constant quality).
@@ -212,8 +222,7 @@ public static class BluRay
         if (!enc.FitDisc || job.CapacityGB <= 0) return 0;
         var seconds = sources.Sum(s => s.Duration);
         var room = job.CapacityGB * 1e9 - AudioAndMenuBytes(job, sources);
-        // shortcut: the whole files, even when a title is cut (overstates what a cut one weighs: it then re-encodes at a rate that fits anyway), when it matters weigh the part kept
-        var asIs = job.Titles.Sum(t => new FileInfo(t.Video).Length);
+        var asIs = FilesBytes(job, sources);
         if (asIs <= room)
         {
             log($"fit disc: the source ({asIs / 1e9:0.0} GB) fits as it is");
@@ -388,7 +397,11 @@ public static class BluRay
         }
         args.AddRange(["-sn", "-dn", output]);
         foreach (var (t, file) in subs)
-            args.AddRange(["-map", $"0:s:{t.Index}", "-c:s", t.IsPgs ? "copy" : "srt", "-f", t.IsPgs ? "sup" : "srt", file]);
+        {
+            args.AddRange(["-map", $"0:s:{t.Index}", "-c:s", t.IsPgs ? "copy" : "srt"]);
+            if (title.End != null) args.AddRange(["-t", s.Duration.ToString("0.###", Inv)]); // the input's -t lets later subtitle cues through
+            args.AddRange(["-f", t.IsPgs ? "sup" : "srt", file]);
+        }
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
     }
 

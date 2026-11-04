@@ -44,7 +44,7 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
         if (!Trimmed) return s;
         var length = Length(s);
         if (length < 1) throw new ArgumentException($"{DisplayName}: la coupe ne laisse rien sur le disque (début {Start:0.#} s, fin {End:0.#} s, durée du fichier {s.Duration:0.#} s)");
-        return s with { Duration = length };
+        return s with { Duration = length, FileDuration = s.Duration };
     }
 
     /// <summary>Chapter starts on the disc (seconds from the start of the part kept): always begins with 0, whole seconds, so no two share a second.</summary>
