@@ -36,6 +36,14 @@ calls (late-bound COM, ISO to a drive, UDF image from a folder). Its licence:
 > ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 > SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+`src/BurnSmith.Core/Hdmv/` (`Pgs.cs`, `IgStream.cs`, `TransportStream.cs`, `ClipFiles.cs`, `HdmvNav.cs`, `MenuClip.cs`, `HdmvAuthor.cs`) is a C# port of
+**bdmvkit** by kajisho5 (Shogo Kajiyama), https://github.com/kajisho5/bdmvkit, commit 5789076 (v0.7.0): the Interactive Graphics (HDMV menu) stream
+writer, the HDMV navigation commands, CLPI / MPLS / MovieObject.bdmv / index.bdmv writers and the PMT retyping. bdmvkit is licensed under the
+**GNU Lesser General Public License v3.0 or later**; the port is redistributed under the GNU GPL v3 or later, by removing the LGPL's additional permissions, as section 7 of the GPL v3 (which the LGPL v3 incorporates) allows.
+Every ported file keeps bdmvkit's authorship and licence in its header, and the options added on top of the port (dated segments, UO mask,
+median-cut palette) are documented in `src/BurnSmith.Core/Hdmv/README.md`. `src/BurnSmith.HdmvCheck/` is BurnSmith's own check program and is not
+part of the released `BurnSmith.exe`.
+
 ## Menu templates and pictures carried by the released `BurnSmith.exe`
 
 Stored as data resources, unpacked on first use into `BurnSmith-data\open` next to the exe; they are read, not linked, by BurnSmith.
