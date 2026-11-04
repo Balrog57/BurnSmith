@@ -758,6 +758,49 @@ public sealed class InstalledTemplate
             var cone = ahead.Where(t => t.across <= t.along);
             return (line.Count > 0 ? line : cone.Any() || dy == 0 ? cone : ahead).OrderBy(t => t.along + 2 * t.across).Select(t => t.o.Id).FirstOrDefault();
         }
-        return buttons.Select(b => b with { Left = Nearest(b, -1, 0), Right = Nearest(b, 1, 0), Up = Nearest(b, 0, -1), Down = Nearest(b, 0, 1) }).ToList();
+        return Reachable(buttons.Select(b => b with { Left = Nearest(b, -1, 0), Right = Nearest(b, 1, 0), Up = Nearest(b, 0, -1), Down = Nearest(b, 0, 1) }).ToList());
+    }
+
+    /// <summary>
+    /// A staggered layout can leave a button that no direction leads to (a thumbnail below and to the left of the first row, which the "same column"
+    /// rule skips): the nearest reachable button that has a free direction towards it gets that edge. Pages where every button is reachable are untouched.
+    /// </summary>
+    static List<MenuButton> Reachable(List<MenuButton> list)
+    {
+        static (double X, double Y) Centre(MenuButton b) => (b.Rect.X + b.Rect.W / 2.0, b.Rect.Y + b.Rect.H / 2.0);
+        static string? Slot(MenuButton b, string direction) => direction switch { "Left" => b.Left, "Right" => b.Right, "Up" => b.Up, _ => b.Down };
+        for (var round = 0; round < list.Count; round++)
+        {
+            var seen = new HashSet<string> { list[0].Id };
+            for (var grew = true; grew;)
+            {
+                grew = false;
+                foreach (var b in list.Where(b => seen.Contains(b.Id)).ToList())
+                    foreach (var n in new[] { b.Left, b.Right, b.Up, b.Down })
+                        if (n != null && seen.Add(n)) grew = true;
+            }
+            if (list.FirstOrDefault(b => !seen.Contains(b.Id)) is not { } lost) break;
+            var (lx, ly) = Centre(lost);
+            var choices = new List<(double Distance, int At, string Direction)>();
+            for (var i = 0; i < list.Count; i++)
+            {
+                if (!seen.Contains(list[i].Id)) continue;
+                var (x, y) = Centre(list[i]);
+                double dx = lx - x, dy = ly - y;
+                var (horizontal, vertical) = (dx > 0 ? "Right" : "Left", dy > 0 ? "Down" : "Up");
+                var free = (Math.Abs(dx) >= Math.Abs(dy) ? new[] { horizontal, vertical } : [vertical, horizontal]).FirstOrDefault(d => Slot(list[i], d) == null);
+                if (free != null) choices.Add((dx * dx + dy * dy, i, free));
+            }
+            if (choices.Count == 0) break; // every direction of every reachable button is taken: left as it is
+            var (_, at, direction) = choices.MinBy(c => c.Distance);
+            list[at] = direction switch
+            {
+                "Left" => list[at] with { Left = lost.Id },
+                "Right" => list[at] with { Right = lost.Id },
+                "Up" => list[at] with { Up = lost.Id },
+                _ => list[at] with { Down = lost.Id },
+            };
+        }
+        return list;
     }
 }
