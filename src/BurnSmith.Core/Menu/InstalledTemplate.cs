@@ -631,12 +631,20 @@ public sealed class InstalledTemplate
     }
 
     /// <summary>
-    /// Remote-control navigation from the positions: the nearest button within 45° of each direction (cross axis counting double).
+    /// Remote-control navigation from the positions: left/right stay in the same row and up/down in the same column when the row or column has
+    /// another button (a Settings button centred under Play and Scenes belongs to the next row); otherwise the nearest button within 45°
+    /// of each direction (cross axis counting double).
     /// Up and down fall back to any button on that side, so a thumbnail row can always reach the Home button below it.
     /// </summary>
     static List<MenuButton> Link(List<MenuButton> buttons)
     {
         static (double X, double Y) Centre(MenuButton b) => (b.Rect.X + b.Rect.W / 2.0, b.Rect.Y + b.Rect.H / 2.0);
+        // share of the smaller button's extent that the two have in common across the direction of travel
+        static bool SameLine(MenuButton a, MenuButton o, int dx)
+        {
+            var (a0, a1, o0, o1) = dx != 0 ? (a.Rect.Y, a.Rect.Y + a.Rect.H, o.Rect.Y, o.Rect.Y + o.Rect.H) : (a.Rect.X, a.Rect.X + a.Rect.W, o.Rect.X, o.Rect.X + o.Rect.W);
+            return Math.Min(a1, o1) - Math.Max(a0, o0) >= 0.5 * Math.Min(a1 - a0, o1 - o0);
+        }
         string? Nearest(MenuButton from, int dx, int dy)
         {
             var (fx, fy) = Centre(from);
@@ -644,8 +652,9 @@ public sealed class InstalledTemplate
                 .Select(o => (o, p: Centre(o)))
                 .Select(t => (t.o, along: (t.p.X - fx) * dx + (t.p.Y - fy) * dy, across: Math.Abs((t.p.X - fx) * dy) + Math.Abs((t.p.Y - fy) * dx)))
                 .Where(t => t.along > 1).ToList();
+            var line = ahead.Where(t => SameLine(from, t.o, dx)).ToList();
             var cone = ahead.Where(t => t.across <= t.along);
-            return (cone.Any() || dy == 0 ? cone : ahead).OrderBy(t => t.along + 2 * t.across).Select(t => t.o.Id).FirstOrDefault();
+            return (line.Count > 0 ? line : cone.Any() || dy == 0 ? cone : ahead).OrderBy(t => t.along + 2 * t.across).Select(t => t.o.Id).FirstOrDefault();
         }
         return buttons.Select(b => b with { Left = Nearest(b, -1, 0), Right = Nearest(b, 1, 0), Up = Nearest(b, 0, -1), Down = Nearest(b, 0, 1) }).ToList();
     }

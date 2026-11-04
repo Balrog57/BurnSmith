@@ -83,12 +83,21 @@ public static class BluRay
             if (i > 0) Merge(dest, job.OutDir);
         }
 
-        // disc title shown by players and Windows (BDMV/META/DL/bdmt_*.xml); only English, see shortcut
+        // disc title and thumbnails shown by players and Windows (BDMV/META/DL: bdmt_*.xml, thumbnail_WxH.jpg, the two sizes of commercial discs)
         var metaDir = Path.Combine(job.OutDir, "BDMV", "META", "DL");
         Directory.CreateDirectory(metaDir);
+        var thumbnails = "";
+        foreach (var (tw, th) in new[] { (416, 240), (640, 360) })
+        {
+            var jpg = $"thumbnail_{tw}x{th}.jpg";
+            Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", (sources[0].Duration * 0.1).ToString("0.###", Inv), "-i", muxed[0].Prepared, "-frames:v", "1", "-q:v", "3",
+                "-vf", $"scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}", Path.Combine(metaDir, jpg)]);
+            if (File.Exists(Path.Combine(metaDir, jpg))) thumbnails += $"<di:thumbnail href=\"{jpg}\" />";
+        }
         File.WriteAllText(Path.Combine(metaDir, "bdmt_eng.xml"),
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?><disclib xmlns=\"urn:BDA:bdmv;disclib\"><di:discinfo xmlns:di=\"urn:BDA:bdmv;discinfo\"><di:title><di:name>"
-            + System.Security.SecurityElement.Escape(job.Menu?.Title ?? job.Label) + "</di:name></di:title></di:discinfo></disclib>"); // shortcut: one language, no thumbnail; add per-language files when the UI has a language setting
+            + System.Security.SecurityElement.Escape(job.Menu?.Title ?? job.Label) + "</di:name></di:title>"
+            + (thumbnails.Length > 0 ? $"<di:description>{thumbnails}</di:description>" : "") + "</di:discinfo></disclib>"); // shortcut: one language; add per-language files when the UI has a language setting
 
         if (job.Menu != null)
         {
@@ -118,7 +127,9 @@ public static class BluRay
     static Muxed MuxTitle(BluRayJob job, DiscTitle title, SourceInfo src, int playlist, string dest, string work, Action<string> log)
     {
         var audio = title.KeptAudio(src);
-        var prepared = Path.Combine(work, $"prepared{playlist}.mkv");
+        // MPEG-TS, not Matroska: from an mkv tsMuxeR finds no SPS/PPS before the keyframes and writes ONE entry point in the clip info,
+        // so a player cannot seek or jump to a chapter; from a TS it writes one per keyframe
+        var prepared = Path.Combine(work, $"prepared{playlist}.ts");
 
         // subtitles the disc can carry: PGS is copied, text becomes SRT (tsMuxeR renders it); other image formats would need OCR
         var subs = new List<(SubtitleTrack Track, string File)>();
@@ -137,10 +148,10 @@ public static class BluRay
         var lines = new List<string>
         {
             $"MUXOPT {(job.Uhd ? "--blu-ray-v3" : "--blu-ray")} --label={job.Label} --vbr --custom-chapters={chapters} --mplsOffset={playlist} --m2tsOffset={playlist}",
-            $"{(job.Uhd ? "V_MPEGH/ISO/HEVC" : "V_MPEG4/ISO/AVC")}, \"{prepared}\", fps={fps}, track=1",
+            $"{(job.Uhd ? "V_MPEGH/ISO/HEVC" : "V_MPEG4/ISO/AVC")}, \"{prepared}\", fps={fps}, track=256",
         };
         for (var j = 0; j < audio.Count; j++)
-            lines.Add($"{AudioTag(BdAudio(audio[j].Codec))}, \"{prepared}\", track={j + 2}, lang={Languages.Iso2(audio[j].Lang)}");
+            lines.Add($"{AudioTag(BdAudio(audio[j].Codec))}, \"{prepared}\", track={257 + j}, lang={Languages.Iso2(audio[j].Lang)}");
         foreach (var (s, file) in subs)
             lines.Add(s.IsPgs
                 ? $"S_HDMV/PGS, \"{file}\", fps={fps}, lang={Languages.Iso2(s.Lang)}"
@@ -173,7 +184,7 @@ public static class BluRay
     static string BdAudio(string codec) => codec is "ac3" or "dts" or "truehd" ? codec : "ac3";
 
     /// <summary>
-    /// Remuxes to prepared.mkv (video = track 1, kept audio = tracks 2..), re-encoding only what a Blu-ray cannot carry,
+    /// Remuxes to prepared.ts (ffmpeg numbers the streams from PID 256: video = 256, kept audio = 257..), re-encoding only what a Blu-ray cannot carry,
     /// and writes the subtitle files in the same pass over the source.
     /// </summary>
     static void Prepare(BluRayJob job, DiscTitle title, SourceInfo s, IReadOnlyList<AudioTrack> audio, List<(SubtitleTrack Track, string File)> subs, string output, Action<string> log)

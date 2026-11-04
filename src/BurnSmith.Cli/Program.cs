@@ -27,8 +27,9 @@ if (a.Count >= 3 && a[0] == "preview")
     return 0;
 }
 
-// burnsmith check-templates [--picture frame.jpg] : builds every template as film and series and checks pages, buttons, remote moves, pictures
-if (a.Count >= 1 && a[0] == "check-templates") return TemplateCheck.Run(Opt("--picture") is { } cp ? Path.GetFullPath(cp) : null);
+// burnsmith check-templates [--matrix] [--picture frame.jpg] : builds every template as film and series and checks pages, buttons, remote moves, pictures;
+// --matrix = every disc shape (1..40 chapters, 2..60 episodes, 1..9 audio, 0..9 subtitles) and 200 designs the menu editor can compose
+if (a.Count >= 1 && a[0] == "check-templates") return TemplateCheck.Run(Opt("--picture") is { } cp ? Path.GetFullPath(cp) : null, a.Contains("--matrix"));
 
 // burnsmith templates : every template found, and the ones that cannot be drawn with the reason
 if (a.Count >= 1 && a[0] == "templates")

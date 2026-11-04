@@ -38,7 +38,7 @@ Ligne de commande : `burnsmith bd|dvd --video f.mkv --out dossier [--design NOM|
 - `src/BurnSmith.Cli` : même moteur en ligne de commande.
 - `bdj/` : source du xlet de menu Blu-ray.
 - `tools/vlctest.ps1` : lit un disque dans un VLC portable et affiche les traces du xlet.
-- `BurnSmith.Cli check-templates` : construit chaque modèle (film puis série) et vérifie pages, boutons, déplacements à la télécommande et images (114 sur 114 aujourd'hui). `BurnSmith.Cli templates` liste les modèles trouvés. `BurnSmith.exe [vidéo] --snapshot out.png [editor[=modèle]] [scroll] | [advanced]` dessine une fenêtre hors écran pour la vérifier.
+- `BurnSmith.Cli check-templates` : construit chaque modèle (film puis série) et vérifie pages, boutons, déplacements à la télécommande et images (114 sur 114 aujourd'hui) ; avec `--matrix`, toutes les formes de disque (1 à 40 chapitres, 2 à 60 épisodes, 1 à 9 pistes audio, 0 à 9 sous-titres) et les 200 menus composables dans l'éditeur. `BurnSmith.Cli templates` liste les modèles trouvés. `BurnSmith.exe [vidéo] --snapshot out.png [editor[=modèle]] [scroll] | [advanced]` dessine une fenêtre hors écran pour la vérifier.
 
 ## Modèles de menu et bibliothèque
 
