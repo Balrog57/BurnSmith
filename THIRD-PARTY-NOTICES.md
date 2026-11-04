@@ -47,8 +47,9 @@ Stored as data resources, unpacked on first use into `%LOCALAPPDATA%\BurnSmith\o
 
 The upstream project does not itemise who made each DVDStyler picture; they travel under the project's licence as published. These files are separate data
 aggregated in the same executable, not linked into BurnSmith's code, so BurnSmith's own code stays GPL v3 or later. If you redistribute the exe, keep this file and the
-`COPYING` / `AUTHORS` / `SOURCE.txt` of `assets/library/dvdstyler`, which are the corresponding source of the DVDStyler data. Open point: whether the DVDStyler
-data may also be combined under GPL v3 (its `COPYING` is v2 and the "or later" wording was not found in what was vendored) has not been settled by a lawyer.
+`COPYING` / `AUTHORS` / `SOURCE.txt` of `assets/library/dvdstyler`, which are the corresponding source of the DVDStyler data. DVDStyler's README and source
+headers (for example `src/MainWin.cpp`) say only "GPL", without a version number; its `COPYING` is the version 2 text, whose section 9 lets the recipient choose any version
+published by the Free Software Foundation, so v3 is available. This is our reading, not legal advice.
 
 ## Menu templates of other software
 
