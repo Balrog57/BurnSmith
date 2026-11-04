@@ -11,6 +11,16 @@ public sealed record Fill(Box Rect, string Color, double Opacity, int Radius) : 
 public sealed record Label(string Value, Box Rect, int Size, bool Bold, string Align = "center") : Op;
 public sealed record Picture(string Path, Box Rect, int Radius, int BorderWidth) : Op;
 
+/// <summary>Template artwork (transparent PNG / JPEG) stretched to <paramref name="Rect"/>.</summary>
+public sealed record Image(string Path, Box Rect) : Op;
+
+/// <summary>Template text: own font (optionally a .ttf next to the template), colour, outline.</summary>
+public sealed record Text(string Value, Box Rect, double Size, string Font, string? FontDir, string Color, bool Bold, bool Italic, string Align = "left",
+                          string? Stroke = null, double StrokeWidth = 0) : Op;
+
+/// <summary>A picture (null = dark placeholder) cut by the template's mask, with its frame drawn on top.</summary>
+public sealed record Framed(Box Rect, string? Picture, string? Frame, string? Mask) : Op;
+
 /// <summary>
 /// What a button does. Kinds: play (Playlist), chapter (Playlist + Mark), page (Page),
 /// playall (Playlist = first, Mark = how many, played one after the other),
@@ -24,6 +34,10 @@ public sealed record MenuButton(string Id, Box Rect, MenuAction Action)
     public string? Right { get; init; }
     public string? Up { get; init; }
     public string? Down { get; init; }
+    /// <summary>Template artwork shown while the button is selected; null = the design's accent frame.</summary>
+    public string? FocusImage { get; init; }
+    /// <summary>Where <see cref="FocusImage"/> goes when it is only a marker beside the button (a star next to text); null = it covers the button.</summary>
+    public Box? FocusSlot { get; init; }
 }
 
 public sealed record MenuPage(string Id, List<Op> Ops, List<MenuButton> Buttons);
@@ -51,14 +65,22 @@ public static class MenuBuilder
 {
     public const int W = 1920, H = 1080, FocusMargin = 10, ThumbsPerPage = 6, MaxAudio = 6, MaxSubtitles = 5, MarkerSize = 36, MarkerGap = 24;
 
-    sealed record Cell(string Id, string Label, string? Picture, MenuAction Action);
+    internal sealed record Cell(string Id, string Label, string? Picture, MenuAction Action);
 
-    static List<Cell> Cells(MenuDesign d, MenuContent c) => c.Series
+    internal static List<Cell> Cells(MenuDesign d, MenuContent c) => c.Series
         ? c.Titles!.Select((t, i) => new Cell($"e{i + 1}", t.Name, t.Picture, new MenuAction("play", Playlist: t.Playlist))).ToList()
         : c.ChapterPictures.Select((p, i) => new Cell($"c{i + 1}", $"{d.ChapterLabel} {i + 1}", p, new MenuAction("chapter", Playlist: c.Playlist, Mark: i))).ToList();
 
+    /// <summary>The installed template of a design (it can be gone: DVDFab moved or uninstalled).</summary>
+    static InstalledTemplate? Pack(MenuDesign d) => d.TemplateDir == null ? null
+        : InstalledTemplate.Load(d.TemplateDir) ?? throw new FileNotFoundException($"Modèle introuvable : {d.TemplateDir} (dossier déplacé ou désinstallé ?)");
+
+    /// <summary>Distance of the "active track" dot from the left edge of its button, as written to the BD-J menu file.</summary>
+    public static int MarkerOffset(MenuDesign d) => Pack(d) is { HasSetupLists: true } p ? p.MarkerOffset : FocusMargin - MarkerSize - MarkerGap;
+
     public static List<MenuPage> Build(MenuDesign d, MenuContent c)
     {
+        if (Pack(d) is { } pack) return pack.Pages(d, c);
         var cells = Cells(d, c);
         var pages = new List<MenuPage> { Root(d, c, cells.Count > 1) };
         var gridPages = cells.Count > 1 ? (cells.Count + ThumbsPerPage - 1) / ThumbsPerPage : 0;
@@ -67,8 +89,14 @@ public static class MenuBuilder
         return pages;
     }
 
-    static List<Op> Button(MenuDesign d, Box r, string text, int size = 54) =>
-        d.ButtonStyle == "Text" ? [new Label(text, r, size, true)] : [new Fill(r, "#FFFFFF", 0.14, 28), new Label(text, r, size, true)];
+    /// <summary>Translucent capsules: white on dark designs, black on light ones (dark text), so they show on any background.</summary>
+    internal static List<Op> Button(MenuDesign d, Box r, string text, int size = 54)
+    {
+        var rgb = d.TextColor.TrimStart('#');
+        var lightText = Convert.ToInt32(rgb[..2], 16) * 0.3 + Convert.ToInt32(rgb[2..4], 16) * 0.59 + Convert.ToInt32(rgb[4..6], 16) * 0.11 > 128;
+        return d.ButtonStyle == "Text" ? [new Label(text, r, size, true)]
+            : [new Fill(r, lightText ? "#FFFFFF" : "#000000", lightText ? 0.14 : 0.10, 28), new Label(text, r, size, true)];
+    }
 
     static MenuPage Root(MenuDesign d, MenuContent c, bool withGrid)
     {
@@ -153,10 +181,13 @@ public static class MenuBuilder
     /// </summary>
     public static MenuPage Settings(MenuDesign d, MenuContent c, int? activeAudio, int? activeSub, string id = "settings")
     {
+        var pack = Pack(d);
+        if (pack is { HasSetupLists: true }) return pack.Settings(d, c, activeAudio, activeSub, id);
         const int colW = 680, rowH = 84, pitch = 100, top = 300;
         var audio = c.AudioNames.Count > 1 ? c.AudioNames : [];
         var subs = c.SubtitleNames;
-        var ops = new List<Op> { new Label(d.SettingsLabel, new Box(0, 60, W, 120), 80, true) };
+        var ops = pack?.SetupBackdrop() ?? []; // a template without audio / subtitle rows: its background, BurnSmith's rows
+        ops.Add(new Label(d.SettingsLabel, new Box(0, 60, W, 120), 80, true));
         var buttons = new List<MenuButton>();
         var both = audio.Count > 0 && subs.Count > 0;
         int AudioX() => both ? 200 : (W - colW) / 2;

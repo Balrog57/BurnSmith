@@ -4,6 +4,13 @@ namespace BurnSmith.Core.Menu;
 public sealed class MenuDesign
 {
     public string Name { get; set; } = "Midnight";
+    /// <summary>Group in the template gallery (the vendor / disc type the template came from).</summary>
+    public string Category { get; set; } = "";
+    /// <summary>
+    /// Folder of an installed template (DVDFab / Leawo) read at run time from the user's own copy; null = plain gradient design.
+    /// Its artwork decides the look and the layout; only the texts, tracks and pictures come from the disc.
+    /// </summary>
+    public string? TemplateDir { get; set; }
     public string Title { get; set; } = "My Disc";
     public string PlayLabel { get; set; } = "Play";
     public string ScenesLabel { get; set; } = "Scenes";
@@ -31,16 +38,4 @@ public sealed class MenuDesign
     public string? Music { get; set; }
 
     public MenuDesign Clone() => (MenuDesign)MemberwiseClone();
-
-    /// <summary>Procedural built-in templates: no third-party artwork.</summary>
-    public static IReadOnlyList<MenuDesign> BuiltIn { get; } =
-    [
-        new() { Name = "Midnight", Top = "#0B1B3B", Bottom = "#2B5DA8", Accent = "#FFC83D" },
-        new() { Name = "Sunset", Top = "#3B0B4B", Bottom = "#E8632B", Accent = "#FFE066" },
-        new() { Name = "Forest", Top = "#06251A", Bottom = "#2E7D4F", Accent = "#B9F27C" },
-        new() { Name = "Ocean", Top = "#03243F", Bottom = "#0FA3B1", Accent = "#FFFFFF" },
-        new() { Name = "Crimson", Top = "#2A0509", Bottom = "#A4161A", Accent = "#FFD166" },
-        new() { Name = "Paper", Top = "#F4F1EA", Bottom = "#D8CFC0", TextColor = "#222222", Accent = "#C0392B" },
-        new() { Name = "Violet", Top = "#1E1858", Bottom = "#6B5FB5", Accent = "#FFD23F", TextColor = "#FFD23F", ButtonStyle = "Text" },
-    ];
 }

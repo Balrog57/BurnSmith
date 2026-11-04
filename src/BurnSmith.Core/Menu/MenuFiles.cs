@@ -22,7 +22,7 @@ public static class MenuFiles
         });
         foreach (var (name, data) in images) File.WriteAllBytes(Path.Combine(dir, name), data);
         // the active audio / subtitle is marked by the xlet while the menu runs: image, size, offset from the button's left edge (which includes the focus margin)
-        txt.Append($"marker mark.png {MenuBuilder.MarkerSize} {MenuBuilder.MarkerSize} {MenuBuilder.FocusMargin - MenuBuilder.MarkerSize - MenuBuilder.MarkerGap}\n");
+        txt.Append($"marker mark.png {MenuBuilder.MarkerSize} {MenuBuilder.MarkerSize} {MenuBuilder.MarkerOffset(design)}\n");
 
         foreach (var p in pages)
         {

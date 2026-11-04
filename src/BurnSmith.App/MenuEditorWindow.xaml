@@ -31,8 +31,21 @@
     </Grid.ColumnDefinitions>
 
     <TabControl>
-      <TabItem Header="Intégrés">
-        <ListBox x:Name="BuiltInList" DisplayMemberPath="Name" SelectionChanged="OnPick"/>
+      <TabItem Header="Modèles">
+        <DockPanel>
+          <Button DockPanel.Dock="Bottom" Content="Ajouter un dossier…" Margin="0,8,0,0" HorizontalAlignment="Stretch" Click="OnAddFolder"/>
+          <TextBlock x:Name="CatalogNote" DockPanel.Dock="Bottom" TextWrapping="Wrap" Opacity="0.65" Margin="0,8,0,0"/>
+          <ListBox x:Name="BuiltInList" SelectionChanged="OnPick" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Margin="0,4">
+                  <Image Source="{Binding Thumbnail}" Width="170" Stretch="Uniform"/>
+                  <TextBlock Text="{Binding Design.Name}" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
       </TabItem>
       <TabItem Header="Mes modèles">
         <ListBox x:Name="CustomList" DisplayMemberPath="Name" SelectionChanged="OnPick"/>
@@ -79,6 +92,8 @@
         <TextBox Text="{Binding OffLabel, UpdateSourceTrigger=PropertyChanged}"/>
         <TextBlock Text="Bouton retour" Style="{StaticResource Caption}"/>
         <TextBox Text="{Binding BackLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock x:Name="LookNote" Text="Ce modèle fixe l'apparence : police, couleurs, fond et libellés des boutons viennent de ses images (souvent en anglais)." TextWrapping="Wrap" Opacity="0.65" Margin="0,12,0,0" Visibility="Collapsed"/>
+        <StackPanel x:Name="Look">
         <TextBlock Text="Police" Style="{StaticResource Caption}"/>
         <TextBox Text="{Binding Font, UpdateSourceTrigger=PropertyChanged}"/>
         <TextBlock Text="Style des boutons" Style="{StaticResource Caption}"/>
@@ -115,6 +130,7 @@
           <Button DockPanel.Dock="Right" Content="Parcourir…" Margin="8,0,0,0" Click="OnBg"/>
           <TextBox Text="{Binding BackgroundImage, Mode=OneWay}" IsReadOnly="True"/>
         </DockPanel>
+        </StackPanel>
         <CheckBox Content="Afficher l'aperçu du film" IsChecked="{Binding ShowPreview}" Margin="0,16,0,0"/>
       </StackPanel>
     </ScrollViewer>

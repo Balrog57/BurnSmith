@@ -54,7 +54,7 @@ public partial class MainWindow : Window
     string kind = "bd"; // dvd | bd | uhd
     string? previewFrame, previewFor;
     bool labelEdited, outEdited;
-    MenuDesign design = MenuDesign.BuiltIn[0].Clone();
+    MenuDesign design = TemplateCatalog.Default().Clone();
 
     public MainWindow()
     {

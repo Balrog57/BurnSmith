@@ -28,7 +28,7 @@ public partial class MenuEditorWindow : Window
         InitializeComponent();
         working = design.Clone();
         this.content = content;
-        BuiltInList.ItemsSource = MenuDesign.BuiltIn;
+        LoadCatalog();
         CustomList.ItemsSource = Templates.List();
         Props.DataContext = working;
 
@@ -37,7 +37,7 @@ public partial class MenuEditorWindow : Window
         Props.AddHandler(Selector.SelectionChangedEvent, new SelectionChangedEventHandler((_, _) => Dirty()));
         Props.AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler((_, _) => Dirty()));
         Props.AddHandler(ToggleButton.UncheckedEvent, new RoutedEventHandler((_, _) => Dirty()));
-        Loaded += (_, _) => Dirty();
+        Loaded += (_, _) => Rebind();
     }
 
     void Dirty() { timer.Stop(); timer.Start(); }
@@ -46,7 +46,26 @@ public partial class MenuEditorWindow : Window
     {
         Props.DataContext = null;
         Props.DataContext = working;
+        Look.IsEnabled = working.TemplateDir == null;
+        LookNote.Visibility = working.TemplateDir == null ? Visibility.Collapsed : Visibility.Visible;
         Dirty();
+    }
+
+    void LoadCatalog()
+    {
+        var (usable, skipped) = TemplateCatalog.Scan();
+        BuiltInList.ItemsSource = usable;
+        CatalogNote.Text = usable.Count == 0
+            ? "Aucun modèle trouvé. DVDFab n'est pas détecté : indiquez son dossier (ex. DVDFab13\\author)."
+            : $"{usable.Count} modèle(s) lus depuis votre installation DVDFab." + (skipped.Count > 0 ? $" {skipped.Count} non pris en charge : {string.Join(", ", skipped.Select(s => s.Name))}." : "");
+    }
+
+    void OnAddFolder(object s, RoutedEventArgs e)
+    {
+        var dlg = new OpenFolderDialog { Title = "Dossier contenant des modèles (DVDFab…)" };
+        if (dlg.ShowDialog(this) != true) return;
+        TemplateCatalog.AddFolder(dlg.FolderName);
+        LoadCatalog();
     }
 
     async Task Render()
@@ -88,9 +107,11 @@ public partial class MenuEditorWindow : Window
     /// <summary>Applying a template changes the look but keeps the user's texts.</summary>
     void OnPick(object s, SelectionChangedEventArgs e)
     {
-        if (((ListBox)s).SelectedItem is not MenuDesign t) return;
+        var t = ((ListBox)s).SelectedItem switch { TemplateCatalog.Found f => f.Design, MenuDesign m => m, _ => null };
+        if (t == null) return;
         working.Name = t.Name; working.Top = t.Top; working.Bottom = t.Bottom; working.TextColor = t.TextColor;
         working.Accent = t.Accent; working.ButtonStyle = t.ButtonStyle; working.BackgroundImage = t.BackgroundImage; working.Font = t.Font;
+        working.TemplateDir = t.TemplateDir; working.Category = t.Category;
         Rebind();
     }
 

@@ -7,7 +7,8 @@ Créateur de DVD, Blu-ray et Blu-ray 4K pour Windows : on choisit une vidéo, on
 ## Ce que ça fait
 
 - DVD (PAL/NTSC, MPEG-2 + AC-3), Blu-ray (H.264, copie si la source est déjà conforme), Blu-ray 4K (HEVC 2160p).
-- Éditeur de menu avec aperçu en direct, modèles intégrés, enregistrement de ses propres modèles.
+- Plusieurs vidéos (séries), choix des pistes audio et sous-titres, page de réglages dans le menu.
+- Éditeur de menu avec aperçu en direct, enregistrement de ses propres modèles, et **galerie des modèles de menu de DVDFab et de Leawo Prof. Media installés sur le PC** (voir ci-dessous).
 - Menus Blu-ray en BD-J (un xlet générique + images), menus DVD par dvdauthor/spumux.
 - Barre de capacité (DVD-5/9, BD-25/50/66/100), chapitres automatiques, création d'ISO (UDF), gravure.
 
@@ -45,8 +46,17 @@ Ligne de commande : `burnsmith bd|dvd --video f.mkv --out dossier [--design NOM]
 - `bdj/` : source du xlet de menu Blu-ray.
 - `tools/vlctest.ps1` : lit un disque dans un VLC portable et affiche les traces du xlet.
 
+## Modèles de menu
+
+BurnSmith **ne contient aucun modèle** : il lit à l'exécution ceux que vous avez déjà installés (dossiers `MenuTemplate` de DVDFab, y compris ceux téléchargés depuis DVDFab, de Leawo Prof. Media, ou un dossier ajouté à la main dans `%APPDATA%\BurnSmith\template-folders.txt`). Rien n'est copié dans le dépôt ni dans l'exe ; sans DVDFab ni Leawo, l'éditeur propose seulement un dégradé uni personnalisable.
+
+- DVDFab Blu-ray / 4K (`template.bd.xml`) : 21 modèles lisibles, positions et images d'origine. Le modèle « Streaming » (tout-en-un) n'est pas géré.
+- DVDFab DVD (`template.xml`) : 5 modèles. Les surbrillances DVD restent un cadre générique à 4 couleurs, pas celui du modèle.
+- Leawo : fichiers de mise en page en 16:9. **Les positions sont une interprétation de BurnSmith**, approximative ; 8 modèles Leawo sans fichier de mise en page ne sont pas gérés.
+- Les libellés des boutons sont dans les images du modèle (souvent en anglais) ; certains PNG du modèle peuvent être corrompus et sont alors ignorés.
+
 ## Reste à faire
 
-Voir les tâches ouvertes : sélection audio/sous-titres et page de réglages, plusieurs vidéos (séries), davantage de modèles de menu, musique de fond, ré-encodage HDR, signature BD-J.
+Fonctions de DVDFab Créateur pas encore reprises : paramètres avancés (nom du volume, sortie BD25/BD50, conversion ou passthrough, qualité/débit), aperçu / recherche de métadonnées / coupe / suppression par titre, options HDR. Aussi : musique de fond, ré-encodage HDR pour la 4K, signature BD-J, surbrillances DVD exactes d'après les modèles, essais sur disque réel et sur lecteurs de salon.
 
-Les menus sont conçus d'après le fonctionnement observé de logiciels existants ; aucun code, modèle ni visuel de ces logiciels n'est repris.
+BurnSmith est indépendant de DVDFab et de Leawo (aucun code de ces logiciels n'est repris) et n'est pas affilié à eux.
