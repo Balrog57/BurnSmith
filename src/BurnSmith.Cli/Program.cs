@@ -89,7 +89,7 @@ if (a.Count >= 1 && a[0] == "check-edit")
     // a PGS stream built by hand: 8x4 picture (1 = white, 2 = black, 0 = nothing), shown at 1 s and 5 s, cleared at 3 s and 8 s
     static byte[] Segment(byte kind, double seconds, params byte[] body) => BurnSmith.Core.Hdmv.Pgs.Segment(kind, (uint)(seconds * 90000), (uint)(seconds * 90000), body);
     static byte[] Be(int value, int bytes) => [.. Enumerable.Range(0, bytes).Select(i => (byte)(value >> 8 * (bytes - 1 - i)))];
-    byte[] SupSet(double at, bool shown, int x = 100, int y = 900)
+    byte[] SupSet(double at, bool shown, int x = 100, int y = 900, bool split = false)
     {
         var picture = BurnSmith.Core.Hdmv.Pgs.Rle([1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 0, 1, 1, 0, 0, 2, 2, 0, 1, 2, 1, 2, 1, 2, 1, 2], 8, 4);
         byte[] placed = shown ? [.. Be(0, 2), 0, 0, .. Be(x, 2), .. Be(y, 2)] : [];
@@ -98,7 +98,12 @@ if (a.Count >= 1 && a[0] == "check-edit")
         if (shown)
         {
             set.Add(Segment(0x14, at, [0, 0, 1, 235, 128, 128, 255, 2, 16, 128, 128, 255]));
-            set.Add(Segment(0x15, at, [.. Be(0, 2), 0, 0xC0, .. Be(picture.Length + 4, 3), .. Be(8, 2), .. Be(4, 2), .. picture]));
+            if (!split) set.Add(Segment(0x15, at, [.. Be(0, 2), 0, 0xC0, .. Be(picture.Length + 4, 3), .. Be(8, 2), .. Be(4, 2), .. picture]));
+            else // the picture in two pieces: first (0x80) and last (0x40)
+            {
+                set.Add(Segment(0x15, at, [.. Be(0, 2), 0, 0x80, .. Be(picture.Length + 4, 3), .. Be(8, 2), .. Be(4, 2), .. picture[..10]]));
+                set.Add(Segment(0x15, at, [.. Be(0, 2), 0, 0x40, .. picture[10..]]));
+            }
         }
         set.Add(Segment(0x80, at));
         return [.. set.SelectMany(s => s)];
@@ -113,6 +118,8 @@ if (a.Count >= 1 && a[0] == "check-edit")
           Times(PgsSubtitles.Cues(PgsSubtitles.Cut(sup, 2, 4), out _)) == "0-1|3-6");
     Check("PGS cut: starting right after a clear keeps nothing old; nothing to show gives an empty file; the whole stream is unchanged",
           Times(PgsSubtitles.Cues(PgsSubtitles.Cut(sup, 3.5, 5), out _)) == "1.5-4.5" && PgsSubtitles.Cut(sup, 9, 5).Length == 0 && PgsSubtitles.Cut(sup, 0, 100).SequenceEqual(sup));
+    var pieces = PgsSubtitles.Cues([.. SupSet(1, true, split: true), .. SupSet(3, false)], out _);
+    Check("PGS picture sent in two pieces reads the same as in one", pieces.Count == 1 && pieces[0].Luma.SequenceEqual(pictures[0].Luma) && pieces[0].Alpha.SequenceEqual(pictures[0].Alpha));
     var notSup = false;
     try { PgsSubtitles.Cues([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], out _); } catch (InvalidDataException) { notSup = true; }
     var pgsFile = new ExternalSubtitle("a.fr.sup", "fre").Track(2);

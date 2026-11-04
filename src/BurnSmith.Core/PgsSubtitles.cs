@@ -155,7 +155,7 @@ public static class PgsSubtitles
         for (int o = 11, left = body[10]; left > 0 && o + 8 <= size; left--)
         {
             if (objects.TryGetValue(Be16(body[o..]), out var obj)) placed.Add((Be16(body[(o + 4)..]), Be16(body[(o + 6)..]), obj.Width, obj.Height, obj.Index));
-            o += body[o + 3] == 0x40 ? 16 : 8; // a cropped object has four more fields
+            o += (body[o + 3] & 0x40) != 0 ? 16 : 8; // a cropped object (0x40; 0x80 is "forced") has four more fields
         }
         if (placed.Count == 0) return null;
         int x0 = placed.Min(p => p.X), y0 = placed.Min(p => p.Y), x1 = placed.Max(p => p.X + p.Width), y1 = placed.Max(p => p.Y + p.Height);
