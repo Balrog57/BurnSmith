@@ -53,11 +53,14 @@ public static class Dvd
             log("warning: the videos do not have the same number of audio/subtitle tracks; the menu follows the first one");
 
         var menuPages = new List<(MenuPage Page, string Mpg)>();
+        // a menu that plays on its own (moving clip or music) starts again when it ends: each page is its own PGC, so the sound restarts when another page opens
+        var restarts = job.Menu is { } design && (design.Loop || design.ExistingMusic() != null);
         if (job.Menu != null) menuPages = BuildMenus(job, sources, movies, work, pal, log);
+        if (restarts) log($"menu: {menuPages.Count} pages, {menuPages.Sum(m => new FileInfo(m.Mpg).Length) / 1e6:0} MB on the disc");
 
         log("author: dvdauthor");
         var xml = Path.Combine(work, "dvd.xml");
-        File.WriteAllText(xml, AuthorXml(job.OutDir, pal, movies, menuPages, job.Menu?.Loop == true).ToString());
+        File.WriteAllText(xml, AuthorXml(job.OutDir, pal, movies, menuPages, restarts).ToString());
         // this dvdauthor build wants exactly "-o dest -x script -h N" plus one more argument (it reads argv[7] unchecked and crashes without)
         Tools.Run(Tools.Find("dvdauthor.exe"), ["-o", job.OutDir, "-x", xml, "-h", "0", "-q"], log, env: new Dictionary<string, string> { ["VIDEO_FORMAT"] = pal ? "PAL" : "NTSC" });
         Directory.CreateDirectory(Path.Combine(job.OutDir, "AUDIO_TS")); // empty, but players and tools expect it
@@ -186,9 +189,11 @@ public static class Dvd
         // a moving menu: the pages are transparent overlays burned onto a clip of the film (or the design's own video) that plays and repeats
         var backgrounds = MenuRenderer.Sta(() => pages.Select(p => loop ? MenuRenderer.Overlay(job.Menu!, p) : MenuRenderer.Background(job.Menu!, p)).ToList());
         var loopSeconds = Math.Clamp(job.Menu.LoopSeconds, 5, 120);
-        var (loopFile, loopSrc, loopStart) = BluRay.LoopSource(job.Menu, job.Titles[0], loopSeconds);
-        var music = job.Menu.Music is { Length: > 0 } mu && File.Exists(mu) ? mu : null;
+        var (loopFile, loopSrc, loopStart) = loop ? BluRay.LoopSource(job.Menu, job.Titles[0], loopSeconds) : default;
+        var musicFile = job.Menu.ExistingMusic();
+        var music = musicFile == null ? null : BluRay.PrepareMusic(job.Menu, musicFile, loopSeconds, work, log);
         if (loop) log($"menu: moving background, {loopSeconds}s from {Path.GetFileName(loopFile)} at {loopStart}s{(music != null ? " + music" : "")}");
+        else if (music != null) log($"menu: music from {Path.GetFileName(musicFile)}, {loopSeconds}s on every page");
 
         var result = new List<(MenuPage, string)>();
         for (var i = 0; i < pages.Count; i++)
@@ -199,18 +204,22 @@ public static class Dvd
             var plain = Path.Combine(work, $"menu_{p.Id}_plain.mpg");
             var sar = pal ? "64/45" : "32/27";
             if (!loop)
-                // still image + silent AC-3 so the menu VOB carries the same streams as a normal title
-                Tools.Run(ffmpeg, ["-y", "-v", "warning", "-loop", "1", "-framerate", pal ? "25" : "30000/1001", "-i", bg,
-                    "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000", "-t", "8",
+            {
+                // still image + the music, else silent AC-3 so the menu VOB carries the same streams as a normal title
+                var still = new List<string> { "-y", "-v", "warning", "-loop", "1", "-framerate", pal ? "25" : "30000/1001", "-i", bg };
+                still.AddRange(music != null ? ["-i", music] : ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]);
+                still.AddRange(["-t", (music != null ? loopSeconds : 8).ToString(Inv),
                     "-vf", $"scale={w}:{h},setsar={sar},format=yuv420p", "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9",
-                    "-b:v", "3000k", plain]);
+                    "-b:v", music != null ? "800k" : "3000k", plain]); // a still picture needs little: the pages are many and each lasts as long as the music
+                Tools.Run(ffmpeg, still);
+            }
             else
             {
                 // the clip, the page drawn over it, and its sound (music repeated, else the clip's own, else silence)
                 var args = new List<string> { "-y", "-v", "warning", "-ss", loopStart.ToString(Inv), "-t", loopSeconds.ToString(Inv), "-i", loopFile };
                 string audioMap;
                 int overlayInput;
-                if (music != null) { args.AddRange(["-stream_loop", "-1", "-i", music]); audioMap = "1:a:0"; overlayInput = 2; }
+                if (music != null) { args.AddRange(["-i", music]); audioMap = "1:a:0"; overlayInput = 2; }
                 else if (loopSrc.Audio.Count > 0) { audioMap = "0:a:0"; overlayInput = 1; }
                 else { args.AddRange(["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]); audioMap = "1:a:0"; overlayInput = 2; }
                 args.AddRange(["-i", bg, "-filter_complex",

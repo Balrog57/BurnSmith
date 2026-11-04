@@ -6,12 +6,13 @@ public static class MenuFiles
 {
     /// <summary>
     /// Writes what the BD-J xlet reads (bdj/.../Menu.java): menu.txt plus one JPEG per page and one PNG per button focus frame.
-    /// With <paramref name="loopPlaylist"/> the pages are transparent PNG overlays and the xlet plays that playlist behind them.
+    /// With <paramref name="loopPlaylist"/> the xlet plays that playlist behind the pages; they are then transparent PNG overlays when
+    /// <paramref name="overlay"/> (a moving menu), else opaque JPEGs as usual (the playlist only carries the menu music).
     /// </summary>
-    public static void WriteBdj(MenuDesign design, IReadOnlyList<MenuPage> pages, string dir, int loopPlaylist = 0, double scale = 1, PlaybackOptions? playback = null, int titles = 0)
+    public static void WriteBdj(MenuDesign design, IReadOnlyList<MenuPage> pages, string dir, int loopPlaylist = 0, double scale = 1, PlaybackOptions? playback = null, int titles = 0, bool overlay = false)
     {
         Directory.CreateDirectory(dir);
-        var ext = loopPlaylist > 0 ? "png" : "jpg";
+        var ext = overlay ? "png" : "jpg";
         int Px(int v) => MenuRenderer.Px(v, scale); // a 720p disc draws its 1920x1080 layout at 2/3
         var txt = new StringBuilder($"size {Px(MenuBuilder.W)} {Px(MenuBuilder.H)}\n");
         if (loopPlaylist > 0) txt.Append($"loop {loopPlaylist}\n");
@@ -22,7 +23,7 @@ public static class MenuFiles
             var list = new List<(string Name, byte[] Data)>();
             foreach (var p in pages)
             {
-                list.Add(($"bg_{p.Id}.{ext}", loopPlaylist > 0 ? MenuRenderer.Overlay(design, p, scale) : MenuRenderer.Background(design, p, scale)));
+                list.Add(($"bg_{p.Id}.{ext}", overlay ? MenuRenderer.Overlay(design, p, scale) : MenuRenderer.Background(design, p, scale)));
                 foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", MenuRenderer.Focus(design, b, scale)));
             }
             list.Add(("mark.png", MenuRenderer.Marker(design, MenuBuilder.MarkerSize, scale)));

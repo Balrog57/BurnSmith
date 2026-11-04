@@ -44,7 +44,7 @@ public partial class MenuEditorWindow : Window
     public MenuDesign Result => working;
 
     /// <summary>For the off-screen snapshot (the bottom of the properties panel).</summary>
-    public void ScrollPropsToEnd() { UpdateLayout(); PropsScroll.ScrollToEnd(); }
+    public void ScrollProps(double? to = null) { UpdateLayout(); if (to is { } y) PropsScroll.ScrollToVerticalOffset(y); else PropsScroll.ScrollToEnd(); }
 
     public MenuEditorWindow(MenuDesign design, string? previewFrame, MenuContent content)
     {
@@ -380,7 +380,7 @@ public partial class MenuEditorWindow : Window
         Pick("Vidéos|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv", "Vidéo du menu animé", f => working.LoopFile = f);
 
     void OnMusic(object s, RoutedEventArgs e) =>
-        Pick("Sons|*.mp3;*.flac;*.wav;*.m4a;*.ogg;*.ac3;*.aac", "Musique du menu animé", f => working.Music = f);
+        Pick("Sons|*.mp3;*.flac;*.wav;*.m4a;*.ogg;*.ac3;*.aac", "Musique du menu", f => working.Music = f);
 
     void OnBgRemove(object s, RoutedEventArgs e)
     {

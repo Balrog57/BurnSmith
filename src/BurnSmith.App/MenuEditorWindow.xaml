@@ -122,23 +122,37 @@
 
         <CheckBox Content="Menu animé : une vidéo tourne en boucle derrière les boutons" IsChecked="{Binding Loop}" Margin="0,16,0,0"/>
         <DockPanel Margin="0,4">
-          <TextBlock Text="Début (s)" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBlock Text="Début vidéo (s)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left"/>
           <TextBox Text="{Binding LoopStart, UpdateSourceTrigger=PropertyChanged}"/>
-        </DockPanel>
-        <DockPanel Margin="0,4">
-          <TextBlock Text="Durée (s)" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-          <TextBox Text="{Binding LoopSeconds, UpdateSourceTrigger=PropertyChanged}"/>
         </DockPanel>
         <TextBlock Text="Vidéo du menu (vide = le premier film)" Style="{StaticResource Caption}"/>
         <DockPanel>
           <Button Content="…" Width="36" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnLoopFile"/>
           <TextBox Text="{Binding LoopFile, UpdateSourceTrigger=PropertyChanged}"/>
         </DockPanel>
-        <TextBlock Text="Musique du menu (vide = le son de la vidéo)" Style="{StaticResource Caption}"/>
+
+        <TextBlock Text="Musique du menu (vide = aucune ; avec un menu animé, remplace le son de la vidéo)" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,16,0,4"/>
         <DockPanel>
           <Button Content="…" Width="36" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnMusic"/>
           <TextBox Text="{Binding Music, UpdateSourceTrigger=PropertyChanged}"/>
         </DockPanel>
+        <DockPanel Margin="0,4">
+          <TextBlock Text="Début musique (s)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBox Text="{Binding MusicStart, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+        <DockPanel Margin="0,4">
+          <TextBlock Text="Volume (%)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBox Text="{Binding MusicVolume, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+        <DockPanel Margin="0,4">
+          <TextBlock Text="Fondu (s)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left" ToolTip="Entrée au début de la boucle, sortie à sa fin (0 = aucun)"/>
+          <TextBox Text="{Binding MusicFade, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+        <DockPanel Margin="0,4">
+          <TextBlock Text="Durée boucle (s)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left" ToolTip="Durée de la vidéo animée et de la musique avant qu'elles recommencent (5 à 120)"/>
+          <TextBox Text="{Binding LoopSeconds, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+        <TextBlock Text="Sans menu animé, la musique joue sur le menu fixe. Sur DVD elle repart quand on change de page ; sur Blu-ray elle continue." TextWrapping="Wrap" Opacity="0.65" Margin="0,4,0,0"/>
         <TextBlock x:Name="LookNote" Text="Ce modèle fixe l'apparence : police, couleurs, fond et libellés des boutons viennent de ses images (souvent en anglais)." TextWrapping="Wrap" Opacity="0.65" Margin="0,12,0,0" Visibility="Collapsed"/>
         <Button x:Name="Detach" Content="Composer à partir de ce fond" Margin="0,8,0,0" HorizontalAlignment="Stretch" Visibility="Collapsed" Click="OnDetach"
                 ToolTip="Garde le fond de ce modèle (sans le copier) et ouvre la police, les boutons, la grille et les couleurs."/>

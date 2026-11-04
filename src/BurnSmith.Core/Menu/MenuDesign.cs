@@ -67,8 +67,18 @@ public sealed class MenuDesign
     public string? LoopFile { get; set; }
     public int LoopStart { get; set; }
     public int LoopSeconds { get; set; } = 30;
-    /// <summary>Sound of the moving menu: this audio file, repeated over the clip; null = the clip's own sound. Only used with <see cref="Loop"/>.</summary>
+    /// <summary>
+    /// Menu music: this audio file, from <see cref="MusicStart"/> on, repeated over <see cref="LoopSeconds"/> seconds with <see cref="MusicVolume"/> % and a fade
+    /// of <see cref="MusicFade"/> seconds in and out. A moving menu plays it instead of the clip's own sound; without one the pages stay still and a
+    /// black picture carries the sound. Null = no music. The loop restarts at its end (on a DVD also when another page is opened).
+    /// </summary>
     public string? Music { get; set; }
+    public int MusicStart { get; set; }
+    public int MusicVolume { get; set; } = 100;
+    public int MusicFade { get; set; } = 2;
+
+    /// <summary>The music file when it is set and exists, else null.</summary>
+    public string? ExistingMusic() => Music is { Length: > 0 } m && File.Exists(m) ? m : null;
 
     public MenuDesign Clone() => (MenuDesign)MemberwiseClone();
 

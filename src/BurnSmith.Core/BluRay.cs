@@ -175,9 +175,10 @@ public static class BluRay
                 muxed[0].Audio, muxed[0].Subtitles);
             var menuDir = Path.Combine(work, "menu");
             var loop = 0;
-            if (job.Menu.Loop && job.Uhd) log("moving menu skipped: a 4K disc needs a 2160p clip, which BurnSmith does not make yet");
-            else if (job.Menu.Loop) { MuxLoop(job, work, log); loop = LoopPlaylist; }
-            MenuFiles.WriteBdj(job.Menu, MenuBuilder.Build(job.Menu, content), menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, job.Titles.Count);
+            var moving = job.Menu.Loop;
+            if ((moving || job.Menu.ExistingMusic() != null) && job.Uhd) log("moving menu and music skipped: a 4K disc needs a 2160p clip, which BurnSmith does not make yet");
+            else if (moving || job.Menu.ExistingMusic() != null) { MuxLoop(job, work, log); loop = LoopPlaylist; }
+            MenuFiles.WriteBdj(job.Menu, MenuBuilder.Build(job.Menu, content), menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, job.Titles.Count, overlay: moving && loop > 0);
             AddMenu(job, menuDir, log);
         }
         Tools.TryDelete(work);
@@ -193,7 +194,7 @@ public static class BluRay
 
     static double AudioAndMenuBytes(BluRayJob job, IReadOnlyList<SourceInfo> sources) =>
         job.Titles.Select((t, i) => t.KeptAudio(sources[i]).Sum(a => AudioKbps(a, t) * 125.0 * sources[i].Duration)).Sum()
-        + 0.15e9 + (job.Menu is { Loop: true } m ? Math.Clamp(m.LoopSeconds, 5, 120) * 2.6e6 : 0);
+        + 0.15e9 + (job.Menu is { } m ? Math.Clamp(m.LoopSeconds, 5, 120) * (m.Loop ? 2.6e6 : m.ExistingMusic() != null ? 0.1e6 : 0) : 0); // a moving clip, or a black one with music
 
     /// <summary>Size in GB the disc will take: the source files when they are kept, else video at the bit rate asked for or fitted, plus audio and menu.</summary>
     public static double EstimateGB(BluRayJob job, IReadOnlyList<SourceInfo> sources)
@@ -287,26 +288,67 @@ public static class BluRay
     }
 
     /// <summary>
-    /// The clip of a moving menu: <see cref="MenuDesign.LoopSeconds"/> seconds of video (the design's file, else the first title) re-encoded as
-    /// 1080p H.264, with the design's music (repeated) or the clip's own sound, muxed apart as playlist <see cref="LoopPlaylist"/> and merged into the disc.
+    /// The menu music as one file any encoder takes: from <see cref="MenuDesign.MusicStart"/>, repeated to fill <paramref name="seconds"/>, at
+    /// <see cref="MenuDesign.MusicVolume"/> %, faded in and out by <see cref="MenuDesign.MusicFade"/> seconds, 48 kHz stereo (a disc does not take 44.1 kHz).
+    /// </summary>
+    internal static string PrepareMusic(MenuDesign menu, string music, int seconds, string work, Action<string> log)
+    {
+        var ffmpeg = Tools.Find("ffmpeg.exe");
+        // not Probe: it wants a video stream
+        var shown = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", music]).Trim();
+        if (!double.TryParse(shown, CultureInfo.InvariantCulture, out var length)) throw new InvalidDataException($"{Path.GetFileName(music)}: not an audio file");
+        var start = Math.Max(0, menu.MusicStart);
+        if (start >= length - 1)
+        {
+            log($"warning: the music lasts {length:0} s, so it starts at 0 instead of {start} s");
+            start = 0;
+        }
+        var part = Path.Combine(work, "music_part.wav");
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", start.ToString(Inv), "-i", music, "-map", "0:a:0", "-vn", "-ac", "2", "-ar", "48000", part], log); // -vn: cover art is a video stream
+        if (new FileInfo(part).Length < 100_000) throw new InvalidDataException($"{Path.GetFileName(music)}: nothing to play from {start} s"); // looping an empty file never ends
+        var fade = Math.Clamp(menu.MusicFade, 0, seconds / 2);
+        var filter = $"volume={(Math.Clamp(menu.MusicVolume, 0, 300) / 100.0).ToString("0.###", Inv)}"
+            + (fade > 0 ? $",afade=t=in:st=0:d={fade},afade=t=out:st={seconds - fade}:d={fade}" : "");
+        var output = Path.Combine(work, "music.wav");
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-stream_loop", "-1", "-i", part, "-t", seconds.ToString(Inv), "-af", filter, "-ac", "2", "-ar", "48000", output], log);
+        return output;
+    }
+
+    /// <summary>
+    /// The clip the menu plays behind its pages, muxed apart as playlist <see cref="LoopPlaylist"/> and merged into the disc:
+    /// a moving menu = <see cref="MenuDesign.LoopSeconds"/> seconds of video (the design's file, else the first title) re-encoded as 1080p H.264;
+    /// with only music = a black picture of that length. Its sound is the design's music (<see cref="PrepareMusic"/>), else the clip's own.
     /// </summary>
     static void MuxLoop(BluRayJob job, string work, Action<string> log)
     {
         var menu = job.Menu!;
         var seconds = Math.Clamp(menu.LoopSeconds, 5, 120);
-        var (file, src, start) = LoopSource(menu, job.Titles[0], seconds);
-        var music = menu.Music is { Length: > 0 } m && File.Exists(m) ? m : null;
-        var fps = Math.Abs(src.Fps - 25) < 0.5 ? "25" : "24000/1001";
+        var musicFile = menu.ExistingMusic();
+        var music = musicFile == null ? null : PrepareMusic(menu, musicFile, seconds, work, log);
         var (w, h) = VideoSize(job);
         var ts = Path.Combine(work, "loop.ts");
-        log($"menu: moving background, {seconds}s from {Path.GetFileName(file)} at {start}s{(music != null ? " + music" : "")}");
-
-        var args = new List<string> { "-y", "-v", "warning", "-ss", start.ToString(Inv), "-t", seconds.ToString(Inv), "-i", file };
-        if (music != null) args.AddRange(["-stream_loop", "-1", "-i", music]);
+        var args = new List<string> { "-y", "-v", "warning" };
+        SourceInfo? src = null;
+        string fps;
+        if (menu.Loop)
+        {
+            var (file, probe, start) = LoopSource(menu, job.Titles[0], seconds);
+            src = probe;
+            fps = Math.Abs(src.Fps - 25) < 0.5 ? "25" : "24000/1001";
+            log($"menu: moving background, {seconds}s from {Path.GetFileName(file)} at {start}s{(music != null ? " + music" : "")}");
+            args.AddRange(["-ss", start.ToString(Inv), "-t", seconds.ToString(Inv), "-i", file]);
+        }
+        else
+        {
+            fps = "24000/1001";
+            log($"menu: music from {Path.GetFileName(musicFile)}, {seconds}s over a black picture");
+            args.AddRange(["-f", "lavfi", "-i", $"color=c=black:s={w}x{h}:r={fps}:d={seconds}"]);
+        }
+        if (music != null) args.AddRange(["-i", music]);
         args.AddRange(["-map", "0:v:0"]);
         if (music != null) args.AddRange(["-map", "1:a:0"]);
-        else if (src.Audio.Count > 0) args.AddRange(["-map", "0:a:0"]);
-        var hasAudio = music != null || src.Audio.Count > 0;
+        else if (src is { Audio.Count: > 0 }) args.AddRange(["-map", "0:a:0"]);
+        var hasAudio = music != null || src is { Audio.Count: > 0 };
         args.AddRange(["-t", seconds.ToString(Inv),
             "-vf", $"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1", "-r", fps,
             "-c:v", "libx264", "-preset", "fast", "-crf", "19", "-pix_fmt", "yuv420p",
@@ -319,7 +361,7 @@ public static class BluRay
         var lines = new List<string>
         {
             $"MUXOPT --blu-ray --label={job.Label} --vbr --mplsOffset={LoopPlaylist} --m2tsOffset={LoopPlaylist}",
-            $"V_MPEG4/ISO/AVC, \"{ts}\", fps={fps}, track=256",
+            $"V_MPEG4/ISO/AVC, \"{ts}\", fps={(fps == "25" ? "25" : "23.976")}, track=256", // tsMuxeR reads "24000/1001" as 24000 and sizes the playlist at 1/1000 of the clip
         };
         if (hasAudio) lines.Add($"A_AC3, \"{ts}\", track=257");
         File.WriteAllLines(meta, lines);

@@ -108,7 +108,7 @@ if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, ne
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || Opt("--out") is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B --volume N --chapter-at T,T|--no-chapters] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--credits 'A|B'] [bd: --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B --volume N --chapter-at T,T|--no-chapters] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--credits 'A|B'] [bd: --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
     return 2;
 }
 
@@ -117,13 +117,20 @@ var design = a.Contains("--no-menu") ? null
 if (design != null && Opt("--title") is { } title) design.Title = title;
 if (design != null && Opt("--credits") is { } credits) design.Credits = credits.Replace('|', '\n'); // --credits "Directed by A|Music by B"
 if (design != null && Opt("--titles") is { } byLanguage) design.TitlesByLanguage = byLanguage.Replace('=', ':').Replace('|', '\n'); // --titles "fra=Mon disque|eng=My disc"
-if (design != null && a.Contains("--loop")) // moving menu: --loop [--loop-file video] [--loop-start S] [--loop-seconds S] [--music audio]
+if (design != null && a.Contains("--loop")) // moving menu: --loop [--loop-file video] [--loop-start S]
 {
     design.Loop = true;
     design.LoopFile = Opt("--loop-file") is { } lf ? Path.GetFullPath(lf) : null;
     design.LoopStart = int.TryParse(Opt("--loop-start"), out var ls) ? ls : 0;
-    design.LoopSeconds = int.TryParse(Opt("--loop-seconds"), out var lsec) ? lsec : 30;
-    design.Music = Opt("--music") is { } mu ? Path.GetFullPath(mu) : null;
+}
+// menu music (with or without --loop): --music audio [--music-start S] [--music-volume PERCENT] [--music-fade S] [--loop-seconds S = how long the loop lasts, 30 by default]
+if (design != null && int.TryParse(Opt("--loop-seconds"), out var lsec)) design.LoopSeconds = lsec;
+if (design != null && Opt("--music") is { } mu)
+{
+    design.Music = Path.GetFullPath(mu);
+    if (int.TryParse(Opt("--music-start"), out var ms)) design.MusicStart = ms;
+    if (int.TryParse(Opt("--music-volume"), out var mv)) design.MusicVolume = mv;
+    if (int.TryParse(Opt("--music-fade"), out var mf)) design.MusicFade = mf;
 }
 var chapters = int.TryParse(Opt("--chapters"), out var m) ? m : 5;
 // cut, volume and chapters belong to one video: the flags written after a --video (up to the next one) are that video's; with a single video they may be anywhere
