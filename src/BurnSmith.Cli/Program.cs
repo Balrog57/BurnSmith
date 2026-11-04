@@ -52,7 +52,7 @@ if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || Opt("--o
 }
 
 var design = a.Contains("--no-menu") ? null
-    : (TemplateCatalog.Find(Opt("--design")) ?? TemplateCatalog.Default()).Clone();
+    : (TemplateCatalog.Find(Opt("--design")) ?? (Opt("--design") is { } unknown ? throw new InvalidOperationException($"unknown template: {unknown}") : TemplateCatalog.Default())).Clone();
 if (design != null && Opt("--title") is { } title) design.Title = title;
 var chapters = int.TryParse(Opt("--chapters"), out var m) ? m : 5;
 var titles = videos.Select(v => new DiscTitle(v, null, Numbers("--audio"), Numbers("--sub"))).ToList();
