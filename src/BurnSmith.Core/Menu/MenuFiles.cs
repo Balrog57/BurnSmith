@@ -17,9 +17,12 @@ public static class MenuFiles
                 list.Add(($"bg_{p.Id}.jpg", MenuRenderer.Background(design, p)));
                 foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", MenuRenderer.Focus(design, b)));
             }
+            list.Add(("mark.png", MenuRenderer.Marker(design, MenuBuilder.MarkerSize)));
             return list;
         });
         foreach (var (name, data) in images) File.WriteAllBytes(Path.Combine(dir, name), data);
+        // the active audio / subtitle is marked by the xlet while the menu runs: image, size, offset from the button's left edge (which includes the focus margin)
+        txt.Append($"marker mark.png {MenuBuilder.MarkerSize} {MenuBuilder.MarkerSize} {MenuBuilder.FocusMargin - MenuBuilder.MarkerSize - MenuBuilder.MarkerGap}\n");
 
         foreach (var p in pages)
         {
@@ -32,6 +35,9 @@ public static class MenuFiles
                 {
                     "play" => $"play {b.Action.Playlist}",
                     "chapter" => $"chapter {b.Action.Playlist} {b.Action.Mark}",
+                    "playall" => $"playall {b.Action.Playlist} {b.Action.Mark}",
+                    "audio" => $"audio {b.Action.Mark}",
+                    "sub" => $"sub {b.Action.Mark}",
                     _ => $"page {b.Action.Page}",
                 };
                 txt.Append($"button {p.Id} {b.Id} {r.X} {r.Y} {r.W} {r.H} hl_{p.Id}_{b.Id}.png {N(b.Left)} {N(b.Right)} {N(b.Up)} {N(b.Down)} {action}\n");

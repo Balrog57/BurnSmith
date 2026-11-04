@@ -5,31 +5,47 @@ using BurnSmith.Core.Menu;
 
 namespace BurnSmith.Core;
 
-/// <summary>Blu-ray / UHD Blu-ray job. <see cref="Menu"/> null = the disc starts straight on the movie (no menu).</summary>
-public sealed record BluRayJob(string Video, string OutDir, MenuDesign? Menu = null, bool Uhd = false,
+/// <summary>
+/// Blu-ray / UHD Blu-ray job: one playlist per entry of <see cref="Titles"/>, in order.
+/// <see cref="Menu"/> null = the disc starts straight on the movie (a single title only).
+/// </summary>
+public sealed record BluRayJob(IReadOnlyList<DiscTitle> Titles, string OutDir, MenuDesign? Menu = null, bool Uhd = false,
                                string Label = "BURNSMITH", int ChapterMinutes = 5);
 
-public sealed record SourceInfo(string VideoCodec, int Width, int Height, double Fps, string AudioCodec, int AudioChannels, double Duration);
+/// <summary><see cref="AudioCodec"/> / <see cref="AudioChannels"/> describe the first audio stream (empty when there is none).</summary>
+public sealed record SourceInfo(string VideoCodec, int Width, int Height, double Fps, string AudioCodec, int AudioChannels, double Duration,
+                                IReadOnlyList<AudioTrack> Audio, IReadOnlyList<SubtitleTrack> Subtitles);
 
 public static class BluRay
 {
-    /// <summary>Playlist / clip number given to the movie; menu actions "play 1" refer to it.</summary>
+    /// <summary>Playlist / clip number of the first title; title N is playlist N.</summary>
     public const int MoviePlaylist = 1;
+
+    static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     public static SourceInfo Probe(string file)
     {
         var json = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-of", "json", "-show_streams", "-show_format", file]);
         using var doc = JsonDocument.Parse(json);
-        JsonElement? Stream(string type) => doc.RootElement.GetProperty("streams").EnumerateArray()
-            .Where(s => s.GetProperty("codec_type").GetString() == type).Select(s => (JsonElement?)s).FirstOrDefault();
-        var v = Stream("video") ?? throw new InvalidDataException("no video stream in " + file);
-        var a = Stream("audio");
+        var streams = doc.RootElement.GetProperty("streams").EnumerateArray().ToList();
+        List<JsonElement> Of(string type) => streams.Where(s => s.GetProperty("codec_type").GetString() == type).ToList();
+        static string Tag(JsonElement s, string name) => s.TryGetProperty("tags", out var t) && t.TryGetProperty(name, out var v) ? v.GetString() ?? "" : "";
+        static bool Flag(JsonElement s, string name) => s.TryGetProperty("disposition", out var d) && d.TryGetProperty(name, out var v) && v.GetInt32() == 1;
+
+        // cover art is a video stream too
+        var v = Of("video").FirstOrDefault(s => !Flag(s, "attached_pic"));
+        if (v.ValueKind == JsonValueKind.Undefined) throw new InvalidDataException("no video stream in " + file);
+        var audio = Of("audio").Select((s, i) => new AudioTrack(i, s.GetProperty("codec_name").GetString()!,
+            s.TryGetProperty("channels", out var c) ? c.GetInt32() : 0, Tag(s, "language"), Tag(s, "title"))).ToList();
+        var subs = Of("subtitle").Select((s, i) => new SubtitleTrack(i, s.GetProperty("codec_name").GetString() ?? "", Tag(s, "language"), Tag(s, "title"), Flag(s, "forced"))).ToList();
+        if (!doc.RootElement.GetProperty("format").TryGetProperty("duration", out var duration)) // a picture has a video stream but no length
+            throw new InvalidDataException("no duration: not a video file");
         var r = v.GetProperty("r_frame_rate").GetString()!.Split('/');
         return new SourceInfo(
             v.GetProperty("codec_name").GetString()!, v.GetProperty("width").GetInt32(), v.GetProperty("height").GetInt32(),
-            double.Parse(r[0], CultureInfo.InvariantCulture) / double.Parse(r[1], CultureInfo.InvariantCulture),
-            a?.GetProperty("codec_name").GetString() ?? "", a?.GetProperty("channels").GetInt32() ?? 0,
-            double.Parse(doc.RootElement.GetProperty("format").GetProperty("duration").GetString()!, CultureInfo.InvariantCulture));
+            double.Parse(r[0], Inv) / double.Parse(r[1], Inv),
+            audio.FirstOrDefault()?.Codec ?? "", audio.FirstOrDefault()?.Channels ?? 0,
+            double.Parse(duration.GetString()!, Inv), audio, subs);
     }
 
     /// <summary>Chapter start times (seconds): one every <paramref name="minutes"/>, never a chapter shorter than 1 minute.</summary>
@@ -41,31 +57,29 @@ public static class BluRay
         return list;
     }
 
+    /// <summary>What one muxed title gives the menu: its preview source and the names of the tracks that really went on the disc.</summary>
+    sealed record Muxed(string Prepared, List<string> Audio, List<string> Subtitles, List<double> ChapterTimes);
+
     public static void Build(BluRayJob job, Action<string>? log = null)
     {
         log ??= _ => { };
-        var src = Probe(job.Video);
-        var work = Path.Combine(job.OutDir + "_work");
+        if (job.Titles.Count == 0) throw new ArgumentException("no video to put on the disc");
+        if (job.Titles.Count > 1 && job.Menu == null) throw new InvalidOperationException("several videos need a menu to choose from");
+        var sources = job.Titles.Select(t => Probe(t.Video)).ToList();
+        var work = job.OutDir + "_work";
         Tools.PrepareOutput(job.OutDir);
         Directory.CreateDirectory(work);
 
-        var prepared = Path.Combine(work, "prepared.mkv");
-        log($"prepare: {src.VideoCodec} {src.Width}x{src.Height} {src.Fps:0.###}fps, audio {src.AudioCodec}");
-        Prepare(job, src, prepared, log);
-
-        var fps = Math.Round(Math.Abs(src.Fps - 25) < 0.01 ? 25 : Math.Abs(src.Fps - 24) < 0.01 ? 24 : 23.976, 3);
-        var chapterTimes = Chapters(src.Duration, job.ChapterMinutes);
-        var chapters = string.Join(';', chapterTimes
-            .Select(t => TimeSpan.FromSeconds(t).ToString(@"hh\:mm\:ss\.fff", CultureInfo.InvariantCulture)));
-        var meta = Path.Combine(work, "disc.meta");
-        File.WriteAllLines(meta,
-        [
-            $"MUXOPT {(job.Uhd ? "--blu-ray-v3" : "--blu-ray")} --label={job.Label} --vbr --custom-chapters={chapters} --mplsOffset={MoviePlaylist} --m2tsOffset={MoviePlaylist}",
-            $"{(job.Uhd ? "V_MPEGH/ISO/HEVC" : "V_MPEG4/ISO/AVC")}, \"{prepared}\", fps={fps.ToString(CultureInfo.InvariantCulture)}, track=1",
-            $"{AudioTag(src.AudioCodec)}, \"{prepared}\", track=2, lang=eng",
-        ]);
-        log("mux: tsMuxeR");
-        Tools.Run(Tools.Find("tsMuxeR.exe"), [meta, job.OutDir], log);
+        var muxed = new List<Muxed>();
+        for (var i = 0; i < job.Titles.Count; i++)
+        {
+            var playlist = MoviePlaylist + i;
+            // later titles are muxed on their own (playlist/clip numbers offset), then merged into the first disc folder
+            var dest = i == 0 ? job.OutDir : Path.Combine(work, "mux" + playlist);
+            if (i > 0 && Directory.Exists(dest)) Directory.Delete(dest, true);
+            muxed.Add(MuxTitle(job, job.Titles[i], sources[i], playlist, dest, work, log));
+            if (i > 0) Merge(dest, job.OutDir);
+        }
 
         // disc title shown by players and Windows (BDMV/META/DL/bdmt_*.xml); only English, see shortcut
         var metaDir = Path.Combine(job.OutDir, "BDMV", "META", "DL");
@@ -79,20 +93,73 @@ public static class BluRay
             log("menu: render");
             var thumbs = Path.Combine(work, "thumbs");
             Directory.CreateDirectory(thumbs);
-            string? Thumb(string name, double t, int w, int h)
+            string? Thumb(string name, int title, double t, int w, int h)
             {
                 var file = Path.Combine(thumbs, name + ".jpg");
-                Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, src.Duration - 0.5)).ToString("0.###", CultureInfo.InvariantCulture),
-                    "-i", prepared, "-frames:v", "1", "-q:v", "2", "-vf", $"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}", file]);
+                Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, sources[title].Duration - 0.5)).ToString("0.###", Inv),
+                    "-i", muxed[title].Prepared, "-frames:v", "1", "-q:v", "2", "-vf", $"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}", file]);
                 return File.Exists(file) ? file : null;
             }
-            var content = new MenuContent(MoviePlaylist, Thumb("preview", src.Duration * 0.1, 800, 450),
-                chapterTimes.Select((t, i) => Thumb($"c{i + 1}", t + 3, 480, 270)).ToList());
+            var series = job.Titles.Count > 1;
+            var content = new MenuContent(MoviePlaylist, Thumb("preview", 0, sources[0].Duration * 0.1, 800, 450),
+                series ? [] : muxed[0].ChapterTimes.Select((t, i) => Thumb($"c{i + 1}", 0, t + 3, 480, 270)).ToList(),
+                series ? job.Titles.Select((t, i) => new TitleEntry(t.DisplayName, MoviePlaylist + i, Thumb($"t{i + 1}", i, sources[i].Duration * 0.1, 480, 270))).ToList() : null,
+                muxed[0].Audio, muxed[0].Subtitles);
             var menuDir = Path.Combine(work, "menu");
             MenuFiles.WriteBdj(job.Menu, MenuBuilder.Build(job.Menu, content), menuDir);
             AddMenu(job, menuDir, log);
         }
+        Tools.TryDelete(work);
         log("done: " + job.OutDir);
+    }
+
+    static Muxed MuxTitle(BluRayJob job, DiscTitle title, SourceInfo src, int playlist, string dest, string work, Action<string> log)
+    {
+        var audio = title.KeptAudio(src);
+        var prepared = Path.Combine(work, $"prepared{playlist}.mkv");
+
+        // subtitles the disc can carry: PGS is copied, text becomes SRT (tsMuxeR renders it); other image formats would need OCR
+        var subs = new List<(SubtitleTrack Track, string File)>();
+        foreach (var s in title.KeptSubtitles(src))
+        {
+            if (!s.Supported) { log($"subtitle '{s.Name}' skipped: {s.Codec} is an image format that needs OCR"); continue; }
+            subs.Add((s, Path.Combine(work, $"sub{playlist}_{subs.Count + 1}.{(s.IsPgs ? "sup" : "srt")}")));
+        }
+        log($"prepare {playlist}: {src.VideoCodec} {src.Width}x{src.Height} {src.Fps:0.###}fps, audio {(audio.Count == 0 ? "none" : string.Join('+', audio.Select(a => a.Codec)))}, subtitles {subs.Count}");
+        Prepare(job, title, src, audio, subs, prepared, log);
+
+        var fps = Math.Round(Math.Abs(src.Fps - 25) < 0.01 ? 25 : Math.Abs(src.Fps - 24) < 0.01 ? 24 : 23.976, 3).ToString(Inv);
+        var chapterTimes = Chapters(src.Duration, job.ChapterMinutes);
+        var chapters = string.Join(';', chapterTimes.Select(t => TimeSpan.FromSeconds(t).ToString(@"hh\:mm\:ss\.fff", Inv)));
+        var (w, h) = job.Uhd ? (3840, 2160) : (1920, 1080);
+        var lines = new List<string>
+        {
+            $"MUXOPT {(job.Uhd ? "--blu-ray-v3" : "--blu-ray")} --label={job.Label} --vbr --custom-chapters={chapters} --mplsOffset={playlist} --m2tsOffset={playlist}",
+            $"{(job.Uhd ? "V_MPEGH/ISO/HEVC" : "V_MPEG4/ISO/AVC")}, \"{prepared}\", fps={fps}, track=1",
+        };
+        for (var j = 0; j < audio.Count; j++)
+            lines.Add($"{AudioTag(BdAudio(audio[j].Codec))}, \"{prepared}\", track={j + 2}, lang={Languages.Iso2(audio[j].Lang)}");
+        foreach (var (s, file) in subs)
+            lines.Add(s.IsPgs
+                ? $"S_HDMV/PGS, \"{file}\", fps={fps}, lang={Languages.Iso2(s.Lang)}"
+                : $"S_TEXT/UTF8, \"{file}\", font-name=\"Arial\", font-size=65, font-color=0xffffffff, bottom-offset=24, font-border=5, text-align=center, video-width={w}, video-height={h}, fps={fps}, lang={Languages.Iso2(s.Lang)}");
+        var meta = Path.Combine(work, $"disc{playlist}.meta");
+        File.WriteAllLines(meta, lines);
+        log($"mux {playlist}: tsMuxeR");
+        Tools.Run(Tools.Find("tsMuxeR.exe"), [meta, dest], log);
+        return new Muxed(prepared, audio.Select(a => a.Name).ToList(), subs.Select(s => s.Track.Name).ToList(), chapterTimes);
+    }
+
+    /// <summary>Moves the playlist, clip info and stream files of a title muxed apart into the disc folder.</summary>
+    static void Merge(string from, string into)
+    {
+        foreach (var sub in new[] { @"BDMV\PLAYLIST", @"BDMV\CLIPINF", @"BDMV\STREAM", @"BDMV\BACKUP\PLAYLIST", @"BDMV\BACKUP\CLIPINF" })
+        {
+            var src = Path.Combine(from, sub);
+            if (!Directory.Exists(src)) continue;
+            Directory.CreateDirectory(Path.Combine(into, sub));
+            foreach (var f in Directory.EnumerateFiles(src)) File.Move(f, Path.Combine(into, sub, Path.GetFileName(f)), true);
+        }
     }
 
     static string AudioTag(string codec) => codec switch
@@ -100,26 +167,37 @@ public static class BluRay
         "dts" => "A_DTS", "truehd" => "A_MLP", _ => "A_AC3",
     };
 
-    /// <summary>Remuxes to prepared.mkv (video = track 1, first audio = track 2), re-encoding only what a Blu-ray cannot carry.</summary>
-    static void Prepare(BluRayJob job, SourceInfo s, string output, Action<string> log)
+    /// <summary>The codec a source audio ends up as on the disc: copied when a Blu-ray carries it, AC-3 otherwise.</summary>
+    static string BdAudio(string codec) => codec is "ac3" or "dts" or "truehd" ? codec : "ac3";
+
+    /// <summary>
+    /// Remuxes to prepared.mkv (video = track 1, kept audio = tracks 2..), re-encoding only what a Blu-ray cannot carry,
+    /// and writes the subtitle files in the same pass over the source.
+    /// </summary>
+    static void Prepare(BluRayJob job, DiscTitle title, SourceInfo s, IReadOnlyList<AudioTrack> audio, List<(SubtitleTrack Track, string File)> subs, string output, Action<string> log)
     {
         var fpsOk = Math.Abs(s.Fps - 23.976) < 0.01 || Math.Abs(s.Fps - 24) < 0.01 || Math.Abs(s.Fps - 25) < 0.01;
         var (w, h) = job.Uhd ? (3840, 2160) : (1920, 1080);
         var videoOk = s.VideoCodec == (job.Uhd ? "hevc" : "h264") && s.Width == w && s.Height == h && fpsOk;
-        var audioOk = s.AudioCodec is "ac3" or "dts" or "truehd";
         if (job.Uhd && !videoOk)
             // shortcut: UHD sources must already be 2160p HEVC; HDR-aware re-encoding is not implemented yet
             throw new NotSupportedException("UHD needs a 3840x2160 HEVC source at 23.976/24/25 fps");
 
-        var args = new List<string> { "-y", "-v", "warning", "-i", job.Video, "-map", "0:v:0", "-map", "0:a:0?" };
+        var args = new List<string> { "-y", "-v", "warning", "-i", title.Video, "-map", "0:v:0" };
+        foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
         if (videoOk) args.AddRange(["-c:v", "copy"]);
         else args.AddRange(["-vf", $"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1",
                             "-r", Math.Abs(s.Fps - 25) < 0.5 ? "25" : "24000/1001",
                             "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p",
                             "-x264-params", "bluray-compat=1:level=41:vbv-maxrate=30000:vbv-bufsize=30000:keyint=24:slices=4:bframes=3:b-pyramid=strict:open-gop=0"]);
-        if (audioOk) args.AddRange(["-c:a", "copy"]);
-        else args.AddRange(["-c:a", "ac3", "-b:a", s.AudioChannels > 2 ? "640k" : "448k"]);
-        args.Add(output);
+        for (var j = 0; j < audio.Count; j++)
+        {
+            if (BdAudio(audio[j].Codec) == audio[j].Codec) args.AddRange([$"-c:a:{j}", "copy"]);
+            else args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", audio[j].Channels > 2 ? "640k" : "448k"]);
+        }
+        args.AddRange(["-sn", "-dn", output]);
+        foreach (var (t, file) in subs)
+            args.AddRange(["-map", $"0:s:{t.Index}", "-c:s", t.IsPgs ? "copy" : "srt", "-f", t.IsPgs ? "sup" : "srt", file]);
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
     }
 

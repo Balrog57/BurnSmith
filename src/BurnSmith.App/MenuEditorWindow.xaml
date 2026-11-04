@@ -65,6 +65,20 @@
         <TextBox Text="{Binding HomeLabel, UpdateSourceTrigger=PropertyChanged}"/>
         <TextBlock Text="Mot « chapitre »" Style="{StaticResource Caption}"/>
         <TextBox Text="{Binding ChapterLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Bouton « tout lire » (séries)" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding PlayAllLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Liste des épisodes (séries)" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding EpisodesLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Bouton réglages (audio / sous-titres)" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding SettingsLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Colonne audio" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding AudioLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Colonne sous-titres" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding SubtitlesLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Sous-titres désactivés" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding OffLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Bouton retour" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding BackLabel, UpdateSourceTrigger=PropertyChanged}"/>
         <TextBlock Text="Police" Style="{StaticResource Caption}"/>
         <TextBox Text="{Binding Font, UpdateSourceTrigger=PropertyChanged}"/>
         <TextBlock Text="Style des boutons" Style="{StaticResource Caption}"/>

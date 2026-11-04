@@ -1,86 +1,176 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using BurnSmith.Core.Menu;
 using static BurnSmith.Core.Menu.IndexedPng;
 
 namespace BurnSmith.Core;
 
-/// <summary>DVD-Video job. <see cref="Menu"/> null = the disc starts straight on the movie.</summary>
-public sealed record DvdJob(string Video, string OutDir, MenuDesign? Menu = null, int ChapterMinutes = 5, double CapacityGB = 4.2);
+/// <summary>DVD-Video job: one title per entry of <see cref="Titles"/>. <see cref="Menu"/> null = the disc starts straight on the movie (a single title only).</summary>
+public sealed record DvdJob(IReadOnlyList<DiscTitle> Titles, string OutDir, MenuDesign? Menu = null, int ChapterMinutes = 5, double CapacityGB = 4.2);
 
-/// <summary>ffmpeg (MPEG-2 + AC-3) -> spumux (button highlights) -> dvdauthor (VIDEO_TS with menus).</summary>
+/// <summary>ffmpeg (MPEG-2 + AC-3) -> spumux (button highlights, text subtitles) -> dvdauthor (VIDEO_TS with menus).</summary>
 public static class Dvd
 {
-    const int Title = 1;
+    static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-    /// <summary>Video/audio bit rates that fill <paramref name="capacityGB"/> (usable GB), video capped at 8 Mb/s.</summary>
-    public static (int Video, int Audio) Bitrates(SourceInfo src, double capacityGB)
+    static int AudioBps(AudioTrack a) => a.Channels > 2 ? 448_000 : 192_000;
+
+    /// <summary>Video bit rate that fills <paramref name="capacityGB"/> (usable GB) with all titles and their kept audio, capped at 8 Mb/s.</summary>
+    public static int VideoBitrate(IReadOnlyList<(SourceInfo Src, DiscTitle Title)> items, double capacityGB)
     {
-        var audio = src.AudioChannels > 2 ? 448_000 : 192_000;
-        return ((int)Math.Clamp(capacityGB * 1e9 * 8 / src.Duration * 0.96 - audio, 1_000_000, 8_000_000), audio);
+        var seconds = items.Sum(i => i.Src.Duration);
+        var audioBits = items.Sum(i => i.Src.Duration * i.Title.KeptAudio(i.Src).Sum(AudioBps));
+        return (int)Math.Clamp((capacityGB * 1e9 * 8 * 0.96 - audioBits) / seconds, 1_000_000, 8_000_000);
     }
 
-    public static double EstimateGB(SourceInfo src, double capacityGB)
+    public static double EstimateGB(IReadOnlyList<(SourceInfo Src, DiscTitle Title)> items, double capacityGB)
     {
-        var (v, a) = Bitrates(src, capacityGB);
-        return (v + a) * src.Duration / 8 / 1e9;
+        var v = VideoBitrate(items, capacityGB);
+        return items.Sum(i => i.Src.Duration * (v + i.Title.KeptAudio(i.Src).Sum(AudioBps))) / 8 / 1e9;
     }
+
+    /// <summary>One encoded title: the MPEG file, the audio and subtitle tracks that really are in it, its chapter times.</summary>
+    sealed record Movie(string Mpg, List<AudioTrack> Audio, List<SubtitleTrack> Subtitles, List<double> ChapterTimes);
 
     public static void Build(DvdJob job, Action<string>? log = null)
     {
         log ??= _ => { };
-        var src = BluRay.Probe(job.Video);
-        var pal = Math.Abs(src.Fps - 25) < 0.5 || Math.Abs(src.Fps - 50) < 0.5;
-        var (w, h) = pal ? (720, 576) : (720, 480);
-        var sar = pal ? "64/45" : "32/27";
+        if (job.Titles.Count == 0) throw new ArgumentException("no video to put on the disc");
+        if (job.Titles.Count > 1 && job.Menu == null) throw new InvalidOperationException("several videos need a menu to choose from");
+        var sources = job.Titles.Select(t => BluRay.Probe(t.Video)).ToList();
+        var items = sources.Zip(job.Titles, (s, t) => (Src: s, Title: t)).ToList();
+        var pal = Math.Abs(sources[0].Fps - 25) < 0.5 || Math.Abs(sources[0].Fps - 50) < 0.5; // the disc follows its first video
         var work = job.OutDir + "_work";
         Tools.PrepareOutput(job.OutDir);
         Directory.CreateDirectory(work);
-        var ffmpeg = Tools.Find("ffmpeg.exe");
 
-        // movie: square pixels -> 16:9 box with bars -> DVD frame size and aspect
-        var movie = Path.Combine(work, "movie.mpg");
-        var ntscFilm = !pal && src.Fps < 25;
-        var rate = pal ? "fps=25" : ntscFilm ? "fps=24000/1001,telecine=pattern=23" : "fps=30000/1001"; // film: real 3:2 pulldown
-        var (videoBps, audioBps) = Bitrates(src, job.CapacityGB);
+        var videoBps = VideoBitrate(items, job.CapacityGB);
         log($"movie: {(pal ? "PAL" : "NTSC")} {videoBps / 1000} kb/s");
-        var args = new List<string> { "-y", "-v", "warning", "-i", job.Video, "-map", "0:v:0", "-map", "0:a:0?",
-            "-vf", $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale=1024:576:force_original_aspect_ratio=decrease,pad=1024:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h},setsar={sar},{rate}",
-            "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9", "-b:v", $"{videoBps / 1000}k", "-b:a", $"{audioBps / 1000}k" };
-        if (ntscFilm) args.AddRange(["-flags", "+ildct+ilme", "-top", "1"]);
-        args.Add(movie);
-        Tools.Run(ffmpeg, args, log);
+        var movies = new List<Movie>();
+        for (var i = 0; i < job.Titles.Count; i++) movies.Add(EncodeTitle(job, i + 1, sources[i], job.Titles[i], pal, videoBps, work, log));
+        if (movies.Any(m => m.Audio.Count != movies[0].Audio.Count || m.Subtitles.Count != movies[0].Subtitles.Count))
+            log("warning: the videos do not have the same number of audio/subtitle tracks; the menu follows the first one");
 
-        var chapterTimes = BluRay.Chapters(src.Duration, job.ChapterMinutes);
         var menuPages = new List<(MenuPage Page, string Mpg)>();
-        if (job.Menu != null) menuPages = BuildMenus(job, src, chapterTimes, work, pal, log);
+        if (job.Menu != null) menuPages = BuildMenus(job, sources, movies, work, pal, log);
 
         log("author: dvdauthor");
         var xml = Path.Combine(work, "dvd.xml");
-        File.WriteAllText(xml, AuthorXml(job.OutDir, pal, movie, chapterTimes, menuPages).ToString());
+        File.WriteAllText(xml, AuthorXml(job.OutDir, pal, movies, menuPages).ToString());
         // this dvdauthor build wants exactly "-o dest -x script -h N" plus one more argument (it reads argv[7] unchecked and crashes without)
         Tools.Run(Tools.Find("dvdauthor.exe"), ["-o", job.OutDir, "-x", xml, "-h", "0", "-q"], log, env: new Dictionary<string, string> { ["VIDEO_FORMAT"] = pal ? "PAL" : "NTSC" });
         Directory.CreateDirectory(Path.Combine(job.OutDir, "AUDIO_TS")); // empty, but players and tools expect it
+        Tools.TryDelete(work);
         log("done: " + job.OutDir);
     }
 
-    static List<(MenuPage, string)> BuildMenus(DvdJob job, SourceInfo src, List<double> chapterTimes, string work, bool pal, Action<string> log)
+    static Movie EncodeTitle(DvdJob job, int number, SourceInfo src, DiscTitle title, bool pal, int videoBps, string work, Action<string> log)
+    {
+        var (w, h) = pal ? (720, 576) : (720, 480);
+        var sar = pal ? "64/45" : "32/27";
+        var audio = title.KeptAudio(src).Take(8).ToList(); // a DVD title carries at most 8 audio streams
+        var movie = Path.Combine(work, $"movie{number}.mpg");
+        // movie: square pixels -> 16:9 box with bars -> DVD frame size and aspect
+        var ntscFilm = !pal && src.Fps < 25;
+        var rate = pal ? "fps=25" : ntscFilm ? "fps=24000/1001,telecine=pattern=23" : "fps=30000/1001"; // film: real 3:2 pulldown
+        var args = new List<string> { "-y", "-v", "warning", "-i", title.Video, "-map", "0:v:0" };
+        foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
+        args.AddRange(["-vf", $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale=1024:576:force_original_aspect_ratio=decrease,pad=1024:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h},setsar={sar},{rate}",
+            "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9", "-b:v", $"{videoBps / 1000}k"]);
+        if (audio.Count == 0) args.Add("-an");
+        for (var j = 0; j < audio.Count; j++)
+        {
+            args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", $"{AudioBps(audio[j]) / 1000}k"]);
+            if (audio[j].Channels > 6) args.AddRange([$"-ac:a:{j}", "6"]); // AC-3 tops out at 5.1
+        }
+        if (ntscFilm) args.AddRange(["-flags", "+ildct+ilme", "-top", "1"]);
+        args.AddRange(["-sn", "-dn", movie]);
+
+        // only text subtitles can become DVD subpictures here (spumux renders them); bitmap formats would need OCR
+        var subs = new List<(SubtitleTrack Track, string File)>();
+        foreach (var s in title.KeptSubtitles(src))
+        {
+            if (!s.IsText) { log($"subtitle '{s.Name}' skipped: {s.Codec} cannot be put on a DVD (text subtitles only)"); continue; }
+            var file = Path.Combine(work, $"sub{number}_{subs.Count + 1}.srt");
+            args.AddRange(["-map", $"0:s:{s.Index}", "-c:s", "srt", "-f", "srt", file]);
+            subs.Add((s, file));
+        }
+        log($"encode {number}: {title.DisplayName} (audio {audio.Count}, subtitles {subs.Count})");
+        Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
+
+        var carried = new List<SubtitleTrack>();
+        if (subs.Count > 0)
+        {
+            var withSubs = Path.Combine(work, $"movie{number}_sub.mpg");
+            try
+            {
+                AddSubtitles(movie, withSubs, subs, pal, work, log);
+                movie = withSubs;
+                carried = subs.Select(s => s.Track).ToList();
+            }
+            catch (Exception e) when (e is InvalidOperationException or IOException)
+            {
+                log("subtitles dropped: " + e.Message.Split('\n')[0]);
+            }
+        }
+        return new Movie(movie, audio, carried, BluRay.Chapters(src.Duration, job.ChapterMinutes));
+    }
+
+    /// <summary>One spumux pass that adds a subtitle stream per entry (cues drawn by <see cref="DvdSubtitles"/>).</summary>
+    static void AddSubtitles(string movie, string output, List<(SubtitleTrack Track, string File)> subs, bool pal, string work, Action<string> log)
+    {
+        log("subtitles: render + spumux");
+        var name = Path.GetFileNameWithoutExtension(movie);
+        // this spumux build writes every subtitle as stream 0x20: add them last to first, moving the earlier ones up one id each time
+        var current = movie;
+        for (var k = subs.Count - 1; k >= 0; k--)
+        {
+            var spu = new XElement("subpictures", DvdSubtitles.Stream(subs[k].File, work, $"{name}_s{k + 1}_", 720, pal ? 576 : 480, pal ? 64.0 / 45 : 32.0 / 27));
+            var xml = Path.Combine(work, $"{name}_s{k + 1}.xml");
+            new XDocument(spu).Save(xml);
+            var next = k == 0 ? output : Path.Combine(work, $"{name}_pass{k}.mpg");
+            Tools.Run(Tools.Find("spumux.exe"), [Path.GetFileName(xml), current, next], log, work);
+            if (!File.Exists(next) || new FileInfo(next).Length < new FileInfo(movie).Length / 2)
+                throw new InvalidOperationException("spumux produced no usable file");
+            if (current != movie) File.Delete(current);
+            if (k > 0) DvdSubtitles.ShiftStreams(next);
+            current = next;
+        }
+    }
+
+    /// <summary>Settings pages: one per (audio, subtitle) choice, so the page itself can show what is chosen.</summary>
+    static string SettingsId(int audio, int sub) => $"settings_{audio}_{sub}";
+
+    static List<(MenuPage, string)> BuildMenus(DvdJob job, List<SourceInfo> sources, List<Movie> movies, string work, bool pal, Action<string> log)
     {
         log("menu: render");
         var ffmpeg = Tools.Find("ffmpeg.exe");
         var (w, h) = pal ? (720, 576) : (720, 480);
         var thumbs = Path.Combine(work, "thumbs");
         Directory.CreateDirectory(thumbs);
-        string? Thumb(string name, double t, int tw, int th)
+        string? Thumb(string name, int title, double t, int tw, int th)
         {
             var file = Path.Combine(thumbs, name + ".jpg");
-            Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, src.Duration - 0.5)).ToString("0.###", CultureInfo.InvariantCulture),
-                "-i", Path.Combine(work, "movie.mpg"), "-frames:v", "1", "-q:v", "2", "-vf", $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}", file]);
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, sources[title].Duration - 0.5)).ToString("0.###", Inv),
+                "-i", movies[title].Mpg, "-frames:v", "1", "-q:v", "2", "-vf", $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}", file]);
             return File.Exists(file) ? file : null;
         }
-        var content = new MenuContent(Title, Thumb("preview", src.Duration * 0.1, 800, 450),
-            chapterTimes.Select((t, i) => Thumb($"c{i + 1}", t + 3, 480, 270)).ToList());
+        var series = job.Titles.Count > 1;
+        var content = new MenuContent(1, Thumb("preview", 0, sources[0].Duration * 0.1, 800, 450),
+            series ? [] : movies[0].ChapterTimes.Select((t, i) => Thumb($"c{i + 1}", 0, t + 3, 480, 270)).ToList(),
+            series ? job.Titles.Select((t, i) => new TitleEntry(t.DisplayName, i + 1, Thumb($"t{i + 1}", i, sources[i].Duration * 0.1, 480, 270))).ToList() : null,
+            movies[0].Audio.Select(a => a.Name).ToList(), movies[0].Subtitles.Select(s => s.Name).ToList());
+
         var pages = MenuBuilder.Build(job.Menu!, content);
+        if (pages.RemoveAll(p => p.Id == "settings") > 0)
+        {
+            var audioStates = content.AudioNames.Count > 1 ? content.AudioNames.Count : 1;
+            var subStates = content.SubtitleNames.Count > 0 ? content.SubtitleNames.Count + 1 : 1;
+            for (var a = 1; a <= audioStates; a++)
+                for (var s = 0; s < subStates; s++)
+                    pages.Add(MenuBuilder.Settings(job.Menu!, content, a, s, SettingsId(a, s)));
+        }
         var backgrounds = MenuRenderer.Sta(() => pages.Select(p => MenuRenderer.Background(job.Menu!, p)).ToList());
 
         var result = new List<(MenuPage, string)>();
@@ -94,7 +184,7 @@ public static class Dvd
             Tools.Run(ffmpeg, ["-y", "-v", "warning", "-loop", "1", "-framerate", pal ? "25" : "30000/1001", "-i", bg,
                 "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000", "-t", "8",
                 "-vf", $"scale={w}:{h},setsar={(pal ? "64/45" : "32/27")},format=yuv420p", "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9",
-                "-b:v", "3000k", Path.Combine(work, $"menu_{p.Id}_plain.mpg")]);
+                "-b:v", "3000k", plain]);
 
             // button highlights: flat frames in 4 colours, scaled from the 1920x1080 layout
             var sx = w / (double)MenuBuilder.W;
@@ -133,42 +223,70 @@ public static class Dvd
 
     static Rgba Hex(string s) => new(Convert.ToByte(s.Substring(1, 2), 16), Convert.ToByte(s.Substring(3, 2), 16), Convert.ToByte(s.Substring(5, 2), 16), 255);
 
-    static XDocument AuthorXml(string dest, bool pal, string movie, List<double> chapterTimes, List<(MenuPage Page, string Mpg)> menus)
+    static XDocument AuthorXml(string dest, bool pal, List<Movie> movies, List<(MenuPage Page, string Mpg)> menus)
     {
         var fmt = pal ? "pal" : "ntsc";
+        var series = movies.Count > 1;
         XElement Video() => new("video", new XAttribute("format", fmt), new XAttribute("aspect", "16:9"), new XAttribute("widescreen", "nopanscan"));
-        string Chapters() => string.Join(',', chapterTimes.Select(t => TimeSpan.FromSeconds(t).ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture)));
+        string Chapters(Movie m) => string.Join(',', m.ChapterTimes.Select(t => TimeSpan.FromSeconds(t).ToString(@"h\:mm\:ss", Inv)));
+
+        // menu PGCs are numbered in order: 1 = root, then the scene/episode pages, then the settings pages
+        int MenuNumber(string pageId) => menus.FindIndex(m => m.Page.Id == pageId) + 1;
+        var settings = menus.Where(m => m.Page.Id.StartsWith("settings_")).Select(m => m.Page.Id).ToList();
+        var states = settings.Select(id => Regex.Match(id, @"settings_(\d+)_(\d+)")).Select(m => (A: int.Parse(m.Groups[1].Value), S: int.Parse(m.Groups[2].Value), Id: m.Value)).ToList();
+
+        // g1 = 1 while "play all" runs, g2 = chosen audio (1-based), g3 = chosen subtitle (0 = off); they select the settings page to show
+        string Enter() => states.Count == 0 ? "" :
+            string.Concat(states.Select(s => $"if (g2 == {s.A} && g3 == {s.S}) jump menu {MenuNumber(s.Id)};")) + $" jump menu {MenuNumber(states[0].Id)};";
+
+        string Command(MenuPage page, MenuButton b)
+        {
+            var a = b.Action;
+            var here = Regex.Match(page.Id, @"settings_(\d+)_(\d+)");
+            switch (a.Kind)
+            {
+                case "play": return (series ? "g1 = 0; " : "") + $"jump title {a.Playlist};";
+                case "chapter": return $"jump title {a.Playlist} chapter {a.Mark + 1};";
+                case "playall": return $"g1 = 1; jump title {a.Playlist};";
+                case "audio": // stream numbers are 0-based on a DVD
+                    return $"g2 = {a.Mark}; audio = {a.Mark - 1}; jump menu {MenuNumber(SettingsId(a.Mark, int.Parse(here.Groups[2].Value)))};";
+                case "sub": // 62 = none; with the display bit (64) the stream number follows
+                    return $"g3 = {a.Mark}; subtitle = {(a.Mark == 0 ? 62 : 64 + a.Mark - 1)}; jump menu {MenuNumber(SettingsId(int.Parse(here.Groups[1].Value), a.Mark))};";
+                default: return a.Page == "settings" ? Enter() : $"jump menu {MenuNumber(a.Page!)};";
+            }
+        }
+
+        var first = movies[0];
+        XElement[] AudioEls() => first.Audio.Select(a => new XElement("audio", new XAttribute("format", "ac3"),
+            new XAttribute("channels", Math.Min(6, Math.Max(1, a.Channels))), new XAttribute("lang", Languages.Iso1(a.Lang)))).ToArray();
+        XElement[] SubEls() => first.Subtitles.Select(s => new XElement("subpicture", new XAttribute("lang", Languages.Iso1(s.Lang)))).ToArray();
 
         var menuEl = new XElement("menus", Video(), new XElement("audio", new XAttribute("lang", "en")), new XElement("subpicture", new XAttribute("lang", "en")));
-        // menu PGCs are numbered in order: 1 = root, then the scene pages
-        int MenuNumber(string pageId) => menus.FindIndex(m => m.Page.Id == pageId) + 1;
         foreach (var (page, mpg) in menus)
         {
             var pgc = new XElement("pgc");
             if (page.Id == "root") pgc.Add(new XAttribute("entry", "root"));
             pgc.Add(new XElement("vob", new XAttribute("file", mpg), new XAttribute("pause", "inf")));
-            foreach (var b in page.Buttons)
-            {
-                var cmd = b.Action.Kind switch
-                {
-                    "play" => $"jump title {Title};",
-                    "chapter" => $"jump title {Title} chapter {b.Action.Mark + 1};",
-                    _ => $"jump menu {MenuNumber(b.Action.Page!)};",
-                };
-                pgc.Add(new XElement("button", new XAttribute("name", b.Id), cmd));
-            }
+            foreach (var b in page.Buttons) pgc.Add(new XElement("button", new XAttribute("name", b.Id), Command(page, b)));
             menuEl.Add(pgc);
         }
 
-        var vob = new XElement("vob", new XAttribute("file", movie), new XAttribute("chapters", Chapters()));
-        var title = new XElement("pgc", vob);
-        if (menus.Count > 0) title.Add(new XElement("post", "call menu;"));
         var titleset = new XElement("titleset");
         if (menus.Count > 0) titleset.Add(menuEl);
-        titleset.Add(new XElement("titles", Video(), new XElement("audio", new XAttribute("lang", "en")), title));
+        var titles = new XElement("titles", Video());
+        titles.Add(AudioEls());
+        titles.Add(SubEls());
+        for (var i = 0; i < movies.Count; i++)
+        {
+            var pgc = new XElement("pgc", new XElement("vob", new XAttribute("file", movies[i].Mpg), new XAttribute("chapters", Chapters(movies[i]))));
+            if (menus.Count > 0)
+                pgc.Add(new XElement("post", (i < movies.Count - 1 ? $"if (g1 == 1) jump title {i + 2}; " : "") + "call menu;")); // after an episode of "play all": the next one
+            titles.Add(pgc);
+        }
+        titleset.Add(titles);
 
         var vmgm = new XElement("vmgm");
-        if (menus.Count > 0) vmgm.Add(new XElement("fpc", "jump titleset 1 menu;"));
+        if (menus.Count > 0) vmgm.Add(new XElement("fpc", "g1 = 0; g2 = 1; g3 = 0; jump titleset 1 menu;"));
         return new XDocument(new XElement("dvdauthor", new XAttribute("dest", dest), vmgm, titleset));
     }
 }

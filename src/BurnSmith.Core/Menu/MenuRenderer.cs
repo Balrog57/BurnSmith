@@ -70,6 +70,10 @@ public static class MenuRenderer
         });
     }
 
+    /// <summary>Transparent PNG: the dot beside the audio / subtitle that is currently chosen.</summary>
+    public static byte[] Marker(MenuDesign d, int size) =>
+        Encode(new PngBitmapEncoder(), size, size, dc => dc.DrawEllipse(new SolidColorBrush(Col(d.Accent)), null, new Point(size / 2.0, size / 2.0), size / 2.0, size / 2.0));
+
     static void DrawPage(DrawingContext dc, MenuDesign d, MenuPage page)
     {
         var full = new Rect(0, 0, MenuBuilder.W, MenuBuilder.H);

@@ -14,6 +14,7 @@ import java.util.Hashtable;
 import java.util.StringTokenizer;
 import java.util.Vector;
 
+import javax.media.Control;
 import javax.media.ControllerErrorEvent;
 import javax.media.ControllerEvent;
 import javax.media.ControllerListener;
@@ -21,10 +22,13 @@ import javax.media.EndOfMediaEvent;
 import javax.media.Manager;
 import javax.media.MediaLocator;
 import javax.media.Player;
+import javax.media.StartEvent;
 import javax.tv.xlet.Xlet;
 import javax.tv.xlet.XletContext;
 import javax.tv.xlet.XletStateChangeException;
 
+import org.bluray.media.PrimaryAudioControl;
+import org.bluray.media.SubtitlingControl;
 import org.bluray.net.BDLocator;
 import org.dvb.event.EventManager;
 import org.dvb.event.UserEvent;
@@ -42,8 +46,12 @@ import org.havi.ui.event.HRcEvent;
  *   size W H
  *   page ID BACKGROUND_IMAGE
  *   button PAGE ID X Y W H FOCUS_IMAGE LEFT RIGHT UP DOWN ACTION [ARG1 [ARG2]]
- * ACTION is "play PLAYLIST", "chapter PLAYLIST MARK" or "page PAGE". The first page is shown first
- * and the first button of a page has the initial focus.
+ *   marker IMAGE W H DX
+ * ACTION is "play PLAYLIST", "chapter PLAYLIST MARK", "page PAGE", "playall FIRST_PLAYLIST COUNT" (plays them one
+ * after the other), "audio N" (stream number, 1-based) or "sub N" (0 = no subtitles). The first page is shown
+ * first and the first button of a page has the initial focus. The marker image is drawn DX pixels from the left
+ * edge of the "audio"/"sub" button that matches the current choice. Audio and subtitle choices are applied to the
+ * player each time a playlist starts.
  */
 public class Menu implements Xlet, UserEventListener, ControllerListener {
 
@@ -67,6 +75,12 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             if (p == null) return;
             if (p.bg != null) g.drawImage(p.bg, 0, 0, this);
             if (b != null && b.focus != null) g.drawImage(b.focus, b.x, b.y, this);
+            if (marker == null) return;
+            for (int i = 0; i < p.buttons.size(); i++) {
+                Button m = (Button) p.buttons.elementAt(i);
+                boolean on = (m.action.equals("audio") && m.n1 == audio) || (m.action.equals("sub") && m.n1 == sub);
+                if (on) g.drawImage(marker, m.x + markerDx, m.y + (m.h - markerH) / 2, this);
+            }
         }
     }
 
@@ -79,6 +93,11 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private Button focus;
     private int width = 1920, height = 1080;
     private boolean listening;
+    private int audio = 1, sub = 0; // current choice: audio stream number, subtitle stream number (0 = off)
+    private Image marker;
+    private String markerName;
+    private int markerW, markerH, markerDx;
+    private int nextPlaylist, endPlaylist; // "play all": playlists still to come, [next, end)
 
     public void initXlet(XletContext c) throws XletStateChangeException {
         ctx = c;
@@ -121,6 +140,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         scene.add(view);
         MediaTracker tracker = new MediaTracker(view);
         int n = 0;
+        marker = load(markerName, tracker, n++);
         for (java.util.Enumeration e = pages.elements(); e.hasMoreElements();) {
             Page p = (Page) e.nextElement();
             p.bg = load(p.bgName, tracker, n++);
@@ -198,9 +218,55 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             Page p = (Page) pages.get(b.arg);
             if (p != null) show(p);
         } else if (b.action.equals("play")) {
+            nextPlaylist = endPlaylist = 0;
             play(b.n1, -1);
         } else if (b.action.equals("chapter")) {
+            nextPlaylist = endPlaylist = 0;
             play(b.n1, b.n2);
+        } else if (b.action.equals("playall")) {
+            nextPlaylist = b.n1 + 1;
+            endPlaylist = b.n1 + b.n2;
+            play(b.n1, -1);
+        } else if (b.action.equals("audio")) {
+            audio = b.n1;
+            log("audio choice " + audio);
+            view.repaint();
+        } else if (b.action.equals("sub")) {
+            sub = b.n1;
+            log("subtitle choice " + sub);
+            view.repaint();
+        }
+    }
+
+    /** Applies the audio / subtitle choice to a playlist that is running. Failures only cost the choice, never the playback. */
+    private void applyTracks(Player p) {
+        try {
+            Control c = p.getControl("org.bluray.media.PrimaryAudioControl");
+            if (c instanceof PrimaryAudioControl) {
+                ((PrimaryAudioControl) c).selectStreamNumber(audio);
+                log("audio stream " + audio + " selected");
+            } else {
+                log("no PrimaryAudioControl");
+            }
+        } catch (Throwable t) {
+            log("audio selection failed: " + t);
+        }
+        try {
+            Control c = p.getControl("org.bluray.media.SubtitlingControl");
+            if (c instanceof SubtitlingControl) {
+                SubtitlingControl s = (SubtitlingControl) c;
+                if (sub > 0) {
+                    s.selectStreamNumber(sub);
+                    s.setSubtitling(true);
+                } else {
+                    s.setSubtitling(false);
+                }
+                log("subtitle stream " + sub + " selected");
+            } else {
+                log("no SubtitlingControl");
+            }
+        } catch (Throwable t) {
+            log("subtitle selection failed: " + t);
         }
     }
 
@@ -224,10 +290,16 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
 
     /** End of the playlist (or a playback error): back to the menu. */
     public void controllerUpdate(ControllerEvent e) {
-        if (e instanceof EndOfMediaEvent || e instanceof ControllerErrorEvent) {
+        if (e instanceof StartEvent) {
+            applyTracks(player);
+        } else if (e instanceof EndOfMediaEvent || e instanceof ControllerErrorEvent) {
             log("playback ended: " + e.getClass().getName());
             closePlayer();
-            showMenu();
+            if (e instanceof EndOfMediaEvent && nextPlaylist > 0 && nextPlaylist < endPlaylist) {
+                play(nextPlaylist++, -1);
+            } else {
+                showMenu();
+            }
         }
     }
 
@@ -271,6 +343,11 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             if (cmd.equals("size")) {
                 width = Integer.parseInt(t.nextToken());
                 height = Integer.parseInt(t.nextToken());
+            } else if (cmd.equals("marker")) {
+                markerName = dash(t.nextToken());
+                markerW = Integer.parseInt(t.nextToken());
+                markerH = Integer.parseInt(t.nextToken());
+                markerDx = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("page")) {
                 Page p = new Page();
                 p.id = t.nextToken();

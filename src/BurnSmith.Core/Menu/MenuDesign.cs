@@ -9,6 +9,13 @@ public sealed class MenuDesign
     public string ScenesLabel { get; set; } = "Scenes";
     public string HomeLabel { get; set; } = "Home";
     public string ChapterLabel { get; set; } = "Chapter";
+    public string PlayAllLabel { get; set; } = "Play all";
+    public string EpisodesLabel { get; set; } = "Episodes";
+    public string SettingsLabel { get; set; } = "Settings";
+    public string AudioLabel { get; set; } = "Audio";
+    public string SubtitlesLabel { get; set; } = "Subtitles";
+    public string OffLabel { get; set; } = "Off";
+    public string BackLabel { get; set; } = "Back";
     public string Font { get; set; } = "Segoe UI";
     /// <summary>Background gradient (#RRGGBB). Ignored when <see cref="BackgroundImage"/> is set.</summary>
     public string Top { get; set; } = "#0B1B3B";

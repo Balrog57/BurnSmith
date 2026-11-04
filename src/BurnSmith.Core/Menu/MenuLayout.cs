@@ -11,7 +11,11 @@ public sealed record Fill(Box Rect, string Color, double Opacity, int Radius) : 
 public sealed record Label(string Value, Box Rect, int Size, bool Bold, string Align = "center") : Op;
 public sealed record Picture(string Path, Box Rect, int Radius, int BorderWidth) : Op;
 
-/// <summary>What a button does. Kinds: play (Playlist), chapter (Playlist + Mark), page (Page).</summary>
+/// <summary>
+/// What a button does. Kinds: play (Playlist), chapter (Playlist + Mark), page (Page),
+/// playall (Playlist = first, Mark = how many, played one after the other),
+/// audio (Mark = stream number, 1-based), sub (Mark = stream number, 0 = off).
+/// </summary>
 public sealed record MenuAction(string Kind, string? Page = null, int Playlist = 0, int Mark = 0);
 
 public sealed record MenuButton(string Id, Box Rect, MenuAction Action)
@@ -24,51 +28,86 @@ public sealed record MenuButton(string Id, Box Rect, MenuAction Action)
 
 public sealed record MenuPage(string Id, List<Op> Ops, List<MenuButton> Buttons);
 
-/// <summary>Movie facts the menu needs: playlist number, preview picture, one picture per chapter (null = none).</summary>
-public sealed record MenuContent(int Playlist, string? PreviewPicture, IReadOnlyList<string?> ChapterPictures);
+/// <summary>One video of a multi-video disc (an episode).</summary>
+public sealed record TitleEntry(string Name, int Playlist, string? Picture);
 
-/// <summary>Turns a design + movie facts into pages on a 1920x1080 canvas. Root page first, then the scene pages.</summary>
+/// <summary>
+/// Disc facts the menu needs: playlist number, preview picture, one picture per chapter (null = none).
+/// <see cref="Titles"/> with 2+ entries makes a series menu (episodes instead of chapters).
+/// <see cref="Audio"/> / <see cref="Subtitles"/> are the display names of the tracks on the disc; they give the settings page.
+/// </summary>
+public sealed record MenuContent(int Playlist, string? PreviewPicture, IReadOnlyList<string?> ChapterPictures,
+    IReadOnlyList<TitleEntry>? Titles = null, IReadOnlyList<string>? Audio = null, IReadOnlyList<string>? Subtitles = null)
+{
+    public bool Series => Titles is { Count: > 1 };
+    public IReadOnlyList<string> AudioNames => (Audio ?? []).Take(MenuBuilder.MaxAudio).ToList();
+    public IReadOnlyList<string> SubtitleNames => (Subtitles ?? []).Take(MenuBuilder.MaxSubtitles).ToList();
+    /// <summary>The settings page exists when the viewer has something to choose.</summary>
+    public bool HasSettings => AudioNames.Count > 1 || SubtitleNames.Count > 0;
+}
+
+/// <summary>Turns a design + disc facts into pages on a 1920x1080 canvas. Root page first, then the scene/episode pages, then settings.</summary>
 public static class MenuBuilder
 {
-    public const int W = 1920, H = 1080, FocusMargin = 10, ThumbsPerPage = 6;
+    public const int W = 1920, H = 1080, FocusMargin = 10, ThumbsPerPage = 6, MaxAudio = 6, MaxSubtitles = 5, MarkerSize = 36, MarkerGap = 24;
+
+    sealed record Cell(string Id, string Label, string? Picture, MenuAction Action);
+
+    static List<Cell> Cells(MenuDesign d, MenuContent c) => c.Series
+        ? c.Titles!.Select((t, i) => new Cell($"e{i + 1}", t.Name, t.Picture, new MenuAction("play", Playlist: t.Playlist))).ToList()
+        : c.ChapterPictures.Select((p, i) => new Cell($"c{i + 1}", $"{d.ChapterLabel} {i + 1}", p, new MenuAction("chapter", Playlist: c.Playlist, Mark: i))).ToList();
 
     public static List<MenuPage> Build(MenuDesign d, MenuContent c)
     {
-        var chapters = c.ChapterPictures.Count;
-        var pages = new List<MenuPage> { Root(d, c, chapters > 1) };
-        var scenePages = chapters > 1 ? (chapters + ThumbsPerPage - 1) / ThumbsPerPage : 0;
-        for (var i = 1; i <= scenePages; i++) pages.Add(Scenes(d, c, i, scenePages));
+        var cells = Cells(d, c);
+        var pages = new List<MenuPage> { Root(d, c, cells.Count > 1) };
+        var gridPages = cells.Count > 1 ? (cells.Count + ThumbsPerPage - 1) / ThumbsPerPage : 0;
+        for (var i = 1; i <= gridPages; i++) pages.Add(Grid(d, c, cells, i, gridPages));
+        if (c.HasSettings) pages.Add(Settings(d, c, null, null));
         return pages;
     }
 
     static List<Op> Button(MenuDesign d, Box r, string text, int size = 54) =>
         d.ButtonStyle == "Text" ? [new Label(text, r, size, true)] : [new Fill(r, "#FFFFFF", 0.14, 28), new Label(text, r, size, true)];
 
-    static MenuPage Root(MenuDesign d, MenuContent c, bool withScenes)
+    static MenuPage Root(MenuDesign d, MenuContent c, bool withGrid)
     {
         var ops = new List<Op> { new Label(d.Title, new Box(0, 70, W, 140), 100, true) };
         if (d.ShowPreview && c.PreviewPicture != null) ops.Add(new Picture(c.PreviewPicture, new Box(560, 250, 800, 450), 24, 4));
 
-        var buttons = new List<MenuButton>();
-        var play = new Box(withScenes ? 520 : 760, 820, 400, 110);
-        var scenes = new Box(1000, 820, 400, 110);
-        ops.AddRange(Button(d, play, d.PlayLabel));
-        buttons.Add(new MenuButton("play", play, new MenuAction("play", Playlist: c.Playlist))
-        { Left = withScenes ? "scenes" : null, Right = withScenes ? "scenes" : null });
-        if (withScenes)
+        var entries = new List<(string Id, string Text, MenuAction Action)>
         {
-            ops.AddRange(Button(d, scenes, d.ScenesLabel));
-            buttons.Add(new MenuButton("scenes", scenes, new MenuAction("page", "scenes1")) { Left = "play", Right = "play" });
+            c.Series
+                ? ("play", d.PlayAllLabel, new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count))
+                : ("play", d.PlayLabel, new MenuAction("play", Playlist: c.Playlist)),
+        };
+        if (withGrid) entries.Add(("scenes", c.Series ? d.EpisodesLabel : d.ScenesLabel, new MenuAction("page", "scenes1")));
+        if (c.HasSettings) entries.Add(("settings", d.SettingsLabel, new MenuAction("page", "settings")));
+
+        const int bw = 400, gap = 60;
+        var x0 = (W - (entries.Count * bw + (entries.Count - 1) * gap)) / 2;
+        var n = entries.Count;
+        var buttons = new List<MenuButton>();
+        for (var k = 0; k < n; k++)
+        {
+            var box = new Box(x0 + k * (bw + gap), 820, bw, 110);
+            ops.AddRange(Button(d, box, entries[k].Text));
+            buttons.Add(new MenuButton(entries[k].Id, box, entries[k].Action)
+            {
+                Left = n > 1 ? entries[(k + n - 1) % n].Id : null,
+                Right = n > 1 ? entries[(k + 1) % n].Id : null,
+            });
         }
         return new MenuPage("root", ops, buttons);
     }
 
-    static MenuPage Scenes(MenuDesign d, MenuContent c, int number, int total)
+    /// <summary>Chapter thumbnails of a movie, or the episodes of a series: 3x2 per page.</summary>
+    static MenuPage Grid(MenuDesign d, MenuContent c, List<Cell> cells, int number, int total)
     {
         const int cols = 3, tw = 480, th = 270, gapX = 70, rowPitch = 380;
         var first = (number - 1) * ThumbsPerPage;
-        var count = Math.Min(ThumbsPerPage, c.ChapterPictures.Count - first);
-        var ops = new List<Op> { new Label(d.ScenesLabel, new Box(0, 60, W, 120), 80, true) };
+        var count = Math.Min(ThumbsPerPage, cells.Count - first);
+        var ops = new List<Op> { new Label(c.Series ? d.EpisodesLabel : d.ScenesLabel, new Box(0, 60, W, 120), 80, true) };
         var buttons = new List<MenuButton>();
         var x0 = (W - (cols * tw + (cols - 1) * gapX)) / 2;
         var nav = new List<(string Id, Box Rect, MenuAction Action, string Text)>();
@@ -80,13 +119,13 @@ public static class MenuBuilder
         for (var i = 0; i < count; i++)
         {
             var r = new Box(x0 + i % cols * (tw + gapX), 190 + i / cols * rowPitch, tw, th);
-            var chapter = first + i + 1;
-            if (c.ChapterPictures[first + i] is { } pic) ops.Add(new Picture(pic, r, 12, 0));
+            var cell = cells[first + i];
+            if (cell.Picture is { } pic) ops.Add(new Picture(pic, r, 12, 0));
             else ops.Add(new Fill(r, "#000000", 0.4, 12));
-            ops.Add(new Label($"{d.ChapterLabel} {chapter}", new Box(r.X, r.Y + th + 6, tw, 44), 34, false));
+            ops.Add(new Label(cell.Label, new Box(r.X, r.Y + th + 6, tw, 44), 34, false));
             var row = i / cols;
-            string? Id(int n) => n >= 0 && n < count ? $"c{first + n + 1}" : null;
-            buttons.Add(new MenuButton($"c{chapter}", r, new MenuAction("chapter", Playlist: c.Playlist, Mark: chapter - 1))
+            string? Id(int n) => n >= 0 && n < count ? cells[first + n].Id : null;
+            buttons.Add(new MenuButton(cell.Id, r, cell.Action)
             {
                 Left = i % cols > 0 ? Id(i - 1) : null,
                 Right = i % cols < cols - 1 ? Id(i + 1) : null,
@@ -102,9 +141,69 @@ public static class MenuBuilder
             {
                 Left = k > 0 ? nav[k - 1].Id : null,
                 Right = k < nav.Count - 1 ? nav[k + 1].Id : null,
-                Up = $"c{first + count}", // back to the last thumbnail
+                Up = cells[first + count - 1].Id, // back to the last thumbnail
             });
         }
         return new MenuPage($"scenes{number}", ops, buttons);
+    }
+
+    /// <summary>
+    /// Audio and subtitle choice, one column each. With <paramref name="activeAudio"/> / <paramref name="activeSub"/> null no
+    /// marker is drawn (the BD-J menu draws it live); a DVD has no live drawing, so it uses one page per choice.
+    /// </summary>
+    public static MenuPage Settings(MenuDesign d, MenuContent c, int? activeAudio, int? activeSub, string id = "settings")
+    {
+        const int colW = 680, rowH = 84, pitch = 100, top = 300;
+        var audio = c.AudioNames.Count > 1 ? c.AudioNames : [];
+        var subs = c.SubtitleNames;
+        var ops = new List<Op> { new Label(d.SettingsLabel, new Box(0, 60, W, 120), 80, true) };
+        var buttons = new List<MenuButton>();
+        var both = audio.Count > 0 && subs.Count > 0;
+        int AudioX() => both ? 200 : (W - colW) / 2;
+        int SubX() => both ? W - 200 - colW : (W - colW) / 2;
+
+        List<string> Column(string header, int x, IReadOnlyList<string> names, int firstNumber, string idPrefix, string kind, int? active)
+        {
+            ops.Add(new Label(header, new Box(x, 200, colW, 70), 46, true, "left"));
+            var ids = new List<string>();
+            for (var i = 0; i < names.Count; i++)
+            {
+                var number = firstNumber + i;
+                var box = new Box(x, top + i * pitch, colW, rowH);
+                ops.AddRange(Button(d, box, names[i], 44));
+                if (active == number) ops.Add(new Fill(new Box(x - MarkerSize - MarkerGap, box.Y + (rowH - MarkerSize) / 2, MarkerSize, MarkerSize), d.Accent, 1, MarkerSize / 2));
+                var bid = idPrefix + number;
+                ids.Add(bid);
+                buttons.Add(new MenuButton(bid, box, new MenuAction(kind, Mark: number)));
+            }
+            return ids;
+        }
+
+        var left = audio.Count > 0 ? Column(d.AudioLabel, AudioX(), audio, 1, "a", "audio", activeAudio) : [];
+        var subNames = subs.Count > 0 ? new[] { d.OffLabel }.Concat(subs).ToList() : [];
+        var right = subs.Count > 0 ? Column(d.SubtitlesLabel, SubX(), subNames, 0, "s", "sub", activeSub) : [];
+
+        var back = new Box((W - 300) / 2, 950, 300, 90);
+        ops.AddRange(Button(d, back, d.BackLabel, 46));
+        var last = (left.Count > 0 ? left : right)[^1];
+        buttons.Add(new MenuButton("back", back, new MenuAction("page", "root")) { Up = last });
+
+        // neighbours: up/down inside a column, left/right to the same row of the other column, the last row leads to Back
+        for (var k = 0; k < buttons.Count - 1; k++)
+        {
+            var b = buttons[k];
+            var col = left.Contains(b.Id) ? left : right;
+            var other = col == left ? right : left;
+            var row = col.IndexOf(b.Id);
+            string? Other() => other.Count == 0 ? null : other[Math.Min(row, other.Count - 1)];
+            buttons[k] = b with
+            {
+                Up = row > 0 ? col[row - 1] : null,
+                Down = row < col.Count - 1 ? col[row + 1] : "back",
+                Left = col == right ? Other() : null,
+                Right = col == left ? Other() : null,
+            };
+        }
+        return new MenuPage(id, ops, buttons);
     }
 }

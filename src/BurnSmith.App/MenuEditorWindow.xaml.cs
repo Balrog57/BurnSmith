@@ -23,11 +23,11 @@ public partial class MenuEditorWindow : Window
 
     public MenuDesign Result => working;
 
-    public MenuEditorWindow(MenuDesign design, string? previewFrame, int chapters)
+    public MenuEditorWindow(MenuDesign design, string? previewFrame, MenuContent content)
     {
         InitializeComponent();
         working = design.Clone();
-        content = new MenuContent(BluRay.MoviePlaylist, previewFrame, Enumerable.Repeat<string?>(null, chapters).ToList());
+        this.content = content;
         BuiltInList.ItemsSource = MenuDesign.BuiltIn;
         CustomList.ItemsSource = Templates.List();
         Props.DataContext = working;
@@ -59,6 +59,8 @@ public partial class MenuEditorWindow : Window
             var (jpeg, count, shown) = await Task.Run(() => MenuRenderer.Sta(() =>
             {
                 var pages = MenuBuilder.Build(d, content);
+                var settings = pages.FindIndex(p => p.Id == "settings");
+                if (settings >= 0) pages[settings] = MenuBuilder.Settings(d, content, 1, 0); // the disc draws the marker live; the preview shows one
                 var i = Math.Min(wanted, pages.Count - 1);
                 return (MenuRenderer.Background(d, pages[i]), pages.Count, i);
             }));

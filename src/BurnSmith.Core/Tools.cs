@@ -46,6 +46,15 @@ public static class Tools
         Directory.Delete(dir, true);
     }
 
+    /// <summary>Removes a temporary folder of ours; a locked file must not fail a build that already succeeded.</summary>
+    public static void TryDelete(string dir)
+    {
+        if (Environment.GetEnvironmentVariable("BURNSMITH_KEEP_WORK") == "1") return; // debugging aid
+        try { Directory.Delete(dir, true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
     /// <summary>Runs a tool and returns its stdout; throws with the output tail when the exit code is not 0.</summary>
     public static string Run(string exe, IEnumerable<string> args, Action<string>? onLine = null, string? workDir = null,
                              IReadOnlyDictionary<string, string>? env = null)

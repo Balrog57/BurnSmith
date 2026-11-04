@@ -16,16 +16,17 @@ public partial class App : Application
     {
         base.OnStartup(e);
         var snap = Array.IndexOf(e.Args, "--snapshot");
-        var video = e.Args.FirstOrDefault(a => !a.StartsWith("--") && File.Exists(a));
+        var snapshot = snap >= 0 && snap + 1 < e.Args.Length;
+        var videos = e.Args.Where((a, i) => !a.StartsWith("--") && (snap < 0 || i != snap + 1) && File.Exists(a)).ToList(); // not the snapshot's own output
         var main = new MainWindow();
-        Window window = e.Args.Contains("editor") ? main.CreateEditor() : main;
+        static void OffScreen(Window w) { w.WindowStartupLocation = WindowStartupLocation.Manual; w.Left = -20000; w.ShowInTaskbar = false; }
+        if (snapshot) OffScreen(main); // never flashes on the desktop
+        main.Show();
+        foreach (var video in videos) await main.LoadSource(video);
+        if (!snapshot) return;
 
-        if (snap < 0 || snap + 1 >= e.Args.Length) { main.Show(); if (video != null) await main.LoadSource(video); return; }
-
-        window.WindowStartupLocation = WindowStartupLocation.Manual;
-        window.Left = -20000; window.ShowInTaskbar = false;
-        window.Show();
-        if (video != null) await main.LoadSource(video);
+        Window window = main;
+        if (e.Args.Contains("editor")) { window = main.CreateEditor(); OffScreen(window); window.Show(); }
         await Task.Delay(2500); // lets async previews finish
         var bmp = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
         bmp.Render(window);
