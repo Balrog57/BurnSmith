@@ -9,7 +9,7 @@ public partial class App : Application
 {
     /// <summary>
     /// burnsmith.exe [video]                      opens the window, optionally with a video already loaded
-    /// burnsmith.exe [video] --snapshot out.png [editor[=template name]] [scroll] | [advanced]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; or the advanced settings)
+    /// burnsmith.exe [video] --snapshot out.png [editor[=template name]] [scroll] | [advanced] [focus]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; or the advanced settings)
     ///                                            off screen to a PNG and exits; lets the UI be checked without touching the desktop
     /// </summary>
     protected override async void OnStartup(StartupEventArgs e)
@@ -37,6 +37,12 @@ public partial class App : Application
             if (e.Args.Contains("scroll")) win.ScrollPropsToEnd();
         }
         else if (e.Args.Contains("advanced")) { window = new AdvancedWindow("MY_DISC", 5); OffScreen(window); window.Show(); }
+        if (e.Args.Contains("focus")) // selection and keyboard focus states: the second template of the list, the first text box (the output folder on the main window)
+        {
+            (window.FindName("BuiltInList") as System.Windows.Controls.ListBox)?.SetCurrentValue(System.Windows.Controls.Primitives.Selector.SelectedIndexProperty, 1);
+            (window.FindName("OutBox") as System.Windows.Controls.TextBox)?.Focus();
+            if (window.FindName("CapacityBox") is System.Windows.Controls.ComboBox box) box.IsDropDownOpen = true; // builds the drop-down items with the theme's item style
+        }
         await Task.Delay(2500); // lets async previews finish
         var bmp = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
         bmp.Render(window);
