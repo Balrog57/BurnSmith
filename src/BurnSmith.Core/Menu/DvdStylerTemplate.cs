@@ -50,10 +50,11 @@ static partial class DvdStylerTemplate
         problem = null;
         if (doc.Child("dvdstyler") is not { } root) return null;
         var menus = Walk(root).Where(w => w.Node.Name == "menu").Select(w => w.Node).ToList();
-        if (menus.Count < 2) { problem = "pas de page de scènes (un seul menu dans le modèle)"; return null; }
+        if (menus.Count < 1) { problem = "pas de menu dans le modèle"; return null; }
         var main = menus[0];
-        var scenes = menus[1];
-        if (main.Child("svg") is not { } svg1 || scenes.Child("svg") is not { } svg2) { problem = "modèle sans dessin de menu"; return null; }
+        var scenes = menus.Count > 1 ? menus[1] : null; // Wall, travel: one menu only, BurnSmith makes the scene page
+        if (main.Child("svg") is not { } svg1) { problem = "modèle sans dessin de menu"; return null; }
+        var svg2 = scenes?.Child("svg") ?? svg1;
 
         double w = Num(svg1.Attr("width")), h = Num(svg1.Attr("height"));
         if (w <= 0 || h <= 0) { problem = "taille de menu illisible"; return null; }
@@ -117,21 +118,42 @@ static partial class DvdStylerTemplate
         var rootNode = El("rootmenu");
         rootNode.Kids.Add(Background(svg1));
         var uiColor = "#FFFFFF";
+        var uiFont = "Segoe UI";
         if (title.Def != null && TextStyle(title.Def) is { } ts)
         {
             uiColor = ts.Color;
+            uiFont = ts.Font;
             rootNode.Kids.Add(Styled("label", ts, title.X, title.Y, title.W, title.H, false));
             common.Kids.Add(Leaf("font", ts.Font));
         }
         string[] roles = ["play", "scenes", "setup"];
-        var buttons1 = placed1.Where(p => p.Id.StartsWith("button")).Take(roles.Length).ToList();
-        for (var i = 0; i < buttons1.Count; i++)
-            if (TextStyle(buttons1[i].Def) is { } bs)
+        if (scenes == null)
+        {
+            // one menu only (Wall: "Play all" + title buttons; travel: "Play All" + three pictures): the play-all button is kept, the
+            // "Scenes" button is BurnSmith's own, under it (above it when the page has no room), in the same style
+            var playAll = Walk(main).Select(x => x.Node).Where(x => x.Name == "button" && x.Child("action")?.Attr("playAll") == "true").Select(x => x.Attr("id")).ToHashSet();
+            var texts = placed1.Where(p => p.Id.StartsWith("button") && TextStyle(p.Def) != null).ToList();
+            var play = texts.FirstOrDefault(p => playAll.Contains(p.Id));
+            if (play.Def == null && texts.Count > 0) play = texts[0];
+            if (play.Def != null && TextStyle(play.Def) is { } ps)
             {
-                rootNode.Kids.Add(Styled(roles[i], bs, buttons1[i].X, buttons1[i].Y, buttons1[i].W, buttons1[i].H, true));
-                if (i == 0 && title.Def == null) uiColor = bs.Color;
+                var below = play.Y + play.H + 12;
+                rootNode.Kids.Add(Styled("play", ps, play.X, play.Y, play.W, play.H, true));
+                rootNode.Kids.Add(Styled("scenes", ps, play.X, below + play.H <= h ? below : play.Y - play.H - 12, play.W, play.H, true));
+                if (title.Def == null) { uiColor = ps.Color; uiFont = ps.Font; }
             }
-        if (buttons1.Count < 2 || rootNode.Child("play") == null || rootNode.Child("scenes") == null) { problem = "boutons du menu principal illisibles"; return null; }
+        }
+        else
+        {
+            var buttons1 = placed1.Where(p => p.Id.StartsWith("button")).Take(roles.Length).ToList();
+            for (var i = 0; i < buttons1.Count; i++)
+                if (TextStyle(buttons1[i].Def) is { } bs)
+                {
+                    rootNode.Kids.Add(Styled(roles[i], bs, buttons1[i].X, buttons1[i].Y, buttons1[i].W, buttons1[i].H, true));
+                    if (i == 0 && title.Def == null) { uiColor = bs.Color; uiFont = bs.Font; }
+                }
+        }
+        if (rootNode.Child("play") == null || rootNode.Child("scenes") == null) { problem = "boutons du menu principal illisibles"; return null; }
 
         // the focus colour DVDStyler gives the buttons when selected
         var accent = Walk(main).Select(x => x.Node).Where(x => x.Name == "parameter").Select(x => x.Attr("selected")).FirstOrDefault(c => c.StartsWith('#') && c.Length == 7);
@@ -142,8 +164,8 @@ static partial class DvdStylerTemplate
         var scene = El("scene");
         scene.Kids.Add(Background(svg2));
         var videos = El("videoes");
-        var filenames = Walk(scenes).Where(x => x.Node.Name == "button").ToDictionary(x => x.Node.Attr("id"), x => x.Node.Child("filename")?.Text ?? "");
-        foreach (var p in Placed(scenes, svg2).Where(p => p.Id.StartsWith("button")))
+        var filenames = scenes == null ? new Dictionary<string, string>() : Walk(scenes).Where(x => x.Node.Name == "button").ToDictionary(x => x.Node.Attr("id"), x => x.Node.Child("filename")?.Text ?? "");
+        foreach (var p in scenes == null ? new() : Placed(scenes, svg2).Where(p => p.Id.StartsWith("button")).ToList())
         {
             var file = filenames.GetValueOrDefault(p.Id, "").ToLowerInvariant();
             var image = Walk(p.Def).Select(x => x.Node).FirstOrDefault(x => x.Name == "image");
@@ -162,7 +184,21 @@ static partial class DvdStylerTemplate
                 scene.Kids.Add(El(left ? "left" : "right", ("rect", Rect(p.X, p.Y, p.W, p.H)), ("glyph", left ? "<" : ">")));
             }
         }
-        if (videos.Kids.Count == 0) { problem = "pas de miniatures dans la page de scènes"; return null; }
+        if (videos.Kids.Count == 0)
+        {
+            // no thumbnails to copy (one-menu templates, text-only lists): BurnSmith's own 3 x 2 grid on the template's background, in its colour and font
+            scene.Kids.RemoveAll(k => k.Name is "left" or "home" or "right");
+            const int tw = 440, th = 248, pitchX = 560, pitchY = 380, x0 = 180, y0 = 220;
+            for (var i = 0; i < 6; i++)
+            {
+                int x = x0 + i % 3 * pitchX, y = y0 + i / 3 * pitchY;
+                var video = El("video", ("rect", $"{x},{y},{tw},{th}"));
+                video.Kids.Add(El("name", ("rect", $"{x},{y + th + 8},{tw},44"), ("font", uiFont), ("font_size", "30"), ("color", uiColor), ("bold", "0"), ("italic", "0"), ("align", "center"), ("fit", "1")));
+                videos.Kids.Add(video);
+            }
+            foreach (var (role, glyph, x) in new[] { ("left", "<", 700), ("home", "⌂", 905), ("right", ">", 1110) })
+                scene.Kids.Add(El(role, ("rect", $"{x},950,110,80"), ("glyph", glyph)));
+        }
         scene.Kids.Add(videos);
 
         var tscenes = El("tscenes");

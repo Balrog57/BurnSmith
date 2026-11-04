@@ -27,6 +27,16 @@ if (a.Count >= 3 && a[0] == "preview")
     return 0;
 }
 
+// burnsmith templates : every template found, and the ones that cannot be drawn with the reason
+if (a.Count >= 1 && a[0] == "templates")
+{
+    var (usable, skipped) = TemplateCatalog.Scan();
+    foreach (var f in usable) Console.WriteLine($"OK    {f.Design.Category} | {f.Design.Name}");
+    foreach (var s in skipped) Console.WriteLine($"SKIP  {s.Name} | {s.Why} | {s.Dir}");
+    Console.WriteLine($"{usable.Count} usable, {skipped.Count} skipped");
+    return 0;
+}
+
 // burnsmith drives | iso <disc folder> <out.iso> [--label X] [--dvd] | burn <image.iso> <F:>   (Windows' own IMAPI2, nothing to install)
 if (a.Count >= 1 && a[0] == "drives")
 {

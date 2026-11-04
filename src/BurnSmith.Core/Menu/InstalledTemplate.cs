@@ -125,13 +125,13 @@ public sealed class InstalledTemplate
                 var text = File.ReadAllText(file);
                 text = System.Text.RegularExpressions.Regex.Replace(text, "(\\w+=\"\\d+)(\\s+)(\\w+=\")", "$1\"$2$3"); // Leawo's files miss a closing quote: Top="136 Width="209"
                 var doc = LooseXml.Parse(text);
-                if (doc.Child("template") is { } t) parsed = new InstalledTemplate(dir, t, "DVDFab Blu-ray");
+                if (doc.Child("template") is { } t) parsed = new InstalledTemplate(dir, AllInOne(t), "DVDFab Blu-ray");
                 else if (doc.Child("Template") is { } s) parsed = new InstalledTemplate(dir, Simple(s, dir), "DVDFab DVD");
                 else if (doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect").StartsWith("16-9")) is { } def)
                     parsed = new InstalledTemplate(dir, Leawo(def, doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect") == "4-3")), "Leawo");
             }
             else if (Directory.Exists(Path.Combine(dir, "Menu")) && Directory.Exists(Path.Combine(dir, "Scene")))
-                parsed = new InstalledTemplate(dir, new XNode("template", []), "Leawo", "images seules : aucune mise en page dans l'installation Leawo (ni fichier, ni dans le programme) ; leur fond reste utilisable dans la bibliothèque");
+                parsed = new InstalledTemplate(dir, LeawoSkin.Build(dir), "Leawo"); // pictures only: BurnSmith lays them out
             return Cache[dir] = parsed;
         }
     }
@@ -143,6 +143,32 @@ public sealed class InstalledTemplate
         using var f = File.OpenRead(path);
         return f.Read(head) < 24 || head[0] != 0x89 ? null
             : (System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(head[16..]), System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(head[20..]));
+    }
+
+    /// <summary>
+    /// DVDFab's "all in one" templates (Streaming) have no main menu: their first scene page is the menu. It becomes the root page
+    /// (background, poster frame, volume name, Play and Scenes buttons in the template's font); the scene page keeps its thumbnails, gets the volume
+    /// name as heading and a Home button at the top right (BurnSmith's own).
+    /// </summary>
+    static XNode AllInOne(XNode t)
+    {
+        if (t.Child("rootmenu") != null || t.Child("scenes")?.Child("tscenes")?.Child("scene") is not { } page) return t;
+        var common = t.Child("common");
+        string C(string key, string fallback) => common?.Child(key)?.Text is { Length: > 0 } v ? v : fallback;
+        XNode El(string name, params (string Key, string Value)[] attrs) => new(name, attrs.ToDictionary(a => a.Key, a => a.Value));
+        var volume = page.Child("texts")?.Children("text").FirstOrDefault(x => x.Attr("as") == "volume_name");
+        XNode Heading() => volume != null ? new XNode("label", new Dictionary<string, string>(volume.Attrs)) : El("label", ("rect", "536,115,1330,60"));
+        // the Play picture is drawn at its own size (266x63) in its rectangle: both buttons share that box, so Down from Play reaches Scenes
+        XNode Button(string name, int y) => El(name, ("rect", $"600,{y},266,63"), ("font", C("font", "Arial")), ("font_size", C("font_size", "44")), ("color", C("font_color", "#ffffff")),
+            ("bold", C("font_bold", "0")), ("italic", C("font_italic", "0")), ("align", "left"), ("textbutton", "1"));
+
+        var root = El("rootmenu");
+        root.Kids.Add(page.Child("bg") ?? El("bg"));
+        if (page.Child("specialvideo")?.Child("video") is { } poster) root.Kids.Add(poster);
+        root.Kids.AddRange([Heading(), Button("play", 330), Button("scenes", 430)]);
+        t.Kids.Add(root);
+        page.Kids.AddRange([Heading(), El("home", ("rect", "1740,120,110,70"), ("glyph", "⌂"))]);
+        return t;
     }
 
     /// <summary>
@@ -387,7 +413,29 @@ public sealed class InstalledTemplate
     {
         var frame = Asset(video.Attr("frame_image", common.Child("frame")?.Text ?? ""));
         var mask = frame == null ? null : Asset(System.IO.Path.GetRelativePath(dir, frame).Replace(".normal.", ".mask."));
-        return new Framed(video.Rect(), picture, frame, mask == frame ? null : mask);
+        return new Framed(video.Rect(), picture, frame, mask == frame || IsBlank(mask) ? null : mask);
+    }
+
+    static readonly Dictionary<string, bool> Blanks = [];
+
+    /// <summary>A mask without any opaque pixel (DVDFab Streaming's thumbnail mask) would hide the whole picture: it is ignored.</summary>
+    static bool IsBlank(string? png)
+    {
+        if (png == null) return false;
+        lock (Blanks)
+        {
+            if (Blanks.TryGetValue(png, out var known)) return known;
+            try
+            {
+                var bitmap = new System.Windows.Media.Imaging.FormatConvertedBitmap(System.Windows.Media.Imaging.BitmapDecoder.Create(new Uri(png),
+                    System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0],
+                    System.Windows.Media.PixelFormats.Bgra32, null, 0);
+                var px = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4];
+                bitmap.CopyPixels(px, bitmap.PixelWidth * 4, 0);
+                return Blanks[png] = !Enumerable.Range(0, px.Length / 4).Any(i => px[i * 4 + 3] > 16);
+            }
+            catch (Exception e) when (e is NotSupportedException or System.IO.FileFormatException or IOException) { return Blanks[png] = false; }
+        }
     }
 
     // ---- pages --------------------------------------------------------------
@@ -398,7 +446,7 @@ public sealed class InstalledTemplate
         var pages = new List<MenuPage> { Root(d, c, cells.Count > 1) };
         var perPage = template.Child("scenes")!.Child("tscenes")!.Child("scene")!.Child("videoes")!.Children("video").Count();
         var total = cells.Count > 1 ? (cells.Count + perPage - 1) / perPage : 0;
-        for (var i = 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, c.Series ? d.EpisodesLabel : d.ScenesLabel));
+        for (var i = 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, c.Series ? d.EpisodesLabel : d.ScenesLabel, c.PreviewPicture));
         if (c.HasSettings) pages.Add(MenuBuilder.Settings(d, c, null, null, "settings")); // BurnSmith's own rows when the template has none
         return pages;
     }
@@ -451,12 +499,13 @@ public sealed class InstalledTemplate
         return new MenuPage("root", ops, Link(buttons));
     }
 
-    MenuPage Scenes(MenuDesign d, List<MenuBuilder.Cell> cells, int number, int total, int perPage, string title)
+    MenuPage Scenes(MenuDesign d, List<MenuBuilder.Cell> cells, int number, int total, int perPage, string title, string? preview)
     {
         var s = template.Child("scenes")!.Child("tscenes")!.Child("scene")!;
         var ops = new List<Op>();
         Background(ops, s);
         Pictures(ops, s);
+        if (s.Child("specialvideo")?.Child("video") is { } poster && d.ShowPreview) ops.Add(Frame(poster, preview)); // DVDFab Streaming: the poster stays beside the thumbnails
         if (s.Child("label") is { } heading) ops.Add(Txt(heading, title));
         var buttons = new List<MenuButton>();
         var slots = s.Child("videoes")!.Children("video").ToList();
