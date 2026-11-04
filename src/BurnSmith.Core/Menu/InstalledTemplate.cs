@@ -175,7 +175,8 @@ public sealed class InstalledTemplate
         XNode Button(string name, int y) => El(name, ("rect", $"600,{y},266,63"), ("font", C("font", "Arial")), ("font_size", C("font_size", "44")), ("color", C("font_color", "#ffffff")),
             ("bold", C("font_bold", "0")), ("italic", C("font_italic", "0")), ("align", "left"), ("textbutton", "1"));
 
-        var root = El("rootmenu");
+        // allinone: with more than one scene the first scene page itself is the menu (see Pages); this root only serves a disc without scenes
+        var root = El("rootmenu", ("allinone", "1"));
         root.Kids.Add(page.Child("bg") ?? El("bg"));
         if (page.Child("specialvideo")?.Child("video") is { } poster) root.Kids.Add(poster);
         root.Kids.AddRange([Heading(), Button("play", 330), Button("scenes", 430)]);
@@ -199,7 +200,10 @@ public sealed class InstalledTemplate
         string Scaled(string size) => ((int)(double.Parse(size, System.Globalization.CultureInfo.InvariantCulture) * sy)).ToString();
         XNode El(string name, params (string Key, string Value)[] attrs) => new(name, attrs.ToDictionary(a => a.Key, a => a.Value));
         XNode Leaf(string name, string text) { var n = El(name); n.Content.Append(text); return n; }
-        XNode Bg() { var bg = El("bg"); bg.Kids.Add(Leaf("image", background)); return bg; }
+        // DVDFab ships a 16:9 twin of the 4:3 background (bdbackground\bg0.png): the same layout (set on the 4:3 size) on artwork that is not stretched
+        var wide = "bdbackground/" + System.IO.Path.GetFileName(background);
+        if (!File.Exists(System.IO.Path.Combine(dir, wide)) || PngSize(System.IO.Path.Combine(dir, wide)) is not (1920, 1080)) wide = background;
+        XNode Bg() { var bg = El("bg"); bg.Kids.Add(Leaf("image", wide)); return bg; }
         XNode Pics(XNode? n)
         {
             var pics = El("pics");
@@ -361,10 +365,10 @@ public sealed class InstalledTemplate
     public bool HasSetupLists => (template.Child("setup")?.Child("audiolist")?.Children("title").Any() ?? false) || (template.Child("setup")?.Child("subtitlelist")?.Children("title").Any() ?? false);
 
     /// <summary>Artwork of the audio / subtitle page for BurnSmith's own rows: the template's background under a dark veil.</summary>
-    public List<Op> SetupBackdrop()
+    public List<Op> SetupBackdrop(string? film = null)
     {
         var ops = new List<Op>();
-        Background(ops, template.Child("setup") ?? template.Child("rootmenu")!);
+        Background(ops, template.Child("setup") ?? template.Child("rootmenu")!, IsAllInOne ? film : null);
         ops.Add(new Fill(new Box(0, 0, MenuBuilder.W, MenuBuilder.H), "#000000", 0.45, 0));
         return ops;
     }
@@ -387,9 +391,14 @@ public sealed class InstalledTemplate
 
     // ---- shared page parts --------------------------------------------------
 
-    void Background(List<Op> ops, XNode page)
+    /// <param name="film">
+    /// A picture of the disc's own film, for the templates whose background is a frame of some film (DVDFab Streaming ships one as a sample and plays
+    /// the real film there): it replaces the template's picture, the template's veil stays over it.
+    /// </param>
+    void Background(List<Op> ops, XNode page, string? film = null)
     {
-        if (Asset(page.Child("bg")?.Child("image")?.Text) is { } bg)
+        if (film != null && File.Exists(film)) ops.Add(new Image(film, new Box(0, 0, MenuBuilder.W, MenuBuilder.H), Backdrop: true, Cover: true));
+        else if (Asset(page.Child("bg")?.Child("image")?.Text) is { } bg)
         {
             var node = page.Child("bg")!;
             var box = node.Attrs.ContainsKey("rect") ? node.Rect() : new Box(0, 0, MenuBuilder.W, MenuBuilder.H);
@@ -465,20 +474,70 @@ public sealed class InstalledTemplate
     public List<MenuPage> Pages(MenuDesign d, MenuContent c)
     {
         var cells = MenuBuilder.Cells(d, c);
-        var pages = new List<MenuPage> { Root(d, c, cells.Count > 1) };
         var perPage = template.Child("scenes")!.Child("tscenes")!.Child("scene")!.Child("videoes")!.Children("video").Count();
         var total = cells.Count > 1 ? (cells.Count + perPage - 1) / perPage : 0;
-        for (var i = 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, c.Series ? d.EpisodesLabel : d.ScenesLabel, c.PreviewPicture));
+        // DVDFab's Streaming has no menu of its own: its first page of thumbnails, with the poster and the title, is the menu
+        var pages = new List<MenuPage> { IsAllInOne && total > 0 ? Scenes(d, cells, 1, total, perPage, d.Title, c.PreviewPicture, c) : Root(d, c, cells.Count > 1) };
+        for (var i = IsAllInOne && total > 0 ? 2 : 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, c.Series ? d.EpisodesLabel : d.ScenesLabel, c.PreviewPicture));
         if (c.HasSettings) pages.Add(MenuBuilder.Settings(d, c, null, null, "settings")); // BurnSmith's own rows when the template has none
-        if (d.CreditLines().Count > 0) pages.Add(MenuBuilder.Credits(d, SetupBackdrop())); // the template has no such page: its background under a veil
+        if (d.CreditLines().Count > 0) pages.Add(MenuBuilder.Credits(d, SetupBackdrop(c.PreviewPicture))); // the template has no such page: its background under a veil
         return pages;
+    }
+
+    bool IsAllInOne => template.Child("rootmenu")?.Attr("allinone") == "1";
+
+    /// <summary>The page id of scene page <paramref name="number"/>: the first one is the root when the template has no menu of its own.</summary>
+    string ScenesId(int number) => number == 1 && IsAllInOne ? "root" : $"scenes{number}";
+
+    /// <summary>Capsules for the buttons the template has no picture for, in one row from <paramref name="x0"/>: the caller says where the row goes.</summary>
+    static void Capsules(List<Op> ops, List<MenuButton> buttons, MenuDesign d, List<(string Id, string Label, MenuAction Action)> pills, int x0, int y, int w, int h, int gap, int size)
+    {
+        for (var k = 0; k < pills.Count; k++)
+        {
+            var box = new Box(x0 + k * (w + gap), y, w, h);
+            ops.Add(MenuBuilder.IsLight(d.TextColor) ? new Fill(box, "#000000", 0.35, h / 2) : new Fill(box, "#FFFFFF", 0.45, h / 2)); // dark text gets a light capsule
+            ops.Add(new Label(pills[k].Label, box, size, true));
+            buttons.Add(new MenuButton(pills[k].Id, box, pills[k].Action));
+        }
+    }
+
+    static readonly Dictionary<string, int> Floors = [];
+
+    /// <summary>
+    /// Row of the picture where its solid part ends (a banner has a glow below its body): 1 = the bottom of <paramref name="rect"/>.
+    /// Capsules go under that, not over the artwork.
+    /// </summary>
+    static int SolidBottom(string? png, Box rect)
+    {
+        if (png == null) return rect.Y + rect.H;
+        lock (Floors)
+        {
+            if (!Floors.TryGetValue(png, out var permille))
+            {
+                try
+                {
+                    var bitmap = new System.Windows.Media.Imaging.FormatConvertedBitmap(System.Windows.Media.Imaging.BitmapDecoder.Create(new Uri(png),
+                        System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0],
+                        System.Windows.Media.PixelFormats.Bgra32, null, 0);
+                    int w = bitmap.PixelWidth, h = bitmap.PixelHeight;
+                    var px = new byte[w * h * 4];
+                    bitmap.CopyPixels(px, w * 4, 0);
+                    var row = h - 1;
+                    while (row > 0 && !Enumerable.Range(0, w).Any(x => px[(row * w + x) * 4 + 3] >= 200)) row--;
+                    permille = (row + 1) * 1000 / h;
+                }
+                catch (Exception e) when (e is NotSupportedException or System.IO.FileFormatException or IOException) { permille = 1000; }
+                Floors[png] = permille;
+            }
+            return rect.Y + rect.H * permille / 1000;
+        }
     }
 
     MenuPage Root(MenuDesign d, MenuContent c, bool withScenes)
     {
         var n = template.Child("rootmenu")!;
         var ops = new List<Op>();
-        Background(ops, n);
+        Background(ops, n, IsAllInOne ? c.PreviewPicture : null);
         Pictures(ops, n);
         if (n.Child("video") is { } video && d.ShowPreview) { Under(ops, video); ops.Add(Frame(video, c.PreviewPicture)); }
         if (n.Child("label") is { } label) ops.Add(Txt(label, d.Title, label.Attr("align", "left")));
@@ -507,40 +566,59 @@ public sealed class InstalledTemplate
             c.Series ? d.PlayAllLabel : d.PlayLabel);
         if (withScenes) Add("scenes", n.Child("scenes"), Button("scenebuttontimage"), new MenuAction("page", "scenes1"), c.Series ? d.EpisodesLabel : d.ScenesLabel);
         // "none_setup" templates have no picture for Settings, and none has one for Credits: plain capsules in a row under the other buttons, BurnSmith's own addition
-        var pills = new List<(string Id, string Label)>();
+        var pills = new List<(string Id, string Label, MenuAction Action)>();
         if (c.HasSettings)
         {
             if (Button("setupbuttontimage") != null || n.Child("setup")?.Attr("textbutton") == "1") Add("settings", n.Child("setup"), Button("setupbuttontimage"), new MenuAction("page", "settings"), d.SettingsLabel);
-            else pills.Add(("settings", d.SettingsLabel));
+            else pills.Add(("settings", d.SettingsLabel, new MenuAction("page", "settings")));
         }
-        if (d.CreditLines().Count > 0) pills.Add(("credits", d.CreditsLabel));
+        if (d.CreditLines().Count > 0) pills.Add(("credits", d.CreditsLabel, new MenuAction("page", "credits")));
         if (pills.Count > 0)
         {
             const int pillW = 320, pillGap = 20;
             var low = buttons.Count == 0 ? MenuBuilder.H / 2 : buttons.Max(b => b.Rect.Y + b.Rect.H);
+            foreach (var pic in n.Child("pics")?.Children("pic") ?? []) low = Math.Max(low, SolidBottom(Asset(pic.Attr("image")), pic.Rect())); // under a banner, not over it
             var middle = buttons.Count == 0 ? MenuBuilder.W / 2 : (int)buttons.Average(b => b.Rect.X + b.Rect.W / 2.0);
             var row = pills.Count * pillW + (pills.Count - 1) * pillGap;
             var x0 = Math.Clamp(middle - row / 2, 20, MenuBuilder.W - row - 20);
-            for (var k = 0; k < pills.Count; k++)
-            {
-                var box = new Box(x0 + k * (pillW + pillGap), Math.Min(low + 8, MenuBuilder.H - 70), pillW, 58);
-                ops.Add(MenuBuilder.IsLight(d.TextColor) ? new Fill(box, "#000000", 0.35, 28) : new Fill(box, "#FFFFFF", 0.45, 28)); // dark text gets a light capsule
-                ops.Add(new Label(pills[k].Label, box, 36, true));
-                buttons.Add(new MenuButton(pills[k].Id, box, new MenuAction("page", pills[k].Id)));
-            }
+            Capsules(ops, buttons, d, pills, x0, Math.Min(low + 8, MenuBuilder.H - 70), pillW, 58, pillGap, 36);
         }
         return new MenuPage("root", ops, Link(buttons));
     }
 
-    MenuPage Scenes(MenuDesign d, List<MenuBuilder.Cell> cells, int number, int total, int perPage, string title, string? preview)
+    /// <param name="root">Not null when this page is the menu itself (DVDFab Streaming): it gets the disc's own lines and the Play / Settings / Credits capsules.</param>
+    MenuPage Scenes(MenuDesign d, List<MenuBuilder.Cell> cells, int number, int total, int perPage, string title, string? preview, MenuContent? root = null)
     {
         var s = template.Child("scenes")!.Child("tscenes")!.Child("scene")!;
         var ops = new List<Op>();
-        Background(ops, s);
+        Background(ops, s, IsAllInOne ? preview : null);
         Pictures(ops, s);
         if (s.Child("specialvideo")?.Child("video") is { } poster && d.ShowPreview) ops.Add(Frame(poster, preview)); // DVDFab Streaming: the poster stays beside the thumbnails
-        if (s.Child("label") is { } heading) ops.Add(Txt(heading, title));
         var buttons = new List<MenuButton>();
+        if (s.Child("label") is { } heading)
+        {
+            var text = Txt(heading, title);
+            ops.Add(root == null ? text : text with { Rect = text.Rect with { W = 700 } }); // the capsules take the right of the title line
+        }
+        if (root != null)
+        {
+            // what the template shows under its title (genre, year...) comes from an online search in DVDFab; here it is what the disc holds
+            if (s.Child("texts")?.Children("text").FirstOrDefault(x => x.Attr("as") == "volume_category") is { } category)
+            {
+                var info = new List<string> { $"{cells.Count} {(root.Series ? d.EpisodesLabel : d.ScenesLabel)}" };
+                if (root.AudioNames.Count > 1) info.Add($"{root.AudioNames.Count} {d.AudioLabel}");
+                if (root.SubtitleNames.Count > 0) info.Add($"{root.SubtitleNames.Count} {d.SubtitlesLabel}");
+                ops.Add(Txt(category, string.Join("  |  ", info)));
+            }
+            var capsules = new List<(string Id, string Label, MenuAction Action)>
+            {
+                ("play", root.Series ? d.PlayAllLabel : d.PlayLabel, root.Series ? new MenuAction("playall", Playlist: root.Titles![0].Playlist, Mark: root.Titles.Count) : new MenuAction("play", Playlist: root.Playlist))
+            };
+            if (root.HasSettings) capsules.Add(("settings", d.SettingsLabel, new MenuAction("page", "settings")));
+            if (d.CreditLines().Count > 0) capsules.Add(("credits", d.CreditsLabel, new MenuAction("page", "credits")));
+            const int w = 190, gap = 12;
+            Capsules(ops, buttons, d, capsules, MenuBuilder.W - 60 - capsules.Count * w - (capsules.Count - 1) * gap, 118, w, 56, gap, 28);
+        }
         var slots = s.Child("videoes")!.Children("video").ToList();
         for (var i = 0; i < slots.Count && (number - 1) * perPage + i < cells.Count; i++)
         {
@@ -566,15 +644,15 @@ public sealed class InstalledTemplate
             ops.Add(new Image(file, box));
             buttons.Add(new MenuButton(id, box, action) { FocusImage = Selected(file) });
         }
-        if (number > 1) Nav("prev", "left", "leftbuttontimage", "<", new MenuAction("page", $"scenes{number - 1}"));
-        Nav("home", "home", "homebuttontimage", "⌂", new MenuAction("page", "root"));
-        if (number < total) Nav("next", "right", "rightbuttontimage", ">", new MenuAction("page", $"scenes{number + 1}"));
+        if (number > 1) Nav("prev", "left", "leftbuttontimage", "<", new MenuAction("page", ScenesId(number - 1)));
+        if (root == null) Nav("home", "home", "homebuttontimage", "⌂", new MenuAction("page", "root"));
+        if (number < total) Nav("next", "right", "rightbuttontimage", ">", new MenuAction("page", ScenesId(number + 1)));
         // whatever the template drew, a scene page must lead back to the menu and on to its neighbours: BurnSmith adds the missing buttons at the bottom
         bool Has(string id) => buttons.Any(b => b.Id == id);
-        if (!Has("home")) Glyph("home", new Box(MenuBuilder.W / 2 - 55, MenuBuilder.H - 110, 110, 70), "⌂", new MenuAction("page", "root"));
-        if (number > 1 && !Has("prev")) Glyph("prev", new Box(MenuBuilder.W / 2 - 195, MenuBuilder.H - 110, 110, 70), "<", new MenuAction("page", $"scenes{number - 1}"));
-        if (number < total && !Has("next")) Glyph("next", new Box(MenuBuilder.W / 2 + 85, MenuBuilder.H - 110, 110, 70), ">", new MenuAction("page", $"scenes{number + 1}"));
-        return new MenuPage($"scenes{number}", ops, Link(buttons));
+        if (root == null && !Has("home")) Glyph("home", new Box(MenuBuilder.W / 2 - 55, MenuBuilder.H - 110, 110, 70), "⌂", new MenuAction("page", "root"));
+        if (number > 1 && !Has("prev")) Glyph("prev", new Box(MenuBuilder.W / 2 - 195, MenuBuilder.H - 110, 110, 70), "<", new MenuAction("page", ScenesId(number - 1)));
+        if (number < total && !Has("next")) Glyph("next", new Box(MenuBuilder.W / 2 + 85, MenuBuilder.H - 110, 110, 70), ">", new MenuAction("page", ScenesId(number + 1)));
+        return new MenuPage(ScenesId(number), ops, Link(buttons));
     }
 
     /// <summary>Row width of the audio list: the BD-J menu draws its "active" dot a fixed distance from each row's left edge.</summary>

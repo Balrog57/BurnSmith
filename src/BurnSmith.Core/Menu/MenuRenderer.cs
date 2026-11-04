@@ -125,7 +125,9 @@ public static class MenuRenderer
             switch (op)
             {
                 case Image im:
-                    if (!(overlay && im.Backdrop)) dc.DrawImage(Load(im.Path), R(im.Rect));
+                    if (overlay && im.Backdrop) break;
+                    if (im.Cover) dc.DrawRectangle(new ImageBrush(Load(im.Path)) { Stretch = Stretch.UniformToFill }, null, R(im.Rect));
+                    else dc.DrawImage(Load(im.Path), R(im.Rect));
                     break;
                 case Text t:
                     DrawText(dc, t);
@@ -162,10 +164,17 @@ public static class MenuRenderer
     static void DrawText(DrawingContext dc, Text t)
     {
         // a template's own .ttf is read from its folder (never installed); the system font of the same name is the fallback
-        var family = t.FontDir == null ? new FontFamily(t.Font)
-            : new FontFamily(new Uri(Path.GetFullPath(t.FontDir).TrimEnd('\\') + "\\"), $"./#{t.Font}, {t.Font}, Segoe UI");
+        // when neither the template nor Windows has the font (Brush Script MT, Showcard Gothic... are Office fonts), one of the same kind from Windows stands in
+        var stand = t.Font.ToLowerInvariant() switch
+        {
+            var f when f.Contains("script") || f.Contains("brush") || f.Contains("corsiva") || f.Contains("calligraph") || f.Contains("handwrit") => "Segoe Script",
+            var f when f.Contains("showcard") || f.Contains("impact") || f.Contains("cooper") => "Segoe UI Black",
+            _ => "Segoe UI",
+        };
+        var family = t.FontDir == null ? new FontFamily($"{t.Font}, {stand}")
+            : new FontFamily(new Uri(Path.GetFullPath(t.FontDir).TrimEnd('\\') + "\\"), $"./#{t.Font}, {t.Font}, {stand}");
         var face = new Typeface(family, t.Italic ? FontStyles.Italic : FontStyles.Normal, t.Bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal);
-        var text = new FormattedText(t.Value, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+        var text = new FormattedText(t.FontDir == null ? t.Value : Drawable(face, t.Value), System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                                      face, t.Size, new SolidColorBrush(Col(t.Color)), 1.0)
         { MaxTextWidth = t.Rect.W, MaxLineCount = 1, Trimming = TextTrimming.CharacterEllipsis };
         var x = t.Align == "left" ? t.Rect.X : t.Rect.X + (t.Rect.W - text.Width) / (t.Align == "right" ? 1 : 2);
@@ -173,6 +182,22 @@ public static class MenuRenderer
         if (t.Stroke != null && t.StrokeWidth > 0) // outline first, so the fill stays crisp on top
             dc.DrawGeometry(null, new Pen(new SolidColorBrush(Col(t.Stroke)), t.StrokeWidth * 2) { LineJoin = PenLineJoin.Round }, text.BuildGeometry(at));
         dc.DrawText(text, at);
+    }
+
+    /// <summary>
+    /// Decorative fonts often map accented letters to an empty glyph ("SCÈNES" came out as "SC NES"): such a letter is replaced by its plain base letter.
+    /// </summary>
+    static string Drawable(Typeface face, string value)
+    {
+        if (!face.TryGetGlyphTypeface(out var glyphs)) return value;
+        bool Draws(char c) => char.IsWhiteSpace(c) || (glyphs.CharacterToGlyphMap.TryGetValue(c, out var g) && !glyphs.GetGlyphOutline(g, 16, 16).Bounds.IsEmpty);
+        var sb = new System.Text.StringBuilder(value.Length);
+        foreach (var c in value)
+        {
+            var plain = c.ToString().Normalize(System.Text.NormalizationForm.FormD)[0];
+            sb.Append(!Draws(c) && plain != c && Draws(plain) ? plain : c);
+        }
+        return sb.ToString();
     }
 
     static void DrawLabel(DrawingContext dc, MenuDesign d, Label l)

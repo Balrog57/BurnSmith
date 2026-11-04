@@ -108,7 +108,8 @@ static class TemplateCheck
         if (!pages[0].Buttons.Any(b => b.Action.Kind is "play" or "playall")) issues.Add($"{label}: pas de bouton lecture sur la page racine");
         if (c.HasSettings && !ids.Contains("settings")) issues.Add($"{label}: pas de page de réglages");
         if (design.CreditLines().Count > 0 && (!ids.Contains("credits") || !pages[0].Buttons.Any(b => b.Id == "credits"))) issues.Add($"{label}: pas de page ou de bouton crédits");
-        if (cells > 1 && !ids.Contains("scenes1")) issues.Add($"{label}: pas de page de scènes");
+        // DVDFab Streaming has no menu of its own: its first page of thumbnails is the root page
+        if (cells > 1 && !ids.Contains("scenes1") && !pages[0].Buttons.Any(b => b.Id != "play" && b.Action.Kind is "play" or "chapter")) issues.Add($"{label}: pas de page de scènes");
 
         foreach (var p in pages)
         {
@@ -129,7 +130,7 @@ static class TemplateCheck
                 foreach (var n in new[] { b.Left, b.Right, b.Up, b.Down })
                     if (n != null && !buttonIds.Contains(n)) issues.Add($"{label}/{p.Id}/{b.Id}: déplacement vers un bouton inconnu ({n})");
                 if (b.Action.Kind == "page" && (b.Action.Page == null || !ids.Contains(b.Action.Page))) issues.Add($"{label}/{p.Id}/{b.Id}: mène à une page inconnue ({b.Action.Page})");
-                if (p.Id.StartsWith("scenes") && b.Action.Kind is "play" or "chapter") cellButtons++;
+                if ((p.Id.StartsWith("scenes") || (p.Id == "root" && b.Id != "play")) && b.Action.Kind is "play" or "chapter") cellButtons++;
                 if (b.FocusImage != null && !File.Exists(b.FocusImage)) issues.Add($"{label}/{p.Id}/{b.Id}: image de sélection introuvable");
             }
             // remote control: every button reachable from the first one

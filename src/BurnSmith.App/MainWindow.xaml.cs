@@ -342,7 +342,8 @@ public partial class MainWindow : Window
     void OnRowMore(object s, RoutedEventArgs e)
     {
         var entry = Row(s);
-        var menu = new ContextMenu { PlacementTarget = (UIElement)s, Placement = PlacementMode.Bottom };
+        // FontFamily: a menu inherits the font of its target, which here is the icon button (the text would show as empty boxes)
+        var menu = new ContextMenu { PlacementTarget = (UIElement)s, Placement = PlacementMode.Bottom, FontFamily = FontFamily };
         var up = new MenuItem { Header = "Monter", IsEnabled = titles.IndexOf(entry!) > 0 };
         var down = new MenuItem { Header = "Descendre", IsEnabled = titles.IndexOf(entry!) < titles.Count - 1 };
         up.Click += (_, _) => Move(entry, -1);

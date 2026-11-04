@@ -28,6 +28,19 @@ if (a.Count >= 3 && a[0] == "preview")
     return 0;
 }
 
+// burnsmith dump <template name> : every drawing operation of every page, with its rectangle (to compare a template's XML with what is drawn)
+if (a.Count >= 2 && a[0] == "dump")
+{
+    var chosen = TemplateCatalog.Find(a[1]) ?? throw new InvalidOperationException($"unknown template: {a[1]}");
+    var sample = new MenuContent(1, null, Enumerable.Repeat<string?>(null, 7).ToList(), null, ["Français AC-3 mono", "English AC-3 mono"], ["Français"]);
+    foreach (var page in MenuBuilder.Build(chosen, sample))
+    {
+        Console.WriteLine($"== {page.Id}");
+        foreach (var op in page.Ops) Console.WriteLine("  " + op);
+    }
+    return 0;
+}
+
 // burnsmith check-templates [--matrix] [--picture frame.jpg] : builds every template as film and series and checks pages, buttons, remote moves, pictures;
 // --matrix = every disc shape (1..40 chapters, 2..60 episodes, 1..9 audio, 0..9 subtitles) and 200 designs the menu editor can compose
 if (a.Count >= 1 && a[0] == "check-templates") return TemplateCheck.Run(Opt("--picture") is { } cp ? Path.GetFullPath(cp) : null, a.Contains("--matrix"));

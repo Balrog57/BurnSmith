@@ -12,7 +12,8 @@ public sealed record Label(string Value, Box Rect, int Size, bool Bold, string A
 public sealed record Picture(string Path, Box Rect, int Radius, int BorderWidth) : Op;
 
 /// <summary>Template artwork (transparent PNG / JPEG) stretched to <paramref name="Rect"/>. <paramref name="Backdrop"/> = the page's background picture, which a moving menu replaces by its video.</summary>
-public sealed record Image(string Path, Box Rect, bool Backdrop = false) : Op;
+/// <param name="Cover">Fill the rectangle with the picture's proportions kept (cropped), instead of stretching it.</param>
+public sealed record Image(string Path, Box Rect, bool Backdrop = false, bool Cover = false) : Op;
 
 /// <summary>Template text: own font (optionally a .ttf next to the template), colour, outline.</summary>
 public sealed record Text(string Value, Box Rect, double Size, string Font, string? FontDir, string Color, bool Bold, bool Italic, string Align = "left",
@@ -272,7 +273,7 @@ public static class MenuBuilder
         const int colW = 680, rowH = 84, pitch = 100, top = 300;
         var audio = c.AudioNames.Count > 1 ? c.AudioNames : [];
         var subs = c.SubtitleNames;
-        var ops = pack?.SetupBackdrop() ?? []; // a template without audio / subtitle rows: its background, BurnSmith's rows
+        var ops = pack?.SetupBackdrop(c.PreviewPicture) ?? []; // a template without audio / subtitle rows: its background, BurnSmith's rows
         ops.Add(new Label(d.SettingsLabel, new Box(0, 60, W, 120), 80, true));
         var buttons = new List<MenuButton>();
         var both = audio.Count > 0 && subs.Count > 0;
