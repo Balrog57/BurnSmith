@@ -10,11 +10,11 @@ using BurnSmith.Core.Menu;
 /// </summary>
 static class TemplateCheck
 {
-    public static int Run(string? picture, bool matrix = false)
+    public static int Run(string? picture, bool matrix = false, string? only = null)
     {
         var (usable, skipped) = TemplateCatalog.Scan();
-        var designs = usable.Select(f => (f.Design, Composed: false)).ToList();
-        if (matrix) designs.AddRange(ComposedDesigns().Select(d => (d, true)));
+        var designs = usable.Where(f => only == null || f.Design.Name.Contains(only, StringComparison.OrdinalIgnoreCase)).Select(f => (f.Design, Composed: false)).ToList();
+        if (matrix && only == null) designs.AddRange(ComposedDesigns().Select(d => (d, true)));
         var failed = 0;
         var watch = System.Diagnostics.Stopwatch.StartNew();
         foreach (var (design, composed) in designs)
@@ -160,7 +160,7 @@ static class TemplateCheck
             while (todo.Count > 0)
                 foreach (var next in new[] { todo.Dequeue() }.SelectMany(b => new[] { b.Left, b.Right, b.Up, b.Down }).Where(n => n != null && seen.Add(n)))
                     todo.Enqueue(p.Buttons.First(b => b.Id == next));
-            if (seen.Count != p.Buttons.Count) issues.Add($"{label}/{p.Id}: {p.Buttons.Count - seen.Count} bouton(s) hors d'atteinte de la télécommande");
+            if (seen.Count != p.Buttons.Count) issues.Add($"{label}/{p.Id}: {p.Buttons.Count - seen.Count} bouton(s) hors d'atteinte de la télécommande ({string.Join(',', p.Buttons.Select(b => b.Id).Where(id => !seen.Contains(id)))})");
             foreach (var file in p.Ops.SelectMany(Files).Where(f => !File.Exists(f)).Distinct()) issues.Add($"{label}/{p.Id}: image introuvable {Path.GetFileName(file)}");
         }
         if (cells > 1 && cellButtons != cells) issues.Add($"{label}: {cellButtons} boutons de scène pour {cells} chapitres / épisodes");

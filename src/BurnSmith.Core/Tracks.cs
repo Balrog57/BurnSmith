@@ -217,6 +217,13 @@ public static class Languages
         return null;
     }
 
+    /// <summary>The languages a subtitle file can be set to: one per language, as (ISO 639-2 code as ffprobe reports it, name in the language's own tongue).</summary>
+    public static IEnumerable<(string Code, string Name)> Choices =>
+        TwoLetter.GroupBy(kv => kv.Value).Select(g => (g.First().Key, Display(g.First().Key, "")));
+
+    /// <summary>True when <paramref name="a"/> and <paramref name="b"/> name the same language ("fre" and "fra"), or are the same code.</summary>
+    public static bool Same(string a, string b) => a == b || (TwoLetter.ContainsKey(a) && TwoLetter.ContainsKey(b) && Iso1(a) == Iso1(b));
+
     /// <summary>"Français", "English"... in the language's own name; falls back to the stream title, then the raw code.</summary>
     public static string Display(string lang, string title)
     {

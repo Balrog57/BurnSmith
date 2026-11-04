@@ -455,6 +455,19 @@ public partial class MainWindow : Window
             var add = new MenuItem { Header = "Ajouter un fichier de sous-titres…" };
             add.Click += (_, _) => AddSubtitleFiles(entry);
             menu.Items.Add(add);
+            // the language of a subtitle file is not always in its name: one submenu per file
+            for (var k = 0; k < entry.Extra.Count; k++)
+            {
+                var (at, file) = (k, entry.Extra[k]);
+                var languages = new MenuItem { Header = $"Langue de « {Path.GetFileName(file.File)} »" };
+                foreach (var (code, name) in Languages.Choices.Prepend(("und", "Inconnue")))
+                {
+                    var choice = new MenuItem { Header = name, IsCheckable = true, IsChecked = Languages.Same(code, file.Lang) };
+                    choice.Click += (_, _) => SetSubtitleLanguage(entry, at, code);
+                    languages.Items.Add(choice);
+                }
+                menu.Items.Add(languages);
+            }
         }
         if (titles.Count > 1)
         {
@@ -464,6 +477,13 @@ public partial class MainWindow : Window
             menu.Items.Add(all);
         }
         menu.IsOpen = true;
+    }
+
+    /// <summary>Sets the language of the <paramref name="at"/>th subtitle file of a video: its name in the lists, on the settings page and the disc's language code follow.</summary>
+    void SetSubtitleLanguage(Entry entry, int at, string code)
+    {
+        entry.Extra = [.. entry.Extra.Select((x, i) => i == at ? x with { Lang = code } : x)];
+        entry.Refresh();
     }
 
     /// <summary>Adds subtitle files (srt, ass, ssa, vtt) to one video, ticked: they are tracks like the video's own, after them.</summary>

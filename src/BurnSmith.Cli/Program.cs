@@ -44,9 +44,9 @@ if (a.Count >= 2 && a[0] == "dump")
     return 0;
 }
 
-// burnsmith check-templates [--matrix] [--picture frame.jpg] : builds every template as film and series and checks pages, buttons, remote moves, pictures;
+// burnsmith check-templates [--matrix] [--only NAME] [--picture frame.jpg] (--only: the templates whose name contains NAME, no composed designs) : builds every template as film and series and checks pages, buttons, remote moves, pictures;
 // --matrix = every disc shape (1..40 chapters, 2..60 episodes, 1..9 audio, 0..9 subtitles) and 200 designs the menu editor can compose
-if (a.Count >= 1 && a[0] == "check-templates") return TemplateCheck.Run(Opt("--picture") is { } cp ? Path.GetFullPath(cp) : null, a.Contains("--matrix"));
+if (a.Count >= 1 && a[0] == "check-templates") return TemplateCheck.Run(Opt("--picture") is { } cp ? Path.GetFullPath(cp) : null, a.Contains("--matrix"), Opt("--only"));
 
 // burnsmith check-edit : the arithmetic of a cut (length, chapters shifted by the start, typed times) without any video
 if (a.Count >= 1 && a[0] == "check-edit")
@@ -86,6 +86,10 @@ if (a.Count >= 1 && a[0] == "check-edit")
     var cues = "1\r\n00:00:01,000 --> 00:00:03,000\r\nbefore\r\n\r\n2\r\n00:00:05,000 --> 00:00:08,500\r\nstraddles\r\nthe start\r\n\r\n3\r\n00:00:12,000 --> 00:00:14,000\r\nkept\r\n\r\n4\r\n00:00:17,000 --> 00:00:19,000\r\nafter\r\n\r\n";
     Check("cut cues: before dropped, straddling cue shortened and moved, later ones dropped, renumbered",
           ExternalSubtitle.Cut(cues, 6, 8) == "1\n00:00:00,000 --> 00:00:02,500\nstraddles\nthe start\n\n2\n00:00:06,000 --> 00:00:08,000\nkept\n\n" && ExternalSubtitle.Cut(cues, 9, 2) == "" && ExternalSubtitle.Cut(cues, 0, 100).Contains("4\n00:00:17,000 --> 00:00:19,000\nafter"));
+    var choices = Languages.Choices.ToList();
+    Check("languages to choose from: one per language, each code read back as itself, a name for each", choices.Count >= 20 && choices.Select(c => c.Name).Distinct().Count() == choices.Count
+          && choices.All(c => c.Name.Length > 0 && Languages.Code(c.Code) == c.Code) && choices.Any(c => c.Code == "fre" && c.Name == "Français"));
+    Check("same language: fre = fra, not ger, and an unknown language is only itself", Languages.Same("fre", "fra") && !Languages.Same("fre", "ger") && Languages.Same("und", "und") && !Languages.Same("und", "fre") && Languages.Same("xyz", "xyz"));
     Check("language words", Languages.Code("fr") == "fre" && Languages.Code("fra") == "fra" && Languages.Code("français") == "fre" && Languages.Code("German") == "ger" && Languages.Code("2017") == null && Languages.Code("it") == "ita");
     var order = DiscTitle.MainFirst([new("b1.mkv", Bonus: true), new("m1.mkv"), new("b2.mkv", Bonus: true), new("m2.mkv")]);
     Check("disc order: the feature first, then the bonus, each group in its own order", string.Join(',', order.Select(t => t.Video)) == "m1.mkv,m2.mkv,b1.mkv,b2.mkv");
