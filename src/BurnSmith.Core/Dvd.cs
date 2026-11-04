@@ -6,7 +6,7 @@ using static BurnSmith.Core.Menu.IndexedPng;
 
 namespace BurnSmith.Core;
 
-/// <summary>DVD-Video job: one title per entry of <see cref="Titles"/>. <see cref="Menu"/> null = the disc starts straight on the movie (a single title only).</summary>
+/// <summary>DVD-Video job: one title per entry of <see cref="Titles"/>, the bonus ones (<see cref="DiscTitle.Bonus"/>) after the others. <see cref="Menu"/> null = the disc starts straight on the movie (a single title only).</summary>
 public sealed record DvdJob(IReadOnlyList<DiscTitle> Titles, string OutDir, MenuDesign? Menu = null, int ChapterMinutes = 5, double CapacityGB = 4.2, EncodeOptions? Encode = null);
 
 /// <summary>ffmpeg (MPEG-2 + AC-3) -> spumux (button highlights, text subtitles) -> dvdauthor (VIDEO_TS with menus).</summary>
@@ -38,6 +38,8 @@ public static class Dvd
         log ??= _ => { };
         if (job.Titles.Count == 0) throw new ArgumentException("no video to put on the disc");
         if (job.Titles.Count > 1 && job.Menu == null) throw new InvalidOperationException("several videos need a menu to choose from");
+        job = job with { Titles = DiscTitle.MainFirst(job.Titles) }; // titles 1..mainCount are the feature, the bonus ones follow
+        var mainCount = job.Titles.Count(t => !t.Bonus);
         var sources = job.Titles.Select(t => t.Cut(BluRay.Probe(t.Video))).ToList(); // durations from here on are the parts kept
         var items = sources.Zip(job.Titles, (s, t) => (Src: s, Title: t)).ToList();
         var pal = Math.Abs(sources[0].Fps - 25) < 0.5 || Math.Abs(sources[0].Fps - 50) < 0.5; // the disc follows its first video
@@ -67,7 +69,7 @@ public static class Dvd
 
         log("author: dvdauthor");
         var xml = Path.Combine(work, "dvd.xml");
-        File.WriteAllText(xml, AuthorXml(job.OutDir, pal, movies, menuPages, restarts).ToString());
+        File.WriteAllText(xml, AuthorXml(job.OutDir, pal, movies, mainCount, menuPages, restarts).ToString());
         // this dvdauthor build wants exactly "-o dest -x script -h N" plus one more argument (it reads argv[7] unchecked and crashes without)
         Tools.Run(Tools.Find("dvdauthor.exe"), ["-o", job.OutDir, "-x", xml, "-h", "0", "-q"], log, env: new Dictionary<string, string> { ["VIDEO_FORMAT"] = pal ? "PAL" : "NTSC" });
         Directory.CreateDirectory(Path.Combine(job.OutDir, "AUDIO_TS")); // empty, but players and tools expect it
@@ -188,11 +190,14 @@ public static class Dvd
             catch (InvalidOperationException) { log($"warning: no picture for {name} (ffmpeg could not read a frame)"); } // the menu then shows an empty frame
             return File.Exists(file) ? file : null;
         }
-        var series = job.Titles.Count > 1;
+        var mainCount = job.Titles.Count(t => !t.Bonus);
+        var series = mainCount > 1; // the extras do not make a series of a film
+        TitleEntry Entry(int i, string name) => new(job.Titles[i].DisplayName, i + 1, Thumb(name, i, sources[i].Duration * 0.1, 480, 270));
         var content = new MenuContent(1, Thumb("preview", 0, sources[0].Duration * 0.1, 800, 450),
             series ? [] : movies[0].ChapterTimes.Select((t, i) => Thumb($"c{i + 1}", 0, t + 3, 480, 270)).ToList(),
-            series ? job.Titles.Select((t, i) => new TitleEntry(t.DisplayName, i + 1, Thumb($"t{i + 1}", i, sources[i].Duration * 0.1, 480, 270))).ToList() : null,
-            movies[0].Audio.Select(a => a.Name).ToList(), movies[0].Subtitles.Select(s => s.Name).ToList());
+            series ? Enumerable.Range(0, mainCount).Select(i => Entry(i, $"t{i + 1}")).ToList() : null,
+            movies[0].Audio.Select(a => a.Name).ToList(), movies[0].Subtitles.Select(s => s.Name).ToList(),
+            mainCount < job.Titles.Count ? Enumerable.Range(mainCount, job.Titles.Count - mainCount).Select(i => Entry(i, $"b{i - mainCount + 1}")).ToList() : null);
 
         var pages = MenuBuilder.Build(job.Menu!, content);
         if (pages.RemoveAll(p => p.Id == "settings") > 0)
@@ -285,7 +290,8 @@ public static class Dvd
 
     static Rgba Hex(string s) => new(Convert.ToByte(s.Substring(1, 2), 16), Convert.ToByte(s.Substring(3, 2), 16), Convert.ToByte(s.Substring(5, 2), 16), 255);
 
-    static XDocument AuthorXml(string dest, bool pal, List<Movie> movies, List<(MenuPage Page, string Mpg)> menus, bool loop)
+    /// <param name="mainCount">The first titles are the feature; the ones after them are bonus: "play all" stops at the last main title.</param>
+    static XDocument AuthorXml(string dest, bool pal, List<Movie> movies, int mainCount, List<(MenuPage Page, string Mpg)> menus, bool loop)
     {
         var fmt = pal ? "pal" : "ntsc";
         var series = movies.Count > 1;
@@ -345,7 +351,7 @@ public static class Dvd
         {
             var pgc = new XElement("pgc", new XElement("vob", new XAttribute("file", movies[i].Mpg), new XAttribute("chapters", Chapters(movies[i]))));
             if (menus.Count > 0)
-                pgc.Add(new XElement("post", (i < movies.Count - 1 ? $"if (g1 == 1) jump title {i + 2}; " : "") + "call menu;")); // after an episode of "play all": the next one
+                pgc.Add(new XElement("post", (i < mainCount - 1 ? $"if (g1 == 1) jump title {i + 2}; " : "") + "call menu;")); // after an episode of "play all": the next one, never a bonus
             titles.Add(pgc);
         }
         titleset.Add(titles);

@@ -6,7 +6,7 @@ using BurnSmith.Core.Menu;
 namespace BurnSmith.Core;
 
 /// <summary>
-/// Blu-ray / UHD Blu-ray job: one playlist per entry of <see cref="Titles"/>, in order.
+/// Blu-ray / UHD Blu-ray job: one playlist per entry of <see cref="Titles"/>, in order, the bonus ones (<see cref="DiscTitle.Bonus"/>) after the others.
 /// <see cref="Menu"/> null = the disc starts straight on the movie (a single title only).
 /// </summary>
 public sealed record BluRayJob(IReadOnlyList<DiscTitle> Titles, string OutDir, MenuDesign? Menu = null, bool Uhd = false,
@@ -111,6 +111,8 @@ public static class BluRay
         log ??= _ => { };
         if (job.Titles.Count == 0) throw new ArgumentException("no video to put on the disc");
         if (job.Titles.Count > 1 && job.Menu == null) throw new InvalidOperationException("several videos need a menu to choose from");
+        job = job with { Titles = DiscTitle.MainFirst(job.Titles) }; // playlists 1..mainCount are the feature, the bonus ones follow
+        var mainCount = job.Titles.Count(t => !t.Bonus);
         var sources = job.Titles.Select(t => t.Cut(Probe(t.Video))).ToList(); // durations from here on are the parts kept
         var work = job.OutDir + "_work";
         Tools.PrepareOutput(job.OutDir);
@@ -168,17 +170,19 @@ public static class BluRay
                 catch (InvalidOperationException) { log($"warning: no picture for {name} (ffmpeg could not read a frame)"); } // the menu then shows an empty frame
                 return File.Exists(file) ? file : null;
             }
-            var series = job.Titles.Count > 1;
+            var series = mainCount > 1; // the extras do not make a series of a film
+            TitleEntry Entry(int i, string name) => new(job.Titles[i].DisplayName, MoviePlaylist + i, Thumb(name, i, sources[i].Duration * 0.1, 480, 270));
             var content = new MenuContent(MoviePlaylist, Thumb("preview", 0, sources[0].Duration * 0.1, 800, 450),
                 series ? [] : muxed[0].ChapterTimes.Select((t, i) => Thumb($"c{i + 1}", 0, t + 3, 480, 270)).ToList(),
-                series ? job.Titles.Select((t, i) => new TitleEntry(t.DisplayName, MoviePlaylist + i, Thumb($"t{i + 1}", i, sources[i].Duration * 0.1, 480, 270))).ToList() : null,
-                muxed[0].Audio, muxed[0].Subtitles);
+                series ? Enumerable.Range(0, mainCount).Select(i => Entry(i, $"t{i + 1}")).ToList() : null,
+                muxed[0].Audio, muxed[0].Subtitles,
+                mainCount < job.Titles.Count ? Enumerable.Range(mainCount, job.Titles.Count - mainCount).Select(i => Entry(i, $"b{i - mainCount + 1}")).ToList() : null);
             var menuDir = Path.Combine(work, "menu");
             var loop = 0;
             var moving = job.Menu.Loop;
             if ((moving || job.Menu.ExistingMusic() != null) && job.Uhd) log("moving menu and music skipped: a 4K disc needs a 2160p clip, which BurnSmith does not make yet");
             else if (moving || job.Menu.ExistingMusic() != null) { MuxLoop(job, work, log); loop = LoopPlaylist; }
-            MenuFiles.WriteBdj(job.Menu, MenuBuilder.Build(job.Menu, content), menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, job.Titles.Count, overlay: moving && loop > 0);
+            MenuFiles.WriteBdj(job.Menu, MenuBuilder.Build(job.Menu, content), menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, mainCount, overlay: moving && loop > 0); // the xlet chains only the main titles
             AddMenu(job, menuDir, log);
         }
         Tools.TryDelete(work);

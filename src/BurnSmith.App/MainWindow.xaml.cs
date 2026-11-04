@@ -35,6 +35,10 @@ public partial class MainWindow : Window
         public double? End { get; set; }
         public int Volume { get; set; } = 100;
         public IReadOnlyList<double>? ChapterAt { get; set; }
+        /// <summary>An extra (trailer, making-of): after the feature on the disc, off "Lecture" / "Tout lire", on the menu's Bonus page.</summary>
+        public bool Bonus { get; set; }
+        /// <summary>The name as the table shows it.</summary>
+        public string Shown => Bonus ? $"Bonus · {Name}" : Name;
 
         /// <summary>The source as the disc sees it: its duration is the part kept.</summary>
         public SourceInfo OnDisc => ToDisc().Cut(Info);
@@ -50,7 +54,7 @@ public partial class MainWindow : Window
         public string SubText => Summary(Subs.Select(i => Tracks.Subtitles.FirstOrDefault(t => t.Index == i)?.Name ?? "?").ToList());
 
         static string Summary(List<string> names) => names.Count == 0 ? "Aucun" : names.Count == 1 ? names[0] : $"{names[0]} +{names.Count - 1}";
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra);
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus);
     }
 
     readonly ObservableCollection<Entry> titles = [];
@@ -105,17 +109,23 @@ public partial class MainWindow : Window
 
     public MenuEditorWindow CreateEditor(MenuDesign? start = null) => new(start ?? design, previewFrame, EditorContent());
 
-    /// <summary>What the editor previews: the real chapters / episodes / tracks of the disc, or a sample while no video is loaded.</summary>
+    /// <summary>The video the menu's picture, the disc's name and the audio / subtitle pages come from: the first that is not a bonus.</summary>
+    Entry? MainEntry => titles.FirstOrDefault(t => !t.Bonus) ?? titles.FirstOrDefault();
+
+    /// <summary>What the editor previews: the real chapters / episodes / bonus / tracks of the disc, or a sample while no video is loaded.</summary>
     MenuContent EditorContent()
     {
-        if (titles.FirstOrDefault() is not { } first)
+        if (MainEntry is not { } first)
             return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, 12).ToList(), null, ["Français 5.1", "English 5.1"], ["Français", "English"]);
         var disc = first.ToDisc();
-        var series = titles.Count > 1;
+        var main = titles.Where(t => !t.Bonus || t == first).ToList(); // as on the disc: the feature first, then the extras
+        var extras = titles.Where(t => t.Bonus && t != first).ToList();
+        var series = main.Count > 1;
         var chapters = series ? 0 : disc.ChapterList(first.OnDisc.Duration, chapterMinutes).Count;
         return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, chapters).ToList(),
-            series ? titles.Select((t, i) => new TitleEntry(t.Name, i + 1, null)).ToList() : null,
-            disc.KeptAudio(first.Info).Select(a => a.Name).ToList(), disc.KeptSubtitles(first.Tracks).Where(SupportsSub).Select(s => s.Name).ToList());
+            series ? main.Select((t, i) => new TitleEntry(t.Name, i + 1, null)).ToList() : null,
+            disc.KeptAudio(first.Info).Select(a => a.Name).ToList(), disc.KeptSubtitles(first.Tracks).Where(SupportsSub).Select(s => s.Name).ToList(),
+            extras.Count > 0 ? extras.Select((t, i) => new TitleEntry(t.Name, main.Count + i + 1, null)).ToList() : null);
     }
 
     void Append(string line)
@@ -204,7 +214,7 @@ public partial class MainWindow : Window
         }
         CapBar.Value = Math.Min(100, est / cap.Gb * 100);
         CapText.Text = $"{est:0.00} Go / {cap.Usable:0.#} Go utilisables{note}";
-        ProjectInfo.Text = titles.Count == 0 ? "" : $"{titles.Count} vidéo{(titles.Count > 1 ? "s" : "")}  ·  {titles.Sum(t => new FileInfo(t.Path).Length) / 1e9:0.0} Go";
+        ProjectInfo.Text = titles.Count == 0 ? "" : $"{titles.Count} vidéo{(titles.Count > 1 ? "s" : "")}{(titles.Any(t => t.Bonus) ? $" (dont {titles.Count(t => t.Bonus)} bonus)" : "")}  ·  {titles.Sum(t => new FileInfo(t.Path).Length) / 1e9:0.0} Go";
     }
 
     /// <summary>Size in GB of the Blu-ray for an output and an encoding (the video at the fitted rate, plus audio and menu); null for a DVD, a 4K disc or no video.</summary>
@@ -262,8 +272,7 @@ public partial class MainWindow : Window
     /// <summary>The menu picture is a frame of the first video, at 10% of the part kept; it changes with the first video and its cut.</summary>
     async Task RefreshPreview()
     {
-        if (titles.Count == 0) return;
-        var first = titles[0];
+        if (MainEntry is not { } first) return;
         var key = $"{first.Path}|{first.Start}|{first.End}";
         if (previewFor == key) return;
         previewFor = key;
@@ -292,7 +301,13 @@ public partial class MainWindow : Window
         if (titles.Count == 0) { previewFrame = previewFor = null; Poster.Source = null; }
         else
         {
-            var name = titles[0].Name;
+            if (titles.All(t => t.Bonus)) // a disc needs a feature: the first video becomes it again
+            {
+                titles[0].Bonus = false;
+                titles[0].Refresh();
+                Warn($"« {titles[0].Name} » redevient le film principal : un disque a besoin d'au moins une vidéo qui ne soit pas un bonus.");
+            }
+            var name = MainEntry!.Name;
             if (!labelEdited) volume = Regex.Replace(name.ToUpperInvariant(), "[^A-Z0-9_]+", "_").Trim('_') is { Length: > 0 } l ? l[..Math.Min(32, l.Length)] : "MON_DISQUE";
             if (design.Title == new MenuDesign().Title) design.Title = name;
         }
@@ -362,7 +377,26 @@ public partial class MainWindow : Window
         down.Click += (_, _) => Move(entry, 1);
         menu.Items.Add(up);
         menu.Items.Add(down);
+        menu.Items.Add(new Separator());
+        // a disc keeps at least one video that is not a bonus
+        var bonus = new MenuItem
+        {
+            Header = "Bonus (après le film, page Bonus du menu)", IsCheckable = true, IsChecked = entry!.Bonus,
+            IsEnabled = entry.Bonus || titles.Count(t => !t.Bonus) > 1,
+        };
+        bonus.Click += (_, _) => SetBonus(entry, bonus.IsChecked);
+        menu.Items.Add(bonus);
         menu.IsOpen = true;
+    }
+
+    /// <summary>Marks a video as an extra, or back as part of the feature: the menu gets (or loses) its Bonus button and page.</summary>
+    void SetBonus(Entry entry, bool bonus)
+    {
+        entry.Bonus = bonus;
+        entry.Refresh();
+        Update();
+        RefreshThumb();
+        _ = RefreshPreview(); // the menu's picture is a frame of the first video that is not a bonus
     }
 
     void Move(Entry? entry, int step)

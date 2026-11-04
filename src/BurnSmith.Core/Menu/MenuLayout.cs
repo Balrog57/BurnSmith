@@ -50,11 +50,14 @@ public sealed record TitleEntry(string Name, int Playlist, string? Picture);
 /// Disc facts the menu needs: playlist number, preview picture, one picture per chapter (null = none).
 /// <see cref="Titles"/> with 2+ entries makes a series menu (episodes instead of chapters).
 /// <see cref="Audio"/> / <see cref="Subtitles"/> are the display names of the tracks on the disc; they give the settings page.
+/// <see cref="Bonus"/> are the extras (trailers, making-of): playlists after the main feature's, listed on their own Bonus page.
 /// </summary>
 public sealed record MenuContent(int Playlist, string? PreviewPicture, IReadOnlyList<string?> ChapterPictures,
-    IReadOnlyList<TitleEntry>? Titles = null, IReadOnlyList<string>? Audio = null, IReadOnlyList<string>? Subtitles = null)
+    IReadOnlyList<TitleEntry>? Titles = null, IReadOnlyList<string>? Audio = null, IReadOnlyList<string>? Subtitles = null,
+    IReadOnlyList<TitleEntry>? Bonus = null)
 {
     public bool Series => Titles is { Count: > 1 };
+    public bool HasBonus => Bonus is { Count: > 0 };
     public IReadOnlyList<string> AudioNames => (Audio ?? []).Take(MenuBuilder.MaxAudio).ToList();
     public IReadOnlyList<string> SubtitleNames => (Subtitles ?? []).Take(MenuBuilder.MaxSubtitles).ToList();
     /// <summary>The settings page exists when the viewer has something to choose.</summary>
@@ -75,6 +78,13 @@ public static class MenuBuilder
         ? c.Titles!.Select((t, i) => new Cell($"e{i + 1}", t.Name, t.Picture, new MenuAction("play", Playlist: t.Playlist))).ToList()
         : c.ChapterPictures.Select((p, i) => new Cell($"c{i + 1}", $"{d.ChapterLabel} {i + 1}", p, new MenuAction("chapter", Playlist: c.Playlist, Mark: i))).ToList();
 
+    /// <summary>The Bonus page's buttons: each plays its video on its own and the disc then comes back to the menu.</summary>
+    internal static List<Cell> BonusCells(MenuContent c) =>
+        (c.Bonus ?? []).Select((t, i) => new Cell($"b{i + 1}", t.Name, t.Picture, new MenuAction("play", Playlist: t.Playlist))).ToList();
+
+    /// <summary>Pages needed for <paramref name="count"/> buttons, <paramref name="perPage"/> on each.</summary>
+    internal static int PageCount(int count, int perPage) => (count + perPage - 1) / perPage;
+
     /// <summary>The installed template of a design (it can be gone: DVDFab moved or uninstalled).</summary>
     static InstalledTemplate? Pack(MenuDesign d) => d.TemplateDir == null ? null
         : InstalledTemplate.Load(d.TemplateDir) ?? throw new FileNotFoundException($"Modèle introuvable : {d.TemplateDir} (dossier déplacé ou désinstallé ?)");
@@ -89,6 +99,12 @@ public static class MenuBuilder
         var pages = new List<MenuPage> { Root(d, c, cells.Count > 1) };
         var gridPages = cells.Count > 1 ? (cells.Count + PerPage(d) - 1) / PerPage(d) : 0;
         for (var i = 1; i <= gridPages; i++) pages.Add(Grid(d, c, cells, i, gridPages));
+        if (c.HasBonus)
+        {
+            var bonus = BonusCells(c);
+            var bonusPages = PageCount(bonus.Count, PerPage(d));
+            for (var i = 1; i <= bonusPages; i++) pages.Add(Grid(d, c, bonus, i, bonusPages, "bonus", d.BonusLabel));
+        }
         if (c.HasSettings) pages.Add(Settings(d, c, null, null));
         if (d.CreditLines().Count > 0) pages.Add(Credits(d, null));
         return pages;
@@ -136,12 +152,15 @@ public static class MenuBuilder
                 : ("play", d.PlayLabel, new MenuAction("play", Playlist: c.Playlist)),
         };
         if (withGrid) entries.Add(("scenes", c.Series ? d.EpisodesLabel : d.ScenesLabel, new MenuAction("page", "scenes1")));
+        if (c.HasBonus) entries.Add(("bonus", d.BonusLabel, new MenuAction("page", "bonus1")));
         if (c.HasSettings) entries.Add(("settings", d.SettingsLabel, new MenuAction("page", "settings")));
         if (d.CreditLines().Count > 0) entries.Add(("credits", d.CreditsLabel, new MenuAction("page", "credits")));
 
-        const int bw = 400, gap = 60;
-        var x0 = (W - (entries.Count * bw + (entries.Count - 1) * gap)) / 2;
         var n = entries.Count;
+        // up to 4 buttons keep BurnSmith's 400 px; 5 (Play, Scenes, Bonus, Settings, Credits) would not fit the 1920 px screen, so they narrow
+        var gap = n <= 4 ? 60 : 40;
+        var bw = n <= 4 ? 400 : (W - 120 - (n - 1) * gap) / n;
+        var x0 = (W - (n * bw + (n - 1) * gap)) / 2;
         var buttons = new List<MenuButton>();
         for (var k = 0; k < n; k++)
         {
@@ -199,22 +218,25 @@ public static class MenuBuilder
         return (cells, (int)marginY, (int)header, (int)(H - marginY - footer + (footer - navH) / 2) + 8, navH, false); // +8: not touching the last row
     }
 
-    /// <summary>Chapter thumbnails of a movie, or the episodes of a series, as many per page as the design's grid holds.</summary>
-    static MenuPage Grid(MenuDesign d, MenuContent c, List<Cell> cells, int number, int total)
+    /// <summary>
+    /// Chapter thumbnails of a movie, or the episodes of a series, or the extras, as many per page as the design's grid holds.
+    /// Pages are called <paramref name="prefix"/>1, <paramref name="prefix"/>2...; <paramref name="title"/> null = the chapters' or episodes' heading.
+    /// </summary>
+    static MenuPage Grid(MenuDesign d, MenuContent c, List<Cell> cells, int number, int total, string prefix = "scenes", string? title = null)
     {
         var cols = Math.Max(1, d.Cols);
         var perPage = PerPage(d);
         var (slots, headerY, headerH, navY, navH, original) = GridGeometry(d);
         var first = (number - 1) * perPage;
         var count = Math.Min(perPage, cells.Count - first);
-        var ops = new List<Op> { new Label(c.Series ? d.EpisodesLabel : d.ScenesLabel, new Box(0, headerY, W, headerH), original ? 80 : Math.Clamp(headerH * 2 / 3, 40, 80), true) };
+        var ops = new List<Op> { new Label(title ?? (c.Series ? d.EpisodesLabel : d.ScenesLabel), new Box(0, headerY, W, headerH), original ? 80 : Math.Clamp(headerH * 2 / 3, 40, 80), true) };
         var buttons = new List<MenuButton>();
         var nav = new List<(string Id, Box Rect, MenuAction Action, string Text)>();
         var x0 = slots[0].X;
         var navW = Math.Min(240, slots[0].W);
-        if (number > 1) nav.Add(("prev", new Box(x0, navY, navW, navH), new MenuAction("page", $"scenes{number - 1}"), "<"));
+        if (number > 1) nav.Add(("prev", new Box(x0, navY, navW, navH), new MenuAction("page", $"{prefix}{number - 1}"), "<"));
         nav.Add(("home", new Box((W - 300) / 2, navY, 300, navH), new MenuAction("page", "root"), d.HomeLabel));
-        if (number < total) nav.Add(("next", new Box(W - x0 - navW, navY, navW, navH), new MenuAction("page", $"scenes{number + 1}"), ">"));
+        if (number < total) nav.Add(("next", new Box(W - x0 - navW, navY, navW, navH), new MenuAction("page", $"{prefix}{number + 1}"), ">"));
 
         var rows = (count + cols - 1) / cols;
         for (var i = 0; i < count; i++)
@@ -259,7 +281,7 @@ public static class MenuBuilder
                 Up = cells[first + count - 1].Id, // back to the last thumbnail
             });
         }
-        return new MenuPage($"scenes{number}", ops, buttons);
+        return new MenuPage($"{prefix}{number}", ops, buttons);
     }
 
     /// <summary>

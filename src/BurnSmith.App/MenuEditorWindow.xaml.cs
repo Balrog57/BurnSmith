@@ -146,6 +146,7 @@ public partial class MenuEditorWindow : Window
         "settings" => "Réglages",
         "credits" => "Crédits",
         _ when id.StartsWith("scenes") => "Scènes " + id[6..],
+        _ when id.StartsWith("bonus") => "Bonus " + id[5..],
         _ => id,
     };
 

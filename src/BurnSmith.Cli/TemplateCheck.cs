@@ -56,6 +56,8 @@ static class TemplateCheck
     {
         yield return ("film", Film(picture, 9, 3, 2), true);
         yield return ("série", Series(picture, 14, 3, 2), true);
+        yield return ("film + 3 bonus", Film(picture, 9, 3, 2, 3), true);
+        yield return ("série + 7 bonus", Series(picture, 14, 3, 2, 7), true);
     }
 
     /// <summary>Every kind of disc: film of 1, 2, 7, 13 or 40 chapters, series of 2, 14 or 60 episodes, each with 1..9 audio and 0..9 subtitle tracks.</summary>
@@ -66,14 +68,25 @@ static class TemplateCheck
             foreach (var n in new[] { 1, 2, 7, 13, 40 }) yield return ($"film{n} a{a}s{s}", Film(picture, n, a, s), a == 3);
             foreach (var n in new[] { 2, 14, 60 }) yield return ($"série{n} a{a}s{s}", Series(picture, n, a, s), a == 3);
         }
+        // extras: a few, a single one, more than a page of them (3x2 grids hold 6, 1x1 grids one), with and without anything else to choose
+        foreach (var (name, content) in new[]
+        {
+            ("film13 +3 bonus a3s2", Film(picture, 13, 3, 2, 3)), ("film1 +1 bonus a1s0", Film(picture, 1, 1, 0, 1)), ("film2 +13 bonus a2s0", Film(picture, 2, 2, 0, 13)),
+            ("série14 +7 bonus a3s2", Series(picture, 14, 3, 2, 7)), ("série2 +1 bonus a1s0", Series(picture, 2, 1, 0, 1)), ("série60 +20 bonus a9s9", Series(picture, 60, 9, 9, 20)),
+        })
+            yield return (name, content, name.StartsWith("film13") || name.StartsWith("série14"));
     }
 
-    static MenuContent Film(string? picture, int chapters, int audio, int subs) =>
-        new(1, picture, Enumerable.Repeat(picture, chapters).ToList(), null, Langs.Take(audio).Select(l => l + " AC-3 5.1").ToList(), Langs.Take(subs).ToList());
+    /// <summary>The extras' playlists come after the feature's (a film is playlist 1, the episodes 1..n).</summary>
+    static List<TitleEntry>? Extras(string? picture, int first, int count) =>
+        count == 0 ? null : Enumerable.Range(0, count).Select(i => new TitleEntry($"Bonus {i + 1}", first + i, picture)).ToList();
 
-    static MenuContent Series(string? picture, int episodes, int audio, int subs) =>
+    static MenuContent Film(string? picture, int chapters, int audio, int subs, int bonus = 0) =>
+        new(1, picture, Enumerable.Repeat(picture, chapters).ToList(), null, Langs.Take(audio).Select(l => l + " AC-3 5.1").ToList(), Langs.Take(subs).ToList(), Extras(picture, 2, bonus));
+
+    static MenuContent Series(string? picture, int episodes, int audio, int subs, int bonus = 0) =>
         new(1, picture, Enumerable.Repeat(picture, 3).ToList(), Enumerable.Range(1, episodes).Select(i => new TitleEntry($"Episode {i}", i, picture)).ToList(),
-            Langs.Take(audio).Select(l => l + " AC-3 5.1").ToList(), Langs.Take(subs).ToList());
+            Langs.Take(audio).Select(l => l + " AC-3 5.1").ToList(), Langs.Take(subs).ToList(), Extras(picture, episodes + 1, bonus));
 
     /// <summary>What the menu editor can make without a template: 5 button styles x 5 grids x thumbnails x square corners x preview.</summary>
     static IEnumerable<MenuDesign> ComposedDesigns()
@@ -105,7 +118,14 @@ static class TemplateCheck
         var ids = pages.Select(p => p.Id).ToHashSet();
         var cells = c.Series ? c.Titles!.Count : c.ChapterPictures.Count;
         var cellButtons = 0;
+        var bonusButtons = new List<int>();
+        if (pages.Select(p => p.Id).Distinct().Count() != pages.Count) issues.Add($"{label}: identifiants de pages en double");
         if (!pages[0].Buttons.Any(b => b.Action.Kind is "play" or "playall")) issues.Add($"{label}: pas de bouton lecture sur la page racine");
+        // the extras: a button to their page, and a page of buttons for them (never part of "play all", which covers the feature's playlists only)
+        if (c.HasBonus && !pages.Any(p => p.Id != "bonus1" && p.Buttons.Any(b => b.Id == "bonus" && b.Action is { Kind: "page", Page: "bonus1" }))) issues.Add($"{label}: pas de bouton Bonus");
+        if (!c.HasBonus && (ids.Any(i => i.StartsWith("bonus")) || pages.Any(p => p.Buttons.Any(b => b.Id == "bonus")))) issues.Add($"{label}: une page ou un bouton Bonus sans bonus");
+        foreach (var all in pages.SelectMany(p => p.Buttons).Where(b => b.Action.Kind == "playall"))
+            if (c.Series && (all.Action.Playlist != c.Titles![0].Playlist || all.Action.Mark != c.Titles.Count)) issues.Add($"{label}: « tout lire » ne couvre pas exactement les épisodes");
         if (c.HasSettings && !ids.Contains("settings")) issues.Add($"{label}: pas de page de réglages");
         if (design.CreditLines().Count > 0 && (!ids.Contains("credits") || !pages[0].Buttons.Any(b => b.Id == "credits"))) issues.Add($"{label}: pas de page ou de bouton crédits");
         // DVDFab Streaming has no menu of its own: its first page of thumbnails is the root page
@@ -131,6 +151,7 @@ static class TemplateCheck
                     if (n != null && !buttonIds.Contains(n)) issues.Add($"{label}/{p.Id}/{b.Id}: déplacement vers un bouton inconnu ({n})");
                 if (b.Action.Kind == "page" && (b.Action.Page == null || !ids.Contains(b.Action.Page))) issues.Add($"{label}/{p.Id}/{b.Id}: mène à une page inconnue ({b.Action.Page})");
                 if ((p.Id.StartsWith("scenes") || (p.Id == "root" && b.Id != "play")) && b.Action.Kind is "play" or "chapter") cellButtons++;
+                if (p.Id.StartsWith("bonus") && b.Action.Kind == "play") bonusButtons.Add(b.Action.Playlist);
                 if (b.FocusImage != null && !File.Exists(b.FocusImage)) issues.Add($"{label}/{p.Id}/{b.Id}: image de sélection introuvable");
             }
             // remote control: every button reachable from the first one
@@ -143,6 +164,7 @@ static class TemplateCheck
             foreach (var file in p.Ops.SelectMany(Files).Where(f => !File.Exists(f)).Distinct()) issues.Add($"{label}/{p.Id}: image introuvable {Path.GetFileName(file)}");
         }
         if (cells > 1 && cellButtons != cells) issues.Add($"{label}: {cellButtons} boutons de scène pour {cells} chapitres / épisodes");
+        if (!bonusButtons.Order().SequenceEqual((c.Bonus ?? []).Select(t => t.Playlist).Order())) issues.Add($"{label}: les boutons de la page Bonus ne jouent pas exactement les {c.Bonus?.Count ?? 0} bonus");
 
         // page graph: all pages reachable from the root, the root reachable from all pages
         var links = pages.ToDictionary(p => p.Id, p => p.Buttons.Where(b => b.Action.Kind == "page" && b.Action.Page != null).Select(b => b.Action.Page!).ToHashSet());

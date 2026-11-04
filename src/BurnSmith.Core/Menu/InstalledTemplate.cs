@@ -483,6 +483,12 @@ public sealed class InstalledTemplate
         // DVDFab's Streaming has no menu of its own: its first page of thumbnails, with the poster and the title, is the menu
         var pages = new List<MenuPage> { IsAllInOne && total > 0 ? Scenes(d, cells, 1, total, perPage, d.Title, c.PreviewPicture, c) : Root(d, c, cells.Count > 1) };
         for (var i = IsAllInOne && total > 0 ? 2 : 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, c.Series ? d.EpisodesLabel : d.ScenesLabel, c.PreviewPicture));
+        if (c.HasBonus) // the template has no Bonus page: its scene page layout lists the extras
+        {
+            var bonus = MenuBuilder.BonusCells(c);
+            var bonusPages = MenuBuilder.PageCount(bonus.Count, perPage);
+            for (var i = 1; i <= bonusPages; i++) pages.Add(Scenes(d, bonus, i, bonusPages, perPage, d.BonusLabel, c.PreviewPicture, prefix: "bonus"));
+        }
         if (c.HasSettings) pages.Add(MenuBuilder.Settings(d, c, null, null, "settings")); // BurnSmith's own rows when the template has none
         if (d.CreditLines().Count > 0) pages.Add(MenuBuilder.Credits(d, SetupBackdrop(c.PreviewPicture))); // the template has no such page: its background under a veil
         return pages;
@@ -490,8 +496,8 @@ public sealed class InstalledTemplate
 
     bool IsAllInOne => template.Child("rootmenu")?.Attr("allinone") == "1";
 
-    /// <summary>The page id of scene page <paramref name="number"/>: the first one is the root when the template has no menu of its own.</summary>
-    string ScenesId(int number) => number == 1 && IsAllInOne ? "root" : $"scenes{number}";
+    /// <summary>The page id of page <paramref name="number"/> of a list (scenes, bonus): the first scene page is the root when the template has no menu of its own.</summary>
+    string PageId(string prefix, int number) => number == 1 && IsAllInOne && prefix == "scenes" ? "root" : $"{prefix}{number}";
 
     /// <summary>Capsules for the buttons the template has no picture for, in one row from <paramref name="x0"/>: the caller says where the row goes.</summary>
     static void Capsules(List<Op> ops, List<MenuButton> buttons, MenuDesign d, List<(string Id, string Label, MenuAction Action)> pills, int x0, int y, int w, int h, int gap, int size)
@@ -569,8 +575,9 @@ public sealed class InstalledTemplate
             c.Series ? new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count) : new MenuAction("play", Playlist: c.Playlist),
             c.Series ? d.PlayAllLabel : d.PlayLabel);
         if (withScenes) Add("scenes", n.Child("scenes"), Button("scenebuttontimage"), new MenuAction("page", "scenes1"), c.Series ? d.EpisodesLabel : d.ScenesLabel);
-        // "none_setup" templates have no picture for Settings, and none has one for Credits: plain capsules in a row under the other buttons, BurnSmith's own addition
+        // "none_setup" templates have no picture for Settings, and none has one for Bonus or Credits: plain capsules in a row under the other buttons, BurnSmith's own addition
         var pills = new List<(string Id, string Label, MenuAction Action)>();
+        if (c.HasBonus) pills.Add(("bonus", d.BonusLabel, new MenuAction("page", "bonus1")));
         if (c.HasSettings)
         {
             if (Button("setupbuttontimage") != null || n.Child("setup")?.Attr("textbutton") == "1") Add("settings", n.Child("setup"), Button("setupbuttontimage"), new MenuAction("page", "settings"), d.SettingsLabel);
@@ -591,7 +598,7 @@ public sealed class InstalledTemplate
     }
 
     /// <param name="root">Not null when this page is the menu itself (DVDFab Streaming): it gets the disc's own lines and the Play / Settings / Credits capsules.</param>
-    MenuPage Scenes(MenuDesign d, List<MenuBuilder.Cell> cells, int number, int total, int perPage, string title, string? preview, MenuContent? root = null)
+    MenuPage Scenes(MenuDesign d, List<MenuBuilder.Cell> cells, int number, int total, int perPage, string title, string? preview, MenuContent? root = null, string prefix = "scenes")
     {
         var s = template.Child("scenes")!.Child("tscenes")!.Child("scene")!;
         var ops = new List<Op>();
@@ -610,6 +617,7 @@ public sealed class InstalledTemplate
             if (s.Child("texts")?.Children("text").FirstOrDefault(x => x.Attr("as") == "volume_category") is { } category)
             {
                 var info = new List<string> { $"{cells.Count} {(root.Series ? d.EpisodesLabel : d.ScenesLabel)}" };
+                if (root.HasBonus) info.Add($"{root.Bonus!.Count} {d.BonusLabel}");
                 if (root.AudioNames.Count > 1) info.Add($"{root.AudioNames.Count} {d.AudioLabel}");
                 if (root.SubtitleNames.Count > 0) info.Add($"{root.SubtitleNames.Count} {d.SubtitlesLabel}");
                 ops.Add(Txt(category, string.Join("  |  ", info)));
@@ -618,6 +626,7 @@ public sealed class InstalledTemplate
             {
                 ("play", root.Series ? d.PlayAllLabel : d.PlayLabel, root.Series ? new MenuAction("playall", Playlist: root.Titles![0].Playlist, Mark: root.Titles.Count) : new MenuAction("play", Playlist: root.Playlist))
             };
+            if (root.HasBonus) capsules.Add(("bonus", d.BonusLabel, new MenuAction("page", "bonus1")));
             if (root.HasSettings) capsules.Add(("settings", d.SettingsLabel, new MenuAction("page", "settings")));
             if (d.CreditLines().Count > 0) capsules.Add(("credits", d.CreditsLabel, new MenuAction("page", "credits")));
             const int w = 190, gap = 12;
@@ -648,15 +657,15 @@ public sealed class InstalledTemplate
             ops.Add(new Image(file, box));
             buttons.Add(new MenuButton(id, box, action) { FocusImage = Selected(file) });
         }
-        if (number > 1) Nav("prev", "left", "leftbuttontimage", "<", new MenuAction("page", ScenesId(number - 1)));
+        if (number > 1) Nav("prev", "left", "leftbuttontimage", "<", new MenuAction("page", PageId(prefix, number - 1)));
         if (root == null) Nav("home", "home", "homebuttontimage", "⌂", new MenuAction("page", "root"));
-        if (number < total) Nav("next", "right", "rightbuttontimage", ">", new MenuAction("page", ScenesId(number + 1)));
+        if (number < total) Nav("next", "right", "rightbuttontimage", ">", new MenuAction("page", PageId(prefix, number + 1)));
         // whatever the template drew, a scene page must lead back to the menu and on to its neighbours: BurnSmith adds the missing buttons at the bottom
         bool Has(string id) => buttons.Any(b => b.Id == id);
         if (root == null && !Has("home")) Glyph("home", new Box(MenuBuilder.W / 2 - 55, MenuBuilder.H - 110, 110, 70), "⌂", new MenuAction("page", "root"));
-        if (number > 1 && !Has("prev")) Glyph("prev", new Box(MenuBuilder.W / 2 - 195, MenuBuilder.H - 110, 110, 70), "<", new MenuAction("page", ScenesId(number - 1)));
-        if (number < total && !Has("next")) Glyph("next", new Box(MenuBuilder.W / 2 + 85, MenuBuilder.H - 110, 110, 70), ">", new MenuAction("page", ScenesId(number + 1)));
-        return new MenuPage(ScenesId(number), ops, Link(buttons));
+        if (number > 1 && !Has("prev")) Glyph("prev", new Box(MenuBuilder.W / 2 - 195, MenuBuilder.H - 110, 110, 70), "<", new MenuAction("page", PageId(prefix, number - 1)));
+        if (number < total && !Has("next")) Glyph("next", new Box(MenuBuilder.W / 2 + 85, MenuBuilder.H - 110, 110, 70), ">", new MenuAction("page", PageId(prefix, number + 1)));
+        return new MenuPage(PageId(prefix, number), ops, Link(buttons));
     }
 
     /// <summary>Row width of the audio list: the BD-J menu draws its "active" dot a fixed distance from each row's left edge.</summary>

@@ -132,14 +132,26 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// The cut (DVDFab / Yuhan "video edit"): <see cref="Start"/> and <see cref="End"/> are seconds of the source file (End null = to the end),
 /// <see cref="Volume"/> a percentage of the sound, <see cref="ChapterAt"/> the chapter times in seconds of the source (null = the disc's
 /// "one every N minutes", empty = no chapters).
+/// <see cref="Bonus"/>: an extra (trailer, making-of) that is not part of the main feature: it comes after the main videos on the disc, is left out of
+/// "Play" / "Play all", and is listed on the menu's Bonus page.
 /// </summary>
 public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<int>? Audio = null, IReadOnlyList<int>? Subtitles = null,
                                double Start = 0, double? End = null, int Volume = 100, IReadOnlyList<double>? ChapterAt = null,
-                               IReadOnlyList<ExternalSubtitle>? External = null)
+                               IReadOnlyList<ExternalSubtitle>? External = null, bool Bonus = false)
 {
     public string DisplayName => Name ?? Path.GetFileNameWithoutExtension(Video);
 
     public bool Trimmed => Start > 0 || End != null;
+
+    /// <summary>
+    /// The disc order: the main feature's videos first, then the bonus ones (each group keeps its order). A title is its playlist number,
+    /// so "Play all" and the chain of episodes (playlists first..first+count) can never run on into a bonus.
+    /// </summary>
+    public static List<DiscTitle> MainFirst(IReadOnlyList<DiscTitle> titles)
+    {
+        if (titles.Count > 0 && titles.All(t => t.Bonus)) throw new ArgumentException("au moins une vidéo doit rester le film principal (toutes sont marquées Bonus)");
+        return [.. titles.Where(t => !t.Bonus), .. titles.Where(t => t.Bonus)];
+    }
 
     /// <summary>Seconds of the source that stay on the disc.</summary>
     public double Length(SourceInfo s) => Math.Max(0, Math.Min(End ?? s.Duration, s.Duration) - Math.Min(Start, s.Duration));

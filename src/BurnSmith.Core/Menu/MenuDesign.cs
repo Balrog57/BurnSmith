@@ -24,6 +24,8 @@ public sealed class MenuDesign
     public string OffLabel { get; set; } = "Off";
     public string BackLabel { get; set; } = "Back";
     public string CreditsLabel { get; set; } = "Credits";
+    /// <summary>Button and heading of the page that lists the extras (videos marked Bonus).</summary>
+    public string BonusLabel { get; set; } = "Bonus";
     /// <summary>Free text of the credits page (cast, thanks, production), one row per line; empty = no credits page and no button for it.</summary>
     public string Credits { get; set; } = "";
     /// <summary>Disc title per language for the player's disc information (BDMV\META\DL), one "xxx: title" per line, xxx = 3-letter language code (fra, eng, deu...).</summary>

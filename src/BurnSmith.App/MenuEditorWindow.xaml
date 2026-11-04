@@ -103,6 +103,8 @@
         <TextBox Text="{Binding PlayAllLabel, UpdateSourceTrigger=PropertyChanged}"/>
         <TextBlock Text="Liste des épisodes (séries)" Style="{StaticResource Caption}"/>
         <TextBox Text="{Binding EpisodesLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Bouton et page des bonus" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding BonusLabel, UpdateSourceTrigger=PropertyChanged}"/>
         <TextBlock Text="Bouton réglages (audio / sous-titres)" Style="{StaticResource Caption}"/>
         <TextBox Text="{Binding SettingsLabel, UpdateSourceTrigger=PropertyChanged}"/>
         <TextBlock Text="Colonne audio" Style="{StaticResource Caption}"/>

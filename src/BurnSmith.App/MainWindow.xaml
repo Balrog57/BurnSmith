@@ -60,7 +60,7 @@
           <ColumnDefinition Width="1.2*" MinWidth="100"/>
           <ColumnDefinition Width="124"/>
         </Grid.ColumnDefinitions>
-        <TextBlock Text="{Binding Name}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <TextBlock Text="{Binding Shown}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,10,0"/>
         <TextBlock Grid.Column="1" Text="{Binding DurationText}" ToolTip="{Binding DurationTip}" VerticalAlignment="Center"/>
         <TextBlock Grid.Column="2" Text="{Binding Hdr}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         <Button Grid.Column="3" Style="{StaticResource Drop}" Content="{Binding AudioText}" ToolTip="Pistes audio gardées" Click="OnAudioMenu"/>
