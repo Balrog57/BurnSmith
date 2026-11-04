@@ -14,7 +14,7 @@ Créateur de DVD, Blu-ray et Blu-ray 4K pour Windows : on choisit une vidéo, on
 
 ## Utiliser
 
-1. Compiler `BurnSmith.exe` (voir *Compiler*) et le lancer ; un exe prêt à l'emploi sera publié dans *Releases*.
+1. Télécharger `BurnSmith.exe` dans [Releases](https://github.com/Balrog57/BurnSmith/releases) (ou le compiler, voir *Compiler*) et le lancer.
 2. Placer à côté les programmes tiers dans un dossier `tools\` (ou les mettre dans le `PATH`, ou définir `BURNSMITH_TOOLS`) :
 
 | Programme | Rôle | Obligatoire pour |
