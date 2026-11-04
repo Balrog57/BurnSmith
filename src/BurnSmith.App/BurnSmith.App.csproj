@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BurnSmith.Core\BurnSmith.Core.csproj" />
+    <ProjectReference Include="..\BurnSmith.Payload\BurnSmith.Payload.csproj" />
   </ItemGroup>
 
 </Project>

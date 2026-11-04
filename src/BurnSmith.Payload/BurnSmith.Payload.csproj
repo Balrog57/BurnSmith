@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Carries the zip of bundled tools (ffmpeg, ffprobe, tsMuxeR) made by publish.ps1. A separate assembly so the app does not load
+       ~170 MB at every start: it is read only the first time, to unpack the tools. Without the zip (a dev build) it is empty. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PayloadZip>$(MSBuildThisFileDirectory)..\..\obj\payload\tools.zip</PayloadZip>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(PayloadZip)')">
+    <EmbeddedResource Include="$(PayloadZip)" LogicalName="tools.zip" />
+  </ItemGroup>
+
+</Project>

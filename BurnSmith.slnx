@@ -3,5 +3,6 @@
     <Project Path="src/BurnSmith.App/BurnSmith.App.csproj" />
     <Project Path="src/BurnSmith.Cli/BurnSmith.Cli.csproj" />
     <Project Path="src/BurnSmith.Core/BurnSmith.Core.csproj" />
+    <Project Path="src/BurnSmith.Payload/BurnSmith.Payload.csproj" />
   </Folder>
 </Solution>

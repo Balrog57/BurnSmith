@@ -15,6 +15,8 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        BurnSmith.Core.Tools.Payload = BurnSmith.Payload.Payload.Open;
+        _ = Task.Run(() => BurnSmith.Core.Tools.BundledDir()); // first run: unpack ffmpeg and tsMuxeR while the window comes up
         var snap = Array.IndexOf(e.Args, "--snapshot");
         var snapshot = snap >= 0 && snap + 1 < e.Args.Length;
         var videos = e.Args.Where((a, i) => !a.StartsWith("--") && (snap < 0 || i != snap + 1) && File.Exists(a)).ToList(); // not the snapshot's own output
