@@ -4,7 +4,7 @@ BurnSmith is free software under the GNU General Public License v3 or later (see
 
 ## Programs carried by the released `BurnSmith.exe`
 
-They are separate executables, unpacked on first run into `%LOCALAPPDATA%\BurnSmith\tools` and run through their command line.
+They are separate executables, unpacked on first run into the `BurnSmith-data\tools` folder next to the exe (or `%LOCALAPPDATA%\BurnSmith\files\tools` when that folder cannot be written) and run through their command line.
 
 | Program | Licence | Source |
 |---|---|---|
@@ -38,7 +38,7 @@ calls (late-bound COM, ISO to a drive, UDF image from a folder). Its licence:
 
 ## Menu templates and pictures carried by the released `BurnSmith.exe`
 
-Stored as data resources, unpacked on first use into `%LOCALAPPDATA%\BurnSmith\open\<build>`; they are read, not linked, by BurnSmith.
+Stored as data resources, unpacked on first use into `BurnSmith-data\open` next to the exe; they are read, not linked, by BurnSmith.
 
 | Material | Licence | Source |
 |---|---|---|
@@ -51,7 +51,12 @@ aggregated in the same executable, not linked into BurnSmith's code, so BurnSmit
 headers (for example `src/MainWin.cpp`) say only "GPL", without a version number; its `COPYING` is the version 2 text, whose section 9 lets the recipient choose any version
 published by the Free Software Foundation, so v3 is available. This is our reading, not legal advice.
 
-## Menu templates of other software
+## Menu templates of other software (pictures and layout files only)
 
-BurnSmith does not contain, copy or redistribute menu templates of DVDFab or Leawo; it reads the ones already installed on the user's PC.
+The released `BurnSmith.exe` carries the **pictures and layout files** (PNG / JPEG / XML) of the menu templates of **DVDFab** and **Leawo Prof. Media**, copied
+from the PC that built the exe (`publish.ps1` runs `BurnSmith.Cli pack-templates`) and unpacked to `BurnSmith-data\templates` next to it. They are **not part of
+BurnSmith's GPL-licensed code**, **they are not in this repository** and they belong to their owners; the exe includes them because the project owner decided
+to reproduce the template artwork. **No program, code, interface or font of either product is included.** A template installed on the user's PC is read from
+there and wins over the carried copy of the same name. If an owner objects to the artwork travelling in the exe, it can be left out by publishing from a PC
+without those programs (the exe then simply offers the free templates), and the released file replaced.
 BurnSmith is independent of, and not affiliated with, DVDFab or Leawo.

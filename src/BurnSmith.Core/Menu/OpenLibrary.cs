@@ -2,7 +2,7 @@ namespace BurnSmith.Core.Menu;
 
 /// <summary>
 /// Open-source menu files that travel inside the exe (DVDStyler's templates and backgrounds, GPL, with their notices).
-/// They are unpacked once to %LOCALAPPDATA%\BurnSmith\open\&lt;build id&gt; so that image readers and the template reader get plain files.
+/// They are unpacked once per build to BurnSmith-data\open (see <see cref="AppFiles"/>) so that image readers and the template reader get plain files.
 /// </summary>
 public static class OpenLibrary
 {
@@ -18,26 +18,17 @@ public static class OpenLibrary
             var asm = typeof(OpenLibrary).Assembly;
             var names = asm.GetManifestResourceNames().Where(n => n.StartsWith("library/", StringComparison.Ordinal)).ToList();
             if (names.Count == 0) return null;
-            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BurnSmith", "open");
-            var target = Path.Combine(root, asm.ManifestModule.ModuleVersionId.ToString("N")[..12]);
-            if (!File.Exists(Path.Combine(target, ".ready")))
+            return dir = AppFiles.Unpack("open", target =>
             {
-                var tmp = $"{target}.{Environment.ProcessId}.tmp";
-                Tools.TryDelete(tmp);
                 foreach (var name in names)
                 {
-                    var file = Path.Combine(tmp, name["library/".Length..].Replace('\\', '/').Replace('/', Path.DirectorySeparatorChar));
+                    var file = Path.Combine(target, name["library/".Length..].Replace('\\', '/').Replace('/', Path.DirectorySeparatorChar));
                     Directory.CreateDirectory(Path.GetDirectoryName(file)!);
                     using var from = asm.GetManifestResourceStream(name)!;
                     using var to = File.Create(file);
                     from.CopyTo(to);
                 }
-                File.WriteAllText(Path.Combine(tmp, ".ready"), "");
-                try { Directory.Move(tmp, target); }
-                catch (IOException) when (File.Exists(Path.Combine(target, ".ready"))) { Tools.TryDelete(tmp); } // another instance unpacked it first
-                foreach (var old in Directory.GetDirectories(root).Where(d => !d.EndsWith(".tmp") && !d.Equals(target, StringComparison.OrdinalIgnoreCase))) Tools.TryDelete(old);
-            }
-            return dir = target;
+            });
         }
     }
 }

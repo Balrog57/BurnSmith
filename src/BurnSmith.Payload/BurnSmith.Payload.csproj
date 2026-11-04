@@ -13,4 +13,12 @@
     <EmbeddedResource Include="$(PayloadZip)" LogicalName="tools.zip" />
   </ItemGroup>
 
+  <!-- pictures and layouts of the DVDFab / Leawo menu templates found on the publishing PC (see publish.ps1); never committed -->
+  <PropertyGroup>
+    <TemplatesZip>$(MSBuildThisFileDirectory)..\..\obj\payload\templates.zip</TemplatesZip>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(TemplatesZip)')">
+    <EmbeddedResource Include="$(TemplatesZip)" LogicalName="templates.zip" />
+  </ItemGroup>
+
 </Project>

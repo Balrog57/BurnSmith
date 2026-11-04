@@ -7,7 +7,7 @@ using static BurnSmith.Core.Menu.IndexedPng;
 namespace BurnSmith.Core;
 
 /// <summary>DVD-Video job: one title per entry of <see cref="Titles"/>. <see cref="Menu"/> null = the disc starts straight on the movie (a single title only).</summary>
-public sealed record DvdJob(IReadOnlyList<DiscTitle> Titles, string OutDir, MenuDesign? Menu = null, int ChapterMinutes = 5, double CapacityGB = 4.2);
+public sealed record DvdJob(IReadOnlyList<DiscTitle> Titles, string OutDir, MenuDesign? Menu = null, int ChapterMinutes = 5, double CapacityGB = 4.2, EncodeOptions? Encode = null);
 
 /// <summary>ffmpeg (MPEG-2 + AC-3) -> spumux (button highlights, text subtitles) -> dvdauthor (VIDEO_TS with menus).</summary>
 public static class Dvd
@@ -45,7 +45,7 @@ public static class Dvd
         Tools.PrepareOutput(job.OutDir);
         Directory.CreateDirectory(work);
 
-        var videoBps = VideoBitrate(items, job.CapacityGB);
+        var videoBps = job.Encode is { DvdKbps: > 0 } manual ? Math.Clamp(manual.DvdKbps, 1500, 9000) * 1000 : VideoBitrate(items, job.CapacityGB); // by hand, else what fills the disc
         log($"movie: {(pal ? "PAL" : "NTSC")} {videoBps / 1000} kb/s");
         var movies = new List<Movie>();
         for (var i = 0; i < job.Titles.Count; i++) movies.Add(EncodeTitle(job, i + 1, sources[i], job.Titles[i], pal, videoBps, work, log));
@@ -57,7 +57,7 @@ public static class Dvd
 
         log("author: dvdauthor");
         var xml = Path.Combine(work, "dvd.xml");
-        File.WriteAllText(xml, AuthorXml(job.OutDir, pal, movies, menuPages).ToString());
+        File.WriteAllText(xml, AuthorXml(job.OutDir, pal, movies, menuPages, job.Menu?.Loop == true).ToString());
         // this dvdauthor build wants exactly "-o dest -x script -h N" plus one more argument (it reads argv[7] unchecked and crashes without)
         Tools.Run(Tools.Find("dvdauthor.exe"), ["-o", job.OutDir, "-x", xml, "-h", "0", "-q"], log, env: new Dictionary<string, string> { ["VIDEO_FORMAT"] = pal ? "PAL" : "NTSC" });
         Directory.CreateDirectory(Path.Combine(job.OutDir, "AUDIO_TS")); // empty, but players and tools expect it
@@ -171,20 +171,46 @@ public static class Dvd
                 for (var s = 0; s < subStates; s++)
                     pages.Add(MenuBuilder.Settings(job.Menu!, content, a, s, SettingsId(a, s)));
         }
-        var backgrounds = MenuRenderer.Sta(() => pages.Select(p => MenuRenderer.Background(job.Menu!, p)).ToList());
+        var loop = job.Menu!.Loop;
+        // a moving menu: the pages are transparent overlays burned onto a clip of the film (or the design's own video) that plays and repeats
+        var backgrounds = MenuRenderer.Sta(() => pages.Select(p => loop ? MenuRenderer.Overlay(job.Menu!, p) : MenuRenderer.Background(job.Menu!, p)).ToList());
+        var loopFile = job.Menu.LoopFile is { Length: > 0 } lf && File.Exists(lf) ? lf : job.Titles[0].Video;
+        var loopSrc = loopFile == job.Titles[0].Video ? sources[0] : BluRay.Probe(loopFile);
+        var loopSeconds = Math.Clamp(job.Menu.LoopSeconds, 5, 120);
+        var loopStart = Math.Clamp(job.Menu.LoopStart, 0, Math.Max(0, (int)loopSrc.Duration - loopSeconds));
+        var music = job.Menu.Music is { Length: > 0 } mu && File.Exists(mu) ? mu : null;
+        if (loop) log($"menu: moving background, {loopSeconds}s from {Path.GetFileName(loopFile)} at {loopStart}s{(music != null ? " + music" : "")}");
 
         var result = new List<(MenuPage, string)>();
         for (var i = 0; i < pages.Count; i++)
         {
             var p = pages[i];
-            var bg = Path.Combine(work, $"menu_{p.Id}.jpg");
+            var bg = Path.Combine(work, $"menu_{p.Id}.{(loop ? "png" : "jpg")}");
             File.WriteAllBytes(bg, backgrounds[i]);
             var plain = Path.Combine(work, $"menu_{p.Id}_plain.mpg");
-            // still image + silent AC-3 so the menu VOB carries the same streams as a normal title
-            Tools.Run(ffmpeg, ["-y", "-v", "warning", "-loop", "1", "-framerate", pal ? "25" : "30000/1001", "-i", bg,
-                "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000", "-t", "8",
-                "-vf", $"scale={w}:{h},setsar={(pal ? "64/45" : "32/27")},format=yuv420p", "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9",
-                "-b:v", "3000k", plain]);
+            var sar = pal ? "64/45" : "32/27";
+            if (!loop)
+                // still image + silent AC-3 so the menu VOB carries the same streams as a normal title
+                Tools.Run(ffmpeg, ["-y", "-v", "warning", "-loop", "1", "-framerate", pal ? "25" : "30000/1001", "-i", bg,
+                    "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000", "-t", "8",
+                    "-vf", $"scale={w}:{h},setsar={sar},format=yuv420p", "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9",
+                    "-b:v", "3000k", plain]);
+            else
+            {
+                // the clip, the page drawn over it, and its sound (music repeated, else the clip's own, else silence)
+                var args = new List<string> { "-y", "-v", "warning", "-ss", loopStart.ToString(Inv), "-t", loopSeconds.ToString(Inv), "-i", loopFile };
+                string audioMap;
+                int overlayInput;
+                if (music != null) { args.AddRange(["-stream_loop", "-1", "-i", music]); audioMap = "1:a:0"; overlayInput = 2; }
+                else if (loopSrc.Audio.Count > 0) { audioMap = "0:a:0"; overlayInput = 1; }
+                else { args.AddRange(["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]); audioMap = "1:a:0"; overlayInput = 2; }
+                args.AddRange(["-i", bg, "-filter_complex",
+                    $"[0:v]scale=trunc(iw*sar/2)*2:ih,setsar=1,scale=1024:576:force_original_aspect_ratio=decrease,pad=1024:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h},setsar={sar},fps={(pal ? "25" : "30000/1001")}[v];" +
+                    $"[{overlayInput}:v]scale={w}:{h},format=rgba[o];[v][o]overlay=format=auto,format=yuv420p[out]",
+                    "-map", "[out]", "-map", audioMap, "-t", loopSeconds.ToString(Inv), "-ac", "2", "-c:a", "ac3", "-b:a", "192k",
+                    "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9", "-b:v", "4000k", plain]);
+                Tools.Run(ffmpeg, args, log);
+            }
 
             // button highlights: flat frames in 4 colours, scaled from the 1920x1080 layout
             var sx = w / (double)MenuBuilder.W;
@@ -223,7 +249,7 @@ public static class Dvd
 
     static Rgba Hex(string s) => new(Convert.ToByte(s.Substring(1, 2), 16), Convert.ToByte(s.Substring(3, 2), 16), Convert.ToByte(s.Substring(5, 2), 16), 255);
 
-    static XDocument AuthorXml(string dest, bool pal, List<Movie> movies, List<(MenuPage Page, string Mpg)> menus)
+    static XDocument AuthorXml(string dest, bool pal, List<Movie> movies, List<(MenuPage Page, string Mpg)> menus, bool loop)
     {
         var fmt = pal ? "pal" : "ntsc";
         var series = movies.Count > 1;
@@ -266,8 +292,11 @@ public static class Dvd
         {
             var pgc = new XElement("pgc");
             if (page.Id == "root") pgc.Add(new XAttribute("entry", "root"));
-            pgc.Add(new XElement("vob", new XAttribute("file", mpg), new XAttribute("pause", "inf")));
+            // a moving menu plays its clip and enters itself again; g4 / g5 carry the highlighted button over that restart (a fresh entry starts on the first button)
+            if (loop) pgc.Add(new XElement("pre", "if (g5 == 1) { button = g4; g5 = 0; }"));
+            pgc.Add(loop ? new XElement("vob", new XAttribute("file", mpg)) : new XElement("vob", new XAttribute("file", mpg), new XAttribute("pause", "inf")));
             foreach (var b in page.Buttons) pgc.Add(new XElement("button", new XAttribute("name", b.Id), Command(page, b)));
+            if (loop) pgc.Add(new XElement("post", $"g4 = s8; g5 = 1; jump menu {MenuNumber(page.Id)};"));
             menuEl.Add(pgc);
         }
 
@@ -286,7 +315,7 @@ public static class Dvd
         titleset.Add(titles);
 
         var vmgm = new XElement("vmgm");
-        if (menus.Count > 0) vmgm.Add(new XElement("fpc", "g1 = 0; g2 = 1; g3 = 0; jump titleset 1 menu;"));
+        if (menus.Count > 0) vmgm.Add(new XElement("fpc", "g1 = 0; g2 = 1; g3 = 0; g4 = 1024; g5 = 0; jump titleset 1 menu;"));
         return new XDocument(new XElement("dvdauthor", new XAttribute("dest", dest), vmgm, titleset));
     }
 }

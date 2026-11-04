@@ -19,38 +19,26 @@ public static class Tools
     /// <summary>Opens the zip of tools the exe carries (ffmpeg, ffprobe, tsMuxeR); set by the app, null in a development build.</summary>
     public static Func<Stream?>? Payload { get; set; }
 
-    static string? bundledDir;
+    /// <summary>Opens the zip of DVDFab / Leawo template pictures the exe carries (made by publish.ps1 from this PC's installs); null when none.</summary>
+    public static Func<Stream?>? TemplatePayload { get; set; }
+
+    static string? bundledDir, templatesDir;
     static readonly object bundledLock = new();
 
-    /// <summary>
-    /// Unpacks the carried tools once per build of the exe into %LOCALAPPDATA%\BurnSmith\tools\&lt;build&gt; (a few seconds, first run only)
-    /// and returns that folder; null when this exe carries none.
-    /// </summary>
-    public static string? BundledDir(Action<string>? log = null)
+    /// <summary>The zip's contents unpacked under <see cref="AppFiles"/> (a few seconds on the first run of a build); null when this exe carries none.</summary>
+    static string? UnpackZip(string name, Func<Stream?>? open)
     {
-        lock (bundledLock)
-        {
-            if (bundledDir != null) return bundledDir;
-            if (Payload == null) return null;
-            var exe = Environment.ProcessPath is { } p && File.Exists(p) ? new FileInfo(p) : null;
-            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BurnSmith", "tools");
-            var dir = Path.Combine(root, exe == null ? "dev" : $"{exe.Length:x}-{exe.LastWriteTimeUtc.Ticks:x}");
-            if (File.Exists(Path.Combine(dir, ".ready"))) return bundledDir = dir;
-            using var stream = Payload();
-            if (stream == null) return null;
-
-            log?.Invoke("tools: première exécution, préparation de ffmpeg et tsMuxeR…");
-            var tmp = $"{dir}.{Environment.ProcessId}.tmp";
-            TryDelete(tmp);
-            Directory.CreateDirectory(tmp);
-            System.IO.Compression.ZipFile.ExtractToDirectory(stream, tmp);
-            File.WriteAllText(Path.Combine(tmp, ".ready"), "");
-            try { Directory.Move(tmp, dir); }
-            catch (IOException) when (File.Exists(Path.Combine(dir, ".ready"))) { TryDelete(tmp); } // another instance unpacked it first
-            foreach (var old in Directory.GetDirectories(root).Where(d => !d.Equals(dir, StringComparison.OrdinalIgnoreCase))) TryDelete(old);
-            return bundledDir = dir;
-        }
+        if (open == null) return null;
+        using var stream = open();
+        if (stream == null) return null;
+        return AppFiles.Unpack(name, dir => System.IO.Compression.ZipFile.ExtractToDirectory(stream, dir));
     }
+
+    /// <summary>ffmpeg, ffprobe and tsMuxeR carried by the exe, unpacked to <c>BurnSmith-data\tools</c>; null when this exe carries none.</summary>
+    public static string? BundledDir() { lock (bundledLock) return bundledDir ??= UnpackZip("tools", Payload); }
+
+    /// <summary>The DVDFab / Leawo template folders carried by the exe, unpacked to <c>BurnSmith-data\templates</c>; null when this exe carries none.</summary>
+    public static string? TemplatesDir() { lock (bundledLock) return templatesDir ??= UnpackZip("templates", TemplatePayload); }
 
     public static string Find(string exe)
     {

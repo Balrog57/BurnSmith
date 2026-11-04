@@ -21,6 +21,7 @@ if (a.Count >= 3 && a[0] == "preview")
         episodes > 1 ? Enumerable.Range(1, episodes).Select(i => new TitleEntry($"Episode {i}", i, pic)).ToList() : null,
         ["Français AC-3 mono", "English AC-3 mono", "Español AC-3 mono"], ["Français", "English"]);
     chosen.Title = "My Blu-ray";
+    if (Opt("--credits") is { } sampleCredits) chosen.Credits = sampleCredits.Replace('|', '\n');
     var files = MenuRenderer.Sta(() => MenuBuilder.Build(chosen, sample).Select(page => (page.Id, Jpeg: MenuRenderer.Background(chosen, page))).ToList());
     foreach (var (id, jpeg) in files) File.WriteAllBytes(Path.Combine(a[2], $"{chosen.Name}_{id}.jpg"), jpeg);
     Console.WriteLine(string.Join(", ", files.Select(f => f.Id)));
@@ -30,6 +31,13 @@ if (a.Count >= 3 && a[0] == "preview")
 // burnsmith check-templates [--matrix] [--picture frame.jpg] : builds every template as film and series and checks pages, buttons, remote moves, pictures;
 // --matrix = every disc shape (1..40 chapters, 2..60 episodes, 1..9 audio, 0..9 subtitles) and 200 designs the menu editor can compose
 if (a.Count >= 1 && a[0] == "check-templates") return TemplateCheck.Run(Opt("--picture") is { } cp ? Path.GetFullPath(cp) : null, a.Contains("--matrix"));
+
+// burnsmith pack-templates <out.zip> : zips the DVDFab / Leawo template pictures and layouts found on this PC (publish.ps1 embeds the zip in the exe)
+if (a.Count >= 2 && a[0] == "pack-templates")
+{
+    Console.WriteLine($"{TemplateCatalog.Pack(Path.GetFullPath(a[1]), Console.WriteLine)} templates packed");
+    return 0;
+}
 
 // burnsmith templates : every template found, and the ones that cannot be drawn with the reason
 if (a.Count >= 1 && a[0] == "templates")
@@ -61,18 +69,30 @@ if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, ne
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || Opt("--out") is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--chapters MINUTES] [--audio N,N] [--sub N,N] [bd: --uhd --label NAME]");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--credits 'A|B'] [bd: --uhd --label NAME --titles 'fra=Titre|eng=Title']");
     return 2;
 }
 
 var design = a.Contains("--no-menu") ? null
     : (TemplateCatalog.Find(Opt("--design")) ?? (Opt("--design") is { } unknown ? throw new InvalidOperationException($"unknown template: {unknown}") : TemplateCatalog.Default())).Clone();
 if (design != null && Opt("--title") is { } title) design.Title = title;
+if (design != null && Opt("--credits") is { } credits) design.Credits = credits.Replace('|', '\n'); // --credits "Directed by A|Music by B"
+if (design != null && Opt("--titles") is { } byLanguage) design.TitlesByLanguage = byLanguage.Replace('=', ':').Replace('|', '\n'); // --titles "fra=Mon disque|eng=My disc"
+if (design != null && a.Contains("--loop")) // moving menu: --loop [--loop-file video] [--loop-start S] [--loop-seconds S] [--music audio]
+{
+    design.Loop = true;
+    design.LoopFile = Opt("--loop-file") is { } lf ? Path.GetFullPath(lf) : null;
+    design.LoopStart = int.TryParse(Opt("--loop-start"), out var ls) ? ls : 0;
+    design.LoopSeconds = int.TryParse(Opt("--loop-seconds"), out var lsec) ? lsec : 30;
+    design.Music = Opt("--music") is { } mu ? Path.GetFullPath(mu) : null;
+}
 var chapters = int.TryParse(Opt("--chapters"), out var m) ? m : 5;
 var titles = videos.Select(v => new DiscTitle(v, null, Numbers("--audio"), Numbers("--sub"))).ToList();
+// --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
+var encode = new EncodeOptions(a.Contains("--reencode"), int.TryParse(Opt("--crf"), out var crf) ? crf : 17, Opt("--preset") ?? "medium", int.TryParse(Opt("--dvd-kbps"), out var kbps) ? kbps : 0);
 
 if (a[0] == "bd")
-    BluRay.Build(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters), Console.WriteLine);
+    BluRay.Build(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters, encode), Console.WriteLine);
 else
-    Dvd.Build(new DvdJob(titles, Path.GetFullPath(outDir), design, chapters), Console.WriteLine);
+    Dvd.Build(new DvdJob(titles, Path.GetFullPath(outDir), design, chapters, Encode: encode), Console.WriteLine);
 return 0;

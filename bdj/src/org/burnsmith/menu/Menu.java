@@ -15,6 +15,7 @@ import java.util.StringTokenizer;
 import java.util.Vector;
 
 import javax.media.Control;
+import javax.media.Controller;
 import javax.media.ControllerErrorEvent;
 import javax.media.ControllerEvent;
 import javax.media.ControllerListener;
@@ -34,6 +35,8 @@ import org.dvb.event.EventManager;
 import org.dvb.event.UserEvent;
 import org.dvb.event.UserEventListener;
 import org.dvb.event.UserEventRepository;
+import org.dvb.ui.DVBAlphaComposite;
+import org.dvb.ui.DVBGraphics;
 import org.havi.ui.HScene;
 import org.havi.ui.HSceneFactory;
 import org.havi.ui.event.HRcEvent;
@@ -47,11 +50,14 @@ import org.havi.ui.event.HRcEvent;
  *   page ID BACKGROUND_IMAGE
  *   button PAGE ID X Y W H FOCUS_IMAGE LEFT RIGHT UP DOWN ACTION [ARG1 [ARG2]]
  *   marker IMAGE W H DX
+ *   loop PLAYLIST
  * ACTION is "play PLAYLIST", "chapter PLAYLIST MARK", "page PAGE", "playall FIRST_PLAYLIST COUNT" (plays them one
  * after the other), "audio N" (stream number, 1-based) or "sub N" (0 = no subtitles). The first page is shown
  * first and the first button of a page has the initial focus. The marker image is drawn DX pixels from the left
  * edge of the "audio"/"sub" button that matches the current choice. Audio and subtitle choices are applied to the
  * player each time a playlist starts.
+ * With "loop", a short playlist plays behind the menu and starts again when it ends; the page images are then transparent overlays
+ * (the graphics plane is cleared before each paint, or moved focus frames would stay on screen).
  */
 public class Menu implements Xlet, UserEventListener, ControllerListener {
 
@@ -72,6 +78,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         public void paint(Graphics g) {
             Page p = page;
             Button b = focus;
+            if (loopPlaylist > 0) clear(g);
             if (p == null) return;
             if (p.bg != null) g.drawImage(p.bg, 0, 0, this);
             if (b != null && b.focus != null) g.drawImage(b.focus, b.x, b.y, this);
@@ -87,7 +94,8 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private XletContext ctx;
     private HScene scene;
     private View view;
-    private Player player;
+    private Player player, loopPlayer;
+    private int loopPlaylist; // menu video playing behind the pages, 0 = none
     private final Hashtable pages = new Hashtable();
     private Page firstPage, page;
     private Button focus;
@@ -126,6 +134,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
 
     public void destroyXlet(boolean unconditional) throws XletStateChangeException {
         stopListening();
+        stopLoop();
         closePlayer();
         if (scene != null) {
             scene.setVisible(false);
@@ -154,6 +163,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     }
 
     private void showMenu() {
+        startLoop();
         show(firstPage);
         scene.setVisible(true);
         scene.requestFocus(); // keys only reach the xlet that owns the focus
@@ -278,6 +288,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
                 : new BDLocator(null, -1, playlist, 0, mark, null);
             scene.setVisible(false);
             stopListening();
+            stopLoop();
             player = Manager.createPlayer(new MediaLocator(loc.toExternalForm()));
             player.addControllerListener(this);
             player.start();
@@ -288,8 +299,59 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         }
     }
 
+    /** Starts the menu video, if the disc has one. A failure only costs the video: the menu still works over black. */
+    private void startLoop() {
+        if (loopPlaylist <= 0 || loopPlayer != null) return;
+        try {
+            BDLocator loc = new BDLocator(null, -1, loopPlaylist);
+            loopPlayer = Manager.createPlayer(new MediaLocator(loc.toExternalForm()));
+            loopPlayer.addControllerListener(this);
+            loopPlayer.start();
+            log("loop started playlist " + loopPlaylist);
+        } catch (Throwable t) {
+            log("loop failed: " + t);
+            stopLoop();
+        }
+    }
+
+    private void stopLoop() {
+        Player p = loopPlayer;
+        loopPlayer = null;
+        if (p == null) return;
+        try {
+            p.removeControllerListener(this);
+            p.stop();
+            p.close();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Transparent again: pages are overlays on the menu video. */
+    private void clear(Graphics g) {
+        try {
+            DVBGraphics d = (DVBGraphics) g;
+            d.setDVBComposite(DVBAlphaComposite.Clear);
+            g.fillRect(0, 0, width, height);
+            d.setDVBComposite(DVBAlphaComposite.SrcOver);
+        } catch (Throwable t) {
+            g.clearRect(0, 0, width, height);
+        }
+    }
+
     /** End of the playlist (or a playback error): back to the menu. */
     public void controllerUpdate(ControllerEvent e) {
+        Controller from = e.getSourceController();
+        if (from != null && from == loopPlayer) {
+            if (e instanceof EndOfMediaEvent) {
+                log("loop restarts");
+                stopLoop();
+                startLoop();
+            } else if (e instanceof ControllerErrorEvent) {
+                log("loop error: " + e.getClass().getName());
+                stopLoop();
+            }
+            return;
+        }
         if (e instanceof StartEvent) {
             applyTracks(player);
         } else if (e instanceof EndOfMediaEvent || e instanceof ControllerErrorEvent) {
@@ -348,6 +410,8 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
                 markerW = Integer.parseInt(t.nextToken());
                 markerH = Integer.parseInt(t.nextToken());
                 markerDx = Integer.parseInt(t.nextToken());
+            } else if (cmd.equals("loop")) {
+                loopPlaylist = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("page")) {
                 Page p = new Page();
                 p.id = t.nextToken();

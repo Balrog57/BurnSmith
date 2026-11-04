@@ -59,6 +59,7 @@ public partial class MainWindow : Window
     string kind = "bd"; // dvd | bd | uhd
     string volume = "MON_DISQUE";
     int chapterMinutes = 5;
+    EncodeOptions encode = new();
     string? previewFrame, previewFor;
     bool labelEdited, outEdited, busy, refreshingDrives;
     int thumbVersion;
@@ -455,10 +456,11 @@ public partial class MainWindow : Window
 
     void OnAdvanced(object s, RoutedEventArgs e)
     {
-        var dlg = new AdvancedWindow(volume, chapterMinutes) { Owner = this };
+        var dlg = new AdvancedWindow(volume, chapterMinutes, encode) { Owner = this };
         if (dlg.ShowDialog() != true) return;
         if (dlg.Volume != volume) { volume = dlg.Volume; labelEdited = true; SyncOutput(); }
         chapterMinutes = dlg.ChapterMinutes;
+        encode = dlg.Encode;
         RefreshThumb();
     }
 
@@ -538,8 +540,8 @@ public partial class MainWindow : Window
 
         var ok = await Work("Création du disque…", (log, progress, token) =>
         {
-            if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable), log);
-            else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes), log);
+            if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable, encode), log);
+            else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes, encode), log);
             var iso = IsoFile(outDir);
             File.Delete(iso); // an image of an earlier build must never be burnt by mistake
             if (!withIso && !burn) return;

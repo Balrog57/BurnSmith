@@ -1,8 +1,9 @@
 namespace BurnSmith.Core.Menu;
 
 /// <summary>
-/// Finds the menu templates installed on this PC (DVDFab, also the ones DVDFab downloaded). They stay where they are:
-/// BurnSmith reads them at run time and never copies or ships them.
+/// Finds the DVDFab and Leawo menu templates: the ones installed on this PC are read where they are, and the exe carries a copy of their
+/// pictures and layout files (made by <see cref="Pack"/> when it was published) for PCs that have neither program. An installed template wins
+/// over the carried one of the same name. The repository holds none of these files.
 /// </summary>
 public static class TemplateCatalog
 {
@@ -22,6 +23,14 @@ public static class TemplateCatalog
 
     /// <summary>Where DVDFab keeps templates; portable copies are looked for in Downloads and next to the program folders.</summary>
     static IEnumerable<string> Roots()
+    {
+        // test aid: pretend this folder (an unpacked templates.zip) is all the PC has, to check what a machine without DVDFab / Leawo gets
+        if (Environment.GetEnvironmentVariable("BURNSMITH_CARRIED_ONLY") is { Length: > 0 } only) { yield return only; yield break; }
+        foreach (var root in InstalledRoots()) yield return root;
+        if (Tools.TemplatesDir() is { } carried) yield return carried; // last: a template found above keeps its name
+    }
+
+    static IEnumerable<string> InstalledRoots()
     {
         yield return Path.Combine(AppData, "DVDFab", "DVDFabCommon", "Creator Menu", "MenuTemplate"); // templates downloaded from inside DVDFab
         foreach (var parent in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
@@ -113,13 +122,42 @@ public static class TemplateCatalog
         var skipped = new List<Skipped>();
         var dvdt = OpenLibrary.Dir() is { } lib && Directory.Exists(Path.Combine(lib, "dvdstyler", "templates"))
             ? Directory.EnumerateFiles(Path.Combine(lib, "dvdstyler", "templates"), "*.dvdt", SearchOption.AllDirectories) : [];
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var dir in Roots().SelectMany(r => TemplateFolders(r)).Concat(dvdt).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var pack = InstalledTemplate.Load(dir);
             if (pack == null) continue;
-            if (pack.Unsupported is { } why) skipped.Add(new Skipped(Design(dir, pack).Name, why, dir));
-            else usable.Add(new Found(Design(dir, pack), pack.Thumbnail));
+            var design = Design(dir, pack);
+            if (!seen.Add($"{design.Category}|{design.Name}")) continue; // installed and carried copies of one template: the first is kept
+            if (pack.Unsupported is { } why) skipped.Add(new Skipped(design.Name, why, dir));
+            else usable.Add(new Found(design, pack.Thumbnail));
         }
         return (usable.OrderBy(f => f.Design.Category).ThenBy(f => f.Design.Name, StringComparer.OrdinalIgnoreCase).ToList(), skipped);
+    }
+
+    /// <summary>
+    /// Zips the DVDFab and Leawo template folders found on this PC into <paramref name="zip"/>: pictures and layout files only (no fonts, no programs),
+    /// as "DVDFab Blu-ray|DVDFab DVD|Leawo/[shape/]name/...". publish.ps1 embeds it in the exe. Returns the number of templates written.
+    /// </summary>
+    public static int Pack(string zip, Action<string>? log = null)
+    {
+        string[] keep = [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".xml"];
+        if (File.Exists(zip)) File.Delete(zip);
+        using var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create);
+        var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var dir in InstalledRoots().SelectMany(r => TemplateFolders(r)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (InstalledTemplate.Load(dir) is not { Unsupported: null } pack) continue;
+            var name = Path.GetFileName(dir);
+            var prefix = pack.Category == "Leawo" ? $"Leawo/{Path.GetFileName(Path.GetDirectoryName(dir))}/{name}" : $"{pack.Category}/{name}";
+            if (!done.Add(prefix)) continue;
+            var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Where(f => keep.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase)).ToList();
+            foreach (var f in files)
+                System.IO.Compression.ZipFileExtensions.CreateEntryFromFile(archive, f, $"{prefix}/{Path.GetRelativePath(dir, f).Replace('\\', '/')}", System.IO.Compression.CompressionLevel.Optimal);
+            log?.Invoke($"{prefix}: {files.Count} fichiers");
+        }
+        using (var w = new StreamWriter(archive.CreateEntry("NOTICE.txt").Open()))
+            w.Write("Images and layout files of DVDFab and Leawo menu templates, kept as published by their owners.\nThey are not part of BurnSmith's GPL-licensed code and belong to their owners.\nNo program, font or interface of either product is included.\n");
+        return done.Count;
     }
 }

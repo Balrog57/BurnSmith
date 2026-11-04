@@ -68,8 +68,8 @@ public partial class MenuEditorWindow : Window
         BuiltInList.ItemsSource = usable;
         var shipped = usable.Count(f => f.Design.Category == DvdForgeTemplates.Category || f.Design.Category.StartsWith("DVDStyler"));
         var installed = usable.Count - shipped;
-        CatalogNote.Text = $"{usable.Count} modèles : {shipped} inclus (DVD Forge, DVDStyler), {installed} lus depuis vos installations DVDFab / Leawo."
-            + (installed == 0 ? " DVDFab / Leawo ne sont pas détectés : indiquez le dossier de leurs modèles." : "")
+        CatalogNote.Text = $"{usable.Count} modèles : {shipped} libres (DVD Forge, DVDStyler), {installed} DVDFab / Leawo."
+            + (installed == 0 ? " Aucun modèle DVDFab / Leawo : cet exe a été construit sans eux et il n'y en a pas sur ce PC, indiquez le dossier de leurs modèles." : "")
             + (skipped.Count > 0 ? $" {skipped.Count} non pris en charge (détail au survol)." : "");
         CatalogNote.ToolTip = skipped.Count == 0 ? null : string.Join("\n", skipped.Select(s => $"{s.Name} : {s.Why}"));
         LoadBackgrounds((usable, skipped));
@@ -180,6 +180,21 @@ public partial class MenuEditorWindow : Window
             MessageBox.Show(this, ex.Message, "BurnSmith");
         }
     }
+
+    /// <summary>Picks the video or the sound of the moving menu; the files stay where they are (the path is stored).</summary>
+    void Pick(string filter, string title, Action<string> set)
+    {
+        var dlg = new OpenFileDialog { Filter = filter + "|Tous les fichiers|*.*", Title = title };
+        if (dlg.ShowDialog(this) != true) return;
+        set(dlg.FileName);
+        Rebind();
+    }
+
+    void OnLoopFile(object s, RoutedEventArgs e) =>
+        Pick("Vidéos|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv", "Vidéo du menu animé", f => working.LoopFile = f);
+
+    void OnMusic(object s, RoutedEventArgs e) =>
+        Pick("Sons|*.mp3;*.flac;*.wav;*.m4a;*.ogg;*.ac3;*.aac", "Musique du menu animé", f => working.Music = f);
 
     void OnBgRemove(object s, RoutedEventArgs e)
     {

@@ -10,7 +10,13 @@ namespace BurnSmith.Core;
 /// <see cref="Menu"/> null = the disc starts straight on the movie (a single title only).
 /// </summary>
 public sealed record BluRayJob(IReadOnlyList<DiscTitle> Titles, string OutDir, MenuDesign? Menu = null, bool Uhd = false,
-                               string Label = "BURNSMITH", int ChapterMinutes = 5);
+                               string Label = "BURNSMITH", int ChapterMinutes = 5, EncodeOptions? Encode = null);
+
+/// <summary>
+/// How the picture is made (DVDFab's video mode and quality). Defaults: a Blu-ray source that already fits is copied, otherwise x264 at constant
+/// quality <see cref="Crf"/> (lower = better, bigger); <see cref="DvdKbps"/> &gt; 0 sets the DVD video bit rate by hand (0 = fills the disc).
+/// </summary>
+public sealed record EncodeOptions(bool ForceReencode = false, int Crf = 17, string Preset = "medium", int DvdKbps = 0);
 
 /// <summary><see cref="AudioCodec"/> / <see cref="AudioChannels"/> describe the first audio stream (empty when there is none).</summary>
 public sealed record SourceInfo(string VideoCodec, int Width, int Height, double Fps, string AudioCodec, int AudioChannels, double Duration,
@@ -20,6 +26,9 @@ public static class BluRay
 {
     /// <summary>Playlist / clip number of the first title; title N is playlist N.</summary>
     public const int MoviePlaylist = 1;
+
+    /// <summary>Playlist / clip number of the moving menu's video.</summary>
+    public const int LoopPlaylist = 99;
 
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
@@ -94,10 +103,14 @@ public static class BluRay
                 "-vf", $"scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}", Path.Combine(metaDir, jpg)]);
             if (File.Exists(Path.Combine(metaDir, jpg))) thumbnails += $"<di:thumbnail href=\"{jpg}\" />";
         }
-        File.WriteAllText(Path.Combine(metaDir, "bdmt_eng.xml"),
+        // one file per language: a player shows the one that matches its own language setting, bdmt_eng.xml being the fallback every disc carries
+        void Bdmt(string lang, string name) => File.WriteAllText(Path.Combine(metaDir, $"bdmt_{lang}.xml"),
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?><disclib xmlns=\"urn:BDA:bdmv;disclib\"><di:discinfo xmlns:di=\"urn:BDA:bdmv;discinfo\"><di:title><di:name>"
-            + System.Security.SecurityElement.Escape(job.Menu?.Title ?? job.Label) + "</di:name></di:title>"
-            + (thumbnails.Length > 0 ? $"<di:description>{thumbnails}</di:description>" : "") + "</di:discinfo></disclib>"); // shortcut: one language; add per-language files when the UI has a language setting
+            + System.Security.SecurityElement.Escape(name) + "</di:name></di:title>"
+            + (thumbnails.Length > 0 ? $"<di:description>{thumbnails}</di:description>" : "") + $"<di:language>{lang}</di:language></di:discinfo></disclib>");
+        var byLanguage = job.Menu?.LanguageTitles() ?? [];
+        if (!byLanguage.Any(t => t.Lang == "eng")) Bdmt("eng", job.Menu?.Title ?? job.Label);
+        foreach (var (lang, name) in byLanguage) Bdmt(lang, name);
 
         if (job.Menu != null)
         {
@@ -117,7 +130,10 @@ public static class BluRay
                 series ? job.Titles.Select((t, i) => new TitleEntry(t.DisplayName, MoviePlaylist + i, Thumb($"t{i + 1}", i, sources[i].Duration * 0.1, 480, 270))).ToList() : null,
                 muxed[0].Audio, muxed[0].Subtitles);
             var menuDir = Path.Combine(work, "menu");
-            MenuFiles.WriteBdj(job.Menu, MenuBuilder.Build(job.Menu, content), menuDir);
+            var loop = 0;
+            if (job.Menu.Loop && job.Uhd) log("moving menu skipped: a 4K disc needs a 2160p clip, which BurnSmith does not make yet");
+            else if (job.Menu.Loop) { MuxLoop(job, sources[0], work, log); loop = LoopPlaylist; }
+            MenuFiles.WriteBdj(job.Menu, MenuBuilder.Build(job.Menu, content), menuDir, loop);
             AddMenu(job, menuDir, log);
         }
         Tools.TryDelete(work);
@@ -163,6 +179,50 @@ public static class BluRay
         return new Muxed(prepared, audio.Select(a => a.Name).ToList(), subs.Select(s => s.Track.Name).ToList(), chapterTimes);
     }
 
+    /// <summary>
+    /// The clip of a moving menu: <see cref="MenuDesign.LoopSeconds"/> seconds of video (the design's file, else the first title) re-encoded as
+    /// 1080p H.264, with the design's music (repeated) or the clip's own sound, muxed apart as playlist <see cref="LoopPlaylist"/> and merged into the disc.
+    /// </summary>
+    static void MuxLoop(BluRayJob job, SourceInfo first, string work, Action<string> log)
+    {
+        var menu = job.Menu!;
+        var file = menu.LoopFile is { Length: > 0 } f && File.Exists(f) ? f : job.Titles[0].Video;
+        var src = file == job.Titles[0].Video ? first : Probe(file);
+        var seconds = Math.Clamp(menu.LoopSeconds, 5, 120);
+        var start = Math.Clamp(menu.LoopStart, 0, Math.Max(0, (int)src.Duration - seconds));
+        var music = menu.Music is { Length: > 0 } m && File.Exists(m) ? m : null;
+        var fps = Math.Abs(src.Fps - 25) < 0.5 ? "25" : "24000/1001";
+        var ts = Path.Combine(work, "loop.ts");
+        log($"menu: moving background, {seconds}s from {Path.GetFileName(file)} at {start}s{(music != null ? " + music" : "")}");
+
+        var args = new List<string> { "-y", "-v", "warning", "-ss", start.ToString(Inv), "-t", seconds.ToString(Inv), "-i", file };
+        if (music != null) args.AddRange(["-stream_loop", "-1", "-i", music]);
+        args.AddRange(["-map", "0:v:0"]);
+        if (music != null) args.AddRange(["-map", "1:a:0"]);
+        else if (src.Audio.Count > 0) args.AddRange(["-map", "0:a:0"]);
+        var hasAudio = music != null || src.Audio.Count > 0;
+        args.AddRange(["-t", seconds.ToString(Inv),
+            "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1", "-r", fps,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "19", "-pix_fmt", "yuv420p",
+            "-x264-params", "bluray-compat=1:level=41:vbv-maxrate=20000:vbv-bufsize=20000:keyint=24:slices=4:bframes=3:b-pyramid=strict:open-gop=0"]);
+        if (hasAudio) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2"]);
+        args.AddRange(["-sn", "-dn", ts]);
+        Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
+
+        var meta = Path.Combine(work, "loop.meta");
+        var lines = new List<string>
+        {
+            $"MUXOPT --blu-ray --label={job.Label} --vbr --mplsOffset={LoopPlaylist} --m2tsOffset={LoopPlaylist}",
+            $"V_MPEG4/ISO/AVC, \"{ts}\", fps={fps}, track=256",
+        };
+        if (hasAudio) lines.Add($"A_AC3, \"{ts}\", track=257");
+        File.WriteAllLines(meta, lines);
+        var dest = Path.Combine(work, "mux" + LoopPlaylist);
+        if (Directory.Exists(dest)) Directory.Delete(dest, true);
+        Tools.Run(Tools.Find("tsMuxeR.exe"), [meta, dest], log);
+        Merge(dest, job.OutDir);
+    }
+
     /// <summary>Moves the playlist, clip info and stream files of a title muxed apart into the disc folder.</summary>
     static void Merge(string from, string into)
     {
@@ -191,7 +251,8 @@ public static class BluRay
     {
         var fpsOk = Math.Abs(s.Fps - 23.976) < 0.01 || Math.Abs(s.Fps - 24) < 0.01 || Math.Abs(s.Fps - 25) < 0.01;
         var (w, h) = job.Uhd ? (3840, 2160) : (1920, 1080);
-        var videoOk = s.VideoCodec == (job.Uhd ? "hevc" : "h264") && s.Width == w && s.Height == h && fpsOk;
+        var enc = job.Encode ?? new EncodeOptions();
+        var videoOk = !enc.ForceReencode && s.VideoCodec == (job.Uhd ? "hevc" : "h264") && s.Width == w && s.Height == h && fpsOk;
         if (job.Uhd && !videoOk)
             // shortcut: UHD sources must already be 2160p HEVC; HDR-aware re-encoding is not implemented yet
             throw new NotSupportedException("UHD needs a 3840x2160 HEVC source at 23.976/24/25 fps");
@@ -201,7 +262,7 @@ public static class BluRay
         if (videoOk) args.AddRange(["-c:v", "copy"]);
         else args.AddRange(["-vf", $"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1",
                             "-r", Math.Abs(s.Fps - 25) < 0.5 ? "25" : "24000/1001",
-                            "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p",
+                            "-c:v", "libx264", "-preset", enc.Preset, "-crf", Math.Clamp(enc.Crf, 10, 28).ToString(Inv), "-pix_fmt", "yuv420p",
                             "-x264-params", "bluray-compat=1:level=41:vbv-maxrate=30000:vbv-bufsize=30000:keyint=24:slices=4:bframes=3:b-pyramid=strict:open-gop=0"]);
         for (var j = 0; j < audio.Count; j++)
         {

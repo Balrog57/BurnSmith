@@ -9,9 +9,14 @@
     <TextBox x:Name="VolumeBox" MaxLength="32"/>
     <TextBlock Text="Un chapitre toutes les" Opacity="0.65" Margin="0,14,0,4"/>
     <ComboBox x:Name="ChapterBox" HorizontalAlignment="Stretch" ItemStringFormat="{}{0} min"/>
-    <TextBlock Text="Mode de traitement" Opacity="0.65" Margin="0,14,0,4"/>
-    <TextBlock TextWrapping="Wrap"
-               Text="Automatique. Blu-ray : la vidéo est copiée telle quelle (passthrough) si elle est déjà en H.264 1080p à 23,976 / 24 / 25 i/s, sinon elle est convertie en x264 (qualité constante). DVD : MPEG-2 au débit calculé pour la capacité. Le choix manuel du débit n'existe pas encore."/>
+    <TextBlock Text="Mode vidéo (Blu-ray)" Opacity="0.65" Margin="0,14,0,4"/>
+    <ComboBox x:Name="ModeBox" HorizontalAlignment="Stretch"/>
+    <TextBlock Text="Qualité de conversion (Blu-ray, x264)" Opacity="0.65" Margin="0,14,0,4"/>
+    <ComboBox x:Name="QualityBox" HorizontalAlignment="Stretch"/>
+    <TextBlock Text="Débit vidéo du DVD en kb/s (0 = automatique, remplit le disque)" Opacity="0.65" Margin="0,14,0,4"/>
+    <TextBox x:Name="DvdBitrateBox" MaxLength="4"/>
+    <TextBlock TextWrapping="Wrap" Opacity="0.65" Margin="0,12,0,0"
+               Text="En mode automatique, la vidéo Blu-ray est copiée telle quelle (passthrough) si elle est déjà en H.264 1080p à 23,976 / 24 / 25 i/s ; sinon, ou si vous demandez de convertir, elle est refaite en x264 à qualité constante. Un DVD est toujours en MPEG-2."/>
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
       <Button Content="OK" IsDefault="True" MinWidth="90" Margin="0,0,8,0" Click="OnOk" Style="{StaticResource Primary}"/>
       <Button Content="Annuler" IsCancel="True" MinWidth="90"/>

@@ -16,7 +16,9 @@ public partial class App : Application
     {
         base.OnStartup(e);
         BurnSmith.Core.Tools.Payload = () => BurnSmith.Payload.Payload.Open(); // a lambda: the 170 MB assembly loads only when this runs
-        _ = Task.Run(() => BurnSmith.Core.Tools.BundledDir()); // first run: unpack ffmpeg and tsMuxeR while the window comes up
+        BurnSmith.Core.Tools.TemplatePayload = () => BurnSmith.Payload.Payload.OpenTemplates();
+        // first run of a build: unpack ffmpeg, tsMuxeR, the open menu library and the template pictures into BurnSmith-data while the window comes up
+        _ = Task.Run(() => { BurnSmith.Core.Tools.BundledDir(); BurnSmith.Core.Tools.TemplatesDir(); BurnSmith.Core.Menu.OpenLibrary.Dir(); });
         var snap = Array.IndexOf(e.Args, "--snapshot");
         var snapshot = snap >= 0 && snap + 1 < e.Args.Length;
         var videos = e.Args.Where((a, i) => !a.StartsWith("--") && (snap < 0 || i != snap + 1) && File.Exists(a)).ToList(); // not the snapshot's own output
@@ -36,7 +38,7 @@ public partial class App : Application
             window.Show();
             if (e.Args.Contains("scroll")) win.ScrollPropsToEnd();
         }
-        else if (e.Args.Contains("advanced")) { window = new AdvancedWindow("MY_DISC", 5); OffScreen(window); window.Show(); }
+        else if (e.Args.Contains("advanced")) { window = new AdvancedWindow("MY_DISC", 5, new BurnSmith.Core.EncodeOptions()); OffScreen(window); window.Show(); }
         if (e.Args.Contains("focus")) // selection and keyboard focus states: the second template of the list, the first text box (the output folder on the main window)
         {
             (window.FindName("BuiltInList") as System.Windows.Controls.ListBox)?.SetCurrentValue(System.Windows.Controls.Primitives.Selector.SelectedIndexProperty, 1);

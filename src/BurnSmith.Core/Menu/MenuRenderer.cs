@@ -67,6 +67,13 @@ public static class MenuRenderer
     public static byte[] Background(MenuDesign d, MenuPage page) =>
         Encode(new JpegBitmapEncoder { QualityLevel = 92 }, MenuBuilder.W, MenuBuilder.H, dc => DrawPage(dc, d, page));
 
+    /// <summary>
+    /// The page without its background (transparent PNG): what goes over a menu video. The design's dim stays as a translucent veil,
+    /// so text is readable on any picture.
+    /// </summary>
+    public static byte[] Overlay(MenuDesign d, MenuPage page) =>
+        Encode(new PngBitmapEncoder(), MenuBuilder.W, MenuBuilder.H, dc => DrawPage(dc, d, page, true));
+
     /// <summary>Transparent PNG with the focus frame, sized like the button plus the focus margin.</summary>
     public static byte[] Focus(MenuDesign d, MenuButton b)
     {
@@ -89,10 +96,14 @@ public static class MenuRenderer
     public static byte[] Marker(MenuDesign d, int size) =>
         Encode(new PngBitmapEncoder(), size, size, dc => dc.DrawEllipse(new SolidColorBrush(Col(d.Accent)), null, new Point(size / 2.0, size / 2.0), size / 2.0, size / 2.0));
 
-    static void DrawPage(DrawingContext dc, MenuDesign d, MenuPage page)
+    static void DrawPage(DrawingContext dc, MenuDesign d, MenuPage page, bool overlay = false)
     {
         var full = new Rect(0, 0, MenuBuilder.W, MenuBuilder.H);
-        if (d.TemplateDir != null) { /* the template's own artwork is the first op of every page */ }
+        if (overlay)
+        {
+            if (d.TemplateDir == null && d.Dim > 0) dc.DrawRectangle(new SolidColorBrush(Col("#000000", d.Dim / 100.0)), null, full);
+        }
+        else if (d.TemplateDir != null) { /* the template's own artwork is the first op of every page */ }
         else if (ElementLibrary.Resolve(d.BackgroundImage) is { } picture && File.Exists(picture))
         {
             dc.DrawRectangle(new ImageBrush(Load(picture)) { Stretch = Stretch.UniformToFill }, null, full);
@@ -114,7 +125,7 @@ public static class MenuRenderer
             switch (op)
             {
                 case Image im:
-                    dc.DrawImage(Load(im.Path), R(im.Rect));
+                    if (!(overlay && im.Backdrop)) dc.DrawImage(Load(im.Path), R(im.Rect));
                     break;
                 case Text t:
                     DrawText(dc, t);

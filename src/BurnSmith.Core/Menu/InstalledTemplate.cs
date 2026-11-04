@@ -393,7 +393,7 @@ public sealed class InstalledTemplate
         {
             var node = page.Child("bg")!;
             var box = node.Attrs.ContainsKey("rect") ? node.Rect() : new Box(0, 0, MenuBuilder.W, MenuBuilder.H);
-            ops.Add(new Image(bg, node.Attr("fit") is { Length: > 0 } fit ? Fit(bg, box, fit) : box));
+            ops.Add(new Image(bg, node.Attr("fit") is { Length: > 0 } fit ? Fit(bg, box, fit) : box, Backdrop: true));
         }
         var cover = page.Child("bg")?.Child("covering_color")?.Text; // #AARRGGBB shade between the artwork and the thumbnails
         if (cover is { Length: 9 }) ops.Add(new Fill(new Box(0, 0, MenuBuilder.W, MenuBuilder.H), "#" + cover[^6..], Convert.ToInt32(cover.TrimStart('#')[..2], 16) / 255.0, 0));
@@ -470,6 +470,7 @@ public sealed class InstalledTemplate
         var total = cells.Count > 1 ? (cells.Count + perPage - 1) / perPage : 0;
         for (var i = 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, c.Series ? d.EpisodesLabel : d.ScenesLabel, c.PreviewPicture));
         if (c.HasSettings) pages.Add(MenuBuilder.Settings(d, c, null, null, "settings")); // BurnSmith's own rows when the template has none
+        if (d.CreditLines().Count > 0) pages.Add(MenuBuilder.Credits(d, SetupBackdrop())); // the template has no such page: its background under a veil
         return pages;
     }
 
@@ -505,17 +506,27 @@ public sealed class InstalledTemplate
             c.Series ? new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count) : new MenuAction("play", Playlist: c.Playlist),
             c.Series ? d.PlayAllLabel : d.PlayLabel);
         if (withScenes) Add("scenes", n.Child("scenes"), Button("scenebuttontimage"), new MenuAction("page", "scenes1"), c.Series ? d.EpisodesLabel : d.ScenesLabel);
+        // "none_setup" templates have no picture for Settings, and none has one for Credits: plain capsules in a row under the other buttons, BurnSmith's own addition
+        var pills = new List<(string Id, string Label)>();
         if (c.HasSettings)
         {
             if (Button("setupbuttontimage") != null || n.Child("setup")?.Attr("textbutton") == "1") Add("settings", n.Child("setup"), Button("setupbuttontimage"), new MenuAction("page", "settings"), d.SettingsLabel);
-            else // "none_setup" templates have no picture for it: a plain capsule under the other buttons, BurnSmith's own addition
+            else pills.Add(("settings", d.SettingsLabel));
+        }
+        if (d.CreditLines().Count > 0) pills.Add(("credits", d.CreditsLabel));
+        if (pills.Count > 0)
+        {
+            const int pillW = 320, pillGap = 20;
+            var low = buttons.Count == 0 ? MenuBuilder.H / 2 : buttons.Max(b => b.Rect.Y + b.Rect.H);
+            var middle = buttons.Count == 0 ? MenuBuilder.W / 2 : (int)buttons.Average(b => b.Rect.X + b.Rect.W / 2.0);
+            var row = pills.Count * pillW + (pills.Count - 1) * pillGap;
+            var x0 = Math.Clamp(middle - row / 2, 20, MenuBuilder.W - row - 20);
+            for (var k = 0; k < pills.Count; k++)
             {
-                var low = buttons.Count == 0 ? MenuBuilder.H / 2 : buttons.Max(b => b.Rect.Y + b.Rect.H);
-                var middle = buttons.Count == 0 ? MenuBuilder.W / 2 : (int)buttons.Average(b => b.Rect.X + b.Rect.W / 2.0);
-                var box = new Box(Math.Clamp(middle - 160, 20, MenuBuilder.W - 340), Math.Min(low + 8, MenuBuilder.H - 70), 320, 58);
+                var box = new Box(x0 + k * (pillW + pillGap), Math.Min(low + 8, MenuBuilder.H - 70), pillW, 58);
                 ops.Add(MenuBuilder.IsLight(d.TextColor) ? new Fill(box, "#000000", 0.35, 28) : new Fill(box, "#FFFFFF", 0.45, 28)); // dark text gets a light capsule
-                ops.Add(new Label(d.SettingsLabel, box, 36, true));
-                buttons.Add(new MenuButton("settings", box, new MenuAction("page", "settings")));
+                ops.Add(new Label(pills[k].Label, box, 36, true));
+                buttons.Add(new MenuButton(pills[k].Id, box, new MenuAction("page", pills[k].Id)));
             }
         }
         return new MenuPage("root", ops, Link(buttons));

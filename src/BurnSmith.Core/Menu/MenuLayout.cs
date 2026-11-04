@@ -11,8 +11,8 @@ public sealed record Fill(Box Rect, string Color, double Opacity, int Radius) : 
 public sealed record Label(string Value, Box Rect, int Size, bool Bold, string Align = "center") : Op;
 public sealed record Picture(string Path, Box Rect, int Radius, int BorderWidth) : Op;
 
-/// <summary>Template artwork (transparent PNG / JPEG) stretched to <paramref name="Rect"/>.</summary>
-public sealed record Image(string Path, Box Rect) : Op;
+/// <summary>Template artwork (transparent PNG / JPEG) stretched to <paramref name="Rect"/>. <paramref name="Backdrop"/> = the page's background picture, which a moving menu replaces by its video.</summary>
+public sealed record Image(string Path, Box Rect, bool Backdrop = false) : Op;
 
 /// <summary>Template text: own font (optionally a .ttf next to the template), colour, outline.</summary>
 public sealed record Text(string Value, Box Rect, double Size, string Font, string? FontDir, string Color, bool Bold, bool Italic, string Align = "left",
@@ -63,7 +63,7 @@ public sealed record MenuContent(int Playlist, string? PreviewPicture, IReadOnly
 /// <summary>Turns a design + disc facts into pages on a 1920x1080 canvas. Root page first, then the scene/episode pages, then settings.</summary>
 public static class MenuBuilder
 {
-    public const int W = 1920, H = 1080, FocusMargin = 10, MaxAudio = 6, MaxSubtitles = 5, MarkerSize = 36, MarkerGap = 24;
+    public const int W = 1920, H = 1080, FocusMargin = 10, MaxAudio = 6, MaxSubtitles = 5, MaxCreditLines = 14, MarkerSize = 36, MarkerGap = 24;
 
     /// <summary>Scene buttons per page.</summary>
     public static int PerPage(MenuDesign d) => Math.Max(1, d.Cols) * Math.Max(1, d.Rows);
@@ -89,6 +89,7 @@ public static class MenuBuilder
         var gridPages = cells.Count > 1 ? (cells.Count + PerPage(d) - 1) / PerPage(d) : 0;
         for (var i = 1; i <= gridPages; i++) pages.Add(Grid(d, c, cells, i, gridPages));
         if (c.HasSettings) pages.Add(Settings(d, c, null, null));
+        if (d.CreditLines().Count > 0) pages.Add(Credits(d, null));
         return pages;
     }
 
@@ -135,6 +136,7 @@ public static class MenuBuilder
         };
         if (withGrid) entries.Add(("scenes", c.Series ? d.EpisodesLabel : d.ScenesLabel, new MenuAction("page", "scenes1")));
         if (c.HasSettings) entries.Add(("settings", d.SettingsLabel, new MenuAction("page", "settings")));
+        if (d.CreditLines().Count > 0) entries.Add(("credits", d.CreditsLabel, new MenuAction("page", "credits")));
 
         const int bw = 400, gap = 60;
         var x0 = (W - (entries.Count * bw + (entries.Count - 1) * gap)) / 2;
@@ -151,6 +153,24 @@ public static class MenuBuilder
             });
         }
         return new MenuPage("root", ops, buttons);
+    }
+
+    /// <summary>
+    /// The credits page: the design's free text, one centred row per line, and a Back button. <paramref name="backdrop"/> is the artwork
+    /// an installed template gives it (null = the design's own background).
+    /// </summary>
+    public static MenuPage Credits(MenuDesign d, List<Op>? backdrop)
+    {
+        var lines = d.CreditLines();
+        var ops = backdrop ?? [];
+        ops.Add(new Label(d.CreditsLabel, new Box(0, 60, W, 120), 80, true));
+        const int top = 210, bottom = 920;
+        var pitch = Math.Min(72, (bottom - top) / Math.Max(1, lines.Count));
+        for (var i = 0; i < lines.Count; i++)
+            ops.Add(new Label(lines[i], new Box(160, top + i * pitch, W - 320, pitch), Math.Clamp(pitch * 3 / 5, 24, 44), false));
+        var back = new Box((W - 300) / 2, 950, 300, 90);
+        ops.AddRange(Button(d, back, d.BackLabel, 46));
+        return new MenuPage("credits", ops, [new MenuButton("back", back, new MenuAction("page", "root"))]);
     }
 
     /// <summary>Cell rectangles of a scene page: BurnSmith's original 3x2 geometry, or the ratio geometry (margins, gap, header, footer) of the design.</summary>

@@ -23,6 +23,11 @@ public sealed class MenuDesign
     public string SubtitlesLabel { get; set; } = "Subtitles";
     public string OffLabel { get; set; } = "Off";
     public string BackLabel { get; set; } = "Back";
+    public string CreditsLabel { get; set; } = "Credits";
+    /// <summary>Free text of the credits page (cast, thanks, production), one row per line; empty = no credits page and no button for it.</summary>
+    public string Credits { get; set; } = "";
+    /// <summary>Disc title per language for the player's disc information (BDMV\META\DL), one "xxx: title" per line, xxx = 3-letter language code (fra, eng, deu...).</summary>
+    public string TitlesByLanguage { get; set; } = "";
     public string Font { get; set; } = "Segoe UI";
     /// <summary>Background gradient (#RRGGBB). Ignored when <see cref="BackgroundImage"/> is set.</summary>
     public string Top { get; set; } = "#0B1B3B";
@@ -54,10 +59,40 @@ public sealed class MenuDesign
     public double Gap { get; set; }
     public double Header { get; set; }
     public double Footer { get; set; }
-    /// <summary>Background music: stored with the template, muxed by the disc builder when supported.</summary>
+    /// <summary>
+    /// Moving menu: a clip of <see cref="LoopSeconds"/> seconds, taken from <see cref="LoopFile"/> (the disc's first video when null) from
+    /// <see cref="LoopStart"/> on, plays behind the buttons and starts again when it ends. The page background picture is then left out.
+    /// </summary>
+    public bool Loop { get; set; }
+    public string? LoopFile { get; set; }
+    public int LoopStart { get; set; }
+    public int LoopSeconds { get; set; } = 30;
+    /// <summary>Sound of the moving menu: this audio file, repeated over the clip; null = the clip's own sound. Only used with <see cref="Loop"/>.</summary>
     public string? Music { get; set; }
 
     public MenuDesign Clone() => (MenuDesign)MemberwiseClone();
+
+    /// <summary>Rows of the credits page (blank lines dropped; what does not fit on one page is cut).</summary>
+    public List<string> CreditLines() =>
+        Credits.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).Take(MenuBuilder.MaxCreditLines).ToList();
+
+    /// <summary>
+    /// Disc titles per language as (code, title): the lines of <see cref="TitlesByLanguage"/> that read "xxx: title" with a 3-letter code.
+    /// The first of a language wins; the plain <see cref="Title"/> is the English fallback every disc carries.
+    /// </summary>
+    public List<(string Lang, string Title)> LanguageTitles()
+    {
+        var list = new List<(string, string)>();
+        foreach (var line in TitlesByLanguage.Split('\n'))
+        {
+            var at = line.IndexOf(':');
+            if (at != 3) continue;
+            var lang = line[..3].Trim().ToLowerInvariant();
+            var title = line[(at + 1)..].Trim();
+            if (title.Length > 0 && lang.All(char.IsAsciiLetterLower) && !list.Any(t => t.Item1 == lang)) list.Add((lang, title));
+        }
+        return list;
+    }
 
     /// <summary>Takes the look of a template (picture, colours, font, button style, grid) and keeps this design's texts, title and music.</summary>
     public void TakeLook(MenuDesign t)

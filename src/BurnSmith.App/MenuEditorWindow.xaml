@@ -95,6 +95,32 @@
         <TextBox Text="{Binding OffLabel, UpdateSourceTrigger=PropertyChanged}"/>
         <TextBlock Text="Bouton retour" Style="{StaticResource Caption}"/>
         <TextBox Text="{Binding BackLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Bouton crédits" Style="{StaticResource Caption}"/>
+        <TextBox Text="{Binding CreditsLabel, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBlock Text="Texte des crédits (une ligne par rangée ; vide = pas de page crédits)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+        <TextBox Text="{Binding Credits, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" VerticalScrollBarVisibility="Auto"/>
+        <TextBlock Text="Titre du disque par langue, Blu-ray (une ligne par langue, ex. fra: Mon disque)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+        <TextBox Text="{Binding TitlesByLanguage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" VerticalScrollBarVisibility="Auto"/>
+
+        <CheckBox Content="Menu animé : une vidéo tourne en boucle derrière les boutons" IsChecked="{Binding Loop}" Margin="0,16,0,0"/>
+        <DockPanel Margin="0,4">
+          <TextBlock Text="Début (s)" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBox Text="{Binding LoopStart, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+        <DockPanel Margin="0,4">
+          <TextBlock Text="Durée (s)" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBox Text="{Binding LoopSeconds, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+        <TextBlock Text="Vidéo du menu (vide = le premier film)" Style="{StaticResource Caption}"/>
+        <DockPanel>
+          <Button Content="…" Width="36" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnLoopFile"/>
+          <TextBox Text="{Binding LoopFile, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+        <TextBlock Text="Musique du menu (vide = le son de la vidéo)" Style="{StaticResource Caption}"/>
+        <DockPanel>
+          <Button Content="…" Width="36" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnMusic"/>
+          <TextBox Text="{Binding Music, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
         <TextBlock x:Name="LookNote" Text="Ce modèle fixe l'apparence : police, couleurs, fond et libellés des boutons viennent de ses images (souvent en anglais)." TextWrapping="Wrap" Opacity="0.65" Margin="0,12,0,0" Visibility="Collapsed"/>
         <Button x:Name="Detach" Content="Composer à partir de ce fond" Margin="0,8,0,0" HorizontalAlignment="Stretch" Visibility="Collapsed" Click="OnDetach"
                 ToolTip="Garde le fond de ce modèle (sans le copier) et ouvre la police, les boutons, la grille et les couleurs."/>

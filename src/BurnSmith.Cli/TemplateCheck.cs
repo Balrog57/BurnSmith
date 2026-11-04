@@ -21,10 +21,15 @@ static class TemplateCheck
         {
             var issues = new List<string>();
             var shapes = matrix ? Shapes(picture).ToList() : Basic(picture).ToList();
-            foreach (var (label, content, render) in shapes)
-                // composed designs are drawn only for 13 chapters / 14 episodes: their pages share one layout code
-                try { Check(design, content, label, issues, render && (!composed || label.StartsWith("film13") || label.StartsWith("série14"))); }
-                catch (Exception e) { issues.Add($"{label}: exception {e.GetType().Name}: {e.Message}"); }
+            // matrix: every design twice, the second time with a credits page and as a moving menu (transparent overlay pages)
+            foreach (var variant in matrix ? new[] { design, Credited(design) } : [design])
+                foreach (var (shape, content, render) in shapes)
+                {
+                    var label = variant == design ? shape : "crédits " + shape;
+                    // composed designs are drawn only for 13 chapters / 14 episodes: their pages share one layout code
+                    try { Check(variant, content, label, issues, render && (!composed || shape.StartsWith("film13") || shape.StartsWith("série14"))); }
+                    catch (Exception e) { issues.Add($"{label}: exception {e.GetType().Name}: {e.Message}"); }
+                }
             // overlapping buttons are only reported: skewed thumbnails, arrows over a carousel and DVD star slots overlap by design
             var notes = issues.Where(i => i.Contains("se chevauchent")).Distinct().ToList();
             var errors = issues.Except(notes).Distinct().ToList();
@@ -34,6 +39,14 @@ static class TemplateCheck
         }
         Console.WriteLine($"{designs.Count - failed} sans problème, {failed} avec problèmes, {skipped.Count} refusés{(matrix ? $", {designs.Count} modèles x {Shapes(picture).Count()} formes de disque en {watch.Elapsed.TotalSeconds:0} s" : "")}");
         return failed == 0 ? 0 : 1;
+    }
+
+    static MenuDesign Credited(MenuDesign d)
+    {
+        var c = d.Clone();
+        c.Credits = "Un film de Marc\nMusique : Clara D.\nMerci à toute la famille";
+        c.Loop = true;
+        return c;
     }
 
     static readonly string[] Langs = ["Français", "English", "Español", "Deutsch", "Italiano", "Português", "Nederlands", "Svenska", "日本語"];
@@ -94,6 +107,7 @@ static class TemplateCheck
         var cellButtons = 0;
         if (!pages[0].Buttons.Any(b => b.Action.Kind is "play" or "playall")) issues.Add($"{label}: pas de bouton lecture sur la page racine");
         if (c.HasSettings && !ids.Contains("settings")) issues.Add($"{label}: pas de page de réglages");
+        if (design.CreditLines().Count > 0 && (!ids.Contains("credits") || !pages[0].Buttons.Any(b => b.Id == "credits"))) issues.Add($"{label}: pas de page ou de bouton crédits");
         if (cells > 1 && !ids.Contains("scenes1")) issues.Add($"{label}: pas de page de scènes");
 
         foreach (var p in pages)
@@ -152,6 +166,18 @@ static class TemplateCheck
             var deviation = Math.Sqrt(px.Average(v => (v - mean) * (v - mean)));
             if (mean < 6) issues.Add($"{label}/{id}: page noire");
             else if (deviation < 4) issues.Add($"{label}/{id}: page unie (écart {deviation:0.0})");
+        }
+        if (!design.Loop) return;
+        // moving menu: the overlay must hold something (text, buttons) and must not be opaque everywhere (the video has to show through)
+        foreach (var (id, png) in MenuRenderer.Sta(() => pages.Select(p => (p.Id, Png: MenuRenderer.Overlay(design, p))).ToList()))
+        {
+            var frame = new FormatConvertedBitmap(new PngBitmapDecoder(new MemoryStream(png), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad).Frames[0], PixelFormats.Bgra32, null, 0);
+            var px = new byte[frame.PixelWidth * frame.PixelHeight * 4];
+            frame.CopyPixels(px, frame.PixelWidth * 4, 0);
+            var opaque = Enumerable.Range(0, px.Length / 4).Count(i => px[i * 4 + 3] > 240) / (double)(px.Length / 4);
+            var any = Enumerable.Range(0, px.Length / 4).Any(i => px[i * 4 + 3] > 16);
+            if (!any) issues.Add($"{label}/{id}: calque du menu animé vide");
+            else if (opaque > 0.85) issues.Add($"{label}/{id}: calque du menu animé opaque à {opaque:P0} (la vidéo ne se verrait pas)");
         }
     }
 }
