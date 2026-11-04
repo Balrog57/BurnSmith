@@ -15,7 +15,7 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        BurnSmith.Core.Tools.Payload = BurnSmith.Payload.Payload.Open;
+        BurnSmith.Core.Tools.Payload = () => BurnSmith.Payload.Payload.Open(); // a lambda: the 170 MB assembly loads only when this runs
         _ = Task.Run(() => BurnSmith.Core.Tools.BundledDir()); // first run: unpack ffmpeg and tsMuxeR while the window comes up
         var snap = Array.IndexOf(e.Args, "--snapshot");
         var snapshot = snap >= 0 && snap + 1 < e.Args.Length;

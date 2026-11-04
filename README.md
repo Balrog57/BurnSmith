@@ -1,8 +1,8 @@
 # BurnSmith
 
-Créateur de DVD, Blu-ray et Blu-ray 4K pour Windows : on choisit une vidéo, on dessine le menu, on obtient un dossier de disque, une image ISO, ou on grave directement. L'application est un **seul `BurnSmith.exe` portable** (rien à installer).
+Créateur de Blu-ray (et DVD, Blu-ray 4K) libre pour Windows : on choisit une ou plusieurs vidéos, on dessine le menu, on obtient un dossier de disque, une image ISO, ou on grave directement ; on peut aussi graver un ISO existant. L'application est un **seul `BurnSmith.exe` portable** qui embarque ffmpeg et tsMuxeR ; la gravure et la création d'ISO passent par Windows (IMAPI2), rien à installer. Licence : GNU GPL v3 ou ultérieure.
 
-> Projet jeune. Les dossiers BDMV / VIDEO_TS générés se lisent dans VLC ; la gravure sur disque réel et la lecture sur lecteurs de salon **n'ont pas encore été testées**.
+> Projet jeune. Les dossiers BDMV générés se lisent dans VLC et les ISO se montent sous Windows ; la **gravure sur disque réel et la lecture sur lecteurs de salon n'ont pas encore été testées**.
 
 ## Ce que ça fait
 
@@ -14,29 +14,21 @@ Créateur de DVD, Blu-ray et Blu-ray 4K pour Windows : on choisit une vidéo, on
 
 ## Utiliser
 
-1. Télécharger `BurnSmith.exe` dans [Releases](https://github.com/Balrog57/BurnSmith/releases) (ou le compiler, voir *Compiler*) et le lancer.
-2. Placer à côté les programmes tiers dans un dossier `tools\` (ou les mettre dans le `PATH`, ou définir `BURNSMITH_TOOLS`) :
+Télécharger `BurnSmith.exe` dans [Releases](https://github.com/Balrog57/BurnSmith/releases) (ou le compiler, voir *Compiler*) et le lancer. Au premier lancement, ffmpeg, ffprobe et tsMuxeR sont dépaquetés dans `%LOCALAPPDATA%\BurnSmith\tools` (quelques secondes, environ 440 Mo) ; un dossier `tools\` à côté de l'exe ou la variable `BURNSMITH_TOOLS` les remplacent si besoin.
 
-| Programme | Rôle | Obligatoire pour |
-|---|---|---|
-| `ffmpeg.exe`, `ffprobe.exe` | analyse et encodage | tout |
-| `tsMuxeR.exe` ([justdan96/tsMuxer](https://github.com/justdan96/tsMuxer)) | assemblage Blu-ray | Blu-ray, 4K |
-| `dvdauthor.exe`, `spumux.exe` | menus et structure DVD | DVD |
-| `ImgBurn.exe` | création d'ISO et gravure | ISO, gravure |
-
-Ces programmes ne sont pas fournis dans ce dépôt (leurs licences sont les leurs). Le mode DVD est écrit pour une build Windows de dvdauthor/spumux dont la ligne de commande est `spumux script entrée sortie` et `dvdauthor -o dest -x script.xml -h 0 -q` ; les builds standard ne sont pas encore gérées.
+Le mode **DVD** reste hors de l'exe : il demande `dvdauthor.exe` et `spumux.exe` (builds Windows dont la ligne de commande est `spumux script entrée sortie` et `dvdauthor -o dest -x script.xml -h 0 -q`), à placer dans `tools\` ou le `PATH`. Les licences des programmes embarqués sont dans `THIRD-PARTY-NOTICES.md`.
 
 ## Compiler
 
-Prérequis : SDK .NET 10.
+Prérequis : SDK .NET 10, un dossier contenant `ffmpeg.exe` et `ffprobe.exe` (dans le `PATH` ou `-FfmpegDir`) et `tools\tsmuxer\bin\tsMuxeR.exe` (ou `-TsMuxer`). Ces binaires ne sont pas dans le dépôt : `publish.ps1` les zippe depuis votre PC.
 
 ```powershell
-.\publish.ps1      # produit dist\BurnSmith.exe (autonome, un seul fichier)
+.\publish.ps1      # produit dist\BurnSmith.exe (autonome, un seul fichier, environ 230 Mo)
 ```
 
 Le menu Blu-ray est un xlet Java 1.3 (`bdj/`). `assets/bdj/menu.jar` est déjà compilé et embarqué dans l'exe ; `bdj\build.ps1` le reconstruit avec un JDK 8 (`tools\jdk8`).
 
-Ligne de commande : `burnsmith bd|dvd --video f.mkv --out dossier [--design NOM|DOSSIER_DU_MODELE] [--title TEXTE] [--no-menu] [--chapters MIN] [--uhd]` ; `burnsmith preview NOM|DOSSIER sortie [--picture image.jpg] [--episodes N]` dessine toutes les pages d'un modèle.
+Ligne de commande : `burnsmith bd|dvd --video f.mkv --out dossier [--design NOM|DOSSIER_DU_MODELE] [--title TEXTE] [--no-menu] [--chapters MIN] [--uhd]` ; `burnsmith preview NOM|DOSSIER sortie [--picture image.jpg] [--episodes N]` dessine toutes les pages d'un modèle ; `burnsmith drives` liste les graveurs vus par Windows ; `burnsmith iso dossier sortie.iso [--label X] [--dvd]` crée l'image UDF ; `burnsmith burn image.iso F:` grave (disque vierge) puis relit le disque ; `burnsmith verify image.iso F:` compare un disque à son image.
 
 ## Structure
 
@@ -59,4 +51,6 @@ BurnSmith **ne contient aucun modèle** : il lit à l'exécution ceux que vous a
 
 Fonctions de DVDFab Créateur pas encore reprises : paramètres avancés (nom du volume, sortie BD25/BD50, conversion ou passthrough, qualité/débit), aperçu / recherche de métadonnées / coupe / suppression par titre, options HDR. Aussi : musique de fond, ré-encodage HDR pour la 4K, signature BD-J, surbrillances DVD exactes d'après les modèles, essais sur disque réel et sur lecteurs de salon.
 
-BurnSmith est indépendant de DVDFab et de Leawo (aucun code de ces logiciels n'est repris) et n'est pas affilié à eux.
+## Licence
+
+GNU GPL v3 ou ultérieure (`LICENSE`). Ce projet s'inspire de projets libres lus sur GitHub, notamment futureburn (MIT) pour la gravure IMAPI2 ; détails dans `THIRD-PARTY-NOTICES.md`. BurnSmith est indépendant de DVDFab et de Leawo (aucun code ni modèle de ces logiciels n'est repris) et n'est pas affilié à eux.

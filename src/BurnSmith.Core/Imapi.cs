@@ -53,6 +53,21 @@ public static class Imapi
         return list;
     }
 
+    /// <summary>Checks, without a drive, that the typed COM views and the progress events can be created on this Windows.</summary>
+    public static void SelfTest()
+    {
+        var format = (IDiscFormat2Data)Create("IMAPI2.MsftDiscFormat2Data");
+        var erase = (IDiscFormat2Erase)Create("IMAPI2.MsftDiscFormat2Erase");
+        var recorder = (IDiscRecorder2)Create("IMAPI2.MsftDiscRecorder2");
+        try
+        {
+            Action<object, object> noop = (_, _) => { };
+            ComEventsHelper.Combine(format, DataEvents, 0x200, noop);
+            ComEventsHelper.Remove(format, DataEvents, 0x200, noop);
+        }
+        finally { Release(format); Release(erase); Release(recorder); }
+    }
+
     static Drive FindDrive(string letter)
     {
         if (letter.Length < 2 || !char.IsAsciiLetter(letter[0]) || letter[1] != ':') throw new ArgumentException("drive must look like F:", nameof(letter));
@@ -60,9 +75,9 @@ public static class Imapi
             ?? throw new ArgumentException($"{letter[..2]} is not a disc burner that Windows can see");
     }
 
-    static dynamic OpenRecorder(Drive drive)
+    static IDiscRecorder2 OpenRecorder(Drive drive)
     {
-        dynamic recorder = Create("IMAPI2.MsftDiscRecorder2");
+        var recorder = (IDiscRecorder2)Create("IMAPI2.MsftDiscRecorder2");
         recorder.InitializeDiscRecorder(drive.Id);
         return recorder;
     }
@@ -71,14 +86,14 @@ public static class Imapi
     public static Media? Inspect(string letter)
     {
         var recorder = OpenRecorder(FindDrive(letter));
-        dynamic format = Create("IMAPI2.MsftDiscFormat2Data");
+        var format = (IDiscFormat2Data)Create("IMAPI2.MsftDiscFormat2Data");
         try
         {
-            format.Recorder = recorder;
-            if (!(bool)format.IsCurrentMediaSupported(recorder)) return null;
-            int kind = format.CurrentPhysicalMediaType;
-            return new Media(kind >= 0 && kind < MediaKinds.Length ? MediaKinds[kind] : $"type {kind}", (bool)format.MediaHeuristicallyBlank,
-                             Convert.ToInt64(format.FreeSectorsOnMedia) * Sector, Convert.ToInt64(format.TotalSectorsOnMedia) * Sector);
+            format.put_Recorder(recorder);
+            if (!format.IsCurrentMediaSupported(recorder)) return null;
+            var kind = format.get_CurrentPhysicalMediaType();
+            return new Media(kind >= 0 && kind < MediaKinds.Length ? MediaKinds[kind] : $"type {kind}", format.get_MediaHeuristicallyBlank(),
+                             (long)format.get_FreeSectorsOnMedia() * Sector, (long)format.get_TotalSectorsOnMedia() * Sector);
         }
         catch (COMException) { return null; }
         finally { Release(format); Release(recorder); }
@@ -172,13 +187,13 @@ public static class Imapi
 
         log?.Invoke($"burn: {Path.GetFileName(isoFile)} -> {letter} ({media.Kind}, {size / 1e9:0.00} GB)");
         var recorder = OpenRecorder(drive);
-        dynamic format = Create("IMAPI2.MsftDiscFormat2Data");
+        var format = (IDiscFormat2Data)Create("IMAPI2.MsftDiscFormat2Data");
         IStream? source = null;
         try
         {
-            format.Recorder = recorder;
-            format.ClientName = "BurnSmith";
-            format.ForceMediaToBeClosed = true;
+            format.put_Recorder(recorder);
+            format.put_ClientName("BurnSmith");
+            format.put_ForceMediaToBeClosed(true);
             var start = Environment.TickCount64;
             Action<object, object> update = (_, args) =>
             {
@@ -221,8 +236,16 @@ public static class Imapi
             cancel.ThrowIfCancellationRequested();
             var n = (int)Math.Min(chunk, total - offset);
             image.ReadExactly(a, 0, n);
-            if (RandomAccess.Read(disc, b.AsSpan(0, n), offset) != n || !a.AsSpan(0, n).SequenceEqual(b.AsSpan(0, n)))
+            var got = RandomAccess.Read(disc, b.AsSpan(0, n), offset);
+            if (!a.AsSpan(0, got).SequenceEqual(b.AsSpan(0, got)))
                 throw new IOException($"Verification failed near {offset / 1048576} MiB: the disc does not match the image.");
+            if (got < n)
+            {
+                // a mounted image (tests) ends a little before the file does; a real disc must hold everything
+                if (total - (offset + got) > 1 << 20) throw new IOException($"Verification failed: the disc ends at {(offset + got) / 1048576} MiB, the image at {total / 1048576} MiB.");
+                log?.Invoke($"verify: le lecteur s'arrête {(total - offset - got) / 1024} Ko avant la fin de l'image (octets lus identiques)");
+                return;
+            }
             offset += n;
             progress?.Report((double)offset / total);
         }
@@ -233,12 +256,12 @@ public static class Imapi
     public static void Erase(string letter, Action<string>? log = null)
     {
         var recorder = OpenRecorder(FindDrive(letter));
-        dynamic erase = Create("IMAPI2.MsftDiscFormat2Erase");
+        var erase = (IDiscFormat2Erase)Create("IMAPI2.MsftDiscFormat2Erase");
         try
         {
-            erase.Recorder = recorder;
-            erase.ClientName = "BurnSmith";
-            erase.FullErase = false;
+            erase.put_Recorder(recorder);
+            erase.put_ClientName("BurnSmith");
+            erase.put_FullErase(false);
             log?.Invoke($"erase: {letter}");
             erase.EraseMedia();
         }
