@@ -13,7 +13,8 @@ Créateur de Blu-ray (et DVD, Blu-ray 4K) libre pour Windows : on choisit une ou
 - Menus Blu-ray en BD-J (un xlet générique + images), menus DVD par dvdauthor/spumux.
 - **Menu animé** : une vidéo (extrait du film ou fichier au choix, avec sa musique) tourne en boucle derrière les boutons, sur Blu-ray (playlist 99 relancée par le xlet ; pas en 4K) et sur DVD (le bouton choisi est conservé à chaque tour).
 - **Page Crédits** (texte libre, bouton sur le menu principal) et **titre du disque par langue** pour les lecteurs Blu-ray (`BDMV\META\DL\bdmt_xxx.xml`).
-- Réglages avancés : volume, durée des chapitres, mode vidéo (automatique ou toujours convertir), qualité x264 (rapide / standard / haute), débit vidéo du DVD à la main.
+- Réglages avancés (comme DVDFab) : volume ; **Sortie** (BD50 / BD25 / BD9 / BD5 en 1080p/i ou 720p, partagée avec la liste de la fenêtre principale) ; qualité vidéo (**Adapter au disque** : la vidéo reste telle quelle tant qu'elle tient, sinon elle est refaite au débit qui remplit le disque ; Source ; 15 / 20 / 30 Mb/s ; débit à la main) avec la taille estimée ; **Mode de lecture** (menu puis tous les titres, premier titre au démarrage puis les autres, ou retour au menu après le titre choisi, avec « Rembobiner ») ; durée des chapitres ; mode vidéo ; vitesse x264 ; débit vidéo du DVD à la main. Un disque 720p porte une vidéo 1280x720 et un menu dessiné en 1280x720.
+- Éditeur de menu : **aperçu complet du thème** : une bande avec toutes les pages (menu, scènes, réglages, crédits), flèches / Entrée / souris pour naviguer comme sur le disque.
 - Barre de capacité (DVD-5/9, BD-25/50/66/100), chapitres automatiques, création d'ISO (UDF), gravure.
 
 ## Utiliser
@@ -34,7 +35,7 @@ Prérequis : SDK .NET 10, un dossier contenant `ffmpeg.exe` et `ffprobe.exe` (da
 
 Le menu Blu-ray est un xlet Java 1.3 (`bdj/`). `assets/bdj/menu.jar` est déjà compilé et embarqué dans l'exe ; `bdj\build.ps1` le reconstruit avec un JDK 8 (`tools\jdk8`).
 
-Ligne de commande : `burnsmith bd|dvd --video f.mkv --out dossier [--design NOM|DOSSIER_DU_MODELE] [--title TEXTE] [--no-menu] [--chapters MIN] [--uhd] [--credits 'A|B'] [--titles 'fra=Titre|eng=Title'] [--loop [--loop-file V] [--loop-start S] [--loop-seconds S] [--music A]] [--reencode] [--crf N] [--preset NOM] [--dvd-kbps N]` ; `burnsmith preview NOM|DOSSIER sortie [--picture image.jpg] [--episodes N]` dessine toutes les pages d'un modèle ; `burnsmith drives` liste les graveurs vus par Windows ; `burnsmith iso dossier sortie.iso [--label X] [--dvd]` crée l'image UDF ; `burnsmith burn image.iso F:` grave (disque vierge) puis relit le disque ; `burnsmith verify image.iso F:` compare un disque à son image.
+Ligne de commande : `burnsmith bd|dvd --video f.mkv --out dossier [--design NOM|DOSSIER_DU_MODELE] [--title TEXTE] [--no-menu] [--chapters MIN] [--uhd] [--credits 'A|B'] [--titles 'fra=Titre|eng=Title'] [--loop [--loop-file V] [--loop-start S] [--loop-seconds S] [--music A]] [--reencode] [--crf N] [--preset NOM] [--dvd-kbps N] [bd : --profile "BD25 720p" --quality source|fit|15|20|30|KBPS --capacity GO --play-mode 0|1|2 [--no-rewind]]` ; `burnsmith preview NOM|DOSSIER sortie [--picture image.jpg] [--episodes N]` dessine toutes les pages d'un modèle ; `burnsmith drives` liste les graveurs vus par Windows ; `burnsmith iso dossier sortie.iso [--label X] [--dvd]` crée l'image UDF ; `burnsmith burn image.iso F:` grave (disque vierge) puis relit le disque ; `burnsmith verify image.iso F:` compare un disque à son image.
 
 ## Structure
 
@@ -65,7 +66,7 @@ La **bibliothèque** de l'éditeur catalogue les fonds (DVDStyler, fonds des mod
 
 ## Reste à faire
 
-Fonctions de DVDFab Créateur pas encore reprises : recherche de métadonnées, montage et coupe par titre, sous-titres externes, amélioration IA / HDR (les icônes ne sont pas là plutôt que sans effet). Aussi : menus HDMV natifs (par exemple avec [bdmvauthor](https://github.com/blenheimears/bdmvauthor), Apache-2.0) : le BD-J non signé est un risque de compatibilité sur lecteurs de salon, menu animé en Blu-ray 4K, placement libre d'éléments dans le menu, surbrillances DVD exactes d'après les modèles, **essais de gravure sur disque réel (non faits : un DVD-RW d'abord, le Blu-ray en dernier)** et sur lecteurs de salon. Le menu animé Blu-ray n'a été vérifié que dans libbluray (journal du xlet), pas à l'image ni sur lecteur.
+Fonctions de DVDFab Créateur et de Yuhan pas encore reprises : recherche de métadonnées, montage et coupe par titre (découpe début / fin, volume, chapitres personnalisés), sous-titres externes (SRT, ASS, SUP…), amélioration IA / HDR, vidéo de début (first-play), menu Bonus, mode de scènes par fichier / texte, élément de menu par glisser-déposer, menu contextuel (pop-up), musique de menu avec fondu, diaporama de photos et disque de musique. Aussi : menus HDMV natifs (par exemple avec [bdmvauthor](https://github.com/blenheimears/bdmvauthor), Apache-2.0) : le BD-J non signé est un risque de compatibilité sur lecteurs de salon, menu animé en Blu-ray 4K, placement libre d'éléments dans le menu, surbrillances DVD exactes d'après les modèles, **essais de gravure sur disque réel (non faits : un DVD-RW d'abord, le Blu-ray en dernier)** et sur lecteurs de salon. Le menu animé Blu-ray n'a été vérifié que dans libbluray (journal du xlet), pas à l'image ni sur lecteur.
 
 ## Licence
 

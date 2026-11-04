@@ -38,7 +38,7 @@ public partial class App : Application
             window.Show();
             if (e.Args.Contains("scroll")) win.ScrollPropsToEnd();
         }
-        else if (e.Args.Contains("advanced")) { window = new AdvancedWindow("MY_DISC", 5, new BurnSmith.Core.EncodeOptions()); OffScreen(window); window.Show(); }
+        else if (e.Args.Contains("advanced")) { window = new AdvancedWindow("MY_DISC", 5, new BurnSmith.Core.EncodeOptions(FitDisc: true), new BurnSmith.Core.PlaybackOptions(), "bd", Output.Bds, Output.DefaultBd); OffScreen(window); window.Show(); }
         if (e.Args.Contains("focus")) // selection and keyboard focus states: the second template of the list, the first text box (the output folder on the main window)
         {
             (window.FindName("BuiltInList") as System.Windows.Controls.ListBox)?.SetCurrentValue(System.Windows.Controls.Primitives.Selector.SelectedIndexProperty, 1);

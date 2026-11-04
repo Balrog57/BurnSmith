@@ -16,16 +16,6 @@ namespace BurnSmith.App;
 
 public partial class MainWindow : Window
 {
-    sealed record Cap(string Name, double Gb, double Usable)
-    {
-        public override string ToString() => $"{Name} ({Gb:0.#} Go)";
-    }
-
-    // nominal size, and the part a build may fill (rest = file system and menu overhead)
-    static readonly Cap[] Dvds = [new("DVD-5", 4.7, 4.2), new("DVD-9", 8.5, 7.6)];
-    static readonly Cap[] Bds = [new("BD-25", 25, 23.3), new("BD-50", 50, 46.5)];
-    static readonly Cap[] Uhds = [new("BD-66", 66, 61), new("BD-100", 100, 93)];
-
     /// <summary>One video of the disc, with the tracks the user keeps (indexes into the source's own audio / subtitle lists).</summary>
     sealed class Entry(string path, SourceInfo info) : INotifyPropertyChanged
     {
@@ -59,7 +49,8 @@ public partial class MainWindow : Window
     string kind = "bd"; // dvd | bd | uhd
     string volume = "MON_DISQUE";
     int chapterMinutes = 5;
-    EncodeOptions encode = new();
+    EncodeOptions encode = new(FitDisc: true); // "Adapter au disque": the video stays as it is while it fits
+    PlaybackOptions playback = new(); // back to the menu after the title that was picked, as before the option existed
     string? previewFrame, previewFor;
     bool labelEdited, outEdited, busy, refreshingDrives;
     int thumbVersion;
@@ -166,8 +157,8 @@ public partial class MainWindow : Window
     {
         kind = k;
         ModeText.Text = k == "dvd" ? "DVD" : k == "uhd" ? "Blu-ray 4K" : "Blu-ray";
-        CapacityBox.ItemsSource = k == "dvd" ? Dvds : k == "uhd" ? Uhds : Bds;
-        CapacityBox.SelectedIndex = 0;
+        CapacityBox.ItemsSource = Output.For(k);
+        CapacityBox.SelectedItem = k == "bd" ? Output.DefaultBd : Output.For(k)[0];
         foreach (var t in titles)
         {
             t.Subs = t.Subs.Where(i => SupportsSub(t.Info.Subtitles.First(x => x.Index == i))).ToList();
@@ -193,13 +184,13 @@ public partial class MainWindow : Window
 
     void Update()
     {
-        if (CapacityBox?.SelectedItem is not Cap cap || CapBar == null) return;
+        if (CapacityBox?.SelectedItem is not Output cap || CapBar == null) return;
         var est = 0.0;
         var note = "";
         if (titles.Count > 0)
         {
-            // shortcut: Blu-ray size = source file sizes (exact when the video is copied, off when re-encoded or tracks are dropped)
-            est = kind == "dvd" ? Dvd.EstimateGB(titles.Select(t => (t.Info, t.ToDisc())).ToList(), cap.Usable) : titles.Sum(t => new FileInfo(t.Path).Length) / 1e9;
+            // shortcut: a 4K disc is sized by its source files (HEVC is kept), the audio dropped from them is not subtracted
+            est = kind == "dvd" ? Dvd.EstimateGB(titles.Select(t => (t.Info, t.ToDisc())).ToList(), cap.Usable) : Estimate(cap, encode) ?? titles.Sum(t => new FileInfo(t.Path).Length) / 1e9;
             if (est > cap.Usable) note = "\ntrop grand pour ce support";
             if (kind == "uhd" && titles.Any(t => t.Info.VideoCodec != "hevc" || t.Info.Height != 2160)) note = "\nles sources doivent être en HEVC 2160p";
         }
@@ -207,6 +198,12 @@ public partial class MainWindow : Window
         CapText.Text = $"{est:0.00} Go / {cap.Usable:0.#} Go utilisables{note}";
         ProjectInfo.Text = titles.Count == 0 ? "" : $"{titles.Count} vidéo{(titles.Count > 1 ? "s" : "")}  ·  {titles.Sum(t => new FileInfo(t.Path).Length) / 1e9:0.0} Go";
     }
+
+    /// <summary>Size in GB of the Blu-ray for an output and an encoding (the video at the fitted rate, plus audio and menu); null for a DVD, a 4K disc or no video.</summary>
+    double? Estimate(Output output, EncodeOptions enc) =>
+        kind != "bd" || titles.Count == 0 ? null
+        : BluRay.EstimateGB(new BluRayJob(titles.Select(t => t.ToDisc()).ToList(), "", MenuCheck.IsChecked == true || titles.Count > 1 ? design : null, false, "X", chapterMinutes, enc, output.Usable),
+            titles.Select(t => t.Info).ToList());
 
     // ---- videos ----
 
@@ -457,11 +454,14 @@ public partial class MainWindow : Window
 
     void OnAdvanced(object s, RoutedEventArgs e)
     {
-        var dlg = new AdvancedWindow(volume, chapterMinutes, encode) { Owner = this };
+        var dlg = new AdvancedWindow(volume, chapterMinutes, encode, playback, kind, Output.For(kind), (Output)CapacityBox.SelectedItem, Estimate) { Owner = this };
         if (dlg.ShowDialog() != true) return;
         if (dlg.Volume != volume) { volume = dlg.Volume; labelEdited = true; SyncOutput(); }
         chapterMinutes = dlg.ChapterMinutes;
         encode = dlg.Encode;
+        playback = dlg.Playback;
+        CapacityBox.SelectedItem = dlg.Output; // the same list as the main window's "Sortie"
+        Update();
         RefreshThumb();
     }
 
@@ -523,7 +523,9 @@ public partial class MainWindow : Window
         if (titles.Count == 0) { MessageBox.Show(this, "Ajoutez d'abord une vidéo.", "BurnSmith"); return; }
         var outDir = OutBox.Text.Trim();
         if (outDir.Length == 0) { MessageBox.Show(this, "Choisissez un dossier de sortie.", "BurnSmith"); return; }
-        var cap = (Cap)CapacityBox.SelectedItem;
+        var cap = (Output)CapacityBox.SelectedItem;
+        var enc = encode with { Hd720 = cap.Hd720 && kind == "bd" };
+        var play = playback;
         var label = volume;
         var drive = DriveBox.SelectedItem as Imapi.Drive;
         var burn = BurnCheck.IsChecked == true && drive != null;
@@ -541,8 +543,8 @@ public partial class MainWindow : Window
 
         var ok = await Work("Création du disque…", (log, progress, token) =>
         {
-            if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable, encode), log);
-            else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes, encode), log);
+            if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable, enc), log);
+            else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes, enc, cap.Usable, play), log);
             var iso = IsoFile(outDir);
             File.Delete(iso); // an image of an earlier build must never be burnt by mistake
             if (!withIso && !burn) return;

@@ -141,6 +141,41 @@
     </Setter>
   </Style>
 
+  <Style TargetType="RadioButton">
+    <Setter Property="Foreground" Value="#F2F2F4"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="RadioButton">
+          <StackPanel Orientation="Horizontal" Background="Transparent">
+            <Grid Width="20" Height="20" VerticalAlignment="Center">
+              <Ellipse x:Name="Ring" StrokeThickness="1.5" Stroke="{StaticResource OutlineBrush}" Fill="{StaticResource InsetBrush}"/>
+              <Ellipse x:Name="Dot" Width="10" Height="10" Fill="{StaticResource AccentBrush}" Visibility="Collapsed"/>
+            </Grid>
+            <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+          </StackPanel>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource AccentHoverBrush}"/>
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource AccentHoverBrush}"/>
+              <Setter TargetName="Ring" Property="StrokeThickness" Value="3"/>
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource AccentBrush}"/>
+              <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.4"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <Style TargetType="ProgressBar" BasedOn="{StaticResource {x:Type ProgressBar}}">
     <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
     <Setter Property="Background" Value="{StaticResource LineBrush}"/>

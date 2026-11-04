@@ -31,11 +31,18 @@ public static class MenuRenderer
 
     static Rect R(Box b) => new(b.X, b.Y, b.W, b.H);
 
-    static byte[] Encode(BitmapEncoder encoder, int w, int h, Action<DrawingContext> draw)
+    /// <summary>Pixels of a length on a canvas drawn at <paramref name="scale"/> (a 720p disc draws its menu at 2/3 of the 1920x1080 layout).</summary>
+    public static int Px(int length, double scale) => (int)Math.Round(length * scale);
+
+    static byte[] Encode(BitmapEncoder encoder, int w, int h, Action<DrawingContext> draw, double scale = 1)
     {
         var visual = new DrawingVisual();
-        using (var dc = visual.RenderOpen()) draw(dc);
-        var bmp = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+        using (var dc = visual.RenderOpen())
+        {
+            if (scale != 1) dc.PushTransform(new ScaleTransform(scale, scale));
+            draw(dc);
+        }
+        var bmp = new RenderTargetBitmap(Px(w, scale), Px(h, scale), 96, 96, PixelFormats.Pbgra32);
         bmp.Render(visual);
         encoder.Frames.Add(BitmapFrame.Create(bmp));
         using var ms = new MemoryStream();
@@ -64,18 +71,18 @@ public static class MenuRenderer
     });
 
     /// <summary>Opaque page background as JPEG (smaller and faster to decode than PNG on a player).</summary>
-    public static byte[] Background(MenuDesign d, MenuPage page) =>
-        Encode(new JpegBitmapEncoder { QualityLevel = 92 }, MenuBuilder.W, MenuBuilder.H, dc => DrawPage(dc, d, page));
+    public static byte[] Background(MenuDesign d, MenuPage page, double scale = 1) =>
+        Encode(new JpegBitmapEncoder { QualityLevel = 92 }, MenuBuilder.W, MenuBuilder.H, dc => DrawPage(dc, d, page), scale);
 
     /// <summary>
     /// The page without its background (transparent PNG): what goes over a menu video. The design's dim stays as a translucent veil,
     /// so text is readable on any picture.
     /// </summary>
-    public static byte[] Overlay(MenuDesign d, MenuPage page) =>
-        Encode(new PngBitmapEncoder(), MenuBuilder.W, MenuBuilder.H, dc => DrawPage(dc, d, page, true));
+    public static byte[] Overlay(MenuDesign d, MenuPage page, double scale = 1) =>
+        Encode(new PngBitmapEncoder(), MenuBuilder.W, MenuBuilder.H, dc => DrawPage(dc, d, page, true), scale);
 
     /// <summary>Transparent PNG with the focus frame, sized like the button plus the focus margin.</summary>
-    public static byte[] Focus(MenuDesign d, MenuButton b)
+    public static byte[] Focus(MenuDesign d, MenuButton b, double scale = 1)
     {
         var m = MenuBuilder.FocusMargin;
         var box = b.Rect.Inflate(m);
@@ -89,12 +96,12 @@ public static class MenuRenderer
             }
             var pen = new Pen(new SolidColorBrush(Col(d.Accent)), 6);
             dc.DrawRoundedRectangle(new SolidColorBrush(Col(d.Accent, 0.18)), pen, new Rect(3, 3, box.W - 6, box.H - 6), 22, 22);
-        });
+        }, scale);
     }
 
     /// <summary>Transparent PNG: the dot beside the audio / subtitle that is currently chosen.</summary>
-    public static byte[] Marker(MenuDesign d, int size) =>
-        Encode(new PngBitmapEncoder(), size, size, dc => dc.DrawEllipse(new SolidColorBrush(Col(d.Accent)), null, new Point(size / 2.0, size / 2.0), size / 2.0, size / 2.0));
+    public static byte[] Marker(MenuDesign d, int size, double scale = 1) =>
+        Encode(new PngBitmapEncoder(), size, size, dc => dc.DrawEllipse(new SolidColorBrush(Col(d.Accent)), null, new Point(size / 2.0, size / 2.0), size / 2.0, size / 2.0), scale);
 
     static void DrawPage(DrawingContext dc, MenuDesign d, MenuPage page, bool overlay = false)
     {

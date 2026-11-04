@@ -1,25 +1,80 @@
 <Window x:Class="BurnSmith.App.AdvancedWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Paramètres avancés" Width="480" SizeToContent="Height" ResizeMode="NoResize"
+        Title="Paramètres avancés" Width="560" SizeToContent="Height" MaxHeight="900" ResizeMode="NoResize"
         Background="{StaticResource BgBrush}" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
-  <StackPanel Margin="24,20,24,20">
-    <TextBlock Text="Sortie" FontSize="18" FontWeight="SemiBold"/>
-    <TextBlock Text="Nom de volume" Opacity="0.65" Margin="0,14,0,4"/>
-    <TextBox x:Name="VolumeBox" MaxLength="32"/>
-    <TextBlock Text="Un chapitre toutes les" Opacity="0.65" Margin="0,14,0,4"/>
-    <ComboBox x:Name="ChapterBox" HorizontalAlignment="Stretch" ItemStringFormat="{}{0} min"/>
-    <TextBlock Text="Mode vidéo (Blu-ray)" Opacity="0.65" Margin="0,14,0,4"/>
-    <ComboBox x:Name="ModeBox" HorizontalAlignment="Stretch"/>
-    <TextBlock Text="Qualité de conversion (Blu-ray, x264)" Opacity="0.65" Margin="0,14,0,4"/>
-    <ComboBox x:Name="QualityBox" HorizontalAlignment="Stretch"/>
-    <TextBlock Text="Débit vidéo du DVD en kb/s (0 = automatique, remplit le disque)" Opacity="0.65" Margin="0,14,0,4"/>
-    <TextBox x:Name="DvdBitrateBox" MaxLength="4"/>
-    <TextBlock TextWrapping="Wrap" Opacity="0.65" Margin="0,12,0,0"
-               Text="En mode automatique, la vidéo Blu-ray est copiée telle quelle (passthrough) si elle est déjà en H.264 1080p à 23,976 / 24 / 25 i/s ; sinon, ou si vous demandez de convertir, elle est refaite en x264 à qualité constante. Un DVD est toujours en MPEG-2."/>
-    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+  <Window.Resources>
+    <Style x:Key="Section" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="16"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{StaticResource AccentTextFillColorPrimaryBrush}"/>
+      <Setter Property="Margin" Value="0,18,0,2"/>
+    </Style>
+    <Style x:Key="Label" TargetType="TextBlock">
+      <Setter Property="Opacity" Value="0.65"/>
+      <Setter Property="Margin" Value="0,12,0,4"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+  </Window.Resources>
+  <Grid Margin="24,16,24,20">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,0,12,0">
+        <!-- Sortie: shared with the main window's list -->
+        <TextBlock Text="Sortie" Style="{StaticResource Section}" Margin="0,0,0,2"/>
+        <TextBlock Text="Nom de volume" Style="{StaticResource Label}"/>
+        <TextBox x:Name="VolumeBox" MaxLength="32"/>
+        <TextBlock Text="Support et taille de l'image" Style="{StaticResource Label}"/>
+        <ComboBox x:Name="OutputBox" HorizontalAlignment="Stretch" SelectionChanged="OnRefresh"/>
+
+        <StackPanel x:Name="QualityPanel">
+          <TextBlock Text="Qualité vidéo" Style="{StaticResource Label}"/>
+          <ComboBox x:Name="QualityBox" HorizontalAlignment="Stretch" SelectionChanged="OnQuality"/>
+          <TextBlock Text="Débit vidéo en kb/s (2000 à 35000)" Style="{StaticResource Label}"/>
+          <TextBox x:Name="RateBox" MaxLength="5" TextChanged="OnRefresh"/>
+          <TextBlock x:Name="SizeText" Margin="0,8,0,0" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel x:Name="DvdPanel">
+          <TextBlock Text="Débit vidéo du DVD en kb/s (0 = automatique, remplit le disque)" Style="{StaticResource Label}"/>
+          <TextBox x:Name="DvdBitrateBox" MaxLength="4"/>
+        </StackPanel>
+
+        <!-- Mode de lecture: what the BD-J menu does when a title ends -->
+        <StackPanel x:Name="PlaybackPanel">
+          <TextBlock Text="Mode de lecture" Style="{StaticResource Section}"/>
+          <Grid Margin="0,8,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <RadioButton x:Name="Mode0" GroupName="play" Content="Menu, puis lire tous les titres à la suite" Checked="OnMode"/>
+            <CheckBox x:Name="Rewind0" Grid.Column="1" Content="Rembobiner" ToolTip="À la fin, revenir au menu. Sinon l'écran reste noir."/>
+          </Grid>
+          <Grid Margin="0,10,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <RadioButton x:Name="Mode1" GroupName="play" Content="Premier titre au démarrage, puis les autres" Checked="OnMode"/>
+            <CheckBox x:Name="Rewind1" Grid.Column="1" Content="Rembobiner" ToolTip="À la fin, relancer le premier titre. Sinon l'écran reste noir."/>
+          </Grid>
+          <RadioButton x:Name="Mode2" GroupName="play" Content="Menu, retour au menu après le titre choisi" Margin="0,10,0,0" Checked="OnMode"/>
+        </StackPanel>
+
+        <TextBlock Text="Autres réglages" Style="{StaticResource Section}"/>
+        <TextBlock Text="Un chapitre toutes les" Style="{StaticResource Label}"/>
+        <ComboBox x:Name="ChapterBox" HorizontalAlignment="Stretch" ItemStringFormat="{}{0} min"/>
+        <StackPanel x:Name="EncodePanel">
+          <TextBlock Text="Mode vidéo" Style="{StaticResource Label}"/>
+          <ComboBox x:Name="ModeBox" HorizontalAlignment="Stretch"/>
+          <TextBlock Text="Vitesse de conversion (x264)" Style="{StaticResource Label}"/>
+          <ComboBox x:Name="SpeedBox" HorizontalAlignment="Stretch"/>
+          <TextBlock TextWrapping="Wrap" Opacity="0.65" Margin="0,12,0,0"
+                     Text="« Adapter au disque » garde la vidéo telle quelle tant qu'elle tient sur le support, sinon la refait au débit qui remplit le disque. « Source » copie la vidéo si elle est déjà en H.264 1080p à 23,976 / 24 / 25 i/s, sinon la refait à qualité constante."/>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
       <Button Content="OK" IsDefault="True" MinWidth="90" Margin="0,0,8,0" Click="OnOk" Style="{StaticResource Primary}"/>
       <Button Content="Annuler" IsCancel="True" MinWidth="90"/>
     </StackPanel>
-  </StackPanel>
+  </Grid>
 </Window>

@@ -18,9 +18,27 @@ public partial class MenuEditorWindow : Window
     readonly MenuDesign working;
     readonly MenuContent content;
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
-    int page, version;
+    int version;
     string? error;
     bool syncing;
+
+    /// <summary>The pages built for one state of the design; the pictures of a page are drawn when it is first shown.</summary>
+    sealed class Shot(MenuDesign design, List<MenuPage> pages)
+    {
+        public MenuDesign Design { get; } = design;
+        public List<MenuPage> Pages { get; } = pages;
+        public Dictionary<string, PageImages> Cache { get; } = [];
+    }
+
+    sealed record PageImages(BitmapImage Background, Dictionary<string, BitmapImage> Focus);
+    public sealed record Slide(string Id, string Name, BitmapImage Thumb);
+
+    Shot? shot;
+    MenuPage? current;
+    PageImages? currentImages;
+    string? focusId;
+    int audioSel = 1, subSel; // what the settings page marks while previewing (audio stream number 1-based, subtitle 0 = off)
+    bool stripSync;
     List<Element> backgrounds = [];
 
     public MenuDesign Result => working;
@@ -66,12 +84,6 @@ public partial class MenuEditorWindow : Window
     {
         var (usable, skipped) = TemplateCatalog.Scan();
         BuiltInList.ItemsSource = usable;
-        var shipped = usable.Count(f => f.Design.Category == DvdForgeTemplates.Category || f.Design.Category.StartsWith("DVDStyler"));
-        var installed = usable.Count - shipped;
-        CatalogNote.Text = $"{usable.Count} modèles : {shipped} libres (DVD Forge, DVDStyler), {installed} DVDFab / Leawo."
-            + (installed == 0 ? " Aucun modèle DVDFab / Leawo : cet exe a été construit sans eux et il n'y en a pas sur ce PC, indiquez le dossier de leurs modèles." : "")
-            + (skipped.Count > 0 ? $" {skipped.Count} non pris en charge (détail au survol)." : "");
-        CatalogNote.ToolTip = skipped.Count == 0 ? null : string.Join("\n", skipped.Select(s => $"{s.Name} : {s.Why}"));
         LoadBackgrounds((usable, skipped));
         _ = FillThumbnails(usable);
     }
@@ -108,33 +120,58 @@ public partial class MenuEditorWindow : Window
         LoadCatalog();
     }
 
+    static BitmapImage Decode(byte[] bytes, int width = 0)
+    {
+        var img = new BitmapImage();
+        img.BeginInit();
+        img.CacheOption = BitmapCacheOption.OnLoad;
+        if (width > 0) img.DecodePixelWidth = width;
+        img.StreamSource = new MemoryStream(bytes);
+        img.EndInit();
+        img.Freeze(); // built on a worker thread, shown on the UI thread
+        return img;
+    }
+
+    /// <summary>The page picture and one focus frame per button. Call it on an STA thread (see <see cref="MenuRenderer.Sta{T}"/>).</summary>
+    static PageImages DrawPage(MenuDesign d, MenuPage p)
+    {
+        var focus = new Dictionary<string, BitmapImage>();
+        foreach (var b in p.Buttons) focus[b.Id] = Decode(MenuRenderer.Focus(d, b));
+        return new PageImages(Decode(MenuRenderer.Background(d, p)), focus);
+    }
+
+    static string PageName(string id) => id switch
+    {
+        "root" => "Menu principal",
+        "settings" => "Réglages",
+        "credits" => "Crédits",
+        _ when id.StartsWith("scenes") => "Scènes " + id[6..],
+        _ => id,
+    };
+
     async Task Render()
     {
         var d = working.Clone();
         var mine = ++version;
-        var wanted = page;
+        var wanted = current?.Id ?? "root";
+        var (audio, sub) = (audioSel, subSel);
         try
         {
-            var (jpeg, count, shown) = await Task.Run(() => MenuRenderer.Sta(() =>
+            var (pages, page, images) = await Task.Run(() => MenuRenderer.Sta(() =>
             {
-                var pages = MenuBuilder.Build(d, content);
-                var settings = pages.FindIndex(p => p.Id == "settings");
-                if (settings >= 0) pages[settings] = MenuBuilder.Settings(d, content, 1, 0); // the disc draws the marker live; the preview shows one
-                var i = Math.Min(wanted, pages.Count - 1);
-                return (MenuRenderer.Background(d, pages[i]), pages.Count, i);
+                var built = MenuBuilder.Build(d, content);
+                var settings = built.FindIndex(p => p.Id == "settings");
+                if (settings >= 0) built[settings] = MenuBuilder.Settings(d, content, audio, sub);
+                var shown = built.FirstOrDefault(p => p.Id == wanted) ?? built[0];
+                return (built, shown, DrawPage(d, shown));
             }));
             if (mine != version) return; // a newer edit is already rendering
-            var img = new BitmapImage();
-            img.BeginInit();
-            img.CacheOption = BitmapCacheOption.OnLoad;
-            img.StreamSource = new MemoryStream(jpeg);
-            img.EndInit();
-            img.Freeze();
-            Preview.Source = img;
-            page = shown;
-            PageText.Text = $"Page {shown + 1} / {count}";
+            shot = new Shot(d, pages);
+            shot.Cache[page.Id] = images;
+            Show(page, images);
             error = null;
             Status.Text = "";
+            _ = FillStrip(shot, mine);
         }
         catch (Exception ex)
         {
@@ -142,6 +179,148 @@ public partial class MenuEditorWindow : Window
             error = ex.Message;
             Status.Text = "Aperçu impossible : " + ex.Message;
         }
+    }
+
+    /// <summary>The whole theme at a glance: one small picture per page, drawn after the page on show so editing stays quick.</summary>
+    async Task FillStrip(Shot s, int mine)
+    {
+        try
+        {
+            var slides = await Task.Run(() => MenuRenderer.Sta(() =>
+                s.Pages.Select(p => new Slide(p.Id, PageName(p.Id), Decode(MenuRenderer.Background(s.Design, p), 224))).ToList()));
+            if (mine != version) return;
+            stripSync = true;
+            PageStrip.ItemsSource = slides;
+            PageStrip.SelectedItem = slides.FirstOrDefault(x => x.Id == current?.Id);
+            stripSync = false;
+        }
+        catch (Exception) { /* the strip is a convenience: the page on show is what matters */ }
+    }
+
+    void Show(MenuPage page, PageImages images)
+    {
+        current = page;
+        currentImages = images;
+        if (page.Buttons.All(b => b.Id != focusId)) focusId = page.Buttons.FirstOrDefault()?.Id;
+        var index = shot?.Pages.FindIndex(p => p.Id == page.Id) ?? 0;
+        PageText.Text = $"{PageName(page.Id)} · page {index + 1} / {shot?.Pages.Count ?? 1}";
+        if (PageStrip.ItemsSource is List<Slide> slides)
+        {
+            stripSync = true;
+            PageStrip.SelectedItem = slides.FirstOrDefault(x => x.Id == page.Id);
+            stripSync = false;
+        }
+        DrawStage();
+    }
+
+    /// <summary>The page as the disc shows it: its picture, the focus frame of the selected button, and a hit area per button for the mouse.</summary>
+    void DrawStage()
+    {
+        StageCanvas.Children.Clear();
+        if (current == null || currentImages == null) return;
+        StageCanvas.Children.Add(new System.Windows.Controls.Image { Source = currentImages.Background, Width = MenuBuilder.W, Height = MenuBuilder.H });
+        if (current.Buttons.FirstOrDefault(b => b.Id == focusId) is { } selected && currentImages.Focus.TryGetValue(selected.Id, out var frame))
+        {
+            var box = selected.Rect.Inflate(MenuBuilder.FocusMargin);
+            var image = new System.Windows.Controls.Image { Source = frame, Width = box.W, Height = box.H, IsHitTestVisible = false };
+            System.Windows.Controls.Canvas.SetLeft(image, box.X);
+            System.Windows.Controls.Canvas.SetTop(image, box.Y);
+            StageCanvas.Children.Add(image);
+        }
+        foreach (var b in current.Buttons)
+        {
+            var hit = new System.Windows.Shapes.Rectangle { Width = b.Rect.W, Height = b.Rect.H, Fill = System.Windows.Media.Brushes.Transparent, Cursor = System.Windows.Input.Cursors.Hand };
+            System.Windows.Controls.Canvas.SetLeft(hit, b.Rect.X);
+            System.Windows.Controls.Canvas.SetTop(hit, b.Rect.Y);
+            var id = b.Id;
+            hit.MouseEnter += (_, _) => Select(id);
+            hit.MouseLeftButtonUp += (_, _) => { Select(id); Activate(b); };
+            StageCanvas.Children.Add(hit);
+        }
+    }
+
+    void Select(string? id)
+    {
+        if (id == null || id == focusId || current?.Buttons.Any(b => b.Id == id) != true) return;
+        focusId = id;
+        DrawStage();
+    }
+
+    async void GoTo(string id, bool first = true)
+    {
+        if (shot is not { } s || s.Pages.FirstOrDefault(p => p.Id == id) is not { } page) return;
+        if (first) focusId = null; // a page opens on its first button, like the disc
+        var mine = version;
+        try
+        {
+            if (!s.Cache.TryGetValue(id, out var images))
+            {
+                images = await Task.Run(() => MenuRenderer.Sta(() => DrawPage(s.Design, page)));
+                s.Cache[id] = images;
+            }
+            if (mine != version || shot != s) return;
+            Show(page, images);
+        }
+        catch (Exception ex)
+        {
+            Status.Text = "Aperçu impossible : " + ex.Message;
+        }
+    }
+
+    /// <summary>What Enter does on the disc: a page opens, a playing button says what would play, audio / subtitle move the marker.</summary>
+    async void Activate(MenuButton b)
+    {
+        var a = b.Action;
+        switch (a.Kind)
+        {
+            case "page":
+                GoTo(a.Page ?? "root");
+                Hint.Text = "";
+                break;
+            case "play":
+                Hint.Text = $"▶ Sur le disque : lecture du titre {a.Playlist}.";
+                break;
+            case "chapter":
+                Hint.Text = $"▶ Sur le disque : lecture du titre {a.Playlist} à partir du repère {a.Mark}.";
+                break;
+            case "playall":
+                Hint.Text = $"▶ Sur le disque : lecture de {a.Mark} titre(s) à la suite.";
+                break;
+            case "audio" or "sub":
+                if (shot is not { } s) return;
+                if (a.Kind == "audio") audioSel = a.Mark; else subSel = a.Mark;
+                var at = s.Pages.FindIndex(p => p.Id == current?.Id);
+                if (at < 0) return;
+                var (audio, sub, design) = (audioSel, subSel, s.Design);
+                var page = await Task.Run(() => MenuRenderer.Sta(() => MenuBuilder.Settings(design, content, audio, sub, current!.Id)));
+                if (shot != s) return;
+                s.Pages[at] = page;
+                s.Cache.Remove(page.Id);
+                GoTo(page.Id, false);
+                break;
+        }
+    }
+
+    void OnStageMouse(object s, System.Windows.Input.MouseButtonEventArgs e) => Stage.Focus();
+
+    void OnStageKey(object s, System.Windows.Input.KeyEventArgs e)
+    {
+        if (current?.Buttons.FirstOrDefault(b => b.Id == focusId) is not { } b) return;
+        switch (e.Key)
+        {
+            case System.Windows.Input.Key.Left: Select(b.Left); break;
+            case System.Windows.Input.Key.Right: Select(b.Right); break;
+            case System.Windows.Input.Key.Up: Select(b.Up); break;
+            case System.Windows.Input.Key.Down: Select(b.Down); break;
+            case System.Windows.Input.Key.Enter: Activate(b); break;
+            default: return;
+        }
+        e.Handled = true;
+    }
+
+    void OnStripPick(object s, SelectionChangedEventArgs e)
+    {
+        if (!stripSync && PageStrip.SelectedItem is Slide slide) GoTo(slide.Id);
     }
 
     /// <summary>Applying a template changes the look but keeps the user's texts.</summary>
@@ -153,8 +332,15 @@ public partial class MenuEditorWindow : Window
         Rebind();
     }
 
-    void OnPrev(object s, RoutedEventArgs e) { page = Math.Max(0, page - 1); Dirty(); }
-    void OnNext(object s, RoutedEventArgs e) { page++; Dirty(); } // Render clamps to the last page
+    void Step(int by)
+    {
+        if (shot == null) return;
+        var i = shot.Pages.FindIndex(p => p.Id == current?.Id) + by;
+        if (i >= 0 && i < shot.Pages.Count) GoTo(shot.Pages[i].Id);
+    }
+
+    void OnPrev(object s, RoutedEventArgs e) => Step(-1);
+    void OnNext(object s, RoutedEventArgs e) => Step(1);
 
     void OnBgPick(object s, SelectionChangedEventArgs e)
     {

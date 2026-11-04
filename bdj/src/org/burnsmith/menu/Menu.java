@@ -51,6 +51,7 @@ import org.havi.ui.event.HRcEvent;
  *   button PAGE ID X Y W H FOCUS_IMAGE LEFT RIGHT UP DOWN ACTION [ARG1 [ARG2]]
  *   marker IMAGE W H DX
  *   loop PLAYLIST
+ *   playback menu|first CHAIN REWIND FIRST_PLAYLIST COUNT   (CHAIN, REWIND: 1 or 0; absent = menu, no chaining, back to the menu)
  * ACTION is "play PLAYLIST", "chapter PLAYLIST MARK", "page PAGE", "playall FIRST_PLAYLIST COUNT" (plays them one
  * after the other), "audio N" (stream number, 1-based) or "sub N" (0 = no subtitles). The first page is shown
  * first and the first button of a page has the initial focus. The marker image is drawn DX pixels from the left
@@ -106,6 +107,9 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private String markerName;
     private int markerW, markerH, markerDx;
     private int nextPlaylist, endPlaylist; // "play all": playlists still to come, [next, end)
+    // "playback" line: where the disc starts and what happens when a title ends (see finished())
+    private boolean startFirst, chain, rewind = true; // start on the first title / titles follow each other / back to the start afterwards
+    private int titleFirst, titleCount; // the titles of the disc: playlists [first, first + count)
 
     public void initXlet(XletContext c) throws XletStateChangeException {
         ctx = c;
@@ -159,7 +163,31 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             }
         }
         tracker.waitForAll();
-        showMenu();
+        if (startFirst && titleCount > 0) startSequence();
+        else showMenu();
+    }
+
+    /** "Start from the first title": no menu, the titles play one after the other. */
+    private void startSequence() {
+        nextPlaylist = titleFirst + 1;
+        endPlaylist = titleFirst + titleCount;
+        play(titleFirst, -1);
+    }
+
+    /**
+     * Nothing left to play. A playback error, "back to the menu" mode and "rewind" return to the start (the menu, or the first title
+     * when the disc starts there); otherwise the disc stops: the player's own Menu key starts it again.
+     */
+    private void finished(boolean normalEnd) {
+        nextPlaylist = endPlaylist = 0;
+        if (normalEnd && chain && titleCount > 0 && startFirst && rewind) {
+            log("rewind: first title again");
+            startSequence();
+        } else if (!normalEnd || !chain || rewind) {
+            showMenu();
+        } else {
+            log("playback finished: stopped");
+        }
     }
 
     private void showMenu() {
@@ -228,10 +256,10 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             Page p = (Page) pages.get(b.arg);
             if (p != null) show(p);
         } else if (b.action.equals("play")) {
-            nextPlaylist = endPlaylist = 0;
+            follow(b.n1);
             play(b.n1, -1);
         } else if (b.action.equals("chapter")) {
-            nextPlaylist = endPlaylist = 0;
+            follow(b.n1);
             play(b.n1, b.n2);
         } else if (b.action.equals("playall")) {
             nextPlaylist = b.n1 + 1;
@@ -245,6 +273,15 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             sub = b.n1;
             log("subtitle choice " + sub);
             view.repaint();
+        }
+    }
+
+    /** The title picked in the menu is followed by the next ones when the disc plays everything in a row. */
+    private void follow(int playlist) {
+        nextPlaylist = endPlaylist = 0;
+        if (chain && titleCount > 0 && playlist >= titleFirst && playlist < titleFirst + titleCount) {
+            nextPlaylist = playlist + 1;
+            endPlaylist = titleFirst + titleCount;
         }
     }
 
@@ -357,11 +394,8 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         } else if (e instanceof EndOfMediaEvent || e instanceof ControllerErrorEvent) {
             log("playback ended: " + e.getClass().getName());
             closePlayer();
-            if (e instanceof EndOfMediaEvent && nextPlaylist > 0 && nextPlaylist < endPlaylist) {
-                play(nextPlaylist++, -1);
-            } else {
-                showMenu();
-            }
+            if (e instanceof EndOfMediaEvent && nextPlaylist > 0 && nextPlaylist < endPlaylist) play(nextPlaylist++, -1);
+            else finished(e instanceof EndOfMediaEvent);
         }
     }
 
@@ -410,6 +444,12 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
                 markerW = Integer.parseInt(t.nextToken());
                 markerH = Integer.parseInt(t.nextToken());
                 markerDx = Integer.parseInt(t.nextToken());
+            } else if (cmd.equals("playback")) {
+                startFirst = t.nextToken().equals("first");
+                chain = t.nextToken().equals("1");
+                rewind = t.nextToken().equals("1");
+                titleFirst = Integer.parseInt(t.nextToken());
+                titleCount = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("loop")) {
                 loopPlaylist = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("page")) {

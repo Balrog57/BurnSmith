@@ -82,7 +82,7 @@ if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, ne
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || Opt("--out") is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--credits 'A|B'] [bd: --uhd --label NAME --titles 'fra=Titre|eng=Title']");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--credits 'A|B'] [bd: --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
     return 2;
 }
 
@@ -102,10 +102,18 @@ if (design != null && a.Contains("--loop")) // moving menu: --loop [--loop-file 
 var chapters = int.TryParse(Opt("--chapters"), out var m) ? m : 5;
 var titles = videos.Select(v => new DiscTitle(v, null, Numbers("--audio"), Numbers("--sub"))).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
-var encode = new EncodeOptions(a.Contains("--reencode"), int.TryParse(Opt("--crf"), out var crf) ? crf : 17, Opt("--preset") ?? "medium", int.TryParse(Opt("--dvd-kbps"), out var kbps) ? kbps : 0);
+// bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (fit = "Adapter au disque"),
+//     --capacity GB (usable size, instead of the profile's), --play-mode 0|1|2 (menu then all titles | first title then all | back to the menu) [--no-rewind]
+var profile = BdProfile.Find(Opt("--profile") ?? "BD25");
+var quality = Opt("--quality") ?? "source";
+var rate = int.TryParse(quality, out var q) ? (q < 1000 ? q * 1000 : q) : 0; // "15" = 15 Mb/s
+var encode = new EncodeOptions(a.Contains("--reencode"), int.TryParse(Opt("--crf"), out var crf) ? crf : 17, Opt("--preset") ?? "medium", int.TryParse(Opt("--dvd-kbps"), out var kbps) ? kbps : 0,
+                               rate, quality == "fit", profile.Hd720);
+var capacity = double.TryParse(Opt("--capacity"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var gb) ? gb : profile.UsableGb;
+var playback = int.TryParse(Opt("--play-mode"), out var mode) ? PlaybackOptions.FromMode(mode, !a.Contains("--no-rewind")) : null;
 
 if (a[0] == "bd")
-    BluRay.Build(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters, encode), Console.WriteLine);
+    BluRay.Build(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback), Console.WriteLine);
 else
     Dvd.Build(new DvdJob(titles, Path.GetFullPath(outDir), design, chapters, Encode: encode), Console.WriteLine);
 return 0;

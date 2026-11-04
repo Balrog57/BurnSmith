@@ -10,7 +10,7 @@ namespace BurnSmith.Core;
 public static class Bdmv
 {
     /// <summary>HAVI graphics configuration ids from the BDJO terminal info (libbluray GraphicsResolution).</summary>
-    public const int HaviHd1080 = 1, HaviUhd1080 = 7;
+    public const int HaviHd1080 = 1, HaviHd720 = 2, HaviUhd1080 = 7;
 
     /// <summary>
     /// Replaces the index table of an index.bdmv by: First Playback = Top Menu = BD-J title <paramref name="bdjoName"/>,
