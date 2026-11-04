@@ -438,13 +438,47 @@ public static class BluRay
             }
         }
         args.AddRange(["-sn", "-dn", output]);
-        foreach (var (t, file) in subs)
+        foreach (var (t, file) in subs.Where(x => x.Track.File == null)) // the video's own tracks; the subtitle files are converted apart
         {
             args.AddRange(["-map", $"0:s:{t.Index}", "-c:s", t.IsPgs ? "copy" : "srt"]);
             if (title.End != null) args.AddRange(["-t", s.Duration.ToString("0.###", Inv)]); // the input's -t lets later subtitle cues through
             args.AddRange(["-f", t.IsPgs ? "sup" : "srt", file]);
         }
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
+        foreach (var (t, file) in subs.Where(x => x.Track.File != null)) WriteExternalSubtitle(title, t, s.Duration, file, log);
+        foreach (var (t, file) in subs.Where(x => !x.Track.IsPgs)) TidySubtitle(file);
+    }
+
+    /// <summary>
+    /// ffmpeg turns ASS into SRT with a font tag around each line and {\an8}-style codes: tsMuxeR then renders no subtitle at all (found with an
+    /// ASS track: the stream came out empty), so both go; italics, bold and underline stay.
+    /// </summary>
+    static void TidySubtitle(string file)
+    {
+        var text = File.ReadAllText(file);
+        var clean = System.Text.RegularExpressions.Regex.Replace(text, @"\{\\[^}]*\}|</?font[^>]*>", "");
+        if (clean != text) File.WriteAllText(file, clean);
+    }
+
+    /// <summary>
+    /// A subtitle file beside the video as the SRT the disc tools take: cut like the video (<see cref="ExternalSubtitle.Cut"/>), read as
+    /// Unicode when it is one, else as Windows-1252 (what French subtitle files usually are),
+    /// (on a Blu-ray the text tracks are then tidied by <see cref="TidySubtitle"/>).
+    /// </summary>
+    internal static void WriteExternalSubtitle(DiscTitle title, SubtitleTrack track, double length, string output, Action<string> log)
+    {
+        var args = new List<string> { "-y", "-v", "error" };
+        if (!IsUnicode(File.ReadAllBytes(track.File!))) args.AddRange(["-sub_charenc", "CP1252"]);
+        args.AddRange(["-i", track.File!, "-c:s", "srt", "-f", "srt", output]);
+        Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
+        File.WriteAllText(output, ExternalSubtitle.Cut(File.ReadAllText(output), title.Start, length)); // not ffmpeg's -ss/-t: they keep a cue that ended before the start
+    }
+
+    static bool IsUnicode(byte[] bytes)
+    {
+        if (bytes.Length >= 2 && (bytes[0], bytes[1]) is (0xFF, 0xFE) or (0xFE, 0xFF)) return true; // UTF-16 byte order mark
+        try { new System.Text.UTF8Encoding(false, true).GetString(bytes); return true; }
+        catch (System.Text.DecoderFallbackException) { return false; }
     }
 
     /// <summary>Adds the BD-J menu on top of the tsMuxeR disc: jar, BDJO, and an index.bdmv that starts the menu (BACKUP copies included).</summary>
