@@ -255,6 +255,20 @@ public static class BluRay
         }
         log($"prepare {playlist}: {src.VideoCodec} {src.Width}x{src.Height} {src.Fps:0.###}fps, audio {(audio.Count == 0 ? "none" : string.Join('+', audio.Select(a => a.Codec)))}, subtitles {subs.Count}");
         Prepare(job, title, src, audio, subs, prepared, kbps, log);
+        // a subtitle with nothing to show in the part kept is an empty file, which tsMuxeR cannot take
+        subs.RemoveAll(x =>
+        {
+            var empty = new FileInfo(x.File).Length == 0;
+            if (empty) log($"subtitle '{x.Track.Name}' skipped: nothing to show in the part kept");
+            return empty;
+        });
+        foreach (var (s, file) in subs.Where(x => x.Track.IsPgs && x.Track.File != null))
+        {
+            // the pictures of a PGS file are placed on a plane of its own size: 1920x1080 on a Blu-ray, also on a 4K one
+            var (planeW, planeH) = job.Uhd ? (1920, 1080) : VideoSize(job);
+            if (PgsSubtitles.PlaneSize(File.ReadAllBytes(file)) is { } plane && plane != (planeW, planeH))
+                log($"warning: subtitle '{s.Name}' is made for a {plane.Width}x{plane.Height} screen, the disc is {planeW}x{planeH}: its pictures may not sit where they were meant to");
+        }
 
         var fps = Math.Round(Math.Abs(src.Fps - 25) < 0.01 ? 25 : Math.Abs(src.Fps - 24) < 0.01 ? 24 : 23.976, 3).ToString(Inv);
         var chapterTimes = title.ChapterList(src.Duration, job.ChapterMinutes);
@@ -465,12 +479,17 @@ public static class BluRay
     }
 
     /// <summary>
-    /// A subtitle file beside the video as the SRT the disc tools take: cut like the video (<see cref="ExternalSubtitle.Cut"/>), read as
+    /// A subtitle file beside the video as the SRT the disc tools take (a .sup stays one, cut by <see cref="PgsSubtitles.Cut"/>): cut like the video (<see cref="ExternalSubtitle.Cut"/>), read as
     /// Unicode when it is one, else as Windows-1252 (what French subtitle files usually are),
     /// (on a Blu-ray the text tracks are then tidied by <see cref="TidySubtitle"/>).
     /// </summary>
     internal static void WriteExternalSubtitle(DiscTitle title, SubtitleTrack track, double length, string output, Action<string> log)
     {
+        if (track.IsPgs) // pictures: cut by their own timing, not converted
+        {
+            File.WriteAllBytes(output, PgsSubtitles.Cut(File.ReadAllBytes(track.File!), title.Start, length));
+            return;
+        }
         var args = new List<string> { "-y", "-v", "error" };
         if (!IsUnicode(File.ReadAllBytes(track.File!))) args.AddRange(["-sub_charenc", "CP1252"]);
         args.AddRange(["-i", track.File!, "-c:s", "srt", "-f", "srt", output]);

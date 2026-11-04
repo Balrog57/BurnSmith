@@ -4,7 +4,7 @@ using BurnSmith.Core.Menu;
 // burnsmith bd|dvd --video <file> [--video <file2> ...] --out <folder> [--design Midnight] [--title "My Disc"] [--no-menu]
 //                  [--chapters 5] [--audio 0,1] [--sub 0] [bd only: --uhd --label X]
 // --audio / --sub: 0-based track numbers of each source, kept in that order (default: first audio, no subtitles). Several --video need a menu.
-// --sub-file: a subtitle file (srt, ass, ssa, vtt) of the video written before it, kept after those tracks; its language comes from the name ("film.fr.srt") or "fra=film.srt"
+// --sub-file: a subtitle file (srt, ass, ssa, vtt, or sup = PGS pictures) of the video written before it, kept after those tracks; its language comes from the name ("film.fr.srt") or "fra=film.srt"
 // --bonus: after a --video, that video is an extra (trailer, making-of): it goes after the main videos, off "Play" / "Play all", on the menu's Bonus page (needs another, main, video)
 var a = args.ToList();
 string? Opt(string name) => a.IndexOf(name) is var i and >= 0 && i + 1 < a.Count ? a[i + 1] : null;
@@ -86,6 +86,37 @@ if (a.Count >= 1 && a[0] == "check-edit")
     var cues = "1\r\n00:00:01,000 --> 00:00:03,000\r\nbefore\r\n\r\n2\r\n00:00:05,000 --> 00:00:08,500\r\nstraddles\r\nthe start\r\n\r\n3\r\n00:00:12,000 --> 00:00:14,000\r\nkept\r\n\r\n4\r\n00:00:17,000 --> 00:00:19,000\r\nafter\r\n\r\n";
     Check("cut cues: before dropped, straddling cue shortened and moved, later ones dropped, renumbered",
           ExternalSubtitle.Cut(cues, 6, 8) == "1\n00:00:00,000 --> 00:00:02,500\nstraddles\nthe start\n\n2\n00:00:06,000 --> 00:00:08,000\nkept\n\n" && ExternalSubtitle.Cut(cues, 9, 2) == "" && ExternalSubtitle.Cut(cues, 0, 100).Contains("4\n00:00:17,000 --> 00:00:19,000\nafter"));
+    // a PGS stream built by hand: 8x4 picture (1 = white, 2 = black, 0 = nothing), shown at 1 s and 5 s, cleared at 3 s and 8 s
+    static byte[] Segment(byte kind, double seconds, params byte[] body) => BurnSmith.Core.Hdmv.Pgs.Segment(kind, (uint)(seconds * 90000), (uint)(seconds * 90000), body);
+    static byte[] Be(int value, int bytes) => [.. Enumerable.Range(0, bytes).Select(i => (byte)(value >> 8 * (bytes - 1 - i)))];
+    byte[] SupSet(double at, bool shown, int x = 100, int y = 900)
+    {
+        var picture = BurnSmith.Core.Hdmv.Pgs.Rle([1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 0, 1, 1, 0, 0, 2, 2, 0, 1, 2, 1, 2, 1, 2, 1, 2], 8, 4);
+        byte[] placed = shown ? [.. Be(0, 2), 0, 0, .. Be(x, 2), .. Be(y, 2)] : [];
+        byte[] composition = [.. Be(1920, 2), .. Be(1080, 2), 0x10, .. Be(1, 2), (byte)(shown ? 0x80 : 0), 0, 0, (byte)(shown ? 1 : 0), .. placed];
+        var set = new List<byte[]> { Segment(0x16, at, composition), Segment(0x17, at, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0) };
+        if (shown)
+        {
+            set.Add(Segment(0x14, at, [0, 0, 1, 235, 128, 128, 255, 2, 16, 128, 128, 255]));
+            set.Add(Segment(0x15, at, [.. Be(0, 2), 0, 0xC0, .. Be(picture.Length + 4, 3), .. Be(8, 2), .. Be(4, 2), .. picture]));
+        }
+        set.Add(Segment(0x80, at));
+        return [.. set.SelectMany(s => s)];
+    }
+    byte[] sup = [.. SupSet(1, true), .. SupSet(3, false), .. SupSet(5, true, 200), .. SupSet(8, false)];
+    string Times(IEnumerable<PgsSubtitles.Cue> list) => string.Join('|', list.Select(c => FormattableString.Invariant($"{c.Start:0.##}-{c.End:0.##}")));
+    var pictures = PgsSubtitles.Cues(sup, out var undecoded);
+    Check("PGS pictures: shown until cleared, placed, 8x4 on a 1920x1080 plane, white and black kept, nothing transparent",
+          Times(pictures) == "1-3|5-8" && undecoded == 0 && pictures[1].X == 200 && pictures[0].Y == 900 && pictures[0].Width == 8 && pictures[0].Height == 4 && pictures[0].PlaneWidth == 1920 && PgsSubtitles.PlaneSize(sup) == (1920, 1080)
+          && pictures[0].Luma[0] == 255 && pictures[0].Luma[8] == 0 && pictures[0].Alpha[0] == 255 && pictures[0].Alpha[4] == 0);
+    Check("PGS cut: a picture on screen at the start stays from 0, later ones move back, the clear after the end is dropped, the last lasts 3 s",
+          Times(PgsSubtitles.Cues(PgsSubtitles.Cut(sup, 2, 4), out _)) == "0-1|3-6");
+    Check("PGS cut: starting right after a clear keeps nothing old; nothing to show gives an empty file; the whole stream is unchanged",
+          Times(PgsSubtitles.Cues(PgsSubtitles.Cut(sup, 3.5, 5), out _)) == "1.5-4.5" && PgsSubtitles.Cut(sup, 9, 5).Length == 0 && PgsSubtitles.Cut(sup, 0, 100).SequenceEqual(sup));
+    var notSup = false;
+    try { PgsSubtitles.Cues([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], out _); } catch (InvalidDataException) { notSup = true; }
+    var pgsFile = new ExternalSubtitle("a.fr.sup", "fre").Track(2);
+    Check("a .sup is a PGS track the disc can carry, named after its language; text tracks are not PGS", notSup && pgsFile.IsPgs && pgsFile.Supported && ExternalSubtitle.Extensions.Contains(".sup") && !new ExternalSubtitle("a.srt").Track(0).IsPgs);
     var choices = Languages.Choices.ToList();
     Check("languages to choose from: one per language, each code read back as itself, a name for each", choices.Count >= 20 && choices.Select(c => c.Name).Distinct().Count() == choices.Count
           && choices.All(c => c.Name.Length > 0 && Languages.Code(c.Code) == c.Code) && choices.Any(c => c.Code == "fre" && c.Name == "Français"));

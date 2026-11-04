@@ -124,7 +124,7 @@ public partial class MainWindow : Window
         var chapters = series ? 0 : disc.ChapterList(first.OnDisc.Duration, chapterMinutes).Count;
         return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, chapters).ToList(),
             series ? main.Select((t, i) => new TitleEntry(t.Name, i + 1, null)).ToList() : null,
-            disc.KeptAudio(first.Info).Select(a => a.Name).ToList(), disc.KeptSubtitles(first.Tracks).Where(SupportsSub).Select(s => s.Name).ToList(),
+            disc.KeptAudio(first.Info).Select(a => a.Name).ToList(), disc.KeptSubtitles(first.Tracks).Where(s => s.Supported).Select(s => s.Name).ToList(),
             extras.Count > 0 ? extras.Select((t, i) => new TitleEntry(t.Name, main.Count + i + 1, null)).ToList() : null);
     }
 
@@ -160,9 +160,6 @@ public partial class MainWindow : Window
         catch (Exception) { FreeText.Text = ""; } // a path being typed
     }
 
-    // a DVD can only carry text subtitles (redrawn as bitmaps); a Blu-ray also takes PGS
-    bool SupportsSub(SubtitleTrack s) => kind == "dvd" ? s.IsText : s.Supported;
-
     void OnModeClick(object s, RoutedEventArgs e)
     {
         ModeButton.ContextMenu.PlacementTarget = ModeButton;
@@ -179,7 +176,7 @@ public partial class MainWindow : Window
         CapacityBox.SelectedItem = k == "bd" ? Output.DefaultBd : Output.For(k)[0];
         foreach (var t in titles)
         {
-            t.Subs = t.Subs.Where(i => SupportsSub(t.Tracks.Subtitles.First(x => x.Index == i))).ToList();
+            t.Subs = t.Subs.Where(i => t.Tracks.Subtitles.First(x => x.Index == i).Supported).ToList();
             t.Refresh();
         }
         Update();
@@ -256,7 +253,7 @@ public partial class MainWindow : Window
                 if (titles.FirstOrDefault() is { } first && first.Info.Audio.Count == entry.Info.Audio.Count)
                 {
                     entry.Audio = first.Audio.ToList();
-                    entry.Subs = first.Subs.Where(i => entry.Tracks.Subtitles.Any(t => t.Index == i && SupportsSub(t))).ToList();
+                    entry.Subs = first.Subs.Where(i => entry.Tracks.Subtitles.Any(t => t.Index == i && t.Supported)).ToList();
                 }
                 titles.Add(entry);
             }
@@ -440,7 +437,7 @@ public partial class MainWindow : Window
         var kept = audio ? entry.Audio : entry.Subs;
         IEnumerable<(int Index, string Text, bool Enabled)> tracks = audio
             ? entry.Info.Audio.Select(a => (a.Index, $"{a.Name}  ({a.Codec})", true))
-            : entry.Tracks.Subtitles.Select(t => (t.Index, SupportsSub(t) ? $"{t.Name}  ({(t.File != null ? Path.GetFileName(t.File) : t.Codec)})" : $"{t.Name}  ({t.Codec}, non pris en charge)", SupportsSub(t)));
+            : entry.Tracks.Subtitles.Select(t => (t.Index, t.Supported ? $"{t.Name}  ({(t.File != null ? Path.GetFileName(t.File) : t.Codec)})" : $"{t.Name}  ({t.Codec}, non pris en charge)", t.Supported));
         var menu = new ContextMenu { PlacementTarget = button, Placement = PlacementMode.Bottom };
         foreach (var (index, text, enabled) in tracks)
         {
@@ -486,18 +483,18 @@ public partial class MainWindow : Window
         entry.Refresh();
     }
 
-    /// <summary>Adds subtitle files (srt, ass, ssa, vtt) to one video, ticked: they are tracks like the video's own, after them.</summary>
+    /// <summary>Adds subtitle files (srt, ass, ssa, vtt, sup) to one video, ticked: they are tracks like the video's own, after them.</summary>
     void AddSubtitleFiles(Entry entry)
     {
         var dialog = new OpenFileDialog
         {
             Title = $"Sous-titres de {entry.Name}", Multiselect = true, InitialDirectory = Path.GetDirectoryName(entry.Path),
-            Filter = "Sous-titres (*.srt;*.ass;*.ssa;*.vtt)|*.srt;*.ass;*.ssa;*.vtt|Tous les fichiers|*.*",
+            Filter = "Sous-titres (*.srt;*.ass;*.ssa;*.vtt;*.sup)|*.srt;*.ass;*.ssa;*.vtt;*.sup|Tous les fichiers|*.*",
         };
         if (dialog.ShowDialog(this) != true) return;
         foreach (var file in dialog.FileNames.Where(f => !entry.Extra.Any(x => x.File.Equals(f, StringComparison.OrdinalIgnoreCase))))
         {
-            if (!ExternalSubtitle.Extensions.Contains(Path.GetExtension(file).ToLowerInvariant())) { Warn($"{Path.GetFileName(file)} : seuls les sous-titres texte sont pris en charge (srt, ass, ssa, vtt)."); continue; }
+            if (!ExternalSubtitle.Extensions.Contains(Path.GetExtension(file).ToLowerInvariant())) { Warn($"{Path.GetFileName(file)} : seuls les sous-titres srt, ass, ssa, vtt et sup (PGS) sont pris en charge."); continue; }
             entry.Extra = [.. entry.Extra, ExternalSubtitle.For(entry.Path, file)];
             var index = entry.Info.Subtitles.Count + entry.Extra.Count - 1;
             if (entry.Subs.Count < MenuBuilder.MaxSubtitles) { entry.Subs.Add(index); entry.Subs.Sort(); }
@@ -532,7 +529,7 @@ public partial class MainWindow : Window
         foreach (var other in titles.Where(t => t != cur))
         {
             other.Audio = cur.Audio.Where(i => other.Info.Audio.Any(a => a.Index == i)).ToList();
-            other.Subs = cur.Subs.Where(i => other.Tracks.Subtitles.Any(t => t.Index == i && SupportsSub(t))).ToList();
+            other.Subs = cur.Subs.Where(i => other.Tracks.Subtitles.Any(t => t.Index == i && t.Supported)).ToList();
             other.Refresh();
         }
         Append("Pistes appliquées à toutes les vidéos (par numéro de piste).");

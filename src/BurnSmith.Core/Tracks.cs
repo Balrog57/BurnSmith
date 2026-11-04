@@ -16,20 +16,20 @@ public sealed record SubtitleTrack(int Index, string Codec, string Lang, string 
 {
     public bool IsPgs => Codec == "hdmv_pgs_subtitle";
     public bool IsText => Codec is "subrip" or "srt" or "ass" or "ssa" or "mov_text" or "webvtt" or "text";
-    /// <summary>Image subtitles other than PGS (DVD VobSub, DVB) would need OCR: not carried.</summary>
+    /// <summary>PGS is copied on a Blu-ray and redrawn on a DVD; other image subtitles (DVD VobSub, DVB) would need OCR: not carried.</summary>
     public bool Supported => IsPgs || IsText;
     public string Name => Languages.Display(Lang, Title) + (Forced ? " (forcés)" : "");
 }
 
 /// <summary>
-/// A subtitle file kept beside the video (SRT, ASS, SSA or WebVTT; bitmap ones would need OCR): one more track of that video, numbered after
-/// the video's own. <see cref="Lang"/> is an ISO 639-2 code, "und" when unknown.
+/// A subtitle file kept beside the video (SRT, ASS, SSA, WebVTT, or PGS as a .sup; the other bitmap ones would need OCR): one more track of that
+/// video, numbered after the video's own. <see cref="Lang"/> is an ISO 639-2 code, "und" when unknown.
 /// </summary>
 public sealed record ExternalSubtitle(string File, string Lang = "und", bool Forced = false)
 {
-    public static readonly string[] Extensions = [".srt", ".ass", ".ssa", ".vtt"];
+    public static readonly string[] Extensions = [".srt", ".ass", ".ssa", ".vtt", ".sup"];
 
-    public SubtitleTrack Track(int index) => new(index, Path.GetExtension(File).ToLowerInvariant() switch { ".ass" => "ass", ".ssa" => "ssa", ".vtt" => "webvtt", _ => "subrip" },
+    public SubtitleTrack Track(int index) => new(index, Path.GetExtension(File).ToLowerInvariant() switch { ".ass" => "ass", ".ssa" => "ssa", ".vtt" => "webvtt", ".sup" => "hdmv_pgs_subtitle", _ => "subrip" },
                                                   Lang, Path.GetFileNameWithoutExtension(File), Forced, File); // the name stands in for the language the file does not say
 
     /// <summary>

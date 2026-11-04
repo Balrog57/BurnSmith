@@ -104,17 +104,17 @@ public static class Dvd
         if (ntscFilm) args.AddRange(["-flags", "+ildct+ilme", "-top", "1"]);
         args.AddRange(["-sn", "-dn", movie]);
 
-        // only text subtitles can become DVD subpictures here (spumux renders them); bitmap formats would need OCR
+        // text subtitles are drawn by DvdSubtitles, PGS pictures redrawn (spumux has no text renderer); other bitmap formats would need OCR
         var subs = new List<(SubtitleTrack Track, string File)>();
         foreach (var s in title.KeptSubtitles(src))
         {
-            if (!s.IsText) { log($"subtitle '{s.Name}' skipped: {s.Codec} cannot be put on a DVD (text subtitles only)"); continue; }
-            var file = Path.Combine(work, $"sub{number}_{subs.Count + 1}.srt");
+            if (!s.Supported) { log($"subtitle '{s.Name}' skipped: {s.Codec} is an image format that needs OCR"); continue; }
+            var file = Path.Combine(work, $"sub{number}_{subs.Count + 1}.{(s.IsPgs ? "sup" : "srt")}");
             if (s.File == null) // the video's own track; a subtitle file is converted apart, below
             {
-                args.AddRange(["-map", $"0:s:{s.Index}", "-c:s", "srt"]);
+                args.AddRange(["-map", $"0:s:{s.Index}", "-c:s", s.IsPgs ? "copy" : "srt"]);
                 if (title.End != null) args.AddRange(["-t", src.Duration.ToString("0.###", Inv)]); // the input's -t lets later subtitle cues through
-                args.AddRange(["-f", "srt", file]);
+                args.AddRange(["-f", s.IsPgs ? "sup" : "srt", file]);
             }
             subs.Add((s, file));
         }
@@ -124,7 +124,7 @@ public static class Dvd
         // spumux refuses a file with no cue, and then the whole movie would lose its subtitles: a track with nothing to show in the part kept is left out
         subs.RemoveAll(x =>
         {
-            var empty = !File.ReadAllText(x.File).Contains("-->");
+            var empty = !DvdSubtitles.HasCues(x.File);
             if (empty) log($"subtitle '{x.Track.Name}' skipped: no cue in the part kept");
             return empty;
         });
@@ -156,7 +156,9 @@ public static class Dvd
         var current = movie;
         for (var k = subs.Count - 1; k >= 0; k--)
         {
-            var spu = new XElement("subpictures", DvdSubtitles.Stream(subs[k].File, work, $"{name}_s{k + 1}_", 720, pal ? 576 : 480, pal ? 64.0 / 45 : 32.0 / 27));
+            var (prefix, h) = ($"{name}_s{k + 1}_", pal ? 576 : 480);
+            var spu = new XElement("subpictures", subs[k].Track.IsPgs ? DvdSubtitles.PgsStream(subs[k].File, work, prefix, 720, h, log)
+                                                                        : DvdSubtitles.Stream(subs[k].File, work, prefix, 720, h, pal ? 64.0 / 45 : 32.0 / 27));
             var xml = Path.Combine(work, $"{name}_s{k + 1}.xml");
             new XDocument(spu).Save(xml);
             var next = k == 0 ? output : Path.Combine(work, $"{name}_pass{k}.mpg");

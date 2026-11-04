@@ -40,18 +40,35 @@ public static class DvdSubtitles
         return cues;
     }
 
+    /// <summary>A subtitle file the DVD can show: SRT text, or PGS pictures (.sup).</summary>
+    public static bool HasCues(string file) =>
+        Path.GetExtension(file).Equals(".sup", StringComparison.OrdinalIgnoreCase) ? PgsSubtitles.Cues(File.ReadAllBytes(file), out _).Count > 0 : File.ReadAllText(file).Contains("-->");
+
     /// <summary>One spumux &lt;stream&gt; for the cues of <paramref name="srt"/>; the bitmaps are written into <paramref name="dir"/>.</summary>
     public static XElement Stream(string srt, string dir, string prefix, int w, int h, double sar)
     {
         var cues = ParseSrt(srt);
         var images = MenuRenderer.Sta(() => cues.Select(c => Draw(c.Text, w, h, sar)).ToList());
+        return Stream(cues.Select(c => (c.Start, c.End)).ToList(), images, dir, prefix);
+    }
+
+    /// <summary>One spumux &lt;stream&gt; for a PGS file (.sup): each picture is scaled to the DVD frame and brought down to the four colours of a subpicture.</summary>
+    public static XElement PgsStream(string sup, string dir, string prefix, int w, int h, Action<string> log)
+    {
+        var cues = PgsSubtitles.Cues(File.ReadAllBytes(sup), out var skipped);
+        if (skipped > 0) log($"warning: {skipped} picture(s) of {Path.GetFileName(sup)} could not be read and are left out");
+        return Stream(cues.Select(c => (c.Start, c.End)).ToList(), cues.Select(c => Redraw(c, w, h)).ToList(), dir, prefix);
+    }
+
+    static XElement Stream(List<(double Start, double End)> times, List<byte[]> images, string dir, string prefix)
+    {
         static string T(double s) => TimeSpan.FromSeconds(s).ToString(@"hh\:mm\:ss\.ff", CultureInfo.InvariantCulture);
         var stream = new XElement("stream");
-        for (var i = 0; i < cues.Count; i++)
+        for (var i = 0; i < times.Count; i++)
         {
             var name = $"{prefix}{i + 1:0000}.png";
             File.WriteAllBytes(Path.Combine(dir, name), images[i]);
-            stream.Add(new XElement("spu", new XAttribute("start", T(cues[i].Start)), new XAttribute("end", T(cues[i].End)), new XAttribute("image", name)));
+            stream.Add(new XElement("spu", new XAttribute("start", T(times[i].Start)), new XAttribute("end", T(times[i].End)), new XAttribute("image", name)));
         }
         return stream;
     }
@@ -110,6 +127,38 @@ public static class DvdSubtitles
             var luminance = (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / 3.0 * 255 / a; // premultiplied -> plain
             canvas.Pixels[i] = (byte)(luminance > 140 ? 2 : 1); // white text, black outline
         }
-        return Encode(canvas, [new(0, 0, 0, 0), new(16, 16, 16, 255), new(255, 255, 255, 255), new(128, 128, 128, 255)]);
+        return Encode(canvas, Palette);
+    }
+
+    /// <summary>Transparent, black (outline), white (text), grey (the edge between them).</summary>
+    static readonly Rgba[] Palette = [new(0, 0, 0, 0), new(16, 16, 16, 255), new(255, 255, 255, 255), new(128, 128, 128, 255)];
+
+    /// <summary>
+    /// A PGS picture on the DVD frame (the whole 16:9 plane lands on the whole frame, whatever the plane's size): each DVD pixel averages the
+    /// source pixels under it, kept when mostly opaque, then white, grey or black by brightness. Colours other than grey levels are lost.
+    /// </summary>
+    static byte[] Redraw(PgsSubtitles.Cue cue, int w, int h)
+    {
+        double sx = (double)w / cue.PlaneWidth, sy = (double)h / cue.PlaneHeight;
+        var canvas = new Canvas(w, h);
+        for (var dy = Math.Max(0, (int)Math.Floor(cue.Y * sy)); dy < Math.Min(h, (int)Math.Ceiling((cue.Y + cue.Height) * sy)); dy++)
+            for (var dx = Math.Max(0, (int)Math.Floor(cue.X * sx)); dx < Math.Min(w, (int)Math.Ceiling((cue.X + cue.Width) * sx)); dx++)
+            {
+                // the source pixels under this one, in the bitmap's own coordinates
+                int fromX = (int)Math.Floor(dx / sx) - cue.X, toX = Math.Max(fromX + 1, (int)Math.Ceiling((dx + 1) / sx) - cue.X);
+                int fromY = (int)Math.Floor(dy / sy) - cue.Y, toY = Math.Max(fromY + 1, (int)Math.Ceiling((dy + 1) / sy) - cue.Y);
+                long opacity = 0, bright = 0;
+                for (var y = Math.Max(0, fromY); y < Math.Min(cue.Height, toY); y++)
+                    for (var x = Math.Max(0, fromX); x < Math.Min(cue.Width, toX); x++)
+                    {
+                        var i = y * cue.Width + x;
+                        opacity += cue.Alpha[i];
+                        bright += cue.Alpha[i] * cue.Luma[i];
+                    }
+                if (opacity == 0 || opacity / ((toX - fromX) * (toY - fromY)) < 70) continue; // mostly transparent
+                var luma = bright / opacity;
+                canvas.Pixels[dy * w + dx] = (byte)(luma >= 170 ? 2 : luma >= 85 ? 3 : 1);
+            }
+        return Encode(canvas, Palette);
     }
 }
