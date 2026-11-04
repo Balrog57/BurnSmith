@@ -61,13 +61,13 @@
           <ColumnDefinition Width="124"/>
         </Grid.ColumnDefinitions>
         <TextBlock Text="{Binding Name}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,10,0"/>
-        <TextBlock Grid.Column="1" Text="{Binding DurationText}" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="1" Text="{Binding DurationText}" ToolTip="{Binding DurationTip}" VerticalAlignment="Center"/>
         <TextBlock Grid.Column="2" Text="{Binding Hdr}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         <Button Grid.Column="3" Style="{StaticResource Drop}" Content="{Binding AudioText}" ToolTip="Pistes audio gardées" Click="OnAudioMenu"/>
         <Button Grid.Column="4" Style="{StaticResource Drop}" Content="{Binding SubText}" ToolTip="Sous-titres gardés" Click="OnSubMenu"/>
         <StackPanel Grid.Column="5" Orientation="Horizontal" HorizontalAlignment="Right">
           <Button Style="{StaticResource IconBtn}" Content="&#xE768;" ToolTip="Prévisualisation (lecteur par défaut)" Click="OnRowPlay"/>
-          <Button Style="{StaticResource IconBtn}" Content="&#xE70F;" ToolTip="Renommer (le nom apparaît dans le menu)" Click="OnRowRename"/>
+          <Button Style="{StaticResource IconBtn}" Content="&#xE70F;" ToolTip="Modifier : nom dans le menu, découpe, volume, chapitres" Click="OnRowEdit"/>
           <Button Style="{StaticResource IconBtn}" Content="&#xE712;" ToolTip="Ordre des titres" Click="OnRowMore"/>
           <Button Style="{StaticResource IconBtn}" Content="&#xE74D;" ToolTip="Supprimer le titre" Click="OnRowRemove"/>
         </StackPanel>

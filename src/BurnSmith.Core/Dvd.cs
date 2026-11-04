@@ -38,7 +38,7 @@ public static class Dvd
         log ??= _ => { };
         if (job.Titles.Count == 0) throw new ArgumentException("no video to put on the disc");
         if (job.Titles.Count > 1 && job.Menu == null) throw new InvalidOperationException("several videos need a menu to choose from");
-        var sources = job.Titles.Select(t => BluRay.Probe(t.Video)).ToList();
+        var sources = job.Titles.Select(t => t.Cut(BluRay.Probe(t.Video))).ToList(); // durations from here on are the parts kept
         var items = sources.Zip(job.Titles, (s, t) => (Src: s, Title: t)).ToList();
         var pal = Math.Abs(sources[0].Fps - 25) < 0.5 || Math.Abs(sources[0].Fps - 50) < 0.5; // the disc follows its first video
         var work = job.OutDir + "_work";
@@ -74,7 +74,11 @@ public static class Dvd
         // movie: square pixels -> 16:9 box with bars -> DVD frame size and aspect
         var ntscFilm = !pal && src.Fps < 25;
         var rate = pal ? "fps=25" : ntscFilm ? "fps=24000/1001,telecine=pattern=23" : "fps=30000/1001"; // film: real 3:2 pulldown
-        var args = new List<string> { "-y", "-v", "warning", "-i", title.Video, "-map", "0:v:0" };
+        // -ss / -t before -i cut the input itself: the video, the sound and the subtitle files written below all start and stop together
+        var args = new List<string> { "-y", "-v", "warning" };
+        if (title.Start > 0) args.AddRange(["-ss", title.Start.ToString(Inv)]);
+        if (title.End != null) args.AddRange(["-t", src.Duration.ToString("0.###", Inv)]);
+        args.AddRange(["-i", title.Video, "-map", "0:v:0"]);
         foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
         args.AddRange(["-vf", $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale=1024:576:force_original_aspect_ratio=decrease,pad=1024:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h},setsar={sar},{rate}",
             "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9", "-b:v", $"{videoBps / 1000}k"]);
@@ -83,6 +87,7 @@ public static class Dvd
         {
             args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", $"{AudioBps(audio[j]) / 1000}k"]);
             if (audio[j].Channels > 6) args.AddRange([$"-ac:a:{j}", "6"]); // AC-3 tops out at 5.1
+            if (title.Volume != 100) args.AddRange([$"-filter:a:{j}", $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}"]);
         }
         if (ntscFilm) args.AddRange(["-flags", "+ildct+ilme", "-top", "1"]);
         args.AddRange(["-sn", "-dn", movie]);
@@ -114,7 +119,7 @@ public static class Dvd
                 log("subtitles dropped: " + e.Message.Split('\n')[0]);
             }
         }
-        return new Movie(movie, audio, carried, BluRay.Chapters(src.Duration, job.ChapterMinutes));
+        return new Movie(movie, audio, carried, title.ChapterList(src.Duration, job.ChapterMinutes));
     }
 
     /// <summary>One spumux pass that adds a subtitle stream per entry (cues drawn by <see cref="DvdSubtitles"/>).</summary>
@@ -154,7 +159,7 @@ public static class Dvd
             var file = Path.Combine(thumbs, name + ".jpg");
             try
             {
-                Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, sources[title].Duration - 0.5)).ToString("0.###", Inv),
+                Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, sources[title].Duration - 1)).ToString("0.###", Inv),
                     "-i", movies[title].Mpg, "-frames:v", "1", "-q:v", "2", "-vf", $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}", file]);
             }
             catch (InvalidOperationException) { log($"warning: no picture for {name} (ffmpeg could not read a frame)"); } // the menu then shows an empty frame
@@ -178,10 +183,8 @@ public static class Dvd
         var loop = job.Menu!.Loop;
         // a moving menu: the pages are transparent overlays burned onto a clip of the film (or the design's own video) that plays and repeats
         var backgrounds = MenuRenderer.Sta(() => pages.Select(p => loop ? MenuRenderer.Overlay(job.Menu!, p) : MenuRenderer.Background(job.Menu!, p)).ToList());
-        var loopFile = job.Menu.LoopFile is { Length: > 0 } lf && File.Exists(lf) ? lf : job.Titles[0].Video;
-        var loopSrc = loopFile == job.Titles[0].Video ? sources[0] : BluRay.Probe(loopFile);
         var loopSeconds = Math.Clamp(job.Menu.LoopSeconds, 5, 120);
-        var loopStart = Math.Clamp(job.Menu.LoopStart, 0, Math.Max(0, (int)loopSrc.Duration - loopSeconds));
+        var (loopFile, loopSrc, loopStart) = BluRay.LoopSource(job.Menu, job.Titles[0], loopSeconds);
         var music = job.Menu.Music is { Length: > 0 } mu && File.Exists(mu) ? mu : null;
         if (loop) log($"menu: moving background, {loopSeconds}s from {Path.GetFileName(loopFile)} at {loopStart}s{(music != null ? " + music" : "")}");
 

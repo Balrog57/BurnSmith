@@ -1,0 +1,62 @@
+<Window x:Class="BurnSmith.App.VideoEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Modifier la vidéo" Width="520" SizeToContent="Height" MaxHeight="900" ResizeMode="NoResize"
+        Background="{StaticResource BgBrush}" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <Grid Margin="24,16,24,20">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,0,12,0">
+        <TextBlock Text="Titre" Style="{StaticResource Section}" Margin="0,0,0,2"/>
+        <TextBlock Text="Nom affiché dans le menu" Style="{StaticResource Label}"/>
+        <TextBox x:Name="NameBox"/>
+        <TextBlock x:Name="SourceText" Opacity="0.65" Margin="0,8,0,0" TextWrapping="Wrap"/>
+
+        <!-- Yuhan's and DVDFab's "Couper": keep only the part between two times -->
+        <TextBlock Text="Découpe" Style="{StaticResource Section}"/>
+        <Grid Margin="0,8,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/><ColumnDefinition Width="120"/><ColumnDefinition Width="28"/>
+            <ColumnDefinition Width="Auto"/><ColumnDefinition Width="120"/>
+          </Grid.ColumnDefinitions>
+          <CheckBox x:Name="StartCheck" Content="Début" VerticalAlignment="Center" Margin="0,0,10,0" Checked="OnCut" Unchecked="OnCut"/>
+          <TextBox x:Name="StartBox" Grid.Column="1" TextChanged="OnCut" ToolTip="h:mm:ss (ou en secondes)"/>
+          <CheckBox x:Name="EndCheck" Grid.Column="3" Content="Fin" VerticalAlignment="Center" Margin="0,0,10,0" Checked="OnCut" Unchecked="OnCut"/>
+          <TextBox x:Name="EndBox" Grid.Column="4" TextChanged="OnCut" ToolTip="h:mm:ss (ou en secondes)"/>
+        </Grid>
+        <TextBlock x:Name="KeptText" Margin="0,8,0,0" TextWrapping="Wrap"/>
+
+        <TextBlock Text="Volume" Style="{StaticResource Section}"/>
+        <Grid Margin="0,8,0,0">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="64"/></Grid.ColumnDefinitions>
+          <Slider x:Name="VolumeSlider" Minimum="10" Maximum="300" TickFrequency="10" IsSnapToTickEnabled="True" SmallChange="10" LargeChange="50" ValueChanged="OnVolume"/>
+          <TextBlock x:Name="VolumeText" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+        </Grid>
+        <TextBlock Text="100 % laisse le son tel quel. Un autre volume refait le son en AC-3." Style="{StaticResource Label}" Margin="0,4,0,0"/>
+
+        <TextBlock Text="Chapitres" Style="{StaticResource Section}"/>
+        <RadioButton x:Name="ChapDisc" GroupName="chapters" Margin="0,8,0,0" Checked="OnChapterMode"/>
+        <RadioButton x:Name="ChapNone" GroupName="chapters" Content="Aucun chapitre" Margin="0,10,0,0" Checked="OnChapterMode"/>
+        <RadioButton x:Name="ChapCustom" GroupName="chapters" Content="Liste personnalisée (temps dans la vidéo d'origine)" Margin="0,10,0,0" Checked="OnChapterMode"/>
+        <Grid x:Name="ListPanel" Margin="24,8,0,0">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <ListBox x:Name="ChapterList" Height="120" SelectionMode="Extended"/>
+          <StackPanel Grid.Column="1" Margin="10,0,0,0" Width="124">
+            <TextBox x:Name="AtBox" ToolTip="h:mm:ss (ou en secondes)"/>
+            <Button Content="Insérer" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnInsert"/>
+            <Button Content="Supprimer" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnDelete"/>
+            <Button Content="Tout supprimer" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnDeleteAll"/>
+          </StackPanel>
+        </Grid>
+        <TextBlock Text="Les chapitres en dehors de la partie gardée sont ignorés." Style="{StaticResource Label}"/>
+      </StackPanel>
+    </ScrollViewer>
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+      <Button Content="OK" IsDefault="True" MinWidth="90" Margin="0,0,8,0" Click="OnOk" Style="{StaticResource Primary}"/>
+      <Button Content="Annuler" IsCancel="True" MinWidth="90"/>
+    </StackPanel>
+  </Grid>
+</Window>

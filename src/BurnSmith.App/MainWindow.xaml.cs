@@ -28,21 +28,24 @@ public partial class MainWindow : Window
         public string Name { get; set; } = System.IO.Path.GetFileNameWithoutExtension(path);
         public List<int> Audio { get; set; } = info.Audio.Take(1).Select(a => a.Index).ToList();
         public List<int> Subs { get; set; } = [];
+        // the cut (see DiscTitle): part kept, volume in %, chapter times in the original file (null = the disc's setting, empty = none)
+        public double Start { get; set; }
+        public double? End { get; set; }
+        public int Volume { get; set; } = 100;
+        public IReadOnlyList<double>? ChapterAt { get; set; }
 
-        public string DurationText
-        {
-            get
-            {
-                var t = TimeSpan.FromSeconds(Info.Duration);
-                return $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}";
-            }
-        }
+        /// <summary>The source as the disc sees it: its duration is the part kept.</summary>
+        public SourceInfo OnDisc => ToDisc().Cut(Info);
+
+        /// <summary>The length on the disc, which is the cut one once the video was edited.</summary>
+        public string DurationText => Timecode.Format(Math.Floor(OnDisc.Duration));
+        public string? DurationTip => ToDisc() is { Trimmed: true } ? $"Durée d'origine : {Timecode.Format(Math.Floor(Info.Duration))}" : null;
         public string Hdr => Info.Hdr;
         public string AudioText => Summary(Audio.Select(i => Info.Audio.FirstOrDefault(a => a.Index == i)?.Name ?? "?").ToList());
         public string SubText => Summary(Subs.Select(i => Info.Subtitles.FirstOrDefault(t => t.Index == i)?.Name ?? "?").ToList());
 
         static string Summary(List<string> names) => names.Count == 0 ? "Aucun" : names.Count == 1 ? names[0] : $"{names[0]} +{names.Count - 1}";
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs);
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt);
     }
 
     readonly ObservableCollection<Entry> titles = [];
@@ -104,7 +107,7 @@ public partial class MainWindow : Window
             return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, 12).ToList(), null, ["Français 5.1", "English 5.1"], ["Français", "English"]);
         var disc = first.ToDisc();
         var series = titles.Count > 1;
-        var chapters = series ? 0 : BluRay.Chapters(first.Info.Duration, chapterMinutes).Count;
+        var chapters = series ? 0 : disc.ChapterList(first.OnDisc.Duration, chapterMinutes).Count;
         return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, chapters).ToList(),
             series ? titles.Select((t, i) => new TitleEntry(t.Name, i + 1, null)).ToList() : null,
             disc.KeptAudio(first.Info).Select(a => a.Name).ToList(), disc.KeptSubtitles(first.Info).Where(SupportsSub).Select(s => s.Name).ToList());
@@ -190,7 +193,7 @@ public partial class MainWindow : Window
         if (titles.Count > 0)
         {
             // shortcut: a 4K disc is sized by its source files (HEVC is kept), the audio dropped from them is not subtracted
-            est = kind == "dvd" ? Dvd.EstimateGB(titles.Select(t => (t.Info, t.ToDisc())).ToList(), cap.Usable) : Estimate(cap, encode) ?? titles.Sum(t => new FileInfo(t.Path).Length) / 1e9;
+            est = kind == "dvd" ? Dvd.EstimateGB(titles.Select(t => (t.OnDisc, t.ToDisc())).ToList(), cap.Usable) : Estimate(cap, encode) ?? titles.Sum(t => new FileInfo(t.Path).Length) / 1e9;
             if (est > cap.Usable) note = "\ntrop grand pour ce support";
             if (kind == "uhd" && titles.Any(t => t.Info.VideoCodec != "hevc" || t.Info.Height != 2160)) note = "\nles sources doivent être en HEVC 2160p";
         }
@@ -203,7 +206,7 @@ public partial class MainWindow : Window
     double? Estimate(Output output, EncodeOptions enc) =>
         kind != "bd" || titles.Count == 0 ? null
         : BluRay.EstimateGB(new BluRayJob(titles.Select(t => t.ToDisc()).ToList(), "", MenuCheck.IsChecked == true || titles.Count > 1 ? design : null, false, "X", chapterMinutes, enc, output.Usable),
-            titles.Select(t => t.Info).ToList());
+            titles.Select(t => t.OnDisc).ToList());
 
     // ---- videos ----
 
@@ -248,14 +251,21 @@ public partial class MainWindow : Window
             }
         }
         AfterTitlesChanged();
-        if (titles.Count > 0 && previewFor != titles[0].Path)
-        {
-            var first = titles[0];
-            previewFor = first.Path;
-            previewFrame = await Task.Run(() => ExtractPreview(first.Path, first.Info));
-            Poster.Source = LoadImage(previewFrame);
-            RefreshThumb();
-        }
+        await RefreshPreview();
+    }
+
+    /// <summary>The menu picture is a frame of the first video, at 10% of the part kept; it changes with the first video and its cut.</summary>
+    async Task RefreshPreview()
+    {
+        if (titles.Count == 0) return;
+        var first = titles[0];
+        var key = $"{first.Path}|{first.Start}|{first.End}";
+        if (previewFor == key) return;
+        previewFor = key;
+        var at = first.Start + first.OnDisc.Duration * 0.1;
+        previewFrame = await Task.Run(() => ExtractPreview(first.Path, at));
+        Poster.Source = LoadImage(previewFrame);
+        RefreshThumb();
     }
 
     static BitmapImage? LoadImage(string? file)
@@ -310,14 +320,14 @@ public partial class MainWindow : Window
         catch (Exception) { if (mine == thumbVersion) MenuThumb.Source = null; } // the thumbnail is cosmetic; the editor shows the error
     }
 
-    /// <summary>One frame at 10% of the movie, used as the picture on the menu preview.</summary>
-    static string? ExtractPreview(string path, SourceInfo info)
+    /// <summary>One frame of the movie at <paramref name="seconds"/>, used as the picture on the menu preview.</summary>
+    static string? ExtractPreview(string path, double seconds)
     {
         var file = Path.Combine(Path.GetTempPath(), "BurnSmith", "preview.jpg");
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         try
         {
-            Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", (info.Duration * 0.1).ToString("0.###", CultureInfo.InvariantCulture),
+            Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", seconds.ToString("0.###", CultureInfo.InvariantCulture),
                 "-i", path, "-frames:v", "1", "-q:v", "2", "-vf", "scale=800:450:force_original_aspect_ratio=increase,crop=800:450", file]);
             return File.Exists(file) ? file : null;
         }
@@ -359,14 +369,17 @@ public partial class MainWindow : Window
         RefreshThumb(); // episode order changes the menu
     }
 
-    void OnRowRename(object s, RoutedEventArgs e)
+    /// <summary>The pencil: the name shown in the menu, the part kept, the volume and the chapters of this video.</summary>
+    async void OnRowEdit(object s, RoutedEventArgs e)
     {
         if (Row(s) is not { } entry) return;
-        var name = Prompt.Ask(this, "Nom affiché dans le menu", entry.Name)?.Trim();
-        if (string.IsNullOrEmpty(name)) return;
-        entry.Name = name;
+        var dlg = new VideoEditWindow(entry.Name, entry.Info.Duration, entry.Start, entry.End, entry.Volume, entry.ChapterAt, chapterMinutes) { Owner = this };
+        if (dlg.ShowDialog() != true) return;
+        (entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt) = (dlg.NameText, dlg.Start, dlg.End, dlg.Volume, dlg.ChapterAt);
         entry.Refresh();
-        RefreshThumb();
+        Update(); // the size follows the length kept
+        RefreshThumb(); // the name and the chapters are on the menu
+        await RefreshPreview();
     }
 
     void OnRowPlay(object s, RoutedEventArgs e)

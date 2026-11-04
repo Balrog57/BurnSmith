@@ -9,7 +9,7 @@ public partial class App : Application
 {
     /// <summary>
     /// burnsmith.exe [video]                      opens the window, optionally with a video already loaded
-    /// burnsmith.exe [video] --snapshot out.png [editor[=template name]] [scroll] | [advanced] [focus]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; or the advanced settings)
+    /// burnsmith.exe [video] --snapshot out.png [editor[=template name]] [scroll] | [advanced] | [edit] [focus]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; or the advanced settings; or the video edit)
     ///                                            off screen to a PNG and exits; lets the UI be checked without touching the desktop
     /// </summary>
     protected override async void OnStartup(StartupEventArgs e)
@@ -38,6 +38,7 @@ public partial class App : Application
             window.Show();
             if (e.Args.Contains("scroll")) win.ScrollPropsToEnd();
         }
+        else if (e.Args.Contains("edit")) { window = new VideoEditWindow("Épisode 1", 5400, 90, 3600, 120, [600, 1800, 3000], 5); OffScreen(window); window.Show(); }
         else if (e.Args.Contains("advanced")) { window = new AdvancedWindow("MY_DISC", 5, new BurnSmith.Core.EncodeOptions(FitDisc: true), new BurnSmith.Core.PlaybackOptions(), "bd", Output.Bds, Output.DefaultBd); OffScreen(window); window.Show(); }
         if (e.Args.Contains("focus")) // selection and keyboard focus states: the second template of the list, the first text box (the output folder on the main window)
         {

@@ -21,10 +21,36 @@ public sealed record SubtitleTrack(int Index, string Codec, string Lang, string 
 /// <summary>
 /// One video of the disc. <see cref="Audio"/> / <see cref="Subtitles"/> are the kept <see cref="AudioTrack.Index"/> /
 /// <see cref="SubtitleTrack.Index"/> values in disc order; null = first audio only, no subtitles.
+/// The cut (DVDFab / Yuhan "video edit"): <see cref="Start"/> and <see cref="End"/> are seconds of the source file (End null = to the end),
+/// <see cref="Volume"/> a percentage of the sound, <see cref="ChapterAt"/> the chapter times in seconds of the source (null = the disc's
+/// "one every N minutes", empty = no chapters).
 /// </summary>
-public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<int>? Audio = null, IReadOnlyList<int>? Subtitles = null)
+public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<int>? Audio = null, IReadOnlyList<int>? Subtitles = null,
+                               double Start = 0, double? End = null, int Volume = 100, IReadOnlyList<double>? ChapterAt = null)
 {
     public string DisplayName => Name ?? Path.GetFileNameWithoutExtension(Video);
+
+    public bool Trimmed => Start > 0 || End != null;
+
+    /// <summary>Seconds of the source that stay on the disc.</summary>
+    public double Length(SourceInfo s) => Math.Max(0, Math.Min(End ?? s.Duration, s.Duration) - Math.Min(Start, s.Duration));
+
+    /// <summary>
+    /// The source as the disc sees it: its length is the part kept, so every size, bit rate, thumbnail and chapter worked out from a
+    /// <see cref="SourceInfo"/> follows the cut without knowing about it.
+    /// </summary>
+    public SourceInfo Cut(SourceInfo s)
+    {
+        if (!Trimmed) return s;
+        var length = Length(s);
+        if (length < 1) throw new ArgumentException($"{DisplayName}: la coupe ne laisse rien sur le disque (début {Start:0.#} s, fin {End:0.#} s, durée du fichier {s.Duration:0.#} s)");
+        return s with { Duration = length };
+    }
+
+    /// <summary>Chapter starts on the disc (seconds from the start of the part kept): always begins with 0, whole seconds, so no two share a second.</summary>
+    public List<double> ChapterList(double length, int minutes) =>
+        ChapterAt == null ? BluRay.Chapters(length, minutes)
+        : ChapterAt.Select(t => Math.Round(t - Start)).Where(t => t > 0 && t < length - 1).Prepend(0).Distinct().Order().ToList();
 
     public IReadOnlyList<AudioTrack> KeptAudio(SourceInfo s) =>
         Audio == null ? s.Audio.Take(1).ToList() : Audio.Select(i => s.Audio.FirstOrDefault(a => a.Index == i)).OfType<AudioTrack>().ToList();

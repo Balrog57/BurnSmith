@@ -108,7 +108,7 @@ public static class BluRay
         log ??= _ => { };
         if (job.Titles.Count == 0) throw new ArgumentException("no video to put on the disc");
         if (job.Titles.Count > 1 && job.Menu == null) throw new InvalidOperationException("several videos need a menu to choose from");
-        var sources = job.Titles.Select(t => Probe(t.Video)).ToList();
+        var sources = job.Titles.Select(t => t.Cut(Probe(t.Video))).ToList(); // durations from here on are the parts kept
         var work = job.OutDir + "_work";
         Tools.PrepareOutput(job.OutDir);
         Directory.CreateDirectory(work);
@@ -159,7 +159,7 @@ public static class BluRay
                 var file = Path.Combine(thumbs, name + ".jpg");
                 try
                 {
-                    Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, sources[title].Duration - 0.5)).ToString("0.###", Inv),
+                    Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, sources[title].Duration - 1)).ToString("0.###", Inv),
                         "-i", muxed[title].Prepared, "-frames:v", "1", "-q:v", "2", "-vf", $"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}", file]);
                 }
                 catch (InvalidOperationException) { log($"warning: no picture for {name} (ffmpeg could not read a frame)"); } // the menu then shows an empty frame
@@ -173,7 +173,7 @@ public static class BluRay
             var menuDir = Path.Combine(work, "menu");
             var loop = 0;
             if (job.Menu.Loop && job.Uhd) log("moving menu skipped: a 4K disc needs a 2160p clip, which BurnSmith does not make yet");
-            else if (job.Menu.Loop) { MuxLoop(job, sources[0], work, log); loop = LoopPlaylist; }
+            else if (job.Menu.Loop) { MuxLoop(job, work, log); loop = LoopPlaylist; }
             MenuFiles.WriteBdj(job.Menu, MenuBuilder.Build(job.Menu, content), menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, job.Titles.Count);
             AddMenu(job, menuDir, log);
         }
@@ -185,10 +185,11 @@ public static class BluRay
     static (int W, int H) VideoSize(BluRayJob job) => job.Uhd ? (3840, 2160) : job.Encode?.Hd720 == true ? (1280, 720) : (1920, 1080);
 
     /// <summary>Rough kb/s of what an audio track weighs on the disc (copied as it is, or re-encoded as AC-3 at 448 / 640).</summary>
-    static int AudioKbps(AudioTrack a) => a.Codec switch { "truehd" => 3500, "dts" => 1536, _ => a.Channels > 2 ? 640 : 448 };
+    static int AudioKbps(AudioTrack a, DiscTitle t) => t.Volume != 100 ? (a.Channels > 2 ? 640 : 448) // a volume change re-encodes the sound as AC-3
+        : a.Codec switch { "truehd" => 3500, "dts" => 1536, _ => a.Channels > 2 ? 640 : 448 };
 
     static double AudioAndMenuBytes(BluRayJob job, IReadOnlyList<SourceInfo> sources) =>
-        job.Titles.Select((t, i) => t.KeptAudio(sources[i]).Sum(a => AudioKbps(a) * 125.0 * sources[i].Duration)).Sum()
+        job.Titles.Select((t, i) => t.KeptAudio(sources[i]).Sum(a => AudioKbps(a, t) * 125.0 * sources[i].Duration)).Sum()
         + 0.15e9 + (job.Menu is { Loop: true } m ? Math.Clamp(m.LoopSeconds, 5, 120) * 2.6e6 : 0);
 
     /// <summary>Size in GB the disc will take: the source files when they are kept, else video at the bit rate asked for or fitted, plus audio and menu.</summary>
@@ -211,6 +212,7 @@ public static class BluRay
         if (!enc.FitDisc || job.CapacityGB <= 0) return 0;
         var seconds = sources.Sum(s => s.Duration);
         var room = job.CapacityGB * 1e9 - AudioAndMenuBytes(job, sources);
+        // shortcut: the whole files, even when a title is cut (overstates what a cut one weighs: it then re-encodes at a rate that fits anyway), when it matters weigh the part kept
         var asIs = job.Titles.Sum(t => new FileInfo(t.Video).Length);
         if (asIs <= room)
         {
@@ -241,7 +243,7 @@ public static class BluRay
         Prepare(job, title, src, audio, subs, prepared, kbps, log);
 
         var fps = Math.Round(Math.Abs(src.Fps - 25) < 0.01 ? 25 : Math.Abs(src.Fps - 24) < 0.01 ? 24 : 23.976, 3).ToString(Inv);
-        var chapterTimes = Chapters(src.Duration, job.ChapterMinutes);
+        var chapterTimes = title.ChapterList(src.Duration, job.ChapterMinutes);
         var chapters = string.Join(';', chapterTimes.Select(t => TimeSpan.FromSeconds(t).ToString(@"hh\:mm\:ss\.fff", Inv)));
         var (w, h) = VideoSize(job);
         var lines = new List<string>
@@ -250,7 +252,7 @@ public static class BluRay
             $"{(job.Uhd ? "V_MPEGH/ISO/HEVC" : "V_MPEG4/ISO/AVC")}, \"{prepared}\", fps={fps}, track=256",
         };
         for (var j = 0; j < audio.Count; j++)
-            lines.Add($"{AudioTag(BdAudio(audio[j].Codec))}, \"{prepared}\", track={257 + j}, lang={Languages.Iso2(audio[j].Lang)}");
+            lines.Add($"{AudioTag(BdAudio(audio[j], title))}, \"{prepared}\", track={257 + j}, lang={Languages.Iso2(audio[j].Lang)}");
         foreach (var (s, file) in subs)
             lines.Add(s.IsPgs
                 ? $"S_HDMV/PGS, \"{file}\", fps={fps}, lang={Languages.Iso2(s.Lang)}"
@@ -263,16 +265,27 @@ public static class BluRay
     }
 
     /// <summary>
+    /// The file a moving menu plays, its probe and the second to start at: the design's file, else the first title, which counts
+    /// <see cref="MenuDesign.LoopStart"/> from the start of the part kept (a cut-out intro never shows on the menu).
+    /// </summary>
+    internal static (string File, SourceInfo Src, int Start) LoopSource(MenuDesign menu, DiscTitle first, int seconds)
+    {
+        var file = menu.LoopFile is { Length: > 0 } f && File.Exists(f) ? f : first.Video;
+        var src = Probe(file);
+        var own = file == first.Video;
+        var room = own ? first.Length(src) : src.Duration;
+        return (file, src, (own ? (int)first.Start : 0) + Math.Clamp(menu.LoopStart, 0, Math.Max(0, (int)room - seconds)));
+    }
+
+    /// <summary>
     /// The clip of a moving menu: <see cref="MenuDesign.LoopSeconds"/> seconds of video (the design's file, else the first title) re-encoded as
     /// 1080p H.264, with the design's music (repeated) or the clip's own sound, muxed apart as playlist <see cref="LoopPlaylist"/> and merged into the disc.
     /// </summary>
-    static void MuxLoop(BluRayJob job, SourceInfo first, string work, Action<string> log)
+    static void MuxLoop(BluRayJob job, string work, Action<string> log)
     {
         var menu = job.Menu!;
-        var file = menu.LoopFile is { Length: > 0 } f && File.Exists(f) ? f : job.Titles[0].Video;
-        var src = file == job.Titles[0].Video ? first : Probe(file);
         var seconds = Math.Clamp(menu.LoopSeconds, 5, 120);
-        var start = Math.Clamp(menu.LoopStart, 0, Math.Max(0, (int)src.Duration - seconds));
+        var (file, src, start) = LoopSource(menu, job.Titles[0], seconds);
         var music = menu.Music is { Length: > 0 } m && File.Exists(m) ? m : null;
         var fps = Math.Abs(src.Fps - 25) < 0.5 ? "25" : "24000/1001";
         var (w, h) = VideoSize(job);
@@ -324,8 +337,10 @@ public static class BluRay
         "dts" => "A_DTS", "truehd" => "A_MLP", _ => "A_AC3",
     };
 
-    /// <summary>The codec a source audio ends up as on the disc: copied when a Blu-ray carries it, AC-3 otherwise.</summary>
-    static string BdAudio(string codec) => codec is "ac3" or "dts" or "truehd" ? codec : "ac3";
+    /// <summary>The codec a source audio ends up as on the disc: copied when a Blu-ray carries it and the volume stays, AC-3 otherwise.</summary>
+    static string BdAudio(AudioTrack a, DiscTitle t) => CopiesAudio(a, t) ? a.Codec : "ac3";
+
+    static bool CopiesAudio(AudioTrack a, DiscTitle t) => t.Volume == 100 && a.Codec is "ac3" or "dts" or "truehd";
 
     /// <summary>
     /// Remuxes to prepared.ts (ffmpeg numbers the streams from PID 256: video = 256, kept audio = 257..), re-encoding only what a Blu-ray cannot carry,
@@ -336,12 +351,19 @@ public static class BluRay
         var fpsOk = Math.Abs(s.Fps - 23.976) < 0.01 || Math.Abs(s.Fps - 24) < 0.01 || Math.Abs(s.Fps - 25) < 0.01;
         var (w, h) = VideoSize(job);
         var enc = job.Encode ?? new EncodeOptions();
-        var videoOk = !enc.ForceReencode && kbps == 0 && s.VideoCodec == (job.Uhd ? "hevc" : "h264") && s.Width == w && s.Height == h && fpsOk;
+        // a cut that starts later must be re-encoded to begin on the exact frame (a copy starts on the keyframe before it); a 4K disc is never re-encoded, so it is copied
+        var copyCut = title.Start == 0 || job.Uhd;
+        var videoOk = !enc.ForceReencode && kbps == 0 && copyCut && s.VideoCodec == (job.Uhd ? "hevc" : "h264") && s.Width == w && s.Height == h && fpsOk;
         if (job.Uhd && !videoOk)
             // shortcut: UHD sources must already be 2160p HEVC; HDR-aware re-encoding is not implemented yet
             throw new NotSupportedException("UHD needs a 3840x2160 HEVC source at 23.976/24/25 fps");
+        if (job.Uhd && title.Start > 0) log($"{title.DisplayName}: 4K is not re-encoded, so the cut starts on the keyframe before {Timecode.Format(title.Start)}");
 
-        var args = new List<string> { "-y", "-v", "warning", "-i", title.Video, "-map", "0:v:0" };
+        // -ss / -t before -i cut the input itself: the video, the sound and the subtitle files written below all start and stop together
+        var args = new List<string> { "-y", "-v", "warning" };
+        if (title.Start > 0) args.AddRange(["-ss", title.Start.ToString(Inv)]);
+        if (title.End != null) args.AddRange(["-t", s.Duration.ToString("0.###", Inv)]);
+        args.AddRange(["-i", title.Video, "-map", "0:v:0"]);
         foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
         if (videoOk) args.AddRange(["-c:v", "copy"]);
         else args.AddRange(["-vf", $"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1",
@@ -356,8 +378,13 @@ public static class BluRay
         }
         for (var j = 0; j < audio.Count; j++)
         {
-            if (BdAudio(audio[j].Codec) == audio[j].Codec) args.AddRange([$"-c:a:{j}", "copy"]);
-            else args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", audio[j].Channels > 2 ? "640k" : "448k"]);
+            if (CopiesAudio(audio[j], title)) args.AddRange([$"-c:a:{j}", "copy"]);
+            else
+            {
+                args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", audio[j].Channels > 2 ? "640k" : "448k"]);
+                if (audio[j].Channels > 6) args.AddRange([$"-ac:a:{j}", "6"]); // AC-3 tops out at 5.1
+                if (title.Volume != 100) args.AddRange([$"-filter:a:{j}", $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}"]);
+            }
         }
         args.AddRange(["-sn", "-dn", output]);
         foreach (var (t, file) in subs)
