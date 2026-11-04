@@ -56,7 +56,14 @@ public static class Dvd
         // a menu that plays on its own (moving clip or music) starts again when it ends: each page is its own PGC, so the sound restarts when another page opens
         var restarts = job.Menu is { } design && (design.Loop || design.ExistingMusic() != null);
         if (job.Menu != null) menuPages = BuildMenus(job, sources, movies, work, pal, log);
-        if (restarts) log($"menu: {menuPages.Count} pages, {menuPages.Sum(m => new FileInfo(m.Mpg).Length) / 1e6:0} MB on the disc");
+        if (restarts)
+        {
+            var menuBytes = menuPages.Sum(m => new FileInfo(m.Mpg).Length);
+            log($"menu: {menuPages.Count} pages, {menuBytes / 1e6:0} MB on the disc");
+            // shortcut: the bit rate above is fixed before the menu exists, so it cannot reserve this; warn instead, lower the loop length or the pages to fix
+            if (movies.Sum(m => new FileInfo(m.Mpg).Length) + menuBytes > job.CapacityGB * 1e9)
+                log("warning: the movie and the looping menu together may not fit the disc; shorten the menu loop or use a lower quality");
+        }
 
         log("author: dvdauthor");
         var xml = Path.Combine(work, "dvd.xml");
