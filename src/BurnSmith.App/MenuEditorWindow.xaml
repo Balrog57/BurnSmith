@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:BurnSmith.App"
         Title="Menu du disque" Width="1320" Height="780" MinWidth="1100" MinHeight="680"
-        Background="#1F1F1F" WindowStartupLocation="CenterOwner">
+        Background="{StaticResource BgBrush}" WindowStartupLocation="CenterOwner">
   <Window.Resources>
     <local:ThumbConverter x:Key="Thumb"/>
     <Style x:Key="Caption" TargetType="TextBlock">
@@ -63,8 +63,8 @@
           <Button Content="▶" Width="40" Click="OnNext"/>
         </StackPanel>
       </DockPanel>
-      <TextBlock x:Name="Status" DockPanel.Dock="Bottom" Foreground="OrangeRed" TextWrapping="Wrap" Margin="0,8,0,0"/>
-      <Border Background="Black" CornerRadius="8">
+      <TextBlock x:Name="Status" DockPanel.Dock="Bottom" Foreground="{StaticResource AccentHoverBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+      <Border Background="Black" CornerRadius="12" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
         <Image x:Name="Preview" Stretch="Uniform"/>
       </Border>
     </DockPanel>
@@ -172,7 +172,7 @@
 
     <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
       <Button Content="Enregistrer le modèle…" Click="OnSave" Margin="0,0,16,0"/>
-      <Button Content="OK" IsDefault="True" Style="{DynamicResource AccentButtonStyle}" MinWidth="100" Margin="0,0,8,0" Click="OnOk"/>
+      <Button Content="OK" IsDefault="True" Style="{StaticResource Primary}" MinWidth="100" Margin="0,0,8,0" Click="OnOk"/>
       <Button Content="Annuler" IsCancel="True" MinWidth="100"/>
     </StackPanel>
   </Grid>

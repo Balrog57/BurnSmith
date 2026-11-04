@@ -27,6 +27,9 @@ if (a.Count >= 3 && a[0] == "preview")
     return 0;
 }
 
+// burnsmith check-templates [--picture frame.jpg] : builds every template as film and series and checks pages, buttons, remote moves, pictures
+if (a.Count >= 1 && a[0] == "check-templates") return TemplateCheck.Run(Opt("--picture") is { } cp ? Path.GetFullPath(cp) : null);
+
 // burnsmith templates : every template found, and the ones that cannot be drawn with the reason
 if (a.Count >= 1 && a[0] == "templates")
 {

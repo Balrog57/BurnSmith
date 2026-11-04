@@ -8,7 +8,7 @@ Créateur de Blu-ray (et DVD, Blu-ray 4K) libre pour Windows : on choisit une ou
 
 - DVD (PAL/NTSC, MPEG-2 + AC-3), Blu-ray (H.264, copie si la source est déjà conforme), Blu-ray 4K (HEVC 2160p).
 - Plusieurs vidéos (séries), choix des pistes audio et sous-titres, page de réglages dans le menu.
-- Fenêtre construite comme celle de DVDFab Créateur (liste des vidéos avec durée / HDR / audio / sous-titres, carte du projet, capacité du disque, sortie dossier / ISO / graveur, progression et annulation de la gravure, effacement d'un disque réinscriptible).
+- Fenêtre construite comme celle de DVDFab Créateur, thème sombre à accent rouge (liste des vidéos avec durée / HDR / audio / sous-titres, carte du projet, capacité du disque, sortie dossier / ISO / graveur, progression et annulation de la gravure, effacement d'un disque réinscriptible).
 - Éditeur de menu avec aperçu en direct et **bibliothèque d'éléments** : 49 modèles livrés (DVD Forge, DVDStyler), plus ceux de DVDFab et de Leawo Prof. Media installés sur le PC ; on compose son menu en choisissant fond, police, style de boutons, grille et couleurs, et on enregistre ses propres modèles (voir ci-dessous).
 - Menus Blu-ray en BD-J (un xlet générique + images), menus DVD par dvdauthor/spumux.
 - Barre de capacité (DVD-5/9, BD-25/50/66/100), chapitres automatiques, création d'ISO (UDF), gravure.
@@ -38,6 +38,7 @@ Ligne de commande : `burnsmith bd|dvd --video f.mkv --out dossier [--design NOM|
 - `src/BurnSmith.Cli` : même moteur en ligne de commande.
 - `bdj/` : source du xlet de menu Blu-ray.
 - `tools/vlctest.ps1` : lit un disque dans un VLC portable et affiche les traces du xlet.
+- `BurnSmith.Cli check-templates` : construit chaque modèle (film puis série) et vérifie pages, boutons, déplacements à la télécommande et images (114 sur 114 aujourd'hui). `BurnSmith.Cli templates` liste les modèles trouvés. `BurnSmith.exe [vidéo] --snapshot out.png [editor[=modèle]] [scroll] | [advanced]` dessine une fenêtre hors écran pour la vérifier.
 
 ## Modèles de menu et bibliothèque
 

@@ -9,7 +9,7 @@ public partial class App : Application
 {
     /// <summary>
     /// burnsmith.exe [video]                      opens the window, optionally with a video already loaded
-    /// burnsmith.exe [video] --snapshot out.png [editor[=template name]] [scroll]   renders the window (or the menu editor, on a template; scroll = bottom of its properties)
+    /// burnsmith.exe [video] --snapshot out.png [editor[=template name]] [scroll] | [advanced]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; or the advanced settings)
     ///                                            off screen to a PNG and exits; lets the UI be checked without touching the desktop
     /// </summary>
     protected override async void OnStartup(StartupEventArgs e)
@@ -36,6 +36,7 @@ public partial class App : Application
             window.Show();
             if (e.Args.Contains("scroll")) win.ScrollPropsToEnd();
         }
+        else if (e.Args.Contains("advanced")) { window = new AdvancedWindow("MY_DISC", 5); OffScreen(window); window.Show(); }
         await Task.Delay(2500); // lets async previews finish
         var bmp = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
         bmp.Render(window);

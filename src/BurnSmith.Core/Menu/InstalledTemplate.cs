@@ -128,13 +128,26 @@ public sealed class InstalledTemplate
                 if (doc.Child("template") is { } t) parsed = new InstalledTemplate(dir, AllInOne(t), "DVDFab Blu-ray");
                 else if (doc.Child("Template") is { } s) parsed = new InstalledTemplate(dir, Simple(s, dir), "DVDFab DVD");
                 else if (doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect").StartsWith("16-9")) is { } def)
-                    parsed = new InstalledTemplate(dir, Leawo(def, doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect") == "4-3")), "Leawo");
+                {
+                    var layout = Leawo(def, doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect") == "4-3"));
+                    // Leawo's own thumbnail positions cover one another in a few files (education01 16-9): its pictures are then laid out by BurnSmith
+                    var skin = Directory.Exists(Path.Combine(dir, "Menu")) && Directory.Exists(Path.Combine(dir, "Scene")) && ThumbnailsOverlap(layout);
+                    parsed = new InstalledTemplate(dir, skin ? LeawoSkin.Build(dir) : layout, "Leawo");
+                }
             }
             else if (Directory.Exists(Path.Combine(dir, "Menu")) && Directory.Exists(Path.Combine(dir, "Scene")))
                 parsed = new InstalledTemplate(dir, LeawoSkin.Build(dir), "Leawo"); // pictures only: BurnSmith lays them out
             return Cache[dir] = parsed;
         }
     }
+
+    static bool ThumbnailsOverlap(XNode layout)
+    {
+        var r = layout.Child("scenes")?.Child("tscenes")?.Child("scene")?.Child("videoes")?.Children("video").Select(v => v.Rect()).ToList() ?? [];
+        return r.Where((a, i) => r.Skip(i + 1).Any(b => Meets(a, b))).Any();
+    }
+
+    static bool Meets(Box a, Box b) => Math.Min(a.X + a.W, b.X + b.W) - Math.Max(a.X, b.X) > a.W / 4 && Math.Min(a.Y + a.H, b.Y + b.H) - Math.Max(a.Y, b.Y) > a.H / 4;
 
     static (int W, int H)? PngSize(string path)
     {
@@ -335,6 +348,15 @@ public sealed class InstalledTemplate
     static Box Place(string picture, Box rect) =>
         PngSize(picture) is var (w, h) ? new Box(rect.X + (rect.W - w) / 2, rect.Y + (rect.H - h) / 2, w, h) : rect;
 
+    /// <summary>A button picture shrunk (never enlarged) to fit inside the rectangle of the XML, centred in it.</summary>
+    static Box Fit(string picture, Box rect)
+    {
+        if (PngSize(picture) is not var (w, h) || w <= 0 || h <= 0) return rect;
+        var s = Math.Min(1.0, Math.Min((double)rect.W / w, (double)rect.H / h));
+        int fw = (int)(w * s), fh = (int)(h * s);
+        return new Box(rect.X + (rect.W - fw) / 2, rect.Y + (rect.H - fh) / 2, fw, fh);
+    }
+
     /// <summary>The template has rows for the audio / subtitle choice (the UHD ones lay that page out differently).</summary>
     public bool HasSetupLists => (template.Child("setup")?.Child("audiolist")?.Children("title").Any() ?? false) || (template.Child("setup")?.Child("subtitlelist")?.Children("title").Any() ?? false);
 
@@ -518,24 +540,29 @@ public sealed class InstalledTemplate
             if (slots[i].Child("name") is { } name) ops.Add(Txt(name, cell.Label, "center"));
             buttons.Add(new MenuButton(cell.Id, slots[i].Rect(), cell.Action) { FocusImage = Selected(framed.Frame) }); // none for Leawo: the accent frame
         }
-        void Nav(string id, string key, string image, MenuAction action)
+        void Glyph(string id, Box r, string glyph, MenuAction action)
+        {
+            ops.AddRange(MenuBuilder.Button(d, r, glyph, Math.Max(24, r.H * 2 / 3)));
+            buttons.Add(new MenuButton(id, r, action));
+        }
+        void Nav(string id, string key, string image, string fallbackGlyph, MenuAction action)
         {
             if (s.Child(key) is not { } node) return;
-            if (node.Attr("glyph") is { Length: > 0 } glyph) // DVDStyler draws its arrows as vector art: BurnSmith draws a text button there
-            {
-                var r = node.Rect();
-                ops.AddRange(MenuBuilder.Button(d, r, glyph, Math.Max(24, r.H * 2 / 3)));
-                buttons.Add(new MenuButton(id, r, action));
-                return;
-            }
-            if (Button(image) is not { } file) return;
+            // DVDStyler draws its arrows as vector art, and a template's picture can be missing or unreadable: BurnSmith draws a text button there
+            var drawn = node.Attr("glyph");
+            if (Button(image) is not { } file || drawn.Length > 0) { Glyph(id, node.Rect(), drawn.Length > 0 ? drawn : fallbackGlyph, action); return; }
             var box = Place(file, node.Rect());
             ops.Add(new Image(file, box));
             buttons.Add(new MenuButton(id, box, action) { FocusImage = Selected(file) });
         }
-        if (number > 1) Nav("prev", "left", "leftbuttontimage", new MenuAction("page", $"scenes{number - 1}"));
-        Nav("home", "home", "homebuttontimage", new MenuAction("page", "root"));
-        if (number < total) Nav("next", "right", "rightbuttontimage", new MenuAction("page", $"scenes{number + 1}"));
+        if (number > 1) Nav("prev", "left", "leftbuttontimage", "<", new MenuAction("page", $"scenes{number - 1}"));
+        Nav("home", "home", "homebuttontimage", "⌂", new MenuAction("page", "root"));
+        if (number < total) Nav("next", "right", "rightbuttontimage", ">", new MenuAction("page", $"scenes{number + 1}"));
+        // whatever the template drew, a scene page must lead back to the menu and on to its neighbours: BurnSmith adds the missing buttons at the bottom
+        bool Has(string id) => buttons.Any(b => b.Id == id);
+        if (!Has("home")) Glyph("home", new Box(MenuBuilder.W / 2 - 55, MenuBuilder.H - 110, 110, 70), "⌂", new MenuAction("page", "root"));
+        if (number > 1 && !Has("prev")) Glyph("prev", new Box(MenuBuilder.W / 2 - 195, MenuBuilder.H - 110, 110, 70), "<", new MenuAction("page", $"scenes{number - 1}"));
+        if (number < total && !Has("next")) Glyph("next", new Box(MenuBuilder.W / 2 + 85, MenuBuilder.H - 110, 110, 70), ">", new MenuAction("page", $"scenes{number + 1}"));
         return new MenuPage($"scenes{number}", ops, Link(buttons));
     }
 
@@ -587,15 +614,19 @@ public sealed class InstalledTemplate
         Rows(audioRows, audio, 1, "a", "audio", activeAudio);
         Rows(subRows, subs, 0, "s", "sub", activeSub);
 
-        void Nav(string id, string key, string image, MenuAction action)
+        var navs = new[]
         {
-            if (n.Child(key) is not { } node || Button(image) is not { } file) return;
-            var box = Place(file, node.Rect());
+            (Id: "play", Key: "play", Image: "playbuttontimage", Action: c.Series ? new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count) : new MenuAction("play", Playlist: c.Playlist)),
+            (Id: "back", Key: "home", Image: "homebuttontimage", Action: new MenuAction("page", "root")),
+        }.Where(x => n.Child(x.Key) != null && Button(x.Image) != null).Select(x => (x.Id, x.Action, File: Button(x.Image)!, Rect: n.Child(x.Key)!.Rect())).ToList();
+        // these rectangles are sized for a small button (like "Set up"): at the pictures' own size Play and Home would cover one another, so they are shrunk to their rectangle
+        var crowded = navs.Count == 2 && Meets(Place(navs[0].File, navs[0].Rect), Place(navs[1].File, navs[1].Rect));
+        foreach (var (navId, action, file, rect) in navs)
+        {
+            var box = crowded ? Fit(file, rect) : Place(file, rect);
             ops.Add(new Image(file, box));
-            buttons.Add(new MenuButton(id, box, action) { FocusImage = Selected(file) });
+            buttons.Add(new MenuButton(navId, box, action) { FocusImage = Selected(file) });
         }
-        Nav("play", "play", "playbuttontimage", c.Series ? new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count) : new MenuAction("play", Playlist: c.Playlist));
-        Nav("back", "home", "homebuttontimage", new MenuAction("page", "root"));
         return new MenuPage(id, ops, Link(buttons));
     }
 
