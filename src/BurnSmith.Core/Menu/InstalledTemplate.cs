@@ -79,11 +79,18 @@ public sealed class InstalledTemplate
     public string Category { get; }
     /// <summary>Selection colour the template itself defines (Leawo's highlight), if any.</summary>
     public string? Accent => common.Child("accent")?.Text is { Length: > 0 } a ? a : null;
-    public string? Thumbnail => new[] { "thumb4x3.bd.png", "Menu/background01.jpg" }.Select(f => Path.Combine(dir, f)).FirstOrDefault(File.Exists);
+    public string? Thumbnail => thumbnail ?? new[] { "thumb4x3.bd.png", "Menu/background01.jpg" }.Select(f => Path.Combine(dir, f)).FirstOrDefault(File.Exists);
+    /// <summary>Colour and font of the template's own texts (DVDStyler's), used for the pages BurnSmith adds.</summary>
+    public string? UiColor => common.Child("ui_color")?.Text is { Length: > 0 } c ? c : null;
+    public string? UiFont => common.Child("font")?.Text is { Length: > 0 } f ? f : null;
+    readonly string? thumbnail;
+    /// <summary>The picture behind the main menu (null when the file is missing or unreadable).</summary>
+    public string? BackgroundFile => Asset(template.Child("rootmenu")?.Child("bg")?.Child("image")?.Text);
 
-    InstalledTemplate(string dir, XNode template, string category, string? noLayout = null)
+    InstalledTemplate(string dir, XNode template, string category, string? noLayout = null, string? thumbnail = null)
     {
         this.dir = dir;
+        this.thumbnail = thumbnail;
         this.template = template;
         Category = category;
         common = template.Child("common") ?? new XNode("common", []);
@@ -102,7 +109,18 @@ public sealed class InstalledTemplate
             if (Cache.TryGetValue(dir, out var known)) return known;
             var file = new[] { "template.bd.xml", "template.xml", "template2.xml" }.Select(f => Path.Combine(dir, f)).FirstOrDefault(File.Exists);
             InstalledTemplate? parsed = null;
-            if (file != null)
+            if (dir.EndsWith(".dvdt", StringComparison.OrdinalIgnoreCase) && File.Exists(dir)) // DVDStyler: one file per template, pictures in <library>\backgrounds
+            {
+                var stem = System.IO.Path.GetFileNameWithoutExtension(dir);
+                var wide = stem.EndsWith("WS", StringComparison.Ordinal);
+                var name = (wide ? stem[..^2] : stem) + (wide ? " 16-9" : " 4-3");
+                var folder = System.IO.Path.GetDirectoryName(dir)!;
+                var tree = DvdStylerTemplate.Convert(LooseXml.Parse(File.ReadAllText(dir)), name, out var problem);
+                parsed = new InstalledTemplate(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(folder))!, "backgrounds"),
+                    tree ?? DvdStylerTemplate.Failed(name), "DVDStyler " + System.IO.Path.GetFileName(folder), tree == null ? problem : null,
+                    System.IO.Path.ChangeExtension(dir, ".png") is var png && File.Exists(png) ? png : null);
+            }
+            else if (file != null)
             {
                 var text = File.ReadAllText(file);
                 text = System.Text.RegularExpressions.Regex.Replace(text, "(\\w+=\"\\d+)(\\s+)(\\w+=\")", "$1\"$2$3"); // Leawo's files miss a closing quote: Top="136 Width="209"
@@ -113,7 +131,7 @@ public sealed class InstalledTemplate
                     parsed = new InstalledTemplate(dir, Leawo(def, doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect") == "4-3")), "Leawo");
             }
             else if (Directory.Exists(Path.Combine(dir, "Menu")) && Directory.Exists(Path.Combine(dir, "Scene")))
-                parsed = new InstalledTemplate(dir, new XNode("template", []), "Leawo", "pas de fichier de mise en page (les positions sont internes à Leawo)");
+                parsed = new InstalledTemplate(dir, new XNode("template", []), "Leawo", "images seules : aucune mise en page dans l'installation Leawo (ni fichier, ni dans le programme) ; leur fond reste utilisable dans la bibliothèque");
             return Cache[dir] = parsed;
         }
     }
@@ -311,7 +329,9 @@ public sealed class InstalledTemplate
     {
         var font = n.Attr("font", common.Child("font")?.Text ?? "Segoe UI");
         var hasFiles = Directory.EnumerateFiles(dir, "*.*").Any(f => f.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".otf", StringComparison.OrdinalIgnoreCase));
-        return new Text(value, n.Rect(), double.TryParse(n.Attr("font_size", common.Child("font_size")?.Text ?? "32"), out var size) ? size : 32,
+        var fontSize = double.TryParse(n.Attr("font_size", common.Child("font_size")?.Text ?? "32"), out var size) ? size : 32;
+        if (n.Attr("fit") == "1" && value.Length > 0) fontSize = Math.Min(fontSize, n.Rect().W / (value.Length * 0.6)); // DVDStyler shrinks a text to its box
+        return new Text(value, n.Rect(), fontSize,
             font, hasFiles ? dir : null, n.Attr("color", common.Child("font_color")?.Text ?? "#FFFFFF"),
             n.Attr("bold", common.Child("font_bold")?.Text ?? "0") == "1", n.Attr("italic", common.Child("font_italic")?.Text ?? "0") == "1", align,
             n.Attrs.ContainsKey("stroke_color") ? n.Attr("stroke_color") : null, double.TryParse(n.Attr("stroke_width"), out var sw) ? sw : 0);
@@ -321,9 +341,29 @@ public sealed class InstalledTemplate
 
     void Background(List<Op> ops, XNode page)
     {
-        if (Asset(page.Child("bg")?.Child("image")?.Text) is { } bg) ops.Add(new Image(bg, new Box(0, 0, MenuBuilder.W, MenuBuilder.H)));
+        if (Asset(page.Child("bg")?.Child("image")?.Text) is { } bg)
+        {
+            var node = page.Child("bg")!;
+            var box = node.Attrs.ContainsKey("rect") ? node.Rect() : new Box(0, 0, MenuBuilder.W, MenuBuilder.H);
+            ops.Add(new Image(bg, node.Attr("fit") is { Length: > 0 } fit ? Fit(bg, box, fit) : box));
+        }
         var cover = page.Child("bg")?.Child("covering_color")?.Text; // #AARRGGBB shade between the artwork and the thumbnails
         if (cover is { Length: 9 }) ops.Add(new Fill(new Box(0, 0, MenuBuilder.W, MenuBuilder.H), "#" + cover[^6..], Convert.ToInt32(cover.TrimStart('#')[..2], 16) / 255.0, 0));
+    }
+
+    /// <summary>The picture inside <paramref name="box"/> with its own proportions (SVG "meet"), aligned as the template says (xminymax, xmidymid...).</summary>
+    static Box Fit(string file, Box box, string align)
+    {
+        try
+        {
+            var frame = System.Windows.Media.Imaging.BitmapDecoder.Create(new Uri(file), System.Windows.Media.Imaging.BitmapCreateOptions.DelayCreation,
+                System.Windows.Media.Imaging.BitmapCacheOption.None).Frames[0];
+            var k = Math.Min(box.W / (double)frame.PixelWidth, box.H / (double)frame.PixelHeight);
+            double w = frame.PixelWidth * k, h = frame.PixelHeight * k;
+            double ax = align.Contains("xmin") ? 0 : align.Contains("xmax") ? 1 : 0.5, ay = align.Contains("ymin") ? 0 : align.Contains("ymax") ? 1 : 0.5;
+            return new Box((int)(box.X + (box.W - w) * ax), (int)(box.Y + (box.H - h) * ay), (int)w, (int)h);
+        }
+        catch (Exception e) when (e is NotSupportedException or System.IO.FileFormatException or IOException) { return box; }
     }
 
     /// <param name="panelIfMissing">Some templates name a panel picture they do not ship (Birthday1's setup page): a dark translucent panel keeps the text readable.</param>
@@ -370,7 +410,7 @@ public sealed class InstalledTemplate
         Background(ops, n);
         Pictures(ops, n);
         if (n.Child("video") is { } video && d.ShowPreview) { Under(ops, video); ops.Add(Frame(video, c.PreviewPicture)); }
-        if (n.Child("label") is { } label) ops.Add(Txt(label, d.Title));
+        if (n.Child("label") is { } label) ops.Add(Txt(label, d.Title, label.Attr("align", "left")));
 
         var buttons = new List<MenuButton>();
         void Add(string id, XNode? node, string? image, MenuAction action, string label)
@@ -387,7 +427,7 @@ public sealed class InstalledTemplate
                 var r = node.Rect();
                 var star = Asset(common.Child("selection")?.Text);
                 var slot = new Box(r.X - r.H, r.Y, r.H, r.H);
-                ops.Add(Txt(node, label, "center"));
+                ops.Add(Txt(node, label, node.Attr("align", "center")));
                 buttons.Add(star == null ? new MenuButton(id, r, action) : new MenuButton(id, new Box(slot.X, r.Y, r.W + r.H, r.H), action) { FocusImage = star, FocusSlot = slot });
             }
         }
@@ -397,13 +437,13 @@ public sealed class InstalledTemplate
         if (withScenes) Add("scenes", n.Child("scenes"), Button("scenebuttontimage"), new MenuAction("page", "scenes1"), c.Series ? d.EpisodesLabel : d.ScenesLabel);
         if (c.HasSettings)
         {
-            if (Button("setupbuttontimage") != null) Add("settings", n.Child("setup"), Button("setupbuttontimage"), new MenuAction("page", "settings"), d.SettingsLabel);
+            if (Button("setupbuttontimage") != null || n.Child("setup")?.Attr("textbutton") == "1") Add("settings", n.Child("setup"), Button("setupbuttontimage"), new MenuAction("page", "settings"), d.SettingsLabel);
             else // "none_setup" templates have no picture for it: a plain capsule under the other buttons, BurnSmith's own addition
             {
                 var low = buttons.Count == 0 ? MenuBuilder.H / 2 : buttons.Max(b => b.Rect.Y + b.Rect.H);
                 var middle = buttons.Count == 0 ? MenuBuilder.W / 2 : (int)buttons.Average(b => b.Rect.X + b.Rect.W / 2.0);
                 var box = new Box(Math.Clamp(middle - 160, 20, MenuBuilder.W - 340), Math.Min(low + 8, MenuBuilder.H - 70), 320, 58);
-                ops.Add(new Fill(box, "#000000", 0.35, 28));
+                ops.Add(MenuBuilder.IsLight(d.TextColor) ? new Fill(box, "#000000", 0.35, 28) : new Fill(box, "#FFFFFF", 0.45, 28)); // dark text gets a light capsule
                 ops.Add(new Label(d.SettingsLabel, box, 36, true));
                 buttons.Add(new MenuButton("settings", box, new MenuAction("page", "settings")));
             }
@@ -431,7 +471,15 @@ public sealed class InstalledTemplate
         }
         void Nav(string id, string key, string image, MenuAction action)
         {
-            if (s.Child(key) is not { } node || Button(image) is not { } file) return;
+            if (s.Child(key) is not { } node) return;
+            if (node.Attr("glyph") is { Length: > 0 } glyph) // DVDStyler draws its arrows as vector art: BurnSmith draws a text button there
+            {
+                var r = node.Rect();
+                ops.AddRange(MenuBuilder.Button(d, r, glyph, Math.Max(24, r.H * 2 / 3)));
+                buttons.Add(new MenuButton(id, r, action));
+                return;
+            }
+            if (Button(image) is not { } file) return;
             var box = Place(file, node.Rect());
             ops.Add(new Image(file, box));
             buttons.Add(new MenuButton(id, box, action) { FocusImage = Selected(file) });

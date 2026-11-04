@@ -32,10 +32,40 @@ public sealed class MenuDesign
     /// <summary>Colour of the focus frame around the selected button.</summary>
     public string Accent { get; set; } = "#FFC83D";
     public bool ShowPreview { get; set; } = true;
-    /// <summary>"Pill" = translucent rounded buttons, "Text" = bare labels (only the focus frame shows the selection).</summary>
+    /// <summary>
+    /// "Pill" = translucent rounded buttons, "Text" = bare labels (only the focus frame shows the selection),
+    /// "Card" = solid card in <see cref="CardFill"/>, "Frame" = double frame in the accent colour, "Glass" = card with a <see cref="Glow"/> outline.
+    /// </summary>
     public string ButtonStyle { get; set; } = "Pill";
+    /// <summary>Scene pages hold <see cref="Cols"/> x <see cref="Rows"/> buttons (3 x 2 = BurnSmith's original page).</summary>
+    public int Cols { get; set; } = 3;
+    public int Rows { get; set; } = 2;
+    /// <summary>False = the scene buttons are text only, without a picture.</summary>
+    public bool Thumbnails { get; set; } = true;
+    /// <summary>Square corners instead of rounded ones.</summary>
+    public bool Square { get; set; }
+    public string CardFill { get; set; } = "#111827";
+    public string Glow { get; set; } = "#000000";
+    /// <summary>Darkening laid over a background picture, in percent (keeps the text readable).</summary>
+    public int Dim { get; set; } = 35;
+    /// <summary>Margins, gap, header and footer of the scene pages as shares of the canvas; 0 = BurnSmith's original fixed geometry.</summary>
+    public double MarginX { get; set; }
+    public double MarginY { get; set; }
+    public double Gap { get; set; }
+    public double Header { get; set; }
+    public double Footer { get; set; }
     /// <summary>Background music: stored with the template, muxed by the disc builder when supported.</summary>
     public string? Music { get; set; }
 
     public MenuDesign Clone() => (MenuDesign)MemberwiseClone();
+
+    /// <summary>Takes the look of a template (picture, colours, font, button style, grid) and keeps this design's texts, title and music.</summary>
+    public void TakeLook(MenuDesign t)
+    {
+        Name = t.Name; Category = t.Category; TemplateDir = t.TemplateDir; BackgroundImage = t.BackgroundImage;
+        Top = t.Top; Bottom = t.Bottom; TextColor = t.TextColor; Accent = t.Accent; Font = t.Font;
+        ButtonStyle = t.ButtonStyle; Cols = t.Cols; Rows = t.Rows; Thumbnails = t.Thumbnails; Square = t.Square;
+        CardFill = t.CardFill; Glow = t.Glow; Dim = t.Dim;
+        MarginX = t.MarginX; MarginY = t.MarginY; Gap = t.Gap; Header = t.Header; Footer = t.Footer;
+    }
 }

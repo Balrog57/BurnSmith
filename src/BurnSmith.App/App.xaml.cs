@@ -9,8 +9,8 @@ public partial class App : Application
 {
     /// <summary>
     /// burnsmith.exe [video]                      opens the window, optionally with a video already loaded
-    /// burnsmith.exe [video] --snapshot out.png [editor]   renders the window (or the menu editor) off screen to a PNG and exits;
-    ///                                            lets the UI be checked without touching the desktop
+    /// burnsmith.exe [video] --snapshot out.png [editor[=template name]] [scroll]   renders the window (or the menu editor, on a template; scroll = bottom of its properties)
+    ///                                            off screen to a PNG and exits; lets the UI be checked without touching the desktop
     /// </summary>
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -28,7 +28,14 @@ public partial class App : Application
         if (!snapshot) return;
 
         Window window = main;
-        if (e.Args.Contains("editor")) { window = main.CreateEditor(); OffScreen(window); window.Show(); }
+        if (e.Args.FirstOrDefault(a => a == "editor" || a.StartsWith("editor=")) is { } editor)
+        {
+            var win = main.CreateEditor(editor.Length > 7 ? TemplateCatalog.Find(editor[7..]) ?? Templates.List().FirstOrDefault(t => t.Name == editor[7..]) : null);
+            window = win;
+            OffScreen(window);
+            window.Show();
+            if (e.Args.Contains("scroll")) win.ScrollPropsToEnd();
+        }
         await Task.Delay(2500); // lets async previews finish
         var bmp = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
         bmp.Render(window);

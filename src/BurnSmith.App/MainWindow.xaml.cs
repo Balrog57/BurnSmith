@@ -103,7 +103,7 @@ public partial class MainWindow : Window
         finally { refreshingDrives = false; }
     }
 
-    public Window CreateEditor() => new MenuEditorWindow(design, previewFrame, EditorContent());
+    public MenuEditorWindow CreateEditor(MenuDesign? start = null) => new(start ?? design, previewFrame, EditorContent());
 
     /// <summary>What the editor previews: the real chapters / episodes / tracks of the disc, or a sample while no video is loaded.</summary>
     MenuContent EditorContent()

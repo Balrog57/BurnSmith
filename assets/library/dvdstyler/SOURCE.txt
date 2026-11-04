@@ -1,0 +1,3 @@
+Menu templates (.dvdt), their preview pictures and background pictures of DVDStyler.
+Source: https://github.com/ntxalex/DVDStyler (mirror of DVDStyler, https://www.dvdstyler.org), commit a7966f5e02484af43d36956669c1c25ebbdfeccd, folders templates/ and backgrounds/, unchanged.
+Licence: GNU GPL (see COPYING). Author of DVDStyler: Alex Thuering. The upstream project does not list who made each picture.

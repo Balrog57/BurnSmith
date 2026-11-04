@@ -93,10 +93,10 @@ public static class MenuRenderer
     {
         var full = new Rect(0, 0, MenuBuilder.W, MenuBuilder.H);
         if (d.TemplateDir != null) { /* the template's own artwork is the first op of every page */ }
-        else if (d.BackgroundImage != null && File.Exists(d.BackgroundImage))
+        else if (ElementLibrary.Resolve(d.BackgroundImage) is { } picture && File.Exists(picture))
         {
-            dc.DrawRectangle(new ImageBrush(Load(d.BackgroundImage)) { Stretch = Stretch.UniformToFill }, null, full);
-            dc.DrawRectangle(new SolidColorBrush(Col("#000000", 0.35)), null, full); // keeps text readable on any picture
+            dc.DrawRectangle(new ImageBrush(Load(picture)) { Stretch = Stretch.UniformToFill }, null, full);
+            if (d.Dim > 0) dc.DrawRectangle(new SolidColorBrush(Col("#000000", d.Dim / 100.0)), null, full); // keeps text readable on any picture
         }
         else
         {

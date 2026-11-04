@@ -10,6 +10,8 @@
   <ItemGroup>
     <!-- the BD-J menu xlet travels inside the assembly so the single-file exe needs no assets folder -->
     <EmbeddedResource Include="..\..\assets\bdj\menu.jar" LogicalName="assets/bdj/menu.jar" />
+    <!-- open-source menu templates and pictures (DVDStyler, GPL) with their notices; unpacked on first use by OpenLibrary -->
+    <EmbeddedResource Include="..\..\assets\library\**\*" LogicalName="library/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

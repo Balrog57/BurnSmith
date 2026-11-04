@@ -36,7 +36,21 @@ calls (late-bound COM, ISO to a drive, UDF image from a folder). Its licence:
 > ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 > SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-## Menu templates
+## Menu templates and pictures carried by the released `BurnSmith.exe`
+
+Stored as data resources, unpacked on first use into `%LOCALAPPDATA%\BurnSmith\open\<build>`; they are read, not linked, by BurnSmith.
+
+| Material | Licence | Source |
+|---|---|---|
+| **DVDStyler** menu templates (`.dvdt`), their preview pictures and the background pictures, unchanged (`assets/library/dvdstyler`, with upstream `COPYING`, `AUTHORS` and `SOURCE.txt`) | GNU General Public License as published with DVDStyler (`COPYING` is the version 2 text; DVDStyler's README says "GNU General Public License (GPL)") | https://github.com/ntxalex/DVDStyler (mirror of https://www.dvdstyler.org), author Alex Thuering |
+| **DVD Forge** template parameters (grid, colours, font, margins of Cinema Dark, Multi-Page TV Grid, Classic Criterion, Retro CRT, Minimalist), re-typed in `DvdForgeTemplates.cs`; no code, no picture | GNU GPL v3 | https://github.com/Nicolasalucin/dvd-forge (`crates/dvdforge-menu/src/templates.rs`) |
+
+The upstream project does not itemise who made each DVDStyler picture; they travel under the project's licence as published. These files are separate data
+aggregated in the same executable, not linked into BurnSmith's code, so BurnSmith's own code stays GPL v3 or later. If you redistribute the exe, keep this file and the
+`COPYING` / `AUTHORS` / `SOURCE.txt` of `assets/library/dvdstyler`, which are the corresponding source of the DVDStyler data. Open point: whether the DVDStyler
+data may also be combined under GPL v3 (its `COPYING` is v2 and the "or later" wording was not found in what was vendored) has not been settled by a lawyer.
+
+## Menu templates of other software
 
 BurnSmith does not contain, copy or redistribute menu templates of DVDFab or Leawo; it reads the ones already installed on the user's PC.
 BurnSmith is independent of, and not affiliated with, DVDFab or Leawo.

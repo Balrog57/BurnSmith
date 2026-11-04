@@ -63,7 +63,10 @@ public sealed record MenuContent(int Playlist, string? PreviewPicture, IReadOnly
 /// <summary>Turns a design + disc facts into pages on a 1920x1080 canvas. Root page first, then the scene/episode pages, then settings.</summary>
 public static class MenuBuilder
 {
-    public const int W = 1920, H = 1080, FocusMargin = 10, ThumbsPerPage = 6, MaxAudio = 6, MaxSubtitles = 5, MarkerSize = 36, MarkerGap = 24;
+    public const int W = 1920, H = 1080, FocusMargin = 10, MaxAudio = 6, MaxSubtitles = 5, MarkerSize = 36, MarkerGap = 24;
+
+    /// <summary>Scene buttons per page.</summary>
+    public static int PerPage(MenuDesign d) => Math.Max(1, d.Cols) * Math.Max(1, d.Rows);
 
     internal sealed record Cell(string Id, string Label, string? Picture, MenuAction Action);
 
@@ -83,19 +86,40 @@ public static class MenuBuilder
         if (Pack(d) is { } pack) return pack.Pages(d, c);
         var cells = Cells(d, c);
         var pages = new List<MenuPage> { Root(d, c, cells.Count > 1) };
-        var gridPages = cells.Count > 1 ? (cells.Count + ThumbsPerPage - 1) / ThumbsPerPage : 0;
+        var gridPages = cells.Count > 1 ? (cells.Count + PerPage(d) - 1) / PerPage(d) : 0;
         for (var i = 1; i <= gridPages; i++) pages.Add(Grid(d, c, cells, i, gridPages));
         if (c.HasSettings) pages.Add(Settings(d, c, null, null));
         return pages;
     }
 
-    /// <summary>Translucent capsules: white on dark designs, black on light ones (dark text), so they show on any background.</summary>
+    /// <summary>True for a light colour (#RRGGBB): text in it needs a dark backdrop, and the other way round.</summary>
+    internal static bool IsLight(string hex)
+    {
+        var rgb = hex.TrimStart('#');
+        return Convert.ToInt32(rgb[..2], 16) * 0.3 + Convert.ToInt32(rgb[2..4], 16) * 0.59 + Convert.ToInt32(rgb[4..6], 16) * 0.11 > 128;
+    }
+
+    /// <summary>The card behind a button, drawn in the design's button style (nothing for "Text").</summary>
+    internal static List<Op> Card(MenuDesign d, Box r)
+    {
+        var radius = d.Square ? 0 : 28;
+        switch (d.ButtonStyle)
+        {
+            case "Text": return [];
+            case "Card": return [new Fill(r, d.CardFill, 0.92, radius)];
+            case "Frame": return [new Fill(r, d.Accent, 1, 0), new Fill(r.Inflate(-3), d.CardFill, 1, 0), new Fill(r.Inflate(-9), d.Accent, 1, 0), new Fill(r.Inflate(-12), d.CardFill, 1, 0)];
+            case "Glass": return [new Fill(r.Inflate(3), d.Glow, 0.9, radius + 3), new Fill(r, d.CardFill, 0.85, radius)];
+            default: // translucent capsule: white on dark designs, black on light ones (dark text), so it shows on any background
+                var lightText = IsLight(d.TextColor);
+                return [new Fill(r, lightText ? "#FFFFFF" : "#000000", lightText ? 0.14 : 0.10, radius)];
+        }
+    }
+
     internal static List<Op> Button(MenuDesign d, Box r, string text, int size = 54)
     {
-        var rgb = d.TextColor.TrimStart('#');
-        var lightText = Convert.ToInt32(rgb[..2], 16) * 0.3 + Convert.ToInt32(rgb[2..4], 16) * 0.59 + Convert.ToInt32(rgb[4..6], 16) * 0.11 > 128;
-        return d.ButtonStyle == "Text" ? [new Label(text, r, size, true)]
-            : [new Fill(r, lightText ? "#FFFFFF" : "#000000", lightText ? 0.14 : 0.10, 28), new Label(text, r, size, true)];
+        var ops = Card(d, r);
+        ops.Add(new Label(text, r, size, true));
+        return ops;
     }
 
     static MenuPage Root(MenuDesign d, MenuContent c, bool withGrid)
@@ -129,28 +153,70 @@ public static class MenuBuilder
         return new MenuPage("root", ops, buttons);
     }
 
-    /// <summary>Chapter thumbnails of a movie, or the episodes of a series: 3x2 per page.</summary>
+    /// <summary>Cell rectangles of a scene page: BurnSmith's original 3x2 geometry, or the ratio geometry (margins, gap, header, footer) of the design.</summary>
+    static (List<Box> Cells, int HeaderY, int HeaderH, int NavY, int NavH, bool Original) GridGeometry(MenuDesign d)
+    {
+        var cols = Math.Max(1, d.Cols);
+        var rows = Math.Max(1, d.Rows);
+        var cells = new List<Box>();
+        if (d.MarginX <= 0 && cols == 3 && rows == 2)
+        {
+            const int tw = 480, th = 270, gapX = 70, rowPitch = 380;
+            var x0 = (W - (cols * tw + (cols - 1) * gapX)) / 2;
+            for (var i = 0; i < 6; i++) cells.Add(new Box(x0 + i % cols * (tw + gapX), 190 + i / cols * rowPitch, tw, th));
+            return (cells, 60, 120, 930, 90, true);
+        }
+        // the design's own ratios, or sensible ones when only the grid size was chosen
+        double mx = d.MarginX > 0 ? d.MarginX : 0.055, my = d.MarginY > 0 ? d.MarginY : 0.075, gp = d.Gap > 0 ? d.Gap : 0.018;
+        double hd = d.Header > 0 ? d.Header : 0.12, ft = d.Footer > 0 ? d.Footer : 0.12;
+        double marginX = W * mx, marginY = H * my, gap = Math.Max(8, Math.Min(W, H) * gp), header = H * hd, footer = H * ft;
+        var cw = Math.Max(16, (W - marginX * 2 - gap * (cols - 1)) / cols);
+        var ch = Math.Max(16, (H - marginY * 2 - header - footer - gap * (rows - 1)) / rows);
+        for (var i = 0; i < cols * rows; i++)
+            cells.Add(new Box((int)(marginX + i % cols * (cw + gap)), (int)(marginY + header + i / cols * (ch + gap)), (int)cw, (int)ch));
+        var navH = (int)Math.Min(90, footer - 8);
+        return (cells, (int)marginY, (int)header, (int)(H - marginY - footer + (footer - navH) / 2) + 8, navH, false); // +8: not touching the last row
+    }
+
+    /// <summary>Chapter thumbnails of a movie, or the episodes of a series, as many per page as the design's grid holds.</summary>
     static MenuPage Grid(MenuDesign d, MenuContent c, List<Cell> cells, int number, int total)
     {
-        const int cols = 3, tw = 480, th = 270, gapX = 70, rowPitch = 380;
-        var first = (number - 1) * ThumbsPerPage;
-        var count = Math.Min(ThumbsPerPage, cells.Count - first);
-        var ops = new List<Op> { new Label(c.Series ? d.EpisodesLabel : d.ScenesLabel, new Box(0, 60, W, 120), 80, true) };
+        var cols = Math.Max(1, d.Cols);
+        var perPage = PerPage(d);
+        var (slots, headerY, headerH, navY, navH, original) = GridGeometry(d);
+        var first = (number - 1) * perPage;
+        var count = Math.Min(perPage, cells.Count - first);
+        var ops = new List<Op> { new Label(c.Series ? d.EpisodesLabel : d.ScenesLabel, new Box(0, headerY, W, headerH), original ? 80 : Math.Clamp(headerH * 2 / 3, 40, 80), true) };
         var buttons = new List<MenuButton>();
-        var x0 = (W - (cols * tw + (cols - 1) * gapX)) / 2;
         var nav = new List<(string Id, Box Rect, MenuAction Action, string Text)>();
-        if (number > 1) nav.Add(("prev", new Box(x0, 930, 240, 90), new MenuAction("page", $"scenes{number - 1}"), "<"));
-        nav.Add(("home", new Box((W - 300) / 2, 930, 300, 90), new MenuAction("page", "root"), d.HomeLabel));
-        if (number < total) nav.Add(("next", new Box(W - x0 - 240, 930, 240, 90), new MenuAction("page", $"scenes{number + 1}"), ">"));
+        var x0 = slots[0].X;
+        var navW = Math.Min(240, slots[0].W);
+        if (number > 1) nav.Add(("prev", new Box(x0, navY, navW, navH), new MenuAction("page", $"scenes{number - 1}"), "<"));
+        nav.Add(("home", new Box((W - 300) / 2, navY, 300, navH), new MenuAction("page", "root"), d.HomeLabel));
+        if (number < total) nav.Add(("next", new Box(W - x0 - navW, navY, navW, navH), new MenuAction("page", $"scenes{number + 1}"), ">"));
 
         var rows = (count + cols - 1) / cols;
         for (var i = 0; i < count; i++)
         {
-            var r = new Box(x0 + i % cols * (tw + gapX), 190 + i / cols * rowPitch, tw, th);
+            var r = slots[i];
             var cell = cells[first + i];
-            if (cell.Picture is { } pic) ops.Add(new Picture(pic, r, 12, 0));
-            else ops.Add(new Fill(r, "#000000", 0.4, 12));
-            ops.Add(new Label(cell.Label, new Box(r.X, r.Y + th + 6, tw, 44), 34, false));
+            if (original)
+            {
+                if (cell.Picture is { } pic) ops.Add(new Picture(pic, r, 12, 0));
+                else ops.Add(new Fill(r, "#000000", 0.4, 12));
+                ops.Add(new Label(cell.Label, new Box(r.X, r.Y + r.H + 6, r.W, 44), 34, false));
+            }
+            else if (d.Thumbnails)
+            {
+                var labelH = Math.Clamp(r.H / 5, 36, 64);
+                var pad = Math.Max(6, r.H / 24);
+                var pictureBox = new Box(r.X + pad, r.Y + pad, r.W - 2 * pad, r.H - labelH - 2 * pad);
+                ops.AddRange(Card(d, r));
+                if (cell.Picture is { } pic) ops.Add(new Picture(pic, pictureBox, d.Square ? 0 : 10, 0));
+                else ops.Add(new Fill(pictureBox, "#000000", 0.4, d.Square ? 0 : 10));
+                ops.Add(new Label(cell.Label, new Box(r.X, r.Y + r.H - labelH - pad / 2, r.W, labelH), Math.Clamp(labelH * 3 / 5, 22, 36), false));
+            }
+            else ops.AddRange(Button(d, r, cell.Label, Math.Clamp(r.H / 3, 26, 54)));
             var row = i / cols;
             string? Id(int n) => n >= 0 && n < count ? cells[first + n].Id : null;
             buttons.Add(new MenuButton(cell.Id, r, cell.Action)

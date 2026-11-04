@@ -1,9 +1,11 @@
 <Window x:Class="BurnSmith.App.MenuEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:BurnSmith.App"
         Title="Menu du disque" Width="1320" Height="780" MinWidth="1100" MinHeight="680"
         Background="#1F1F1F" WindowStartupLocation="CenterOwner">
   <Window.Resources>
+    <local:ThumbConverter x:Key="Thumb"/>
     <Style x:Key="Caption" TargetType="TextBlock">
       <Setter Property="Opacity" Value="0.65"/>
       <Setter Property="Margin" Value="0,12,0,3"/>
@@ -41,6 +43,7 @@
                 <StackPanel Margin="0,4">
                   <Image Source="{Binding Thumbnail}" Width="170" Stretch="Uniform"/>
                   <TextBlock Text="{Binding Design.Name}" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                  <TextBlock Text="{Binding Design.Category}" HorizontalAlignment="Center" Opacity="0.5" FontSize="11"/>
                 </StackPanel>
               </DataTemplate>
             </ListBox.ItemTemplate>
@@ -66,7 +69,7 @@
       </Border>
     </DockPanel>
 
-    <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+    <ScrollViewer x:Name="PropsScroll" Grid.Column="2" VerticalScrollBarVisibility="Auto">
       <StackPanel x:Name="Props" Margin="0,0,8,0">
         <TextBlock Text="Titre" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
         <TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"/>
@@ -93,14 +96,21 @@
         <TextBlock Text="Bouton retour" Style="{StaticResource Caption}"/>
         <TextBox Text="{Binding BackLabel, UpdateSourceTrigger=PropertyChanged}"/>
         <TextBlock x:Name="LookNote" Text="Ce modèle fixe l'apparence : police, couleurs, fond et libellés des boutons viennent de ses images (souvent en anglais)." TextWrapping="Wrap" Opacity="0.65" Margin="0,12,0,0" Visibility="Collapsed"/>
+        <Button x:Name="Detach" Content="Composer à partir de ce fond" Margin="0,8,0,0" HorizontalAlignment="Stretch" Visibility="Collapsed" Click="OnDetach"
+                ToolTip="Garde le fond de ce modèle (sans le copier) et ouvre la police, les boutons, la grille et les couleurs."/>
         <StackPanel x:Name="Look">
         <TextBlock Text="Police" Style="{StaticResource Caption}"/>
-        <TextBox Text="{Binding Font, UpdateSourceTrigger=PropertyChanged}"/>
+        <ComboBox x:Name="FontBox" IsEditable="True" Text="{Binding Font, UpdateSourceTrigger=PropertyChanged}"/>
         <TextBlock Text="Style des boutons" Style="{StaticResource Caption}"/>
-        <ComboBox SelectedValue="{Binding ButtonStyle}" SelectedValuePath="Tag" HorizontalAlignment="Stretch">
-          <ComboBoxItem Content="Capsules" Tag="Pill"/>
-          <ComboBoxItem Content="Texte seul" Tag="Text"/>
-        </ComboBox>
+        <ComboBox x:Name="StyleBox" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ButtonStyle}" HorizontalAlignment="Stretch"/>
+        <TextBlock Text="Grille des scènes (colonnes × lignes)" Style="{StaticResource Caption}"/>
+        <StackPanel Orientation="Horizontal">
+          <ComboBox x:Name="ColsBox" SelectedItem="{Binding Cols}" Width="70"/>
+          <TextBlock Text="×" Margin="10,0" VerticalAlignment="Center"/>
+          <ComboBox x:Name="RowsBox" SelectedItem="{Binding Rows}" Width="70"/>
+        </StackPanel>
+        <CheckBox Content="Images des scènes" IsChecked="{Binding Thumbnails}" Margin="0,8,0,0"/>
+        <CheckBox Content="Coins carrés" IsChecked="{Binding Square}" Margin="0,4,0,0"/>
 
         <TextBlock Text="Couleurs (#RRGGBB)" Style="{StaticResource Caption}"/>
         <DockPanel Margin="0,2">
@@ -123,13 +133,38 @@
           <TextBlock Text="Sélection" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
           <TextBox Text="{Binding Accent, UpdateSourceTrigger=PropertyChanged}"/>
         </DockPanel>
-
-        <TextBlock Text="Image de fond" Style="{StaticResource Caption}"/>
-        <DockPanel>
-          <Button DockPanel.Dock="Right" Content="✕" Margin="4,0,0,0" Click="OnBgClear"/>
-          <Button DockPanel.Dock="Right" Content="Parcourir…" Margin="8,0,0,0" Click="OnBg"/>
-          <TextBox Text="{Binding BackgroundImage, Mode=OneWay}" IsReadOnly="True"/>
+        <DockPanel Margin="0,2">
+          <Border Style="{StaticResource Swatch}" Background="{Binding CardFill}"/>
+          <TextBlock Text="Cartes" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBox Text="{Binding CardFill, UpdateSourceTrigger=PropertyChanged}"/>
         </DockPanel>
+        <DockPanel Margin="0,2">
+          <Border Style="{StaticResource Swatch}" Background="{Binding Glow}"/>
+          <TextBlock Text="Halo" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBox Text="{Binding Glow, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+
+        <TextBlock Text="Image de fond (bibliothèque)" Style="{StaticResource Caption}"/>
+        <ListBox x:Name="BgList" Height="230" SelectionChanged="OnBgPick" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <DockPanel Margin="0,2">
+                <Image Source="{Binding Path, Converter={StaticResource Thumb}}" Width="96" Height="54" Stretch="UniformToFill" DockPanel.Dock="Left"/>
+                <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Text="{Binding Source}" Opacity="0.55" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <DockPanel Margin="0,6,0,0">
+          <Button x:Name="BgRemove" DockPanel.Dock="Right" Content="Retirer" Margin="4,0,0,0" IsEnabled="False" Click="OnBgRemove"/>
+          <Button DockPanel.Dock="Right" Content="Aucune" Margin="8,0,0,0" Click="OnBgClear"/>
+          <Button Content="Importer…" Click="OnBg"/>
+        </DockPanel>
+        <TextBlock Text="Assombrir le fond (%)" Style="{StaticResource Caption}"/>
+        <Slider Minimum="0" Maximum="80" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding Dim}"/>
         </StackPanel>
         <CheckBox Content="Afficher l'aperçu du film" IsChecked="{Binding ShowPreview}" Margin="0,16,0,0"/>
       </StackPanel>

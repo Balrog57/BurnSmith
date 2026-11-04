@@ -20,12 +20,21 @@ public partial class MenuEditorWindow : Window
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     int page, version;
     string? error;
+    bool syncing;
+    List<Element> backgrounds = [];
 
     public MenuDesign Result => working;
+
+    /// <summary>For the off-screen snapshot (the bottom of the properties panel).</summary>
+    public void ScrollPropsToEnd() { UpdateLayout(); PropsScroll.ScrollToEnd(); }
 
     public MenuEditorWindow(MenuDesign design, string? previewFrame, MenuContent content)
     {
         InitializeComponent();
+        FontBox.ItemsSource = System.Windows.Media.Fonts.SystemFontFamilies.Select(f => f.Source).Order().ToList();
+        StyleBox.ItemsSource = ElementLibrary.ButtonStyles.Select(b => new { b.Label, b.Value }).ToList();
+        ColsBox.ItemsSource = new[] { 1, 2, 3, 4, 5 };
+        RowsBox.ItemsSource = new[] { 1, 2, 3, 4 };
         working = design.Clone();
         this.content = content;
         LoadCatalog();
@@ -35,6 +44,7 @@ public partial class MenuEditorWindow : Window
         timer.Tick += (_, _) => { timer.Stop(); _ = Render(); };
         Props.AddHandler(TextBoxBase.TextChangedEvent, new TextChangedEventHandler((_, _) => Dirty()));
         Props.AddHandler(Selector.SelectionChangedEvent, new SelectionChangedEventHandler((_, _) => Dirty()));
+        Props.AddHandler(RangeBase.ValueChangedEvent, new RoutedPropertyChangedEventHandler<double>((_, _) => Dirty()));
         Props.AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler((_, _) => Dirty()));
         Props.AddHandler(ToggleButton.UncheckedEvent, new RoutedEventHandler((_, _) => Dirty()));
         Loaded += (_, _) => Rebind();
@@ -47,7 +57,8 @@ public partial class MenuEditorWindow : Window
         Props.DataContext = null;
         Props.DataContext = working;
         Look.IsEnabled = working.TemplateDir == null;
-        LookNote.Visibility = working.TemplateDir == null ? Visibility.Collapsed : Visibility.Visible;
+        LookNote.Visibility = Detach.Visibility = working.TemplateDir == null ? Visibility.Collapsed : Visibility.Visible;
+        SelectBackground();
         Dirty();
     }
 
@@ -55,10 +66,38 @@ public partial class MenuEditorWindow : Window
     {
         var (usable, skipped) = TemplateCatalog.Scan();
         BuiltInList.ItemsSource = usable;
-        CatalogNote.Text = usable.Count == 0
-            ? "Aucun modèle trouvé. DVDFab / Leawo ne sont pas détectés : indiquez le dossier des modèles."
-            : $"{usable.Count} modèle(s) lus depuis vos installations DVDFab / Leawo." + (skipped.Count > 0 ? $" {skipped.Count} non pris en charge (détail au survol)." : "");
+        var shipped = usable.Count(f => f.Design.Category == DvdForgeTemplates.Category || f.Design.Category.StartsWith("DVDStyler"));
+        var installed = usable.Count - shipped;
+        CatalogNote.Text = $"{usable.Count} modèles : {shipped} inclus (DVD Forge, DVDStyler), {installed} lus depuis vos installations DVDFab / Leawo."
+            + (installed == 0 ? " DVDFab / Leawo ne sont pas détectés : indiquez le dossier de leurs modèles." : "")
+            + (skipped.Count > 0 ? $" {skipped.Count} non pris en charge (détail au survol)." : "");
         CatalogNote.ToolTip = skipped.Count == 0 ? null : string.Join("\n", skipped.Select(s => $"{s.Name} : {s.Why}"));
+        LoadBackgrounds((usable, skipped));
+        _ = FillThumbnails(usable);
+    }
+
+    void LoadBackgrounds((List<TemplateCatalog.Found>, List<TemplateCatalog.Skipped>)? scan = null)
+    {
+        backgrounds = ElementLibrary.Backgrounds(scan);
+        BgList.ItemsSource = backgrounds;
+        SelectBackground();
+    }
+
+    /// <summary>Shows which library picture the design uses (none selected = the gradient, or a picture that is not in the library).</summary>
+    void SelectBackground()
+    {
+        var file = ElementLibrary.Resolve(working.BackgroundImage);
+        syncing = true;
+        BgList.SelectedItem = file == null ? null : backgrounds.FirstOrDefault(b => b.Path.Equals(file, StringComparison.OrdinalIgnoreCase));
+        BgRemove.IsEnabled = (BgList.SelectedItem as Element)?.Removable == true;
+        syncing = false;
+    }
+
+    /// <summary>Templates BurnSmith draws itself have no picture file: draw them once in the background, then refresh the gallery.</summary>
+    async Task FillThumbnails(List<TemplateCatalog.Found> usable)
+    {
+        if (!await Task.Run(() => TemplateCatalog.RenderThumbnails(usable))) return;
+        BuiltInList.ItemsSource = TemplateCatalog.Scan().Usable;
     }
 
     void OnAddFolder(object s, RoutedEventArgs e)
@@ -110,26 +149,66 @@ public partial class MenuEditorWindow : Window
     {
         var t = ((ListBox)s).SelectedItem switch { TemplateCatalog.Found f => f.Design, MenuDesign m => m, _ => null };
         if (t == null) return;
-        working.Name = t.Name; working.Top = t.Top; working.Bottom = t.Bottom; working.TextColor = t.TextColor;
-        working.Accent = t.Accent; working.ButtonStyle = t.ButtonStyle; working.BackgroundImage = t.BackgroundImage; working.Font = t.Font;
-        working.TemplateDir = t.TemplateDir; working.Category = t.Category;
+        working.TakeLook(t);
         Rebind();
     }
 
     void OnPrev(object s, RoutedEventArgs e) { page = Math.Max(0, page - 1); Dirty(); }
     void OnNext(object s, RoutedEventArgs e) { page++; Dirty(); } // Render clamps to the last page
 
+    void OnBgPick(object s, SelectionChangedEventArgs e)
+    {
+        if (syncing || BgList.SelectedItem is not Element picked) return;
+        working.BackgroundImage = ElementLibrary.Reference(picked.Path);
+        BgRemove.IsEnabled = picked.Removable;
+    }
+
+    /// <summary>Adds pictures to your library (a copy is kept in %APPDATA%\BurnSmith\library) and uses the last one.</summary>
     void OnBg(object s, RoutedEventArgs e)
     {
-        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*" };
+        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*", Multiselect = true, Title = "Images à ajouter à la bibliothèque" };
         if (dlg.ShowDialog(this) != true) return;
-        working.BackgroundImage = dlg.FileName;
-        Rebind();
+        try
+        {
+            var added = dlg.FileNames.Select(ElementLibrary.Import).ToList();
+            working.BackgroundImage = added[^1].Path;
+            LoadBackgrounds();
+            Dirty();
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, ex.Message, "BurnSmith");
+        }
+    }
+
+    void OnBgRemove(object s, RoutedEventArgs e)
+    {
+        if (BgList.SelectedItem is not Element { Removable: true } mine) return;
+        try
+        {
+            ElementLibrary.Remove(mine);
+            working.BackgroundImage = null;
+            LoadBackgrounds();
+            Dirty();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, ex.Message, "BurnSmith");
+        }
     }
 
     void OnBgClear(object s, RoutedEventArgs e)
     {
         working.BackgroundImage = null;
+        Rebind();
+    }
+
+    /// <summary>Leaves an installed template but keeps its background (by path, not copied): font, buttons, grid and colours become yours.</summary>
+    void OnDetach(object s, RoutedEventArgs e)
+    {
+        var file = working.TemplateDir == null ? null : InstalledTemplate.Load(working.TemplateDir)?.BackgroundFile;
+        working.TemplateDir = null;
+        working.BackgroundImage = file == null ? null : ElementLibrary.Reference(file);
         Rebind();
     }
 
@@ -179,4 +258,27 @@ static class Prompt
         win.Loaded += (_, _) => { box.Focus(); box.SelectAll(); };
         return win.ShowDialog() == true ? box.Text : null;
     }
+}
+
+/// <summary>A small decoded copy of a picture file for the gallery (the big one would be decoded for every row otherwise).</summary>
+sealed class ThumbConverter : System.Windows.Data.IValueConverter
+{
+    public object? Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+    {
+        if (value is not string file || !File.Exists(file)) return null;
+        try
+        {
+            var img = new BitmapImage();
+            img.BeginInit();
+            img.UriSource = new Uri(file);
+            img.DecodePixelWidth = 192;
+            img.CacheOption = BitmapCacheOption.OnLoad; // does not keep the file open: "Retirer" can delete it
+            img.EndInit();
+            img.Freeze();
+            return img;
+        }
+        catch (Exception e) when (e is NotSupportedException or IOException or InvalidOperationException) { return null; }
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
 }

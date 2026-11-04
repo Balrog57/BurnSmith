@@ -7,7 +7,7 @@ namespace BurnSmith.Core.Menu;
 public static class TemplateCatalog
 {
     public sealed record Found(MenuDesign Design, string? Thumbnail);
-    public sealed record Skipped(string Name, string Why);
+    public sealed record Skipped(string Name, string Why, string Dir);
 
     static string AppData => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
 
@@ -67,20 +67,57 @@ public static class TemplateCatalog
     {
         var name = Path.GetFileName(dir);
         if (pack.Category == "Leawo") name += $" ({Path.GetFileName(Path.GetDirectoryName(dir))})";
+        if (pack.Category.StartsWith("DVDStyler")) name = pack.Name;
         var design = new MenuDesign { Name = name, Category = pack.Category, TemplateDir = dir };
         if (pack.Accent != null) design.Accent = pack.Accent;
+        if (pack.Category.StartsWith("DVDStyler")) { design.TextColor = pack.UiColor ?? design.TextColor; design.Font = pack.UiFont ?? design.Font; }
         return design;
+    }
+
+    // ---- templates BurnSmith ships (open source) ----
+
+    static string ThumbDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BurnSmith", "thumbs");
+    const int ThumbVersion = 1; // bump when the menu engine draws differently, so cached pictures are redone
+
+    static string ThumbFile(MenuDesign d) =>
+        Path.Combine(ThumbDir, string.Concat($"{d.Category}_{d.Name}_v{ThumbVersion}".Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)) + ".jpg");
+
+    /// <summary>Designs BurnSmith draws itself (DVD Forge's parameters): they have no picture file, one is drawn on first use.</summary>
+    static IEnumerable<Found> Shipped() =>
+        DvdForgeTemplates.All().Select(d => new Found(d, File.Exists(ThumbFile(d)) ? ThumbFile(d) : null));
+
+    /// <summary>Draws the gallery picture (the scene page with sample thumbnails) of every design that has none yet. True when it made some.</summary>
+    public static bool RenderThumbnails(IEnumerable<Found> found)
+    {
+        var todo = found.Where(f => f.Thumbnail == null).Select(f => f.Design).ToList();
+        if (todo.Count == 0) return false;
+        Directory.CreateDirectory(ThumbDir);
+        var content = new MenuContent(1, null, Enumerable.Repeat<string?>(null, 12).ToList(), null, ["Français 5.1", "English 5.1"], ["Français"]);
+        MenuRenderer.Sta(() =>
+        {
+            foreach (var d in todo)
+                try
+                {
+                    var pages = MenuBuilder.Build(d, content);
+                    File.WriteAllBytes(ThumbFile(d), MenuRenderer.Background(d, pages[Math.Min(1, pages.Count - 1)]));
+                }
+                catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException) { /* no picture: the gallery shows the name */ }
+            return 0;
+        });
+        return true;
     }
 
     public static (List<Found> Usable, List<Skipped> Skipped) Scan()
     {
-        var usable = new List<Found>();
+        var usable = new List<Found>(Shipped());
         var skipped = new List<Skipped>();
-        foreach (var dir in Roots().SelectMany(r => TemplateFolders(r)).Distinct(StringComparer.OrdinalIgnoreCase))
+        var dvdt = OpenLibrary.Dir() is { } lib && Directory.Exists(Path.Combine(lib, "dvdstyler", "templates"))
+            ? Directory.EnumerateFiles(Path.Combine(lib, "dvdstyler", "templates"), "*.dvdt", SearchOption.AllDirectories) : [];
+        foreach (var dir in Roots().SelectMany(r => TemplateFolders(r)).Concat(dvdt).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var pack = InstalledTemplate.Load(dir);
             if (pack == null) continue;
-            if (pack.Unsupported is { } why) skipped.Add(new Skipped(Design(dir, pack).Name, why));
+            if (pack.Unsupported is { } why) skipped.Add(new Skipped(Design(dir, pack).Name, why, dir));
             else usable.Add(new Found(Design(dir, pack), pack.Thumbnail));
         }
         return (usable.OrderBy(f => f.Design.Category).ThenBy(f => f.Design.Name, StringComparer.OrdinalIgnoreCase).ToList(), skipped);
