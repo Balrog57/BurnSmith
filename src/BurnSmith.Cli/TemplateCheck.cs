@@ -16,6 +16,12 @@ static class TemplateCheck
         var designs = usable.Where(f => only == null || f.Design.Name.Contains(only, StringComparison.OrdinalIgnoreCase)).Select(f => (f.Design, Composed: false)).ToList();
         if (matrix && only == null) designs.AddRange(ComposedDesigns().Select(d => (d, true)));
         var failed = 0;
+        // the DVD Forge and DVDStyler templates are in git, so even a machine with no vendor template has them: without them nothing, or little, would be checked
+        if (designs.Count == 0 || only == null && !(usable.Any(f => f.Design.Category == DvdForgeTemplates.Category) && usable.Any(f => f.Design.Category.StartsWith("DVDStyler"))))
+        {
+            Console.WriteLine($"FAIL {designs.Count} modèles trouvés, il manque ceux de DVD Forge ou de DVDStyler, ou --only ne désigne rien");
+            return 1;
+        }
         var watch = System.Diagnostics.Stopwatch.StartNew();
         foreach (var (design, composed) in designs)
         {
