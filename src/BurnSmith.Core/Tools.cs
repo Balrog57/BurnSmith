@@ -59,16 +59,16 @@ public static class Tools
     }
 
     /// <summary>
-    /// Empties <paramref name="dir"/> before a build, but only when it is missing, empty, or an earlier disc folder
-    /// (holds BDMV or VIDEO_TS). Anything else is refused so a wrongly picked folder is never wiped.
+    /// Empties <paramref name="dir"/> before a build, but only when it is missing, empty, or holds nothing but an earlier disc
+    /// (BDMV, CERTIFICATE, VIDEO_TS, AUDIO_TS). Anything else is refused so a wrongly picked folder is never wiped.
     /// </summary>
     public static void PrepareOutput(string dir)
     {
         if (!Directory.Exists(dir)) return;
         var kind = Directory.EnumerateFileSystemEntries(dir).Select(Path.GetFileName).ToList();
         if (kind.Count == 0) return;
-        if (!kind.Any(n => n is "BDMV" or "VIDEO_TS" or "CERTIFICATE" or "AUDIO_TS"))
-            throw new IOException($"'{dir}' is not empty and is not a disc folder: choose a new or empty folder.");
+        if (!kind.All(n => n is "BDMV" or "VIDEO_TS" or "CERTIFICATE" or "AUDIO_TS"))
+            throw new IOException($"'{dir}' is not empty and is not just a disc folder: choose a new or empty folder.");
         Directory.Delete(dir, true);
     }
 

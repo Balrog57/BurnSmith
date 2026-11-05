@@ -429,6 +429,37 @@ if (a.Count >= 1 && a[0] == "check-edit")
     Check("the disc reads the new language: kept tracks and their names", relabel.KeptAudio(relabelled)[0].Name.StartsWith("Français") && relabel.KeptSubtitles(relabelled)[0].Name == "English" && new DiscTitle("x").KeptAudio(tracked)[0].Lang == "und");
     Check("no language set: the source is returned as it is", new DiscTitle("x", TrackLanguage: new Dictionary<string, string>()).Cut(tracked) == tracked);
     Check("one video's own interval replaces the disc's; a list wins over it", Show(new DiscTitle("x", ChapterMinutes: 2).ChapterList(600, 5)) == "0,120,240,360,480" && Show(new DiscTitle("x", ChapterAt: [30], ChapterMinutes: 2).ChapterList(600, 5)) == "0,30" && Show(new DiscTitle("x").ChapterList(600, 5)) == "0,300");
+    // the output folder: only what is nothing but an earlier disc is emptied; one foreign file and the whole folder is left alone
+    var outRoot = Path.Combine(Path.GetTempPath(), "bs_out_" + Guid.NewGuid().ToString("N")[..8]);
+    try
+    {
+        string OutFolder(string name, params string[] files)
+        {
+            var dir = Path.Combine(outRoot, name);
+            Directory.CreateDirectory(dir);
+            foreach (var entry in files)
+            {
+                var path = Path.Combine(dir, entry);
+                if (entry.EndsWith('/')) { Directory.CreateDirectory(path); continue; }
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, "x");
+            }
+            return dir;
+        }
+        static bool Refused(string dir) { try { Tools.PrepareOutput(dir); return false; } catch (IOException) { return true; } }
+        var mixed = OutFolder("mixed", "VIDEO_TS/VTS_01_1.VOB", "precieux.txt", "Films/autre.mkv");
+        Check("a disc folder with anything else in it is refused, and every file in it survives",
+              Refused(mixed) && File.Exists(Path.Combine(mixed, "VIDEO_TS", "VTS_01_1.VOB")) && File.Exists(Path.Combine(mixed, "precieux.txt")) && File.Exists(Path.Combine(mixed, "Films", "autre.mkv")));
+        var mixedBd = OutFolder("mixedbd", "BDMV/index.bdmv", "CERTIFICATE/id.bdmv", "notes.txt");
+        Check("the same beside a BDMV folder", Refused(mixedBd) &&File.Exists(Path.Combine(mixedBd, "notes.txt")) && File.Exists(Path.Combine(mixedBd, "BDMV", "index.bdmv")));
+        var oldDvd = OutFolder("olddvd", "VIDEO_TS/VIDEO_TS.IFO", "AUDIO_TS/");
+        var oldBd = OutFolder("oldbd", "BDMV/index.bdmv", "CERTIFICATE/id.bdmv");
+        Check("a real earlier DVD or Blu-ray folder is still emptied for the new build", !Refused(oldDvd) && !Refused(oldBd) && !Directory.Exists(oldDvd) && !Directory.Exists(oldBd));
+        var noDisc = OutFolder("nodisc", "precieux.txt");
+        var empty = OutFolder("empty");
+        Check("a folder without any disc is refused; an empty or missing one is fine", Refused(noDisc) &&File.Exists(Path.Combine(noDisc, "precieux.txt")));
+    }
+    finally { if (Directory.Exists(outRoot)) Directory.Delete(outRoot, true); }
     // the structure check on a disc built by hand: a tiny Blu-ray folder, then the same with something wrong
     var discDir = Path.Combine(Path.GetTempPath(), "bs_disc_" + Guid.NewGuid().ToString("N")[..8]);
     try
