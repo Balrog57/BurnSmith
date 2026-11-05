@@ -549,3 +549,33 @@ DVDFab règle la surbrillance par **style**, **couleur** et **transparence** (§
 - Éditeur : un second sélecteur de couleur « Sélection (2e) » et un curseur « Transparence de la sélection (%) ».
 
 **Épreuves** : `check-highlights` **13/13**, dont « une couleur de sélection distincte change l'image » et « une transparence de sélection différente change l'image (0 % ne remplit plus le cadre) ». Images dans `analysis\out\styles2` : `style_custom.png` (382 octets) montre le soulignement en vert au lieu de l'ambre, `style_faint.png` (2 385 octets) le cadre sans remplissage contre 2 349 avec.
+## 22. Mode liste sur la ligne de commande, et la limite du banc d'essai (2026-11-05)
+
+### 22.1 `--list` construit un disque, pas seulement un aperçu
+
+Le mode liste (§15.2) n'était réglable que dans l'éditeur et l'aperçu. Il l'est maintenant au montage : `burnsmith bd --design "Birthday 01" --list --chapter-at 0,3,6,9,12`.
+
+**Preuve, sur le `menu.txt` de deux disques réels** (mêmes chapitres, même modèle) :
+
+```
+--list : page scenes1, 5 boutons en colonne
+  c1 530 260 840 65   (voisins : bas c2)
+  c2 530 320 840 65   (haut c1, bas c3)
+  c3 530 380 840 65   …
+  c4 530 440 840 65   …
+  c5 530 500 840 65   (haut c4, bas home)
+  home 917 890 84 84  (haut c5)
+
+grille : page scenes1, 3 boutons en 3 x 1, puis page scenes2 avec 2
+  c1 299 437 340 209   c2 791 437   c3 1283 437   next → scenes2
+```
+
+Cinq chapitres tiennent donc sur **une** page en liste, là où la grille en demande deux, et la navigation haut / bas est câblée de ligne en ligne.
+
+### 22.2 La preuve différentielle de la reprise reste bloquée par le banc d'essai
+
+Pour observer « on revient sur un autre bouton » (§19), il faut une page racine avec plusieurs boutons **de lecture** et un moyen de déplacer le focus. J'ai construit un disque pour cela : modèle « Streaming », deux vidéos, page racine à trois boutons (`play`, `e1`, `e2`) dont le `menu.txt` donne bien les voisins (`e1` → droite `e2`, `e2` → gauche `e1`).
+
+Résultat : `key-nav-activate` fonctionne (le journal joue `playlist 1`, puis `playlist 2` par enchaînement), mais **`key-nav-right` ne déplace pas le focus** — le journal ne montre jamais `page root` avec un autre bouton, ni `resume on button 1`. Le blocage est donc dans l'envoi des touches par l'interface RC de VLC (ou dans leur traduction par libbluray), pas dans le xlet : les voisins existent, l'activation marche, la lecture du registre et l'écriture sont établies.
+
+Piste pour lever la limite : piloter le disque par un autre canal (fenêtre VLC au premier plan avec de vraies frappes, ou un lecteur qui expose une API de touches), ou écrire un petit programme BD-J de test qui lit un registre et le journalise — la seconde option ne prouve pas la reprise du menu, seulement la mécanique des registres.
