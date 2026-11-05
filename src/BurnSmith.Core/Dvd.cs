@@ -354,7 +354,7 @@ public static class Dvd
         for (var i = 0; i < movies.Count; i++)
         {
             var pgc = new XElement("pgc", new XElement("vob", new XAttribute("file", movies[i].Mpg), new XAttribute("chapters", Chapters(movies[i]))));
-            if (menus.Count == 0 && first.DefaultSubtitle > 0) pgc.AddFirst(new XElement("pre", $"subtitle = {63 + first.DefaultSubtitle};")); // no menu to start it: the film does (stream numbers are 0-based, 64 = shown)
+            if (menus.Count == 0 && i == 0 && first.DefaultSubtitle > 0) pgc.AddFirst(new XElement("pre", $"subtitle = {63 + first.DefaultSubtitle};")); // no menu to start it: the first title does, once (stream numbers are 0-based, 64 = shown)
             if (menus.Count > 0)
                 pgc.Add(new XElement("post", (i < mainCount - 1 ? $"if (g1 == 1) jump title {i + 2}; " : "") + "call menu;")); // after an episode of "play all": the next one, never a bonus
             titles.Add(pgc);
