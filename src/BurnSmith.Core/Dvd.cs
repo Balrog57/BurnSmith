@@ -208,7 +208,7 @@ public static class Dvd
             var subStates = content.SubtitleNames.Count > 0 ? content.SubtitleNames.Count + 1 : 1;
             for (var a = 1; a <= audioStates; a++)
                 for (var s = 0; s < subStates; s++)
-                    pages.Add(MenuBuilder.Settings(job.Menu!, content, a, s, SettingsId(a, s)));
+                    pages.Add(MenuBuilder.WithElements(job.Menu!, MenuBuilder.Settings(job.Menu!, content, a, s, SettingsId(a, s))));
         }
         var loop = job.Menu!.Loop;
         // a moving menu: the pages are transparent overlays burned onto a clip of the film (or the design's own video) that plays and repeats
@@ -255,25 +255,42 @@ public static class Dvd
                 Tools.Run(ffmpeg, args, log);
             }
 
-            // button highlights: flat frames in 4 colours, scaled from the 1920x1080 layout
+            // button highlights: the template's own artwork when it has one, else flat frames in 4 colours, scaled from the 1920x1080 layout
             var sx = w / (double)MenuBuilder.W;
             var sy = h / (double)MenuBuilder.H;
             var hl = new Canvas(w, h);
             var sel = new Canvas(w, h);
+            // spumux reads the page button by button, so the model's per-button artwork is rasterised at the button's size on the page
+            var art = MenuRenderer.Sta(() => p.Buttons.Select(b =>
+            {
+                if (b.DvdHighlightImage is not { } image) return ((byte[] Px, int W, int H)?)null;
+                try { return MenuRenderer.Raster(image, b.DvdHighlightMask, (int)Math.Round(b.Rect.W * sx), (int)Math.Round(b.Rect.H * sy)); }
+                catch (InvalidDataException) { return null; } // an unreadable picture must not cost the whole disc: the frame stands in
+            }).ToList());
             var sub = new XElement("spu", new XAttribute("start", "00:00:00.00"), new XAttribute("highlight", $"hl_{p.Id}.png"),
                 new XAttribute("select", $"sel_{p.Id}.png"), new XAttribute("force", "yes"));
-            foreach (var b in p.Buttons)
+            for (var k = 0; k < p.Buttons.Count; k++)
             {
+                var b = p.Buttons[k];
                 var r = b.Rect.Inflate(MenuBuilder.FocusMargin / 2);
                 int x0 = (int)(r.X * sx) & ~1, y0 = (int)(r.Y * sy) & ~1;
                 int x1 = (int)((r.X + r.W) * sx), y1 = (int)((r.Y + r.H) * sy) & ~1;
-                hl.Frame(x0, y0, x1, y1, 3, 1);
-                sel.Frame(x0, y0, x1, y1, 4, 2);
+                if (art[k] is { } a)
+                {
+                    hl.Stamp(a.Px, a.W, a.H, x0, y0, 1); // the artwork's shape, in the one tint a subpicture can spend on it
+                    sel.Stamp(a.Px, a.W, a.H, x0, y0, 2);
+                }
+                else
+                {
+                    hl.Frame(x0, y0, x1, y1, 3, 1);
+                    sel.Frame(x0, y0, x1, y1, 4, 2);
+                }
                 sub.Add(new XElement("button", new XAttribute("name", b.Id),
                     new XAttribute("x0", x0), new XAttribute("y0", y0), new XAttribute("x1", x1), new XAttribute("y1", y1),
                     Nav("up", b.Up), Nav("down", b.Down), Nav("left", b.Left), Nav("right", b.Right)));
             }
-            var accent = Hex(job.Menu!.Accent);
+            // one tint for the whole page (a subpicture has four colours): the artwork's own average, else the design's accent
+            var accent = art.FirstOrDefault(a => a != null) is { } first ? Average(first.Px, first.W, first.H) : Hex(job.Menu!.Accent);
             Rgba[] palette = [new(0, 0, 0, 0), accent, new(255, 255, 255, 255), new(0, 0, 0, 0)];
             File.WriteAllBytes(Path.Combine(work, $"hl_{p.Id}.png"), Encode(hl, palette));
             File.WriteAllBytes(Path.Combine(work, $"sel_{p.Id}.png"), Encode(sel, palette));

@@ -8,6 +8,8 @@ public readonly record struct Box(int X, int Y, int W, int H)
 /// <summary>Drawing instructions of a page. Plain data, so the layout is testable without WPF.</summary>
 public abstract record Op;
 public sealed record Fill(Box Rect, string Color, double Opacity, int Radius) : Op;
+/// <summary>An outline around <paramref name="Rect"/> (the edge of a free element).</summary>
+public sealed record Border(Box Rect, string Color, int Width, int Radius) : Op;
 public sealed record Label(string Value, Box Rect, int Size, bool Bold, string Align = "center") : Op;
 public sealed record Picture(string Path, Box Rect, int Radius, int BorderWidth) : Op;
 
@@ -39,6 +41,13 @@ public sealed record MenuButton(string Id, Box Rect, MenuAction Action)
     public string? FocusImage { get; init; }
     /// <summary>Where <see cref="FocusImage"/> goes when it is only a marker beside the button (a star next to text); null = it covers the button.</summary>
     public Box? FocusSlot { get; init; }
+    /// <summary>
+    /// The template's highlighted artwork for this button (<c>frame/0.dvd.sub.png</c> beside <c>frame/0.dvd.normal.png</c>): the picture a DVD
+    /// subpicture is made from, composited at this button's place. Null = the design's own four-colour frame.
+    /// </summary>
+    public string? DvdHighlightImage { get; init; }
+    /// <summary>The shape of that artwork (<c>frame/0.dvd.mask.png</c>, 1-bit); null = the whole rectangle.</summary>
+    public string? DvdHighlightMask { get; init; }
 }
 
 public sealed record MenuPage(string Id, List<Op> Ops, List<MenuButton> Buttons);
@@ -93,6 +102,33 @@ public static class MenuBuilder
     public static int MarkerOffset(MenuDesign d) => Pack(d) is { HasSetupLists: true } p ? p.MarkerOffset : FocusMargin - MarkerSize - MarkerGap;
 
     public static List<MenuPage> Build(MenuDesign d, MenuContent c)
+    {
+        var pages = BuildCore(d, c);
+        return d.Elements.Count == 0 ? pages : pages.Select(p => WithElements(d, p)).ToList();
+    }
+
+    /// <summary>
+    /// The page with the design's free elements drawn over it. Call it on every page built outside <see cref="Build"/> (the audio / subtitle
+    /// pages a DVD makes per choice), or the elements would be missing there.
+    /// </summary>
+    public static MenuPage WithElements(MenuDesign d, MenuPage page)
+    {
+        if (d.Elements.Count == 0) return page;
+        var mine = d.Elements.Where(e => e.AppliesTo(page.Id)).ToList();
+        if (mine.Count == 0) return page;
+        var behind = mine.Where(e => e.Behind).SelectMany(e => e.Ops(d)).ToList();
+        var front = mine.Where(e => !e.Behind).SelectMany(e => e.Ops(d)).ToList();
+        if (behind.Count == 0 && front.Count == 0) return page;
+        var ops = page.Ops.ToList();
+        // a template's own artwork is the page's first op: a "behind" element goes over it, under the buttons drawn after it
+        var at = 0;
+        while (at < ops.Count && ops[at] is Image { Backdrop: true }) at++;
+        ops.InsertRange(at, behind);
+        ops.AddRange(front);
+        return page with { Ops = ops };
+    }
+
+    static List<MenuPage> BuildCore(MenuDesign d, MenuContent c)
     {
         if (Pack(d) is { } pack) return pack.Pages(d, c);
         var cells = Cells(d, c);

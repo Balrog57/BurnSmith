@@ -122,6 +122,65 @@
         <TextBlock Text="Titre du disque par langue, Blu-ray (une ligne par langue, ex. fra: Mon disque)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
         <TextBox Text="{Binding TitlesByLanguage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" VerticalScrollBarVisibility="Auto"/>
 
+        <TextBlock Text="Éléments libres : texte, image ou cadre posés à la main sur une page (comme dans DVDStyler)" Style="{StaticResource Caption}" Margin="0,16,0,3" TextWrapping="Wrap"/>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+          <Button Content="+ Texte" Click="OnAddText" Margin="0,0,6,0"/>
+          <Button Content="+ Image" Click="OnAddImage" Margin="0,0,6,0"/>
+          <Button Content="+ Cadre" Click="OnAddBox"/>
+        </StackPanel>
+        <ListBox x:Name="ElemList" Height="88" SelectionChanged="OnElemPick"/>
+        <DockPanel Margin="0,4,0,0">
+          <TextBlock Text="Page" Width="76" VerticalAlignment="Center"/>
+          <ComboBox x:Name="ElemPage" SelectionChanged="OnElemPickEvent"/>
+        </DockPanel>
+        <DockPanel Margin="0,4,0,0">
+          <TextBlock Text="Texte" Width="76" VerticalAlignment="Center"/>
+          <TextBox x:Name="ElemText" TextChanged="OnElemText"/>
+        </DockPanel>
+        <DockPanel Margin="0,4,0,0">
+          <Button Content="Image…" Width="76" DockPanel.Dock="Left" Click="OnElemImage"/>
+          <TextBox x:Name="ElemImage" TextChanged="OnElemText" Margin="6,0,0,0"/>
+        </DockPanel>
+        <TextBlock Text="Horizontal" Style="{StaticResource Caption}"/>
+        <Slider x:Name="ElemX" Minimum="0" Maximum="1800" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+        <TextBlock Text="Vertical" Style="{StaticResource Caption}"/>
+        <Slider x:Name="ElemY" Minimum="0" Maximum="980" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+        <TextBlock Text="Largeur" Style="{StaticResource Caption}"/>
+        <Slider x:Name="ElemW" Minimum="40" Maximum="1920" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+        <TextBlock Text="Hauteur" Style="{StaticResource Caption}"/>
+        <Slider x:Name="ElemH" Minimum="20" Maximum="1080" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+        <TextBlock Text="Taille du texte" Style="{StaticResource Caption}"/>
+        <Slider x:Name="ElemSize" Minimum="12" Maximum="160" TickFrequency="2" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+        <DockPanel Margin="0,2">
+          <Border Style="{StaticResource Swatch}" Background="{Binding ElementName=ElemColor, Path=Text}"/>
+          <TextBlock Text="Couleur" Width="76" VerticalAlignment="Center"/>
+          <TextBox x:Name="ElemColor" TextChanged="OnElemText"/>
+        </DockPanel>
+        <DockPanel Margin="0,2">
+          <Border Style="{StaticResource Swatch}" Background="{Binding ElementName=ElemFill, Path=Text}"/>
+          <TextBlock Text="Remplissage" Width="76" VerticalAlignment="Center"/>
+          <TextBox x:Name="ElemFill" TextChanged="OnElemText"/>
+        </DockPanel>
+        <DockPanel Margin="0,2">
+          <Border Style="{StaticResource Swatch}" Background="{Binding ElementName=ElemBorder, Path=Text}"/>
+          <TextBlock Text="Bordure" Width="76" VerticalAlignment="Center"/>
+          <TextBox x:Name="ElemBorder" TextChanged="OnElemText"/>
+        </DockPanel>
+        <TextBlock Text="Épaisseur de bordure" Style="{StaticResource Caption}"/>
+        <Slider x:Name="ElemBorderW" Minimum="0" Maximum="16" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+        <TextBlock Text="Opacité du cadre (%)" Style="{StaticResource Caption}"/>
+        <Slider x:Name="ElemOpacity" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+        <DockPanel Margin="0,4,0,0">
+          <TextBlock Text="Alignement" Width="76" VerticalAlignment="Center"/>
+          <ComboBox x:Name="ElemAlign" SelectionChanged="OnElemPickEvent"/>
+        </DockPanel>
+        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+          <CheckBox x:Name="ElemBold" Content="Gras" Margin="0,0,12,0" Checked="OnElemToggle" Unchecked="OnElemToggle"/>
+          <CheckBox x:Name="ElemItalic" Content="Italique" Checked="OnElemToggle" Unchecked="OnElemToggle"/>
+        </StackPanel>
+        <CheckBox x:Name="ElemBehind" Content="Derrière les boutons (panneau, cadre)" Margin="0,4,0,0" Checked="OnElemToggle" Unchecked="OnElemToggle"/>
+        <Button Content="Supprimer l'élément" Click="OnElemDelete" Margin="0,6,0,0" HorizontalAlignment="Left"/>
+
         <CheckBox Content="Menu animé : une vidéo tourne en boucle derrière les boutons" IsChecked="{Binding Loop}" Margin="0,16,0,0"/>
         <DockPanel Margin="0,4">
           <TextBlock Text="Début vidéo (s)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left"/>

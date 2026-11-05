@@ -1,4 +1,4 @@
-﻿using BurnSmith.Core;
+using BurnSmith.Core;
 using BurnSmith.Core.Menu;
 
 // burnsmith bd|dvd --video <file> [--video <file2> ...] --out <folder> [--design Midnight] [--title "My Disc"] [--no-menu]
@@ -11,6 +11,7 @@ using BurnSmith.Core.Menu;
 // --bonus: after a --video, that video is an extra (trailer, making-of): it goes after the main videos, off "Play" / "Play all", on the menu's Bonus page (needs another, main, video)
 var a = args.ToList();
 string? Opt(string name) => a.IndexOf(name) is var i and >= 0 && i + 1 < a.Count ? a[i + 1] : null;
+IEnumerable<string> OptAll(string name) { for (var i = 0; i + 1 < a.Count; i++) if (a[i] == name) yield return a[i + 1]; } // --element can repeat
 List<int>? Numbers(string name) => Opt(name)?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
 var videos = a.Select((v, i) => (v, i)).Where(x => x.v == "--video" && x.i + 1 < a.Count).Select(x => Path.GetFullPath(a[x.i + 1])).ToList();
 
@@ -28,6 +29,7 @@ if (a.Count >= 3 && a[0] == "preview")
         int.TryParse(Opt("--bonus"), out var extras) && extras > 0 ? Enumerable.Range(0, extras).Select(i => new TitleEntry($"Bonus {i + 1}", Math.Max(episodes, 1) + 1 + i, pic)).ToList() : null);
     chosen.Title = "My Blu-ray";
     if (Opt("--credits") is { } sampleCredits) chosen.Credits = sampleCredits.Replace('|', '\n');
+    foreach (var spec in OptAll("--element")) chosen.Elements.Add(MenuElement.Parse(spec));
     var files = MenuRenderer.Sta(() => MenuBuilder.Build(chosen, sample).Select(page => (page.Id, Jpeg: MenuRenderer.Background(chosen, page))).ToList());
     foreach (var (id, jpeg) in files) File.WriteAllBytes(Path.Combine(a[2], $"{chosen.Name}_{id}.jpg"), jpeg);
     Console.WriteLine(string.Join(", ", files.Select(f => f.Id)));
@@ -50,6 +52,106 @@ if (a.Count >= 2 && a[0] == "dump")
 // burnsmith check-templates [--matrix] [--only NAME] [--picture frame.jpg] (--only: the templates whose name contains NAME, no composed designs) : builds every template as film and series and checks pages, buttons, remote moves, pictures;
 // --matrix = every disc shape (1..40 chapters, 2..60 episodes, 1..9 audio, 0..9 subtitles) and 200 designs the menu editor can compose
 if (a.Count >= 1 && a[0] == "check-templates") return TemplateCheck.Run(Opt("--picture") is { } cp ? Path.GetFullPath(cp) : null, a.Contains("--matrix"), Opt("--only"));
+
+// burnsmith check-highlights : les surbrillances DVD prises aux modèles (image de survol du modèle, PNG 2 bits à 4 couleurs, repli sur le cadre générique)
+if (a.Count >= 1 && a[0] == "check-highlights")
+{
+    var hlFailed = 0;
+    void Check(string what, bool ok) { if (!ok) hlFailed++; Console.WriteLine($"{(ok ? "ok  " : "FAIL")} {what}"); }
+    static bool Has(byte[] hay, string ascii)
+    {
+        var needle = System.Text.Encoding.ASCII.GetBytes(ascii);
+        for (var i = 0; i + needle.Length <= hay.Length; i++) if (hay.AsSpan(i, needle.Length).SequenceEqual(needle)) return true;
+        return false;
+    }
+
+    var hlContent = new MenuContent(1, null, Enumerable.Repeat<string?>(null, 4).ToList(), null, ["Français AC-3 mono", "English AC-3 mono"], ["Français"]);
+
+    // (a) an installed DVDFab DVD model names its highlighted artwork for each button that has one
+    var hlModel = TemplateCatalog.Scan().Usable.Select(f => f.Design).FirstOrDefault(d => d.TemplateDir != null && d.Category.Contains("DVDFab DVD"));
+    if (hlModel == null) Console.WriteLine("ok   (aucun modèle DVDFab DVD installé : la vérification du modèle est sautée)");
+    else
+    {
+        var hlPages = MenuBuilder.Build(hlModel, hlContent);
+        var hlButtons = hlPages.SelectMany(p => p.Buttons).Where(b => b.DvdHighlightImage != null).ToList();
+        Check("le modèle nomme l'image de survol de ses boutons, et le fichier existe", hlButtons.Count > 0 && hlButtons.All(b => File.Exists(b.DvdHighlightImage!)));
+        Check("le masque de forme vient du jumeau « .mask. » du modèle", hlButtons.Any(b => b.DvdHighlightMask is { } m && File.Exists(m)));
+        var hlOne = hlButtons.First();
+        var (hlPx, hlW, hlH) = MenuRenderer.Sta(() => MenuRenderer.Raster(hlOne.DvdHighlightImage!, hlOne.DvdHighlightMask, 120, 80));
+        var hlOpaque = hlPx.Where((_, i) => i % 4 == 3).Count(alpha => alpha >= 128);
+        Check("le raster a la taille du bouton et des pixels visibles (c'est ce que spumux affichera)",
+              hlW == 120 && hlH == 80 && hlOpaque > 0);
+        var hlPage = new IndexedPng.Canvas(720, 576);
+        hlPage.Stamp(hlPx, hlW, hlH, 200, 200, 1);
+        Check($"collée sur la page, la forme du modèle est reprise telle quelle ({hlOpaque} pixels) et rien n'est ajouté ailleurs",
+              hlPage.Pixels.Count(v => v == 1) == hlOpaque && hlPage.Pixels.Count(v => v != 0) == hlOpaque);
+    }
+
+    // (b) the encoder: a 2-bit indexed PNG, four colours, index 0 transparent
+    var hlCanvas = new IndexedPng.Canvas(16, 8);
+    var hlArt = Enumerable.Range(0, 4 * 2 * 4).Select(i => (byte)(i % 4 == 3 ? 255 : 0)).ToArray();
+    hlCanvas.Stamp(hlArt, 4, 2, 4, 3, 1);
+    var hlPng = IndexedPng.Encode(hlCanvas, [new(0, 0, 0, 0), new(200, 40, 40, 255), new(255, 255, 255, 255), new(0, 0, 0, 0)]);
+    Check("la surbrillance est un PNG indexé 2 bits à quatre couleurs, avec transparence",
+          hlPng.Length > 26 && hlPng[24] == 2 && hlPng[25] == 3 && Has(hlPng, "tRNS") && Has(hlPng, "PLTE"));
+    Check("l'artwork est tamponné à sa place, le reste de la page reste transparent",
+          hlCanvas.Pixels[3 * 16 + 4] == 1 && hlCanvas.Pixels[3 * 16 + 7] == 1 && hlCanvas.Pixels[3 * 16 + 8] == 0 && hlCanvas.Pixels[0] == 0);
+
+    // (c) a design without a model has no artwork at all: Dvd.cs keeps its four-colour frame there
+    var hlPlain = TemplateCatalog.Find("Cinema Dark") ?? new MenuDesign();
+    Check("un modèle sans artwork garde le cadre à quatre couleurs (aucune image de surbrillance nommée)",
+          hlPlain.TemplateDir == null && MenuBuilder.Build(hlPlain, hlContent).All(p => p.Buttons.All(b => b.DvdHighlightImage == null)));
+
+    Console.WriteLine(hlFailed == 0 ? "all ok" : $"{hlFailed} failed");
+    return hlFailed == 0 ? 0 : 1;
+}
+
+// burnsmith check-elements : the free elements of the menu (reading a command-line element, which pages it goes on, what it draws) without a video or a window
+if (a.Count >= 1 && a[0] == "check-elements")
+{
+    var elFailed = 0;
+    void Check(string what, bool ok) { if (!ok) elFailed++; Console.WriteLine($"{(ok ? "ok  " : "FAIL")} {what}"); }
+    static bool Throws(Action work) { try { work(); return false; } catch (Exception e) when (e is ArgumentException or InvalidOperationException or FormatException) { return true; } }
+
+    var elText = MenuElement.Parse("kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;color=#FFE6AE;align=center;bold=1");
+    Check("text element: kind, rectangle, text, size, colour, alignment, bold",
+          elText.Kind == "text" && elText.Box() == new Box(100, 120, 900, 90) && elText.Text == "Bienvenue" && elText.Size == 54 && elText.Color == "#FFE6AE" && elText.Align == "center" && elText.Bold);
+    Check("geometry that leaves the page is pulled back inside it", new MenuElement { X = -50, Y = 2000, W = 5000, H = 10 }.Box() == new Box(0, 1070, 1920, 10));
+    Check("page targeting: all, root, scenes, bonus; a misspelt page hits nothing",
+          new MenuElement { Page = "all" }.AppliesTo("settings") && new MenuElement { Page = "root" }.AppliesTo("root") && !new MenuElement { Page = "root" }.AppliesTo("scenes1")
+          && new MenuElement { Page = "scenes" }.AppliesTo("scenes2") && !new MenuElement { Page = "scenes" }.AppliesTo("bonus1") && !new MenuElement { Page = "roots" }.AppliesTo("root"));
+    Check("an unknown kind is refused, so a misspelt element is not silently something else", Throws(() => MenuElement.Parse("kind=vidéo;text=x")));
+
+    var elDesign = TemplateCatalog.Default().Clone();
+    var elContent = new MenuContent(1, null, ["a", "b", "c"], null, ["Français", "English"], ["Français"]);
+    var elBefore = MenuBuilder.Build(elDesign, elContent);
+    elDesign.Elements.Add(MenuElement.Parse("kind=text;page=root;rect=10,10,400,60;text=Salut;size=40"));
+    elDesign.Elements.Add(MenuElement.Parse("kind=box;page=scenes;rect=0,700,1920,380;fill=#000000;opacity=50;border=#FFC83D;borderw=4"));
+    elDesign.Elements.Add(MenuElement.Parse("kind=text;page=credits;rect=10,10,400,60;text=Fin"));
+    elDesign.Elements.Add(MenuElement.Parse("kind=image;page=all;rect=10,10,100,100;file=Z:\\absent\\logo.png"));
+    var elPages = MenuBuilder.Build(elDesign, elContent);
+
+    Check("elements change the drawing, not the pages", elPages.Select(p => p.Id).SequenceEqual(elBefore.Select(p => p.Id)));
+    Check("a text on the root page is drawn there and nowhere else",
+          elPages.First(p => p.Id == "root").Ops.OfType<Text>().Any(t => t.Value == "Salut") && !elPages.First(p => p.Id == "scenes1").Ops.OfType<Text>().Any(t => t.Value == "Salut"));
+    var elGrids = elPages.Where(p => p.Id.StartsWith("scenes")).ToList();
+    Check("a box on the scenes pages: one fill and one border on each, in its own colours",
+          elGrids.Count > 0 && elGrids.All(p => p.Ops.OfType<Fill>().Count(f => f.Color == "#000000" && Math.Abs(f.Opacity - 0.5) < 1e-9) == 1
+                                         && p.Ops.OfType<Border>().Count(b => b.Color == "#FFC83D" && b.Width == 4) == 1));
+    Check("an element for a page the disc has not got is simply not drawn", !elPages.Any(p => p.Ops.OfType<Text>().Any(t => t.Value == "Fin")));
+    Check("an image whose file is missing draws nothing (the page still builds)", !elPages.Any(p => p.Ops.OfType<Image>().Any(i => i.Path.Contains("logo.png"))));
+    Check("the elements are copied with the design, not shared",
+          elDesign.Clone().Elements.Count == elDesign.Elements.Count && !ReferenceEquals(elDesign.Clone().Elements[0], elDesign.Elements[0]));
+
+    var elUnder = elDesign.Clone();
+    elUnder.Elements.Add(MenuElement.Parse("kind=box;page=root;rect=0,700,1920,380;fill=#123456;opacity=100;behind=1"));
+    var elOver = elDesign.Clone();
+    elOver.Elements.Add(MenuElement.Parse("kind=box;page=root;rect=0,700,1920,380;fill=#123456;opacity=100"));
+    static int Panel(MenuDesign dd, MenuContent cc) => MenuBuilder.Build(dd, cc).First(p => p.Id == "root").Ops.FindIndex(o => o is Fill { Color: "#123456" });
+    Check("a box told to stay behind the buttons is drawn before them, otherwise over them", Panel(elUnder, elContent) < Panel(elOver, elContent));
+    Console.WriteLine(elFailed == 0 ? "all ok" : $"{elFailed} failed");
+    return elFailed == 0 ? 0 : 1;
+}
 
 // burnsmith check-edit : the arithmetic of a cut (length, chapters shifted by the start, typed times) without any video
 if (a.Count >= 1 && a[0] == "check-edit")
@@ -304,6 +406,7 @@ var design = a.Contains("--no-menu") ? null
     : (TemplateCatalog.Find(Opt("--design")) ?? (Opt("--design") is { } unknown ? throw new InvalidOperationException($"unknown template: {unknown}") : TemplateCatalog.Default())).Clone();
 if (design != null && Opt("--title") is { } title) design.Title = title;
 if (design != null && Opt("--credits") is { } credits) design.Credits = credits.Replace('|', '\n'); // --credits "Directed by A|Music by B"
+foreach (var spec in OptAll("--element")) design?.Elements.Add(MenuElement.Parse(spec)); // --element "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;align=center"
 if (design != null && Opt("--titles") is { } byLanguage) design.TitlesByLanguage = byLanguage.Replace('=', ':').Replace('|', '\n'); // --titles "fra=Mon disque|eng=My disc"
 if (design != null && a.Contains("--loop")) // moving menu: --loop [--loop-file video] [--loop-start S]
 {

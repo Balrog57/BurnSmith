@@ -30,6 +30,11 @@ public sealed class MenuDesign
     public string Credits { get; set; } = "";
     /// <summary>Disc title per language for the player's disc information (BDMV\META\DL), one "xxx: title" per line, xxx = 3-letter language code (fra, eng, deu...).</summary>
     public string TitlesByLanguage { get; set; } = "";
+    /// <summary>
+    /// Elements placed by hand (text, picture, box), drawn over the pages their <see cref="MenuElement.Page"/> names. They are baked into the page
+    /// picture like the rest of the layout, so a DVD and a Blu-ray menu show them without any player-side code.
+    /// </summary>
+    public List<MenuElement> Elements { get; set; } = [];
     public string Font { get; set; } = "Segoe UI";
     /// <summary>Background gradient (#RRGGBB). Ignored when <see cref="BackgroundImage"/> is set.</summary>
     public string Top { get; set; } = "#0B1B3B";
@@ -82,7 +87,13 @@ public sealed class MenuDesign
     /// <summary>The music file when it is set and exists, else null.</summary>
     public string? ExistingMusic() => Music is { Length: > 0 } m && File.Exists(m) ? m : null;
 
-    public MenuDesign Clone() => (MenuDesign)MemberwiseClone();
+    /// <summary>A copy safe to edit: the free elements are copied too (a shared list would be changed behind the caller's back).</summary>
+    public MenuDesign Clone()
+    {
+        var copy = (MenuDesign)MemberwiseClone();
+        copy.Elements = Elements.Select(e => e.Copy()).ToList();
+        return copy;
+    }
 
     /// <summary>Rows of the credits page (blank lines dropped; what does not fit on one page is cut).</summary>
     public List<string> CreditLines() =>

@@ -24,6 +24,46 @@ public static class IndexedPng
                     if (x < x0 + thickness || x > x1 - thickness || y < y0 + thickness || y > y1 - thickness)
                         Pixels[y * Width + x] = index;
         }
+
+        /// <summary>
+        /// Pastes a raster (BGRA, premultiplied, as WPF hands it over) at <paramref name="x0"/>,<paramref name="y0"/>, keeping only its shape:
+        /// a pixel that is at least half opaque takes <paramref name="index"/>, the others stay transparent. That is how a template's button
+        /// artwork becomes a DVD subpicture, which has four colours at most.
+        /// </summary>
+        public void Stamp(byte[] bgra, int w, int h, int x0, int y0, byte index)
+        {
+            for (var y = 0; y < h; y++)
+            {
+                var ty = y0 + y;
+                if (ty < 0 || ty >= Height) continue;
+                for (var x = 0; x < w; x++)
+                {
+                    var tx = x0 + x;
+                    if (tx < 0 || tx >= Width) continue;
+                    if (bgra[(y * w + x) * 4 + 3] >= 128) Pixels[ty * Width + tx] = index;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The one tint a subpicture can spend on a piece of artwork: the average of its visible pixels, un-premultiplied (WPF's Pbgra32 stores
+    /// colour multiplied by alpha, so the raw bytes of a half-transparent pixel are not its colour). White when nothing is visible.
+    /// </summary>
+    public static Rgba Average(byte[] bgra, int width, int height)
+    {
+        long r = 0, g = 0, b = 0, n = 0;
+        for (var i = 0; i < width * height; i++)
+        {
+            int a = bgra[i * 4 + 3];
+            if (a < 128) continue;
+            r += bgra[i * 4] * 255L / a;
+            g += bgra[i * 4 + 1] * 255L / a;
+            b += bgra[i * 4 + 2] * 255L / a;
+            n++;
+        }
+        if (n == 0) return new Rgba(255, 255, 255, 255);
+        return new Rgba((byte)Math.Min(255, r / n), (byte)Math.Min(255, g / n), (byte)Math.Min(255, b / n), 255);
     }
 
     public static byte[] Encode(Canvas c, Rgba[] palette)

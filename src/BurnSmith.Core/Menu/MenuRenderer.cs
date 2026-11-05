@@ -103,6 +103,29 @@ public static class MenuRenderer
     public static byte[] Marker(MenuDesign d, int size, double scale = 1) =>
         Encode(new PngBitmapEncoder(), size, size, dc => dc.DrawEllipse(new SolidColorBrush(Col(d.Accent)), null, new Point(size / 2.0, size / 2.0), size / 2.0, size / 2.0), scale);
 
+    /// <summary>
+    /// A template's button artwork as raw pixels at the size a DVD subpicture needs (BGRA, premultiplied — WPF's own order), cut by its mask
+    /// when it has one. Runs on an STA thread: callers wrap it in <see cref="Sta{T}"/>.
+    /// </summary>
+    public static (byte[] Px, int W, int H) Raster(string image, string? mask, int w, int h)
+    {
+        w = Math.Max(1, w);
+        h = Math.Max(1, h);
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            var rect = new Rect(0, 0, w, h);
+            if (mask != null) dc.PushOpacityMask(new ImageBrush(Load(mask)) { Stretch = Stretch.Fill });
+            dc.DrawImage(Load(image), rect);
+            if (mask != null) dc.Pop();
+        }
+        var bmp = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+        bmp.Render(visual);
+        var px = new byte[w * h * 4];
+        bmp.CopyPixels(px, w * 4, 0);
+        return (px, w, h);
+    }
+
     static void DrawPage(DrawingContext dc, MenuDesign d, MenuPage page, bool overlay = false)
     {
         var full = new Rect(0, 0, MenuBuilder.W, MenuBuilder.H);
@@ -144,6 +167,9 @@ public static class MenuRenderer
                     break;
                 case Fill f:
                     dc.DrawRoundedRectangle(new SolidColorBrush(Col(f.Color, f.Opacity)), null, R(f.Rect), f.Radius, f.Radius);
+                    break;
+                case Border b:
+                    dc.DrawRoundedRectangle(null, new Pen(new SolidColorBrush(Col(b.Color)), b.Width) { LineJoin = PenLineJoin.Round }, R(b.Rect), Math.Max(0, b.Radius), Math.Max(0, b.Radius));
                     break;
                 case Picture p:
                     var rect = R(p.Rect);

@@ -269,3 +269,28 @@ Ordre conseillé : 0 en parallèle de 1 ; 2 avant 3 (le modèle de données doit
 - Estimations de taille des phases volontairement absentes : aucune mesure n'a été faite.
 - La phase 0 est la seule qui lève le risque principal, et elle exige un lecteur de salon et un disque inscriptible.
 - Les phases 1 à 3 touchent les fichiers que l'autre session modifie en ce moment (`MenuDesign`, `BluRay.cs`, `Dvd.cs`, `MenuFiles.cs`, l'application WPF). Rien n'a été implémenté ici ; décider où et quand les lancer évite les conflits.
+
+## 8. Phase 2, première brique : les éléments libres du menu (2026-11-05)
+
+Fait dans BurnSmith (phase 2 de la feuille de route, point « placement libre ») :
+
+- `MenuElement` (texte / image / cadre) : rectangle en pixels du canevas 1920x1080, page visée (`all`, `root`, `scenes`, `bonus`, `settings`, `credits`), police, taille, couleurs, contour, bordure, opacité, rayon, alignement, proportions ; `Behind` met l'élément **sous** les boutons (panneau, cadre) au lieu de dessus.
+- `MenuBuilder.WithElements` les ajoute à chaque page au moment de la construction ; un élément `Behind` est inséré juste après l'artwork du modèle (le premier `Image { Backdrop: true }`), donc au-dessus du fond et sous les boutons. Les pages fabriquées hors de `Build` (les pages de réglages par choix du DVD) passent par la même fonction, sinon les éléments y manqueraient.
+- Comme le rendu est le même pour tous les lecteurs, les éléments sont **fondus dans l'image de page** : ils apparaissent sur un DVD (dvdauthor/spumux) et sur un Blu-ray (menu BD-J) sans code côté lecteur. C'est le choix qui évite de toucher le xlet Java et les flux IG pour cette brique.
+- Éditeur : ajout (+ Texte / + Image / + Cadre), liste des éléments, curseurs position / taille / épaisseur de bordure / opacité, couleur, remplissage, bordure, alignement, gras / italique, case « Derrière les boutons », suppression, déplacement à la souris sur l'aperçu (le contour se déplace, l'aperçu se refait au relâchement).
+- Ligne de commande : `--element "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;align=center"`, clés `kind, page, rect, text, file, font, size, color, align, bold, italic, outline, outlinew, fill, opacity, radius, border, borderw, fit, behind`.
+- Épreuves faites : `BurnSmith.Cli check-elements` (11 vérifications, `all ok`) ; rendu d'un modèle DVDFab (`Birthday1`) avec un texte sur la racine et un texte sur les seules pages de scènes (vérifié à l'image) ; **DVD réellement construit** (`dvdauthor` + `spumux`) dont le VOB de menu montre le texte et le panneau, le panneau restant derrière le bouton Lecture ; `check-templates` toujours à 144 sans problème.
+
+Ce qui reste de la phase 2 : style par bouton, boutons interactifs supplémentaires (« ajouter un bouton » et non seulement des éléments décoratifs), page Bonus paramétrable (nombre d'éléments, mode d'affichage), scènes par fichier / par texte, sons de boutons. La note de décompilation de la même date est dans `ANALYSE-REA.md`.
+## 9. Surbrillances DVD prises aux modèles (2026-11-05)
+
+Suite du §1 : la lecture de `FUN_180015840` a donné la structure, et le modèle DVDFab DVD donne les images. Ce qui a été fait :
+
+- `MenuButton` porte `DvdHighlightImage` / `DvdHighlightMask` ; `InstalledTemplate` les remplit depuis l'image de survol déjà connue (`Selected()` : `frame/0.dvd.normal.png` → `frame/0.dvd.sub.png`) et son jumeau `.mask.`, aux six endroits où un bouton reçoit un artwork. Un bouton-texte à marqueur en étoile n'a pas de `.sub.` : il garde le cadre plat.
+- `MenuRenderer.Raster` rend l'artwork à la taille exacte du bouton, masque appliqué, en pixels BGRA (WPF, prémultipliés) ; appelé dans le `MenuRenderer.Sta` de `Dvd.cs`, puisque la boucle de construction n'est pas sur un thread STA.
+- `IndexedPng.Canvas.Stamp` colle ce raster sur le canevas de page en un seul index opaque (alpha ≥ 128), et `IndexedPng.Average` déprémultiplie pour trouver la teinte moyenne de l'artwork — la seule couleur qu'une surbrillance DVD peut consacrer à une image.
+- `Dvd.cs` : par bouton, artwork tamponné s'il existe, sinon le cadre à quatre couleurs d'avant (même palette : transparent, teinte, blanc, transparent). Le script spumux est inchangé (`<spu highlight select force>` + `<button>`), conforme à ce que Yuhan écrit.
+
+**Épreuves** : `BurnSmith.Cli check-highlights` (7 vérifications, `all ok`) vérifie que le modèle nomme bien ses images, que le raster a la taille du bouton (120 × 80 demandés), que la page ne reçoit que la forme du modèle (107 pixels opaques, ni plus ni moins), que le PNG produit est indexé 2 bits à quatre couleurs avec `tRNS`, et qu'un design sans modèle n'a aucune image de survol. Un DVD construit avec `DVDFab DVD | 01movie` (`dvdauthor` + `spumux`) produit un VOB de menu dont `ffprobe` annonce la piste `dvd_subtitle` (index 3) : la surbrillance est bien dans le disque, pas seulement dans un fichier intermédiaire. `check-templates` reste à 144 sans problème.
+
+**Limite à connaître** : la surbrillance ne peut pas être plus fidèle qu'**une teinte opaque + transparence par bouton**. Une page qui mélange un bouton avec artwork et des pastilles BurnSmith dessine les unes à plat et l'autre en silhouette teintée, avec une seule palette pour la page — c'est une contrainte du format DVD (quatre couleurs), pas un choix. Le rendu exact de DVDFab (souvent deux teintes) demanderait une page homogène.

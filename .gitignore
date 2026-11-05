@@ -16,3 +16,6 @@ tools/*
 vlc-help.txt
 *_work/
 BurnSmith-data/
+
+# decompilation bench: copies of vendor binaries, test films and rendered pages (never redistributed)
+analysis/

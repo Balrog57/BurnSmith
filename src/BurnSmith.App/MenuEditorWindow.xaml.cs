@@ -58,6 +58,7 @@ public partial class MenuEditorWindow : Window
         LoadCatalog();
         CustomList.ItemsSource = Templates.List();
         Props.DataContext = working;
+        InitElements();
 
         timer.Tick += (_, _) => { timer.Stop(); _ = Render(); };
         Props.AddHandler(TextBoxBase.TextChangedEvent, new TextChangedEventHandler((_, _) => Dirty()));
@@ -77,6 +78,8 @@ public partial class MenuEditorWindow : Window
         Look.IsEnabled = working.TemplateDir == null;
         LookNote.Visibility = Detach.Visibility = working.TemplateDir == null ? Visibility.Collapsed : Visibility.Visible;
         SelectBackground();
+        RefreshElemList();
+        ShowElem();
         Dirty();
     }
 
@@ -162,7 +165,7 @@ public partial class MenuEditorWindow : Window
             {
                 var built = MenuBuilder.Build(d, content);
                 var settings = built.FindIndex(p => p.Id == "settings");
-                if (settings >= 0) built[settings] = MenuBuilder.Settings(d, content, audio, sub);
+                if (settings >= 0) built[settings] = MenuBuilder.WithElements(d, MenuBuilder.Settings(d, content, audio, sub));
                 var shown = built.FirstOrDefault(p => p.Id == wanted) ?? built[0];
                 return (built, shown, DrawPage(d, shown));
             }));
@@ -238,6 +241,7 @@ public partial class MenuEditorWindow : Window
             hit.MouseLeftButtonUp += (_, _) => { Select(id); Activate(b); };
             StageCanvas.Children.Add(hit);
         }
+        DrawElements();
     }
 
     void Select(string? id)
@@ -293,7 +297,7 @@ public partial class MenuEditorWindow : Window
                 var at = s.Pages.FindIndex(p => p.Id == current?.Id);
                 if (at < 0) return;
                 var (audio, sub, design) = (audioSel, subSel, s.Design);
-                var page = await Task.Run(() => MenuRenderer.Sta(() => MenuBuilder.Settings(design, content, audio, sub, current!.Id)));
+                var page = await Task.Run(() => MenuRenderer.Sta(() => MenuBuilder.WithElements(design, MenuBuilder.Settings(design, content, audio, sub, current!.Id))));
                 if (shot != s) return;
                 s.Pages[at] = page;
                 s.Cache.Remove(page.Id);
@@ -303,6 +307,215 @@ public partial class MenuEditorWindow : Window
     }
 
     void OnStageMouse(object s, System.Windows.Input.MouseButtonEventArgs e) => Stage.Focus();
+
+    // ---------------------------------------------------------------- free elements (DVDStyler-style placement)
+    MenuElement? sel;
+    bool elemSync;
+
+    static readonly (string Value, string Label)[] PageChoices =
+    [
+        ("all", "Toutes les pages"), ("root", "Menu principal"), ("scenes", "Scènes"), ("bonus", "Bonus"), ("settings", "Réglages"), ("credits", "Crédits"),
+    ];
+
+    void InitElements()
+    {
+        ElemPage.ItemsSource = PageChoices;
+        ElemPage.SelectedValuePath = "Value";
+        ElemPage.DisplayMemberPath = "Label";
+        ElemAlign.ItemsSource = new[] { "left", "center", "right" };
+        RefreshElemList();
+        ShowElem();
+    }
+
+    static string Describe(MenuElement e) => e.Kind switch
+    {
+        "image" => $"Image · {e.Page} · {Path.GetFileName(e.Image ?? "")}",
+        "box" => $"Cadre · {e.Page} · {e.W}×{e.H}",
+        _ => $"Texte · {e.Page} · {(e.Text.Length > 24 ? e.Text[..24] + "…" : e.Text)}",
+    };
+
+    void RefreshElemList()
+    {
+        elemSync = true;
+        ElemList.ItemsSource = working.Elements.Select(Describe).ToList();
+        ElemList.SelectedIndex = sel == null ? -1 : working.Elements.IndexOf(sel);
+        elemSync = false;
+    }
+
+    /// <summary>Puts the selected element's values into the panel; the handlers stay quiet while it runs.</summary>
+    void ShowElem()
+    {
+        elemSync = true;
+        var on = sel != null;
+        foreach (var c in new FrameworkElement[] { ElemPage, ElemText, ElemImage, ElemX, ElemY, ElemW, ElemH, ElemSize, ElemColor, ElemFill, ElemBorder, ElemBorderW, ElemOpacity, ElemAlign, ElemBold, ElemItalic, ElemBehind })
+            c.IsEnabled = on;
+        if (sel is { } e)
+        {
+            ElemPage.SelectedValue = e.Page;
+            ElemText.Text = e.Text;
+            ElemImage.Text = e.Image ?? "";
+            ElemX.Value = e.X;
+            ElemY.Value = e.Y;
+            ElemW.Value = Math.Clamp(e.W, 40, 1920);
+            ElemH.Value = Math.Clamp(e.H, 20, 1080);
+            ElemSize.Value = Math.Clamp(e.Size, 12, 160);
+            ElemColor.Text = e.Color;
+            ElemFill.Text = e.Fill;
+            ElemBorder.Text = e.Border;
+            ElemBorderW.Value = Math.Clamp(e.BorderWidth, 0, 16);
+            ElemOpacity.Value = Math.Clamp(e.Opacity, 0, 100);
+            ElemAlign.SelectedItem = e.Align;
+            ElemBold.IsChecked = e.Bold;
+            ElemItalic.IsChecked = e.Italic;
+            ElemBehind.IsChecked = e.Behind;
+            ElemText.IsEnabled = e.Kind != "image";
+        }
+        elemSync = false;
+    }
+
+    /// <summary>Takes the panel's values into the selected element and asks for a new preview.</summary>
+    void SyncElem()
+    {
+        if (elemSync || sel is not { } e) return;
+        e.Page = ElemPage.SelectedValue as string ?? MenuElement.AllPages;
+        e.Text = ElemText.Text;
+        e.Image = string.IsNullOrWhiteSpace(ElemImage.Text) ? null : ElemImage.Text.Trim();
+        e.X = (int)ElemX.Value;
+        e.Y = (int)ElemY.Value;
+        e.W = (int)ElemW.Value;
+        e.H = (int)ElemH.Value;
+        e.Size = (int)ElemSize.Value;
+        e.Color = ElemColor.Text;
+        e.Fill = ElemFill.Text;
+        e.Border = ElemBorder.Text;
+        e.BorderWidth = (int)ElemBorderW.Value;
+        e.Opacity = (int)ElemOpacity.Value;
+        e.Align = ElemAlign.SelectedItem as string ?? "left";
+        e.Bold = ElemBold.IsChecked == true;
+        e.Italic = ElemItalic.IsChecked == true;
+        e.Behind = ElemBehind.IsChecked == true;
+        var at = working.Elements.IndexOf(e);
+        if (at >= 0)
+        {
+            elemSync = true;
+            ElemList.Items[at] = Describe(e);
+            elemSync = false;
+        }
+        Dirty();
+    }
+
+    void SelectElem(MenuElement? e)
+    {
+        sel = e;
+        elemSync = true;
+        ElemList.SelectedIndex = e == null ? -1 : working.Elements.IndexOf(e);
+        elemSync = false;
+        ShowElem();
+        DrawStage();
+    }
+
+    void AddElem(MenuElement e)
+    {
+        working.Elements.Add(e);
+        sel = e;
+        RefreshElemList();
+        ShowElem();
+        Dirty();
+    }
+
+    void OnAddText(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "text", Page = current?.Id == "root" ? "root" : MenuElement.AllPages, Text = "Votre texte", X = 140, Y = 140, W = 700, H = 90, Size = 48 });
+
+    void OnAddBox(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "box", Page = current?.Id == "root" ? "root" : MenuElement.AllPages, X = 120, Y = 780, W = 1680, H = 200, Opacity = 45, Radius = 24, BorderWidth = 0, Behind = true });
+
+    void OnAddImage(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "image", Page = MenuElement.AllPages, X = 1500, Y = 60, W = 300, H = 300, Fit = true, BorderWidth = 0 });
+
+    void OnElemPick(object s, SelectionChangedEventArgs e)
+    {
+        if (elemSync) return;
+        var at = ElemList.SelectedIndex;
+        SelectElem(at >= 0 && at < working.Elements.Count ? working.Elements[at] : null);
+    }
+
+    void OnElemText(object s, TextChangedEventArgs e) => SyncElem();
+    void OnElemSlide(object s, RoutedPropertyChangedEventArgs<double> e) => SyncElem();
+    void OnElemPickEvent(object s, SelectionChangedEventArgs e) => SyncElem();
+    void OnElemToggle(object s, RoutedEventArgs e) => SyncElem();
+
+    void OnElemImage(object s, RoutedEventArgs e)
+    {
+        if (sel is not { } el) return;
+        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*", Title = "Image de l'élément" };
+        if (dlg.ShowDialog(this) != true) return;
+        try
+        {
+            el.Image = ElementLibrary.Import(dlg.FileName).Path;
+            ShowElem();
+            Dirty();
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, ex.Message, "BurnSmith");
+        }
+    }
+
+    void OnElemDelete(object s, RoutedEventArgs e)
+    {
+        if (sel is not { } el) return;
+        working.Elements.Remove(el);
+        SelectElem(null);
+        RefreshElemList();
+        Dirty();
+    }
+
+    /// <summary>The element outlines on the page on show: click one to edit it, drag it to move it (the preview follows when the mouse is let go).</summary>
+    void DrawElements()
+    {
+        if (current == null) return;
+        var accent = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(working.Accent));
+        foreach (var el in working.Elements.Where(x => x.AppliesTo(current.Id)).ToList())
+        {
+            var box = el.Box();
+            var outline = new System.Windows.Shapes.Rectangle
+            {
+                Width = box.W, Height = box.H, Fill = System.Windows.Media.Brushes.Transparent,
+                Stroke = accent, StrokeThickness = el == sel ? 5 : 2, StrokeDashArray = [6, 4], Cursor = System.Windows.Input.Cursors.SizeAll,
+            };
+            System.Windows.Controls.Canvas.SetLeft(outline, box.X);
+            System.Windows.Controls.Canvas.SetTop(outline, box.Y);
+            System.Windows.Point? from = null;
+            System.Windows.Point origin = default;
+            var element = el;
+            outline.MouseLeftButtonDown += (_, me) =>
+            {
+                SelectElem(element);
+                from = me.GetPosition(StageCanvas);
+                origin = new System.Windows.Point(element.X, element.Y);
+                outline.CaptureMouse();
+                me.Handled = true;
+            };
+            outline.MouseMove += (_, me) =>
+            {
+                if (from is not { } start) return;
+                var at = me.GetPosition(StageCanvas);
+                element.X = (int)Math.Clamp(origin.X + at.X - start.X, 0, MenuBuilder.W - 8);
+                element.Y = (int)Math.Clamp(origin.Y + at.Y - start.Y, 0, MenuBuilder.H - 8);
+                System.Windows.Controls.Canvas.SetLeft(outline, element.X);
+                System.Windows.Controls.Canvas.SetTop(outline, element.Y);
+                elemSync = true;
+                ElemX.Value = Math.Clamp(element.X, 0, 1800);
+                ElemY.Value = Math.Clamp(element.Y, 0, 980);
+                elemSync = false;
+            };
+            outline.MouseLeftButtonUp += (_, _) =>
+            {
+                if (from == null) return;
+                from = null;
+                outline.ReleaseMouseCapture();
+                Dirty();
+            };
+            StageCanvas.Children.Add(outline);
+        }
+    }
 
     void OnStageKey(object s, System.Windows.Input.KeyEventArgs e)
     {
