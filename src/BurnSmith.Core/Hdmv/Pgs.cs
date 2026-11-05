@@ -57,21 +57,25 @@ public static class Pgs
     /// <summary>Inverse of <see cref="Rle"/>; throws when the data does not decode to w x h pixels.</summary>
     public static byte[] Unrle(ReadOnlySpan<byte> data, int w, int h)
     {
-        var o = new List<byte>(w * h);
+        var pixels = (long)w * h; // both sizes come from the file: a damaged one must not overflow or reserve gigabytes
+        var o = new List<byte>((int)Math.Min(pixels, data.Length));
         int i = 0, row = 0;
         while (i < data.Length && row < h)
         {
             var b = data[i++];
             if (b != 0) { o.Add(b); continue; }
+            if (i >= data.Length) throw new InvalidDataException("RLE data cut short");
             var f = data[i++];
             if (f == 0) { row++; continue; }
+            if (i + ((f & 0x40) != 0 ? 1 : 0) + ((f & 0x80) != 0 ? 1 : 0) > data.Length) throw new InvalidDataException("RLE data cut short");
             var n = f & 0x3F;
             if ((f & 0x40) != 0) n = n << 8 | data[i++];
             byte c = 0;
             if ((f & 0x80) != 0) c = data[i++];
+            if (o.Count + n > pixels) throw new InvalidDataException($"RLE gives more than the {pixels} pixels expected");
             for (var k = 0; k < n; k++) o.Add(c);
         }
-        if (o.Count != w * h) throw new InvalidDataException($"RLE gives {o.Count} pixels, expected {w * h}");
+        if (o.Count != pixels) throw new InvalidDataException($"RLE gives {o.Count} pixels, expected {pixels}");
         return [.. o];
     }
 
