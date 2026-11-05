@@ -485,6 +485,8 @@ if (a.Count >= 1 && a[0] == "check-update")
         Environment.SetEnvironmentVariable("BURNSMITH_TOOLS", null);
         var beside = Path.Combine(AppContext.BaseDirectory, "tools");
         Up("a development build looks in the tools folder of the parents", Tools.SearchRoots().Any(r => r != beside));
+        var devJar = Assets.Find(@"bdj\menu.jar");
+        Up("a development build takes the jar of a parent's assets folder", AppContext.BaseDirectory.StartsWith(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(devJar)!, "..", "..")), StringComparison.OrdinalIgnoreCase));
         Environment.SetEnvironmentVariable("BURNSMITH_TOOLS", Path.Combine(work, "does-not-exist"));
         Up("a BURNSMITH_TOOLS that does not exist is passed over", !Tools.SearchRoots().Any(r => r.StartsWith(work)));
         Up("the cache can be used from several threads", typeof(Tools).GetField("cache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)?.FieldType.Name.StartsWith("Concurrent") == true);
@@ -492,7 +494,7 @@ if (a.Count >= 1 && a[0] == "check-update")
         var tools = Path.GetDirectoryName(locked)!;
         var onPath = Path.Combine(work, "on-path");
         Directory.CreateDirectory(onPath);
-        foreach (var name in new[] { "in-both.exe", "only-path.exe" }) File.WriteAllText(Path.Combine(onPath, name), "");
+        foreach (var name in new[] { "in-both.exe", "only-path.exe", "spaced.exe" }) File.WriteAllText(Path.Combine(onPath, name), "");
         File.WriteAllText(Path.Combine(tools, "in-env.exe"), "");
         Environment.SetEnvironmentVariable("PATH", onPath);
         Environment.SetEnvironmentVariable("BURNSMITH_TOOLS", tools);
@@ -512,6 +514,27 @@ if (a.Count >= 1 && a[0] == "check-update")
         Up("BURNSMITH_TOOLS comes before the bundled copy", Found("in-env.exe")?.StartsWith(tools) == true);
         Up("the bundled copy comes before PATH", Found("in-both.exe")?.StartsWith(Tools.BundledDir()!) == true);
         Up("PATH comes last", Found("only-path.exe")?.StartsWith(onPath) == true);
+        Environment.SetEnvironmentVariable("TMP", work); // the embedded jar is written under %TEMP%: not over a real one
+        var jar = Assets.Find(@"bdj\menu.jar");
+        Environment.SetEnvironmentVariable("TMP", realTmp);
+        Up("a release takes the embedded jar, not the one of a parent's assets folder", jar.StartsWith(work, StringComparison.OrdinalIgnoreCase));
+        using (var opened = System.IO.Compression.ZipFile.OpenRead(jar))
+            Up("the jar can be used", opened.Entries.Any(e => e.Name.EndsWith(".class")));
+
+        var cwd = Path.Combine(work, "cwd");
+        Directory.CreateDirectory(cwd);
+        File.WriteAllText(Path.Combine(cwd, "in-cwd.exe"), "");
+        Environment.SetEnvironmentVariable("PATH", $";  ; {onPath} ;");
+        var home = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(cwd);
+        try
+        {
+            string? fromCwd = null;
+            try { fromCwd = Tools.Find("in-cwd.exe"); } catch (FileNotFoundException) { }
+            Up("an empty PATH entry is not the current folder", fromCwd == null);
+        }
+        finally { Directory.SetCurrentDirectory(home); }
+        Up("spaces around a PATH entry do not matter", Found("spaced.exe")?.StartsWith(onPath) == true);
         var absent = "";
         try { Tools.Find("not-anywhere.exe"); } catch (Exception e) { absent = e.Message; }
         Up("a missing tool says how to provide it", absent.Contains("BURNSMITH_TOOLS") && absent.Contains("PATH"));

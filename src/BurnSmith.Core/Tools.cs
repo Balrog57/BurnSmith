@@ -57,7 +57,7 @@ public static class Tools
         }
         if (BundledDir() is { } bundled && Directory.EnumerateFiles(bundled, exe, Everywhere).FirstOrDefault() is { } inside)
             return cache[exe] = inside;
-        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) // an empty entry would mean the current folder
         {
             var p = Path.Combine(dir, exe);
             if (File.Exists(p)) return cache[exe] = p;

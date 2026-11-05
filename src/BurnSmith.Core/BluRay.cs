@@ -614,12 +614,12 @@ public static class BluRay
     }
 }
 
-/// <summary>Finds files shipped in the assets folder (next to the app or any parent), else the copy embedded in the assembly (portable exe).</summary>
+/// <summary>Finds files shipped in the assets folder next to the app (in a development build, or any parent: what goes on a disc must not come from a folder a normal user can create, such as C:\assets), else the copy embedded in the assembly.</summary>
 public static class Assets
 {
     public static string Find(string relative)
     {
-        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
+        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = Tools.BundledDir() == null ? d.Parent : null)
         {
             var p = Path.Combine(d.FullName, "assets", relative);
             if (File.Exists(p)) return p;
