@@ -89,6 +89,9 @@ public partial class MainWindow : Window
     MenuDesign design = new();
     readonly Task defaultDesign;
 
+    /// <summary>For the off-screen snapshot: what it shows must start from the default template.</summary>
+    public Task DefaultDesignLoaded => defaultDesign;
+
     /// <summary>A disc or a video is being made: nothing may shut the app down now.</summary>
     public bool Working => busy || making > 0;
 

@@ -36,6 +36,7 @@ public partial class App : Application
         if (!snapshot && BurnSmith.Core.Updater.IsInstalled()) _ = CheckForUpdate(main); // while the videos load; never in a portable or development copy
         foreach (var video in videos) await main.LoadSource(video);
         if (!snapshot) return;
+        await main.DefaultDesignLoaded;
         if (e.Args.FirstOrDefault(a => a.StartsWith("design=")) is { } design && TemplateCatalog.Find(design[7..]) is { } start) main.UseDesign(start);
 
         Window window = main;
