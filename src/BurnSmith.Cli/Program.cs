@@ -392,7 +392,7 @@ if (a.Count >= 1 && a[0] == "check-elements")
     return elFailed == 0 ? 0 : 1;
 }
 
-// burnsmith check-update [--live] : which release tags count as newer (a same version never does); --live also asks GitHub for the newest release
+// burnsmith check-update [--live] : which release tags count as newer (a same version never does), the refusals that protect a release, where tools are looked for; --live also asks GitHub for the newest release, which must carry a digest
 if (a.Count >= 1 && a[0] == "check-update")
 {
     var upFailed = 0;
@@ -403,8 +403,128 @@ if (a.Count >= 1 && a[0] == "check-update")
     Up("a tag that is no version is ignored", !Updater.IsNewer("nightly", new Version(0, 1, 0)));
     Up("a dev build is not installed", !Updater.IsInstalled());
     if (a.Contains("--live"))
-        Console.WriteLine(await Updater.LatestAsync(new Version(0, 0, 0)) is { } r ? $"newest release: {r.Version} {r.Url} sha256={r.Sha256 ?? "(none given)"}" : "no release with a BurnSmith-Setup asset yet");
+    {
+        var r = await Updater.LatestAsync(new Version(0, 0, 0));
+        Console.WriteLine(r != null ? $"newest release: {r.Version} {r.Url} sha256={r.Sha256 ?? "(none given)"}" : "no release with a BurnSmith-Setup asset yet");
+        Up("the newest release carries a digest, so it will not be refused", r?.Sha256 != null);
+    }
+
+    var work = Path.Combine(Path.GetTempPath(), $"burnsmith-check-update-{Environment.ProcessId}");
+    var realTmp = Environment.GetEnvironmentVariable("TMP");
+    var icacls = Path.Combine(Environment.SystemDirectory, "icacls.exe");
+    var locked = Path.Combine(work, "tools", "locked");
+    Directory.CreateDirectory(locked);
+    try
+    {
+        // the update: a server on this PC, and %TEMP% moved here so that a real download is not touched
+        Environment.SetEnvironmentVariable("TMP", work);
+        var updates = Path.Combine(work, "BurnSmith-update");
+        Up("the update folder of this check is its own", Path.GetTempPath().TrimEnd('\\').Equals(work, StringComparison.OrdinalIgnoreCase));
+        var port = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        port.Start();
+        var url = $"http://localhost:{((System.Net.IPEndPoint)port.LocalEndpoint).Port}/";
+        port.Stop();
+        using var server = new System.Net.HttpListener();
+        server.Prefixes.Add(url);
+        server.Start();
+        var body = System.Text.Encoding.UTF8.GetBytes("not an installer");
+        var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(body));
+        var requests = 0;
+        _ = Task.Run(async () =>
+        {
+            while (server.IsListening)
+            {
+                var call = await server.GetContextAsync();
+                Interlocked.Increment(ref requests);
+                await call.Response.OutputStream.WriteAsync(body);
+                call.Response.Close();
+            }
+        });
+        var v = new Version(9, 9, 9, 9);
+        async Task<Exception?> Download(string? sha) { try { await Updater.DownloadAsync(new Updater.Release(v, url, sha)); return null; } catch (Exception e) { return e; } }
+        Directory.CreateDirectory(updates);
+        var older = Path.Combine(updates, "BurnSmith-Setup-0.0.1.exe");
+        File.WriteAllText(older, "old");
+        Up("no digest: refused", await Download(null) is IOException);
+        Up("no digest: nothing asked of the server, nothing written, nothing removed", requests == 0 && Directory.GetFiles(updates).SequenceEqual([older]));
+        var lockedOlder = Path.Combine(updates, "BurnSmith-Setup-0.0.2.exe");
+        var sameVersion = Path.Combine(updates, $"BurnSmith-Setup-{v}.exe");
+        File.WriteAllText(lockedOlder, "old");
+        File.WriteAllText(sameVersion, "old");
+        using (File.Open(lockedOlder, FileMode.Open, FileAccess.Read, FileShare.None))
+        using (File.Open(sameVersion, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var failure = await Download(digest);
+            Up("right digest: downloaded, locked older installers did not stop it", failure == null);
+            if (failure != null) Console.WriteLine(failure.Message);
+            Up("an older installer is removed when a download starts", !File.Exists(older));
+            Up("a locked one is left alone", File.Exists(lockedOlder) && File.Exists(sameVersion));
+        }
+        Up("the download is what the server sent", Directory.GetFiles(updates, $"BurnSmith-Setup-{v}-*.exe").SingleOrDefault() is { } got && File.ReadAllBytes(got).SequenceEqual(body));
+        Up("wrong digest: refused, the download does not stay", await Download(new string('0', 64)) is IOException && Directory.GetFiles(updates, $"BurnSmith-Setup-{v}-*.exe").Length == 0);
+        server.Stop();
+        Environment.SetEnvironmentVariable("TMP", realTmp);
+
+        var noTemplates = Path.Combine(work, "none.zip");
+        Up("packing no template is an error", Throws(() => TemplateCatalog.Pack(noTemplates, roots: [work])));
+        File.Delete(noTemplates);
+
+        // publish.ps1: a wrong ffmpeg must stop it first of all. No tsMuxeR is given: if the pin went away the script stops there, nothing is built
+        var script = "publish.ps1";
+        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
+            if (File.Exists(Path.Combine(d.FullName, script))) { script = Path.Combine(d.FullName, script); break; }
+        var fake = Path.Combine(work, "fake-ffmpeg");
+        Directory.CreateDirectory(fake);
+        foreach (var tool in new[] { "ffmpeg.exe", "ffprobe.exe" }) File.WriteAllText(Path.Combine(fake, tool), "");
+        var refused = "";
+        try { Tools.Run("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-FfmpegDir", fake, "-TsMuxer", Path.Combine(fake, "none.exe")], env: new Dictionary<string, string> { ["PSModulePath"] = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\Modules") }); } // not the modules of a PowerShell 7 this was started from
+        catch (InvalidOperationException e) { refused = e.Message.Replace("\r", "").Replace("\n", ""); }
+        Up("publish.ps1 refuses an ffmpeg that is not the pinned one", refused.Contains("pinned"));
+
+        // where tools are looked for. Development first: Payload null, as here, and every checkout has a tools folder (vlctest.ps1 is committed)
+        Environment.SetEnvironmentVariable("BURNSMITH_TOOLS", null);
+        var beside = Path.Combine(AppContext.BaseDirectory, "tools");
+        Up("a development build looks in the tools folder of the parents", Tools.SearchRoots().Any(r => r != beside));
+        Environment.SetEnvironmentVariable("BURNSMITH_TOOLS", Path.Combine(work, "does-not-exist"));
+        Up("a BURNSMITH_TOOLS that does not exist is passed over", !Tools.SearchRoots().Any(r => r.StartsWith(work)));
+        Up("the cache can be used from several threads", typeof(Tools).GetField("cache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)?.FieldType.Name.StartsWith("Concurrent") == true);
+
+        var tools = Path.GetDirectoryName(locked)!;
+        var onPath = Path.Combine(work, "on-path");
+        Directory.CreateDirectory(onPath);
+        foreach (var name in new[] { "in-both.exe", "only-path.exe" }) File.WriteAllText(Path.Combine(onPath, name), "");
+        File.WriteAllText(Path.Combine(tools, "in-env.exe"), "");
+        Environment.SetEnvironmentVariable("PATH", onPath);
+        Environment.SetEnvironmentVariable("BURNSMITH_TOOLS", tools);
+        if (!AppFiles.Root().StartsWith(AppContext.BaseDirectory, StringComparison.OrdinalIgnoreCase)) // through dotnet <dll> the fake tools below would replace those an installed copy unpacked
+        {
+            Up("where a release looks for tools: run BurnSmith.Cli.exe, not dotnet <dll>", false);
+            return 1;
+        }
+        var carried = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(carried, System.IO.Compression.ZipArchiveMode.Create, true))
+            foreach (var name in new[] { "in-env.exe", "in-both.exe", "only-bundled.exe" }) zip.CreateEntry(name);
+        Tools.Payload = () => new MemoryStream(carried.ToArray()); // from here on this process is a release, with these tools "carried"
+        Up("a release looks in BURNSMITH_TOOLS and no parent", Tools.SearchRoots().Where(r => r != beside).SequenceEqual([tools]));
+        Tools.Run(icacls, [locked, "/deny", "*S-1-1-0:(RD)"]);
+        string? Found(string exe) { try { return Tools.Find(exe); } catch (Exception e) { Console.WriteLine($"{exe}: {e.GetType().Name}: {e.Message}"); return null; } }
+        Up("a locked sub-folder does not stop the search", Found("only-bundled.exe")?.StartsWith(Tools.BundledDir()!) == true);
+        Up("BURNSMITH_TOOLS comes before the bundled copy", Found("in-env.exe")?.StartsWith(tools) == true);
+        Up("the bundled copy comes before PATH", Found("in-both.exe")?.StartsWith(Tools.BundledDir()!) == true);
+        Up("PATH comes last", Found("only-path.exe")?.StartsWith(onPath) == true);
+        var absent = "";
+        try { Tools.Find("not-anywhere.exe"); } catch (Exception e) { absent = e.Message; }
+        Up("a missing tool says how to provide it", absent.Contains("BURNSMITH_TOOLS") && absent.Contains("PATH"));
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("TMP", realTmp);
+        Tools.Run(icacls, [locked, "/remove:d", "*S-1-1-0"]);
+        Tools.TryDelete(work);
+    }
     return upFailed == 0 ? 0 : 1;
+
+    static bool Throws(Action act) { try { act(); return false; } catch (InvalidOperationException) { return true; } }
 }
 
 // burnsmith check-edit : the arithmetic of a cut (length, chapters shifted by the start, typed times) without any video
