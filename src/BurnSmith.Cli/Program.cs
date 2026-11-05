@@ -299,6 +299,11 @@ if (a.Count >= 1 && a[0] == "check-edit")
         Check("two videos with the same streams join into one of the sum of both; a different size or track list does not match",
               Frames(F("twice.mkv")) == 200 && Math.Abs(BluRay.Probe(F("twice.mkv")).Duration - 8) < 0.2 && MediaMaker.SameLayout(show, show)
               && !MediaMaker.SameLayout(show, show with { Width = 1280, Height = 720 }) && !MediaMaker.SameLayout(show, show with { Audio = [] }) && !MediaMaker.SameLayout(show, show with { Fps = 24 }));
+        // same size and codec but another H.264 profile and frame reordering: a stream copy keeps only the first file's parameter sets, so the second part could not decode on a player
+        foreach (var (name, settings) in new[] { ("x.mkv", new[] { "-profile:v", "main", "-bf", "0" }), ("y.mkv", new[] { "-profile:v", "high", "-bf", "3" }) })
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=s=640x360:d=1", "-pix_fmt", "yuv420p", "-c:v", "libx264", .. settings, F(name)]);
+        Check("two clips of one size and codec but another H.264 profile or reordering are not joined; the same clip is",
+              !MediaMaker.SameLayout(BluRay.Probe(F("x.mkv")), BluRay.Probe(F("y.mkv"))) && MediaMaker.SameLayout(BluRay.Probe(F("x.mkv")), BluRay.Probe(F("x.mkv"))));
     }
     catch (FileNotFoundException) { Console.WriteLine("skip slideshow and song videos (no ffmpeg)"); }
     finally { if (Directory.Exists(mediaDir)) Directory.Delete(mediaDir, true); }

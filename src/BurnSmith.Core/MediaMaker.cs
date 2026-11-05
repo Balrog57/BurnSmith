@@ -73,9 +73,9 @@ public static class MediaMaker
         return output;
     }
 
-    /// <summary>Whether two videos can be put end to end without re-encoding: same picture (codec, size, rate, HDR) and the same audio and subtitle streams in the same order.</summary>
+    /// <summary>Whether two videos can be put end to end without re-encoding: same picture (codec, profile and level, size, rate, HDR) and the same audio and subtitle streams in the same order.</summary>
     public static bool SameLayout(SourceInfo a, SourceInfo b) =>
-        a.VideoCodec == b.VideoCodec && a.Width == b.Width && a.Height == b.Height && Math.Abs(a.Fps - b.Fps) < 0.01 && a.Hdr == b.Hdr
+        a.VideoCodec == b.VideoCodec && a.Width == b.Width && a.Height == b.Height && Math.Abs(a.Fps - b.Fps) < 0.01 && a.Hdr == b.Hdr && a.Encoding == b.Encoding
         && a.Audio.Select(t => (t.Codec, t.Channels)).SequenceEqual(b.Audio.Select(t => (t.Codec, t.Channels)))
         && a.Subtitles.Select(t => t.Codec).SequenceEqual(b.Subtitles.Select(t => t.Codec));
 

@@ -55,7 +55,8 @@ public sealed record BdProfile(string Name, double Gb, double UsableGb, bool Hd7
 /// after <see cref="DiscTitle.Cut"/> the part kept, with the whole file's length in <see cref="FileDuration"/> (0 = not cut).
 /// </summary>
 public sealed record SourceInfo(string VideoCodec, int Width, int Height, double Fps, string AudioCodec, int AudioChannels, double Duration,
-                                IReadOnlyList<AudioTrack> Audio, IReadOnlyList<SubtitleTrack> Subtitles, string Hdr = "SDR", double FileDuration = 0);
+                                IReadOnlyList<AudioTrack> Audio, IReadOnlyList<SubtitleTrack> Subtitles, string Hdr = "SDR", double FileDuration = 0,
+                                string Encoding = ""); // Encoding: the video's profile / level / reorder depth / reference frames, which a stream-copy join must not mix
 
 public static class BluRay
 {
@@ -94,7 +95,8 @@ public static class BluRay
             v.GetProperty("codec_name").GetString()!, v.GetProperty("width").GetInt32(), v.GetProperty("height").GetInt32(),
             double.Parse(r[0], Inv) / double.Parse(r[1], Inv),
             audio.FirstOrDefault()?.Codec ?? "", audio.FirstOrDefault()?.Channels ?? 0,
-            double.Parse(duration.GetString()!, Inv), audio, subs, hdr);
+            double.Parse(duration.GetString()!, Inv), audio, subs, hdr,
+            Encoding: string.Join('/', new[] { "profile", "level", "has_b_frames", "refs" }.Select(n => v.TryGetProperty(n, out var p) ? p.ToString() : "")));
     }
 
     /// <summary>Chapter start times (seconds): one every <paramref name="minutes"/>, never a chapter shorter than 1 minute.</summary>
@@ -231,11 +233,11 @@ public static class BluRay
     static (int W, int H) VideoSize(BluRayJob job) => job.Uhd ? (3840, 2160) : job.Encode?.Hd720 == true ? (1280, 720) : (1920, 1080);
 
     /// <summary>Rough kb/s of what an audio track weighs on the disc (copied as it is, or re-encoded as AC-3 at 448 / 640).</summary>
-    static int AudioKbps(AudioTrack a, DiscTitle t) => t.Volume != 100 ? (a.Channels > 2 ? 640 : 448) // a volume change re-encodes the sound as AC-3
+    static int AudioKbps(AudioTrack a, DiscTitle t, bool uhd) => !CopiesAudio(a, t, uhd) ? (a.Channels > 2 ? 640 : 448) // re-encoded as AC-3 (volume change, later start)
         : a.Codec switch { "truehd" => 3500, "dts" => 1536, _ => a.Channels > 2 ? 640 : 448 };
 
     static double AudioAndMenuBytes(BluRayJob job, IReadOnlyList<SourceInfo> sources) =>
-        job.Titles.Select((t, i) => t.KeptAudio(sources[i]).Sum(a => AudioKbps(a, t) * 125.0 * sources[i].Duration)).Sum()
+        job.Titles.Select((t, i) => t.KeptAudio(sources[i]).Sum(a => AudioKbps(a, t, job.Uhd) * 125.0 * sources[i].Duration)).Sum()
         + 0.15e9 + (job.Menu is { } m ? Math.Clamp(m.LoopSeconds, 5, 120) * (m.Loop ? 2.6e6 : m.ExistingMusic() != null ? 0.1e6 : 0) : 0); // a moving clip, or a black one with music
 
     /// <summary>Size in GB the disc will take: the source files when they are kept, else video at the bit rate asked for or fitted, plus audio and menu.</summary>

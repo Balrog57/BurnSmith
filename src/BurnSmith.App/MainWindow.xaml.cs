@@ -202,10 +202,13 @@ public partial class MainWindow : Window
     void OnMenuToggle(object s, RoutedEventArgs e) => UpdateMenuState();
 
     /// <summary>Several videos can only be chosen from a menu, and a series menu lists episodes instead of chapters.</summary>
+    /// <summary>More than one video to choose from; the start video plays by itself and is not one of them.</summary>
+    static bool NeedsMenu(IEnumerable<DiscTitle> list) => list.Count(t => !t.Intro) > 1;
+
     void UpdateMenuState()
     {
         if (MenuButton == null) return;
-        var series = titles.Count > 1;
+        var series = NeedsMenu(titles.Select(t => t.ToDisc()));
         if (series) MenuCheck.IsChecked = true;
         MenuCheck.IsEnabled = !series;
         MenuButton.IsEnabled = MenuCheck.IsChecked == true;
@@ -232,7 +235,7 @@ public partial class MainWindow : Window
     /// <summary>Size in GB of the Blu-ray for an output and an encoding (the video at the fitted rate, plus audio and menu); null for a DVD, a 4K disc or no video.</summary>
     double? Estimate(Output output, EncodeOptions enc) =>
         kind != "bd" || titles.Count == 0 ? null
-        : BluRay.EstimateGB(new BluRayJob(titles.Select(t => t.ToDisc()).ToList(), "", MenuCheck.IsChecked == true || titles.Count > 1 ? design : null, false, "X", chapterMinutes, enc, output.Usable),
+        : BluRay.EstimateGB(new BluRayJob(titles.Select(t => t.ToDisc()).ToList(), "", MenuCheck.IsChecked == true || NeedsMenu(titles.Select(t => t.ToDisc())) ? design : null, false, "X", chapterMinutes, enc, output.Usable),
             titles.Select(t => t.OnDisc).ToList());
 
     // ---- videos ----
@@ -288,15 +291,23 @@ public partial class MainWindow : Window
         NaturalOrder(songs);
         try
         {
-            if (photos.Count > 0 && Prompt.Ask(this, photos.Count == 1 ? "Diaporama d'une photo : secondes" : $"Diaporama de {photos.Count} photos : secondes par photo", "5") is { } text
-                && double.TryParse(text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var each))
+            if (photos.Count > 0)
             {
-                var file = NextMade("Diaporama" + (madeNames.Values.Count(n => n.StartsWith("Diaporama")) is var k and > 0 ? $" {k + 1}" : ""));
-                var music = songs.ToList();
-                songs.Clear(); // the songs of a slideshow are its music, not titles
-                StatusText.Text = "Préparation du diaporama…";
-                await Task.Run(() => MediaMaker.Slideshow(photos, each, music, file, Say));
-                videos.Add(file);
+                var answer = Prompt.Ask(this, photos.Count == 1 ? "Diaporama d'une photo : secondes" : $"Diaporama de {photos.Count} photos : secondes par photo", "5");
+                if (answer != null && double.TryParse(answer.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var each) && each > 0)
+                {
+                    var file = NextMade("Diaporama" + (madeNames.Values.Count(n => n.StartsWith("Diaporama")) is var k and > 0 ? $" {k + 1}" : ""));
+                    var music = songs.ToList();
+                    songs.Clear(); // the songs of a slideshow are its music, not titles
+                    StatusText.Text = "Préparation du diaporama…";
+                    await Task.Run(() => MediaMaker.Slideshow(photos, each, music, file, Say));
+                    videos.Add(file);
+                }
+                else
+                {
+                    Warn("Diaporama annulé (durée par photo absente ou invalide) : les photos" + (songs.Count > 0 ? " et les morceaux déposés avec elles" : "") + " ne sont pas ajoutés.");
+                    songs.Clear(); // they were dropped as the music of that slideshow
+                }
             }
             foreach (var song in songs)
             {
@@ -510,7 +521,7 @@ public partial class MainWindow : Window
         var next = titles[i + 1];
         var why = entry.ToDisc().Trimmed || next.ToDisc().Trimmed ? "Retirez d'abord la coupe des deux vidéos."
             : entry.Bonus != next.Bonus || entry.Intro != next.Intro ? "Une vidéo du film, un bonus et la vidéo de début ne se fusionnent pas entre eux."
-            : !MediaMaker.SameLayout(entry.Info, next.Info) ? "Les deux vidéos n'ont pas les mêmes flux (codec, taille, cadence, pistes) : on ne peut pas les coller sans les réencoder."
+            : !MediaMaker.SameLayout(entry.Info, next.Info) ? "Les deux vidéos n'ont pas les mêmes flux (codec et profil, taille, cadence, pistes) : on ne peut pas les coller sans les réencoder."
             : null;
         if (why != null) { MessageBox.Show(this, why, "Fusionner", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         StatusText.Text = "Fusion des deux vidéos…";
@@ -544,6 +555,7 @@ public partial class MainWindow : Window
         entry.Intro = intro;
         if (intro) entry.Bonus = false;
         entry.Refresh();
+        UpdateMenuState(); // a film and its start video need no menu; two films do
         Update();
         RefreshThumb();
         _ = RefreshPreview();
@@ -835,7 +847,7 @@ public partial class MainWindow : Window
                 "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
 
         var discTitles = titles.Select(t => t.ToDisc()).ToList();
-        var menu = MenuCheck.IsChecked == true || discTitles.Count > 1 ? design.Clone() : null;
+        var menu = MenuCheck.IsChecked == true || NeedsMenu(discTitles) ? design.Clone() : null;
         var minutes = chapterMinutes;
         var uhd = kind == "uhd";
         var dvd = kind == "dvd";
