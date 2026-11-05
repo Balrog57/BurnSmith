@@ -122,17 +122,18 @@ public static class BluRay
         job = job with { Titles = DiscTitle.MainFirst(job.Titles) }; // playlists 1..mainCount are the feature, the bonus ones follow
         var mainCount = job.Titles.Count(t => !t.Bonus);
         var sources = job.Titles.Select(t => t.Cut(Probe(t.Video))).ToList(); // durations from here on are the parts kept
+        var introSource = intro?.Cut(Probe(intro.Video));
         var work = job.OutDir + "_work";
         Tools.PrepareOutput(job.OutDir);
         Tools.FreshFolder(work);
-        try { Author(job, intro, sources, mainCount, work, log); }
+        try { Author(job, intro, introSource, sources, mainCount, work, log); }
         finally { Tools.TryDelete(work); } // temporary videos of many GB: a failed build must not leave them behind
         log("done: " + job.OutDir);
     }
 
-    static void Author(BluRayJob job, DiscTitle? intro, List<SourceInfo> sources, int mainCount, string work, Action<string> log)
+    static void Author(BluRayJob job, DiscTitle? intro, SourceInfo? introSource, List<SourceInfo> sources, int mainCount, string work, Action<string> log)
     {
-        var kbps = TargetKbps(job, sources, log);
+        var kbps = intro == null ? TargetKbps(job, sources, log) : TargetKbps(job with { Titles = [.. job.Titles, intro] }, [.. sources, introSource!], log); // the intro takes room on the disc too
         var muxed = new List<Muxed>();
         for (var i = 0; i < job.Titles.Count; i++)
         {
@@ -146,7 +147,7 @@ public static class BluRay
         if (intro != null)
         {
             var introDest = Path.Combine(work, "mux" + IntroPlaylist);
-            MuxTitle(job, intro, intro.Cut(Probe(intro.Video)), IntroPlaylist, introDest, work, kbps, log);
+            MuxTitle(job, intro, introSource!, IntroPlaylist, introDest, work, kbps, log);
             Merge(introDest, job.OutDir);
         }
 
