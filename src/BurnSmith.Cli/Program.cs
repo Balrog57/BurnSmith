@@ -49,10 +49,10 @@ if (a.Count >= 2 && a[0] == "dump")
     return 0;
 }
 
-// burnsmith check-disc <disc folder | .iso> : the structure of a finished disc (files present, headers, whole packets, IFO sizes), without a player; 1 when something is wrong
+// burnsmith check-disc <disc folder | .iso [folder it was made from]> : the structure of a finished disc (files present, headers, whole packets, IFO sizes), without a player; 1 when something is wrong
 if (a.Count >= 2 && a[0] == "check-disc")
 {
-    var found = Directory.Exists(a[1]) ? DiscCheck.Folder(a[1]) : DiscCheck.Image(a[1]);
+    var found = Directory.Exists(a[1]) ? DiscCheck.Folder(a[1]) : DiscCheck.Image(a[1], a.Count > 2 ? a[2] : null);
     Console.WriteLine(found.Count == 0 ? "ok   disc structure" : string.Join(Environment.NewLine, found.Select(p => "FAIL " + p)));
     return found.Count == 0 ? 0 : 1;
 }
@@ -200,6 +200,44 @@ if (a.Count >= 1 && a[0] == "check-edit")
     Check("no chapters: only 0", Show(new DiscTitle("x", ChapterAt: []).ChapterList(600, 5)) == "0");
     Check("custom times are shifted by the start, 0 added, outside dropped", Show(new DiscTitle("x", Start: 100, End: 400, ChapterAt: [50, 100, 160, 250.4, 399.5, 500]).ChapterList(300, 5)) == "0,60,150");
     Check("one video's own interval replaces the disc's; a list wins over it", Show(new DiscTitle("x", ChapterMinutes: 2).ChapterList(600, 5)) == "0,120,240,360,480" && Show(new DiscTitle("x", ChapterAt: [30], ChapterMinutes: 2).ChapterList(600, 5)) == "0,30" && Show(new DiscTitle("x").ChapterList(600, 5)) == "0,300");
+    // the structure check on a disc built by hand: a tiny Blu-ray folder, then the same with something wrong
+    var discDir = Path.Combine(Path.GetTempPath(), "bs_disc_" + Guid.NewGuid().ToString("N")[..8]);
+    try
+    {
+        var bdmv = Path.Combine(discDir, "BDMV");
+        foreach (var sub in new[] { "BACKUP", "PLAYLIST", "CLIPINF", "STREAM" }) Directory.CreateDirectory(Path.Combine(bdmv, sub));
+        foreach (var (file, magic) in new[] { ("index.bdmv", "INDX0200"), ("MovieObject.bdmv", "MOBJ0200"), ("BACKUP/index.bdmv", "INDX0200"), ("BACKUP/MovieObject.bdmv", "MOBJ0200"), ("PLAYLIST/00001.mpls", "MPLS0200 00001M2TS"), ("CLIPINF/00001.clpi", "HDMV0200") })
+            File.WriteAllText(Path.Combine(bdmv, file), magic);
+        var packets = new byte[192 * 50];
+        for (var k = 0; k < 50; k++) packets[192 * k + 4] = 0x47;
+        var stream = Path.Combine(bdmv, "STREAM", "00001.m2ts");
+        File.WriteAllBytes(stream, packets);
+        var good = DiscCheck.Folder(discDir);
+        File.WriteAllBytes(stream, packets[..^1]);
+        var shortStream = DiscCheck.Folder(discDir);
+        File.WriteAllBytes(stream, packets);
+        packets[192 * 7 + 4] = 0;
+        File.WriteAllBytes(stream, packets);
+        var noSync = DiscCheck.Folder(discDir);
+        File.Delete(Path.Combine(bdmv, "CLIPINF", "00001.clpi"));
+        File.WriteAllBytes(Path.Combine(bdmv, "BACKUP", "MovieObject.bdmv"), [1]);
+        var broken = DiscCheck.Folder(discDir);
+        var image = new byte[300 * 2048];
+        "BEA01"u8.CopyTo(image.AsSpan(16 * 2048 + 1));
+        foreach (var sector in new[] { 256, 299 }) image[sector * 2048] = 2;
+        var iso = Path.Combine(discDir, "t.iso");
+        File.WriteAllBytes(iso, image);
+        var goodImage = DiscCheck.Image(iso);
+        File.WriteAllBytes(iso, image[..(299 * 2048)]);
+        var cutImage = DiscCheck.Image(iso);
+        File.WriteAllBytes(iso, image[..^7]);
+        var oddImage = DiscCheck.Image(iso);
+        Check("disc check: a tidy Blu-ray folder has no problem; a cut stream, a lost sync byte, a missing clip info and a different backup are each found; same for an image (whole sectors, UDF anchors)",
+              good.Count == 0 && shortStream.Count == 1 && shortStream[0].Contains("paquets entiers") && noSync.Count == 1 && noSync[0].Contains("synchronisation")
+              && broken.Count >= 2 && broken.Any(p => p.Contains("CLIPINF")) && broken.Any(p => p.Contains("BACKUP"))
+              && goodImage.Count == 0 && cutImage.Count == 1 && cutImage[0].Contains("tronquée") && oddImage.Any(p => p.Contains("secteurs")) && DiscCheck.Folder(Path.Combine(discDir, "nothing")).Count == 1);
+    }
+    finally { Directory.Delete(discDir, true); }
     Check("custom times in whole seconds, unique", Show(new DiscTitle("x", ChapterAt: [10.2, 10.4, 5]).ChapterList(600, 5)) == "0,5,10");
     var dir = Path.Combine(Path.GetTempPath(), "bs_extsub_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(dir);
