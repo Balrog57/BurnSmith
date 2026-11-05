@@ -2,23 +2,26 @@
 
 Répartition : **REA / décompilation et orchestration** de mon côté, **implémentation** par Claude Code (sous-agent), une tâche à la fois pour éviter deux écritures sur les mêmes fichiers. Une tâche n'est déclarée finie que si la build est propre, que `check-templates` reste à 144 sans problème, et que la preuve demandée existe.
 
-## En cours
+## Fait
 
-### T1 — Surbrillances DVD exactes d'après les modèles
+### T0 — Éléments libres du menu (fait le 2026-11-05, commit `55ada06`)
 
-- **But** : les menus DVD utilisent les images de surbrillance du modèle au lieu du cadre plat à quatre couleurs.
-- **Périmètre** : `Menu/InstalledTemplate.cs`, `Menu/MenuRenderer.cs`, `Menu/IndexedPng.cs`, `Dvd.cs`, nouvelle commande `check-highlights` dans `src/BurnSmith.Cli/Program.cs`.
-- **Preuves REA fournies** : `ANALYSE-REA.md` §6 (script spumux décompilé : `highlight` / `select` par page, `<button>` par bouton avec rectangle et voisins, codes `0 = haut, 1 = bas, 2 = gauche, 3 = droite`) et §6 bis (mesures PNG : `frame/0.dvd.sub.png` 390×260 en palette 8 bits, masque 1 bit, `selection/0.png` 180×180 en 2 bits).
-- **Fini quand** : `check-highlights` passe, un DVD construit avec un modèle DVDFab montre la surbrillance du modèle, et le cadre générique reste le repli.
+`MenuElement` (texte / image / cadre), placement à la souris dans l'éditeur, `--element` en ligne de commande, `check-elements` (11 vérifications).
+
+### T1 — Surbrillances DVD prises aux modèles (fait le 2026-11-05, commit `55ada06`)
+
+`DvdHighlightImage` / `DvdHighlightMask` sur `MenuButton`, `MenuRenderer.Raster`, `IndexedPng.Stamp` / `Average`, composition page par page dans `Dvd.cs`, `check-highlights` (7 vérifications). Épreuve : DVD construit avec `DVDFab DVD | 01movie`, VOB de menu portant une piste `dvd_subtitle` (ffprobe), `check-templates` à 144.
+
+**Ces deux tâches ont été écrites par l'orchestrateur, pas par le sous-agent** : deux délégations à Claude Code n'ont produit aucun code (la première a refusé de livrer sans pouvoir compiler, la seconde n'a rien rendu). Tant que `dotnet` reste hors de son bac à sable, la délégation utile est « écris, l'orchestrateur compile » — mais elle n'a pas encore abouti.
 
 ## À suivre
 
 ### T2 — Mises en page Leawo exactes (les 6 modèles qui ont un `template.xml`)
 
 - **But** : remplacer l'interprétation de BurnSmith par les positions du fichier `MenuTemplate\Build-in\16-9\<thème>\template.xml` (`<Menu>` : `Frame`, `videoscr`, `TitleText`, `ButtonPlayText`, `ButtonScenesText` ; `<Scene><Page>` : `FrameN`, `videoscrN`, `ButtonNext`, `ButtonPre`, `Return`, `ButtonTextN`), pour 16-9 **et** 16:9-2, en 4:3 aussi.
-- **Périmètre** : `Menu/LeawoSkin.cs` (aujourd'hui : mesure des ouvertures transparentes et placement deviné) et son appelant.
+- **Périmètre** : `Menu/LeawoSkin.cs` (aujourd'hui : mesure des ouvertures transparentes et placement deviné).
 - **Fini quand** : pour les trois thèmes qui ont un XML (childhood01, education01, holiday01), les rectangles lus dans le XML sont utilisés tels quels ; `check-templates` inchangé ; `preview` d'un de ces modèles comparé à `background01.jpg` du modèle.
-- **Conflit** : ne pas lancer avant que T1 ait fini (mêmes fichiers, `InstalledTemplate.cs`).
+- **Note** : les 27 autres thèmes n'ont que des images (vérifié : aucun binaire Leawo ne contient leurs noms), donc la mesure d'ouverture reste la bonne méthode pour eux.
 
 ### T3 — Pages de réglages des modèles Blu-ray DVDFab (`audiolist` / `subtitlelist`)
 
