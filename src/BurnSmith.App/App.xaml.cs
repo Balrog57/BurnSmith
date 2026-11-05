@@ -61,7 +61,7 @@ public partial class App : Application
     }
 
     /// <summary>Once per start of an installed copy: offers the newest GitHub release. Offline or up to date, it says nothing.</summary>
-    static async Task CheckForUpdate(Window owner)
+    static async Task CheckForUpdate(MainWindow owner)
     {
         var current = typeof(App).Assembly.GetName().Version ?? new Version(0, 0);
         BurnSmith.Core.Updater.Release? release;
@@ -74,6 +74,12 @@ public partial class App : Application
         try
         {
             var setup = await BurnSmith.Core.Updater.DownloadAsync(release, new Progress<double>(p => owner.Title = $"Téléchargement de la mise à jour… {p:P0}"));
+            while (owner.Working) // the install closes the app: it waits for the disc; closed meanwhile, the next start offers it again
+            {
+                owner.Title = "Mise à jour téléchargée : elle s'installera à la fin du travail en cours";
+                await Task.Delay(1000);
+            }
+            if (!owner.IsVisible) return;
             BurnSmith.Core.Updater.Install(setup); // Windows asks for administrator rights here
             Current.Shutdown();
         }

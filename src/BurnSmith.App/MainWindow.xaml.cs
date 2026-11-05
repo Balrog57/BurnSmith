@@ -83,7 +83,13 @@ public partial class MainWindow : Window
     bool labelEdited, outEdited, busy, refreshingDrives;
     int thumbVersion;
     CancellationTokenSource? cancel;
+    volatile bool writing; // a burn or an erase is under way: stopping it can ruin the disc
+    bool closeAfterWork;
+    int making; // slideshows, songs and joins being made: long ffmpeg runs without a Cancel button
     MenuDesign design = TemplateCatalog.Default().Clone();
+
+    /// <summary>A disc or a video is being made: nothing may shut the app down now.</summary>
+    public bool Working => busy || making > 0;
 
     public MainWindow()
     {
@@ -96,6 +102,37 @@ public partial class MainWindow : Window
         Activated += (_, _) => RefreshDrives(); // a burner plugged in meanwhile shows up when the user comes back
         AfterTitlesChanged();
         Loaded += async (_, _) => await OfferDvdIfPossible();
+    }
+
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        base.OnClosing(e);
+        if (busy)
+        {
+            e.Cancel = true; // the window closes when the work has stopped (see Work): quitting now would leave the work folder behind
+            if (closeAfterWork) return;
+            if (writing) { RefuseClosing(); return; }
+            if (MessageBox.Show(this, "Un disque est en cours de création.\n\nFermer BurnSmith annule la création : le travail est arrêté, ses fichiers temporaires sont supprimés et le disque ne sera pas terminé. La fenêtre se ferme dès l'arrêt.\n\nFermer quand même ?",
+                    "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+            if (!busy) { e.Cancel = false; return; } // it ended while the question was open
+            if (writing) { RefuseClosing(); return; } // it went on to the burn meanwhile
+            closeAfterWork = true;
+            CancelButton.IsEnabled = false;
+            StatusText.Text = "Annulation…";
+            cancel?.Cancel();
+        }
+        else if (making > 0 && !closeAfterWork
+                 && MessageBox.Show(this, "Une vidéo est en préparation (diaporama, morceau ou fusion).\n\nFermer BurnSmith l'arrête : elle ne sera pas ajoutée.\n\nFermer quand même ?",
+                     "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) e.Cancel = true;
+    }
+
+    void RefuseClosing() =>
+        MessageBox.Show(this, "Une gravure ou un effacement est en cours : BurnSmith reste ouvert, car l'interrompre peut rendre le disque inutilisable.\n\nAttendez la fin. Une gravure peut être arrêtée avec le bouton Annuler.", "BurnSmith", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+    protected override void OnClosed(EventArgs e)
+    {
+        Tools.KillAll(); // what runs without a Cancel button (a slideshow, a preview): before Closed removes its folder
+        base.OnClosed(e);
     }
 
     /// <summary>The released exe carries neither dvdauthor nor spumux: DVD is on offer only when they were put in place. Off the UI thread: looking waits for the exe's tools to unpack.</summary>
@@ -326,6 +363,7 @@ public partial class MainWindow : Window
         if (photos.Count == 0 && songs.Count == 0) return videos;
         NaturalOrder(photos);
         NaturalOrder(songs);
+        making++;
         try
         {
             if (photos.Count > 0)
@@ -363,6 +401,7 @@ public partial class MainWindow : Window
         {
             Warn("Photos / musique : " + ex.Message.Split('\n')[0]);
         }
+        finally { making--; }
         return videos;
     }
 
@@ -562,6 +601,7 @@ public partial class MainWindow : Window
             : null;
         if (why != null) { MessageBox.Show(this, why, "Fusionner", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         StatusText.Text = "Fusion des deux vidéos…";
+        making++;
         try
         {
             var file = NextMade(entry.Name);
@@ -582,6 +622,7 @@ public partial class MainWindow : Window
         {
             Warn("Fusion : " + ex.Message.Split('\n')[0]);
         }
+        finally { making--; }
     }
 
     /// <summary>Marks a video as an extra, or back as part of the feature: the menu gets (or loses) its Bonus button and page.</summary>
@@ -850,6 +891,8 @@ public partial class MainWindow : Window
 
     void OnCancel(object s, RoutedEventArgs e)
     {
+        if (writing && MessageBox.Show(this, "Arrêter la gravure ?\n\nLe disque en cours d'écriture sera probablement inutilisable (un disque réinscriptible devra être effacé). L'arrêt peut prendre quelques minutes.",
+                "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
         CancelButton.IsEnabled = false;
         StatusText.Text = "Annulation…";
         cancel?.Cancel();
@@ -859,14 +902,14 @@ public partial class MainWindow : Window
     /// Runs one long job off the UI thread with its progress bar (indeterminate until the job reports a value) and a log line per step.
     /// Returns false when it failed or was cancelled.
     /// </summary>
-    async Task<bool> Work(string what, Action<Action<string>, IProgress<double>, CancellationToken> job)
+    async Task<bool> Work(string what, Action<Action<string>, IProgress<double>, CancellationToken> job, bool canCancel = true)
     {
         busy = true;
         StartButton.IsEnabled = BurnButton.IsEnabled = EraseButton.IsEnabled = false;
         Busy.IsIndeterminate = true;
         StatusText.Text = what;
         ProgressPanel.Visibility = Visibility.Visible;
-        CancelButton.IsEnabled = true;
+        CancelButton.IsEnabled = canCancel;
         cancel = new CancellationTokenSource();
         var token = cancel.Token;
         var progress = new Progress<double>(v => { Busy.IsIndeterminate = false; Busy.Value = v * 100; });
@@ -884,12 +927,13 @@ public partial class MainWindow : Window
         }
         finally
         {
-            busy = false;
+            busy = writing = false;
             StartButton.IsEnabled = true;
             ProgressPanel.Visibility = Visibility.Collapsed;
             cancel.Dispose();
             cancel = null;
             RefreshDrives();
+            if (closeAfterWork) Close();
         }
     }
 
@@ -918,8 +962,8 @@ public partial class MainWindow : Window
 
         var ok = await Work("Création du disque…", (log, progress, token) =>
         {
-            if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable, enc), log);
-            else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes, enc, cap.Usable, play), log);
+            if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable, enc), log, token);
+            else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes, enc, cap.Usable, play), log, token);
             var iso = IsoFile(outDir);
             File.Delete(iso); // an image of an earlier build must never be burnt by mistake
             var problems = DiscCheck.Folder(outDir);
@@ -928,12 +972,13 @@ public partial class MainWindow : Window
             if (!withIso && !burn) return;
             token.ThrowIfCancellationRequested();
             log("Création de l'image ISO…");
-            Iso.Build(outDir, iso, label, dvd, log, progress);
+            Iso.Build(outDir, iso, label, dvd, log, progress, token);
             var imageProblems = DiscCheck.Image(iso, outDir);
             log(imageProblems.Count == 0 ? "Vérification de l'image ISO : aucune anomalie." : "Vérification de l'image ISO : " + string.Join(" ; ", imageProblems));
             if (burn && imageProblems.Count > 0) throw new InvalidOperationException("Le disque n'est pas gravé, l'image ISO a des anomalies : " + string.Join(" ; ", imageProblems));
             if (burn)
             {
+                writing = true;
                 token.ThrowIfCancellationRequested();
                 Iso.Burn(iso, drive!.Letter, log, progress, token);
             }
@@ -956,6 +1001,7 @@ public partial class MainWindow : Window
             $"Graver « {Path.GetFileName(iso)} » sur {drive.Letter} ?\n\nInsérez un disque vierge adapté à la taille de l'image. Le disque sera écrit définitivement.",
             "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (answer != MessageBoxResult.Yes) return;
+        writing = true;
         if (await Work("Gravure…", (log, progress, token) => Iso.Burn(iso, drive.Letter, log, progress, token))) Append("Terminé.");
     }
 
@@ -964,6 +1010,7 @@ public partial class MainWindow : Window
         if (DriveBox.SelectedItem is not Imapi.Drive drive) { MessageBox.Show(this, "Aucun graveur détecté.", "BurnSmith"); return; }
         if (MessageBox.Show(this, $"Effacer le disque réinscriptible de {drive.Letter} ?\n\nToutes les données du disque seront perdues.",
                 "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
-        if (await Work("Effacement…", (log, _, _) => Imapi.Erase(drive.Letter, log))) Append("Terminé.");
+        writing = true;
+        if (await Work("Effacement…", (log, _, _) => Imapi.Erase(drive.Letter, log), canCancel: false)) Append("Terminé."); // IMAPI's erase takes no cancel
     }
 }
