@@ -20,7 +20,6 @@ public partial class MenuEditorWindow : Window
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     int version;
     string? error;
-    bool syncing;
 
     /// <summary>The pages built for one state of the design; the pictures of a page are drawn when it is first shown.</summary>
     sealed class Shot(MenuDesign design, List<MenuPage> pages)
@@ -40,11 +39,28 @@ public partial class MenuEditorWindow : Window
     int audioSel = 1, subSel; // what the settings page marks while previewing (audio stream number 1-based, subtitle 0 = off)
     bool stripSync;
     List<Element> backgrounds = [];
+    List<ButtonCard> buttons = [];
+    object? pressed, dragging; // the library item under the mouse button, then the one being dragged to the page
+    System.Windows.Point pressedAt;
 
     public MenuDesign Result => working;
 
-    /// <summary>For the off-screen snapshot (the bottom of the properties panel).</summary>
-    public void ScrollProps(double? to = null) { UpdateLayout(); if (to is { } y) PropsScroll.ScrollToVerticalOffset(y); else PropsScroll.ScrollToEnd(); }
+    /// <summary>For the off-screen snapshot (the bottom of the properties panel on show).</summary>
+    public void ScrollProps(double? to = null)
+    {
+        UpdateLayout();
+        if (Props.SelectedContent is not ScrollViewer panel) return;
+        if (to is { } y) panel.ScrollToVerticalOffset(y); else panel.ScrollToEnd();
+    }
+
+    /// <summary>For the off-screen snapshot: which tab of the library (0 templates, 1 mine, 2 backgrounds, 3 buttons) and of the properties (0 element, 1 menu, 2 animation, 3 look) is on show.</summary>
+    public void ShowTabs(int? library, int? props, bool withButton = false)
+    {
+        if (library is { } l) Library.SelectedIndex = Math.Clamp(l, 0, Library.Items.Count - 1);
+        if (withButton && buttons.Count > 0) AddLibraryButton(buttons[0].Item, new System.Windows.Point(MenuBuilder.W / 2.0, MenuBuilder.H * 0.75)); // as a double click on the first button of the library does
+        if (props is { } p) Props.SelectedIndex = Math.Clamp(p, 0, Props.Items.Count - 1);
+        UpdateLayout();
+    }
 
     public MenuEditorWindow(MenuDesign design, string? previewFrame, MenuContent content)
     {
@@ -88,24 +104,73 @@ public partial class MenuEditorWindow : Window
         var (usable, skipped) = TemplateCatalog.Scan();
         BuiltInList.ItemsSource = usable;
         LoadBackgrounds((usable, skipped));
+        LoadButtons((usable, skipped));
         _ = FillThumbnails(usable);
+    }
+
+    /// <summary>A list the library shows under one heading per source (BurnSmith's looks, yours, each template's own).</summary>
+    static System.ComponentModel.ICollectionView BySource<T>(IEnumerable<T> items)
+    {
+        var view = new System.Windows.Data.ListCollectionView(items.ToList());
+        view.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription("Source"));
+        return view;
     }
 
     void LoadBackgrounds((List<TemplateCatalog.Found>, List<TemplateCatalog.Skipped>)? scan = null)
     {
         backgrounds = ElementLibrary.Backgrounds(scan);
-        BgList.ItemsSource = backgrounds;
+        BgList.ItemsSource = BySource(backgrounds);
         SelectBackground();
+    }
+
+    /// <summary>One button of the library as the list shows it: the picture, or a sample of the look BurnSmith draws.</summary>
+    public sealed class ButtonCard(ElementLibrary.ButtonItem item, System.Windows.Media.ImageSource? sample) : System.ComponentModel.INotifyPropertyChanged
+    {
+        System.Windows.Media.ImageSource? sample = sample;
+        public ElementLibrary.ButtonItem Item { get; } = item;
+        public string Name => Item.Name;
+        public string Source => Item.Source;
+        public System.Windows.Media.ImageSource? Sample
+        {
+            get => sample;
+            set { sample = value; PropertyChanged?.Invoke(this, new(nameof(Sample))); }
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    }
+
+    void LoadButtons((List<TemplateCatalog.Found>, List<TemplateCatalog.Skipped>)? scan = null)
+    {
+        var thumb = new ThumbConverter();
+        buttons = ElementLibrary.Buttons(scan).Select(i => new ButtonCard(i, i.Normal == null ? null : thumb.Convert(i.Normal, typeof(System.Windows.Media.ImageSource), "", System.Globalization.CultureInfo.InvariantCulture) as System.Windows.Media.ImageSource)).ToList();
+        BtnList.ItemsSource = BySource(buttons);
+        _ = FillButtonSamples();
+    }
+
+    /// <summary>The looks BurnSmith draws have no picture file: one sample of each is drawn (in this design's colours) behind the list.</summary>
+    async Task FillButtonSamples()
+    {
+        var design = working.Clone();
+        design.TemplateDir = null;
+        design.BackgroundImage = null;
+        var cards = buttons.Where(c => c.Item.Style != null).ToList();
+        try
+        {
+            var samples = await Task.Run(() => MenuRenderer.Sta(() => cards.Select(c =>
+            {
+                var sample = new MenuElement { Kind = "button", Look = c.Item.Style!, Text = "Bouton", X = 200, Y = 280, W = 1520, H = 520, Size = 150 };
+                return Decode(MenuRenderer.Background(design, new MenuPage("sample", sample.Ops(design).ToList(), [])), 192);
+            }).ToList()));
+            for (var i = 0; i < cards.Count; i++) cards[i].Sample = samples[i];
+        }
+        catch (Exception) { /* the list still names the looks: the samples are a convenience */ }
     }
 
     /// <summary>Shows which library picture the design uses (none selected = the gradient, or a picture that is not in the library).</summary>
     void SelectBackground()
     {
         var file = ElementLibrary.Resolve(working.BackgroundImage);
-        syncing = true;
         BgList.SelectedItem = file == null ? null : backgrounds.FirstOrDefault(b => b.Path.Equals(file, StringComparison.OrdinalIgnoreCase));
         BgRemove.IsEnabled = (BgList.SelectedItem as Element)?.Removable == true;
-        syncing = false;
     }
 
     /// <summary>Templates BurnSmith draws itself have no picture file: draw them once in the background, then refresh the gallery.</summary>
@@ -306,15 +371,24 @@ public partial class MenuEditorWindow : Window
         }
     }
 
-    void OnStageMouse(object s, System.Windows.Input.MouseButtonEventArgs e) => Stage.Focus();
+    /// <summary>A click on the page that misses the selected element's outline and handles lets go of it, as in DVDStyler.</summary>
+    void OnStageMouse(object s, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        Stage.Focus();
+        if (sel != null && (e.OriginalSource as FrameworkElement)?.Tag as string != "element") SelectElem(null);
+    }
 
     // ---------------------------------------------------------------- free elements (DVDStyler-style placement)
     MenuElement? sel;
     bool elemSync;
+    const int Handle = 30, MinW = 40, MinH = 20; // size of a resize handle on the 1920x1080 page, smallest element
 
-    static readonly (string Value, string Label)[] PageChoices =
+    // a record, not a tuple: the combo binds to properties, and a tuple's fields are not (the page would show empty and fall back to "all")
+    sealed record PageChoice(string Value, string Label);
+
+    static readonly PageChoice[] PageChoices =
     [
-        ("all", "Toutes les pages"), ("root", "Menu principal"), ("scenes", "Scènes"), ("bonus", "Bonus"), ("settings", "Réglages"), ("credits", "Crédits"),
+        new("all", "Toutes les pages"), new("root", "Menu principal"), new("scenes", "Scènes"), new("bonus", "Bonus"), new("settings", "Réglages"), new("credits", "Crédits"),
     ];
 
     void InitElements()
@@ -324,13 +398,14 @@ public partial class MenuEditorWindow : Window
         ElemPage.DisplayMemberPath = "Label";
         ElemAlign.ItemsSource = new[] { "left", "center", "right" };
         ElemTarget.ItemsSource = new[] { "movie", "all", "root", "scenes1", "settings", "credits", "bonus1" };
+        ElemLook.ItemsSource = new[] { new { Label = "(celui du thème)", Value = "" } }.Concat(ElementLibrary.ButtonStyles.Select(b => new { b.Label, b.Value })).ToList();
         RefreshElemList();
         ShowElem();
     }
 
     static string Describe(MenuElement e) => e.Kind switch
     {
-        "button" => $"Bouton · {e.Page} · {e.Text} → {e.Target}",
+        "button" => $"Bouton · {e.Page} · {(e.Text.Length > 0 ? e.Text : e.Image != null ? Path.GetFileName(e.Image) : "sans texte")} → {e.Target}",
         "image" => $"Image · {e.Page} · {Path.GetFileName(e.Image ?? "")}",
         "box" => $"Cadre · {e.Page} · {e.W}×{e.H}",
         _ => $"Texte · {e.Page} · {(e.Text.Length > 24 ? e.Text[..24] + "…" : e.Text)}",
@@ -349,13 +424,15 @@ public partial class MenuEditorWindow : Window
     {
         elemSync = true;
         var on = sel != null;
-        foreach (var c in new FrameworkElement[] { ElemPage, ElemText, ElemImage, ElemX, ElemY, ElemW, ElemH, ElemSize, ElemColor, ElemFill, ElemBorder, ElemBorderW, ElemOpacity, ElemAlign, ElemTarget, ElemBold, ElemItalic, ElemBehind })
+        foreach (var c in new FrameworkElement[] { ElemPage, ElemText, ElemImage, ElemFocus, ElemLook, ElemCopy, ElemX, ElemY, ElemW, ElemH, ElemSize, ElemColor, ElemFill, ElemBorder, ElemBorderW, ElemOpacity, ElemAlign, ElemTarget, ElemBold, ElemItalic, ElemBehind })
             c.IsEnabled = on;
         if (sel is { } e)
         {
             ElemPage.SelectedValue = e.Page;
             ElemText.Text = e.Text;
             ElemImage.Text = e.Image ?? "";
+            ElemFocus.Text = e.Focus ?? "";
+            ElemLook.SelectedValue = e.Look;
             ElemX.Value = e.X;
             ElemY.Value = e.Y;
             ElemW.Value = Math.Clamp(e.W, 40, 1920);
@@ -383,6 +460,8 @@ public partial class MenuEditorWindow : Window
         e.Page = ElemPage.SelectedValue as string ?? MenuElement.AllPages;
         e.Text = ElemText.Text;
         e.Image = string.IsNullOrWhiteSpace(ElemImage.Text) ? null : ElemImage.Text.Trim();
+        e.Focus = string.IsNullOrWhiteSpace(ElemFocus.Text) ? null : ElemFocus.Text.Trim();
+        e.Look = ElemLook.SelectedValue as string ?? "";
         e.X = (int)ElemX.Value;
         e.Y = (int)ElemY.Value;
         e.W = (int)ElemW.Value;
@@ -414,6 +493,7 @@ public partial class MenuEditorWindow : Window
         elemSync = true;
         ElemList.SelectedIndex = e == null ? -1 : working.Elements.IndexOf(e);
         elemSync = false;
+        if (e != null) Props.SelectedIndex = 0; // the element's own settings, wherever the panel was
         ShowElem();
         DrawStage();
     }
@@ -464,6 +544,26 @@ public partial class MenuEditorWindow : Window
         }
     }
 
+    /// <summary>The picture a button image shows while it is selected (its "sub" twin). Stored where it is: a file that moves falls back to the theme's frame.</summary>
+    void OnElemFocus(object s, RoutedEventArgs e)
+    {
+        if (sel is not { } el) return;
+        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*", Title = "Image du bouton sélectionné" };
+        if (dlg.ShowDialog(this) != true) return;
+        el.Focus = dlg.FileName;
+        ShowElem();
+        Dirty();
+    }
+
+    void OnElemDuplicate(object s, RoutedEventArgs e)
+    {
+        if (sel is not { } el) return;
+        var copy = el.Copy();
+        copy.X = Math.Min(el.X + 40, MenuBuilder.W - 8);
+        copy.Y = Math.Min(el.Y + 40, MenuBuilder.H - 8);
+        AddElem(copy);
+    }
+
     void OnElemDelete(object s, RoutedEventArgs e)
     {
         if (sel is not { } el) return;
@@ -473,58 +573,239 @@ public partial class MenuEditorWindow : Window
         Dirty();
     }
 
-    /// <summary>The element outlines on the page on show: click one to edit it, drag it to move it (the preview follows when the mouse is let go).</summary>
+    // ---------------------------------------------------------------- the library onto the page
+
+    /// <summary>The page on show as an element's page: its kind ("scenes2" is "scenes"), so what is dropped belongs to that kind of page.</summary>
+    string PageOfCurrent()
+    {
+        var kind = new string((current?.Id ?? "root").TakeWhile(char.IsAsciiLetter).ToArray());
+        return kind is "root" or "scenes" or "bonus" or "settings" or "credits" ? kind : MenuElement.AllPages;
+    }
+
+    /// <summary>Sets a library picture as the page background. An installed template draws its own: the picture then replaces it, after a question.</summary>
+    void ApplyBackground(Element picked)
+    {
+        if (working.TemplateDir != null)
+        {
+            if (MessageBox.Show(this, "Ce fond remplace celui du modèle : ses boutons et sa mise en page deviennent les vôtres (police, boutons, grille, couleurs).\n\nContinuer ?",
+                                "Fond", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            working.TemplateDir = null;
+        }
+        working.BackgroundImage = ElementLibrary.Reference(picked.Path);
+        Rebind();
+    }
+
+    /// <summary>A library button becomes a button element centred on <paramref name="at"/> (page coordinates): a picture button keeps its picture's proportions.</summary>
+    void AddLibraryButton(ElementLibrary.ButtonItem item, System.Windows.Point at)
+    {
+        int w = 400, h = 110;
+        var el = new MenuElement { Kind = "button", Page = PageOfCurrent(), Target = "movie", Size = 44 };
+        if (item.Normal != null)
+        {
+            el.Image = ElementLibrary.Reference(item.Normal);
+            el.Focus = item.Focus == null ? null : ElementLibrary.Reference(item.Focus);
+            if (MenuRenderer.Size(item.Normal) is { } size)
+            {
+                var k = Math.Min(1.0, 600.0 / size.W); // a picture made for a 1080p page stays as it is, a bigger one is brought down
+                w = Math.Max(60, (int)(size.W * k));
+                h = Math.Max(30, (int)(size.H * k));
+            }
+        }
+        else
+        {
+            el.Look = item.Style ?? "";
+            el.Text = "Bouton";
+        }
+        el.W = w;
+        el.H = h;
+        el.X = (int)Math.Clamp(at.X - w / 2.0, 0, MenuBuilder.W - w);
+        el.Y = (int)Math.Clamp(at.Y - h / 2.0, 0, MenuBuilder.H - h);
+        AddElem(el);
+    }
+
+    void OnLibraryDown(object s, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        pressedAt = e.GetPosition(null);
+        pressed = e.OriginalSource is DependencyObject d && System.Windows.Controls.ItemsControl.ContainerFromElement((ListBox)s, d) is ListBoxItem item ? item.DataContext : null;
+    }
+
+    /// <summary>Pulling a library item away from the list starts a drag; letting it go on the page applies it.</summary>
+    void OnLibraryMove(object s, System.Windows.Input.MouseEventArgs e)
+    {
+        if (pressed == null || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed) { pressed = null; return; }
+        var d = pressedAt - e.GetPosition(null);
+        if (Math.Abs(d.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(d.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+        dragging = pressed;
+        pressed = null;
+        try { DragDrop.DoDragDrop((DependencyObject)s, new DataObject("burnsmith-library", "item"), DragDropEffects.Copy); }
+        finally { dragging = null; }
+    }
+
+    void OnStageDragOver(object s, DragEventArgs e)
+    {
+        e.Effects = dragging is Element or ButtonCard ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    void OnStageDrop(object s, DragEventArgs e)
+    {
+        var at = e.GetPosition(StageCanvas);
+        switch (dragging)
+        {
+            case Element picture: ApplyBackground(picture); break;
+            case ButtonCard card: AddLibraryButton(card.Item, at); break;
+        }
+        e.Handled = true;
+    }
+
+    void OnBgDouble(object s, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject d && System.Windows.Controls.ItemsControl.ContainerFromElement(BgList, d) is ListBoxItem { DataContext: Element picked }) ApplyBackground(picked);
+    }
+
+    void OnBtnDouble(object s, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject d && System.Windows.Controls.ItemsControl.ContainerFromElement(BtnList, d) is ListBoxItem { DataContext: ButtonCard card })
+            AddLibraryButton(card.Item, new System.Windows.Point(MenuBuilder.W / 2.0, MenuBuilder.H * 0.75));
+    }
+
+    void OnBtnPick(object s, SelectionChangedEventArgs e) => BtnRemove.IsEnabled = (BtnList.SelectedItem as ButtonCard)?.Item.Removable == true;
+
+    /// <summary>Adds a button picture to your library: the picture, then (it may be left out) the one it shows when selected.</summary>
+    void OnBtnImport(object s, RoutedEventArgs e)
+    {
+        var filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*";
+        var normal = new OpenFileDialog { Filter = filter, Title = "Image du bouton" };
+        if (normal.ShowDialog(this) != true) return;
+        var focus = new OpenFileDialog { Filter = filter, Title = "Image du bouton sélectionné (Annuler = aucune : le cadre du thème)" };
+        try
+        {
+            ElementLibrary.ImportButton(normal.FileName, focus.ShowDialog(this) == true ? focus.FileName : null);
+            LoadButtons();
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, ex.Message, "BurnSmith");
+        }
+    }
+
+    void OnBtnRemove(object s, RoutedEventArgs e)
+    {
+        if (BtnList.SelectedItem is not ButtonCard { Item.Removable: true } card) return;
+        try
+        {
+            ElementLibrary.RemoveButton(card.Item);
+            LoadButtons();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, ex.Message, "BurnSmith");
+        }
+    }
+
+    // A drag on the page: the element, which part of it was grabbed (0 = the body moves it, 1..4 = a corner resizes it: NW, NE, SW, SE),
+    // where the mouse was, and the element's rectangle at that moment. The mouse is captured by the canvas, because the page is redrawn
+    // (and the shape under the mouse replaced) as soon as the element is selected.
+    (MenuElement El, int Part, System.Windows.Point Start, int X, int Y, int W, int H)? drag;
+    bool dragMoved;
+
+    /// <summary>The element outlines on the page on show: click one to edit it, drag it to move it, drag a corner of the selected one to resize it.</summary>
     void DrawElements()
     {
         if (current == null) return;
         var accent = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(working.Accent));
-        foreach (var el in working.Elements.Where(x => x.AppliesTo(current.Id)).ToList())
+        var clear = System.Windows.Media.Brushes.Transparent;
+        var here = working.Elements.Where(x => x.AppliesTo(current.Id)).ToList();
+        foreach (var el in here.Where(x => x != sel).Concat(here.Where(x => x == sel))) // the selected one last, so its corners are the ones that get the click
         {
             var box = el.Box();
-            var outline = new System.Windows.Shapes.Rectangle
-            {
-                Width = box.W, Height = box.H, Fill = System.Windows.Media.Brushes.Transparent,
-                Stroke = accent, StrokeThickness = el == sel ? 5 : 2, StrokeDashArray = [6, 4], Cursor = System.Windows.Input.Cursors.SizeAll,
-            };
-            System.Windows.Controls.Canvas.SetLeft(outline, box.X);
-            System.Windows.Controls.Canvas.SetTop(outline, box.Y);
-            System.Windows.Point? from = null;
-            System.Windows.Point origin = default;
-            var element = el;
-            outline.MouseLeftButtonDown += (_, me) =>
-            {
-                SelectElem(element);
-                from = me.GetPosition(StageCanvas);
-                origin = new System.Windows.Point(element.X, element.Y);
-                outline.CaptureMouse();
-                me.Handled = true;
-            };
-            outline.MouseMove += (_, me) =>
-            {
-                if (from is not { } start) return;
-                var at = me.GetPosition(StageCanvas);
-                element.X = (int)Math.Clamp(origin.X + at.X - start.X, 0, MenuBuilder.W - 8);
-                element.Y = (int)Math.Clamp(origin.Y + at.Y - start.Y, 0, MenuBuilder.H - 8);
-                System.Windows.Controls.Canvas.SetLeft(outline, element.X);
-                System.Windows.Controls.Canvas.SetTop(outline, element.Y);
-                elemSync = true;
-                ElemX.Value = Math.Clamp(element.X, 0, 1800);
-                ElemY.Value = Math.Clamp(element.Y, 0, 980);
-                elemSync = false;
-            };
-            outline.MouseLeftButtonUp += (_, _) =>
-            {
-                if (from == null) return;
-                from = null;
-                outline.ReleaseMouseCapture();
-                Dirty();
-            };
-            StageCanvas.Children.Add(outline);
+            Piece(el, 0, box.X, box.Y, box.W, box.H, clear, accent, el == sel ? 5 : 2, System.Windows.Input.Cursors.SizeAll);
+            if (el != sel) continue;
+            var h = Math.Min(Handle, Math.Min(box.W, box.H) / 3);
+            var right = box.X + box.W - h;
+            var bottom = box.Y + box.H - h;
+            Piece(el, 1, box.X, box.Y, h, h, accent, clear, 0, System.Windows.Input.Cursors.SizeNWSE);
+            Piece(el, 2, right, box.Y, h, h, accent, clear, 0, System.Windows.Input.Cursors.SizeNESW);
+            Piece(el, 3, box.X, bottom, h, h, accent, clear, 0, System.Windows.Input.Cursors.SizeNESW);
+            Piece(el, 4, right, bottom, h, h, accent, clear, 0, System.Windows.Input.Cursors.SizeNWSE);
         }
     }
 
+    void Piece(MenuElement el, int part, int x, int y, int w, int h, System.Windows.Media.Brush fill, System.Windows.Media.Brush stroke, double thickness, System.Windows.Input.Cursor cursor)
+    {
+        var shape = new System.Windows.Shapes.Rectangle { Width = w, Height = h, Fill = fill, Stroke = stroke, StrokeThickness = thickness, Cursor = cursor, Tag = "element" };
+        if (part == 0) shape.StrokeDashArray = [6, 4];
+        System.Windows.Controls.Canvas.SetLeft(shape, x);
+        System.Windows.Controls.Canvas.SetTop(shape, y);
+        shape.MouseLeftButtonDown += (_, me) =>
+        {
+            Stage.Focus();
+            drag = (el, part, me.GetPosition(StageCanvas), el.X, el.Y, el.W, el.H);
+            dragMoved = false;
+            if (el != sel) SelectElem(el); // redraws the page: this shape is gone, the canvas keeps the mouse
+            StageCanvas.CaptureMouse();
+            me.Handled = true;
+        };
+        StageCanvas.Children.Add(shape);
+    }
+
+    void OnCanvasMove(object s, System.Windows.Input.MouseEventArgs e)
+    {
+        if (drag is not { } d || !StageCanvas.IsMouseCaptured) return;
+        var at = e.GetPosition(StageCanvas);
+        int dx = (int)(at.X - d.Start.X), dy = (int)(at.Y - d.Start.Y);
+        var el = d.El;
+        if (d.Part == 0)
+        {
+            el.X = Math.Clamp(d.X + dx, 0, MenuBuilder.W - 8);
+            el.Y = Math.Clamp(d.Y + dy, 0, MenuBuilder.H - 8);
+        }
+        else
+        {
+            int left = d.X, top = d.Y, right = d.X + d.W, bottom = d.Y + d.H;
+            if (d.Part is 1 or 3) left = Math.Clamp(left + dx, 0, right - MinW); else right = Math.Clamp(right + dx, left + MinW, MenuBuilder.W);
+            if (d.Part is 1 or 2) top = Math.Clamp(top + dy, 0, bottom - MinH); else bottom = Math.Clamp(bottom + dy, top + MinH, MenuBuilder.H);
+            (el.X, el.Y, el.W, el.H) = (left, top, right - left, bottom - top);
+        }
+        dragMoved = true;
+        ShowElem();
+        DrawStage();
+    }
+
+    /// <summary>The preview is redrawn when the mouse is let go (a click that did not move anything costs nothing).</summary>
+    void OnCanvasUp(object s, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (drag == null) return;
+        StageCanvas.ReleaseMouseCapture();
+    }
+
+    void OnCanvasLost(object s, System.Windows.Input.MouseEventArgs e)
+    {
+        var moved = dragMoved;
+        drag = null;
+        dragMoved = false;
+        if (moved) { RefreshElemList(); Dirty(); }
+    }
+
+    /// <summary>Keys on the page: with an element selected, Delete removes it, Escape lets it go and the arrows nudge it (10 px, Shift 1 px); otherwise the arrows and Enter walk the buttons like a remote.</summary>
     void OnStageKey(object s, System.Windows.Input.KeyEventArgs e)
     {
+        if (sel is { } el)
+        {
+            var step = (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Shift) != 0 ? 1 : 10;
+            switch (e.Key)
+            {
+                case System.Windows.Input.Key.Delete: OnElemDelete(s, new RoutedEventArgs()); break;
+                case System.Windows.Input.Key.Escape: SelectElem(null); break;
+                case System.Windows.Input.Key.Left: Nudge(el, -step, 0); break;
+                case System.Windows.Input.Key.Right: Nudge(el, step, 0); break;
+                case System.Windows.Input.Key.Up: Nudge(el, 0, -step); break;
+                case System.Windows.Input.Key.Down: Nudge(el, 0, step); break;
+                default: return;
+            }
+            e.Handled = true;
+            return;
+        }
         if (current?.Buttons.FirstOrDefault(b => b.Id == focusId) is not { } b) return;
         switch (e.Key)
         {
@@ -536,6 +817,16 @@ public partial class MenuEditorWindow : Window
             default: return;
         }
         e.Handled = true;
+    }
+
+    void Nudge(MenuElement el, int dx, int dy)
+    {
+        var box = el.Box();
+        el.X = Math.Clamp(el.X + dx, 0, MenuBuilder.W - box.W);
+        el.Y = Math.Clamp(el.Y + dy, 0, MenuBuilder.H - box.H);
+        ShowElem();
+        DrawStage();
+        Dirty();
     }
 
     void OnStripPick(object s, SelectionChangedEventArgs e)
@@ -562,12 +853,8 @@ public partial class MenuEditorWindow : Window
     void OnPrev(object s, RoutedEventArgs e) => Step(-1);
     void OnNext(object s, RoutedEventArgs e) => Step(1);
 
-    void OnBgPick(object s, SelectionChangedEventArgs e)
-    {
-        if (syncing || BgList.SelectedItem is not Element picked) return;
-        working.BackgroundImage = ElementLibrary.Reference(picked.Path);
-        BgRemove.IsEnabled = picked.Removable;
-    }
+    /// <summary>A click on a background only selects it (so it can be removed); a double click or a drop on the page applies it.</summary>
+    void OnBgPick(object s, SelectionChangedEventArgs e) => BgRemove.IsEnabled = (BgList.SelectedItem as Element)?.Removable == true;
 
     /// <summary>Adds pictures to your library (a copy is kept in %APPDATA%\BurnSmith\library) and uses the last one.</summary>
     void OnBg(object s, RoutedEventArgs e)
@@ -577,9 +864,8 @@ public partial class MenuEditorWindow : Window
         try
         {
             var added = dlg.FileNames.Select(ElementLibrary.Import).ToList();
-            working.BackgroundImage = added[^1].Path;
             LoadBackgrounds();
-            Dirty();
+            ApplyBackground(added[^1]);
         }
         catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
         {

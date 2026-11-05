@@ -134,7 +134,12 @@ public static class MenuBuilder
         foreach (var e in mine.Where(x => x.IsButton))
         {
             var id = "u" + d.Elements.IndexOf(e); // stable across pages: the same element is the same button wherever it is drawn
-            if (buttons.All(b => b.Id != id)) buttons.Add(new MenuButton(id, e.Box(), Action(e, c)));
+            if (buttons.All(b => b.Id != id))
+            {
+                // a picture button is selected with its own "sub" picture: on a Blu-ray menu it is the focus image, on a DVD the highlight a subpicture is made from
+                var focus = ElementLibrary.Resolve(e.Focus) is { } f && File.Exists(f) && ElementLibrary.Resolve(e.Image) is { } art && File.Exists(art) ? f : null;
+                buttons.Add(new MenuButton(id, e.Box(), Action(e, c)) { FocusImage = focus, DvdHighlightImage = focus });
+            }
         }
         var result = page with { Ops = ops, Buttons = buttons };
         return mine.Any(x => x.IsButton) ? Relink(result) : result;

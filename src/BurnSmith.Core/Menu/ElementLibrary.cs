@@ -22,22 +22,33 @@ public static class ElementLibrary
     public static readonly (string Label, string Value)[] ButtonStyles =
         [("Capsules", "Pill"), ("Texte seul", "Text"), ("Cartes", "Card"), ("Cadre classique", "Frame"), ("Verre néon", "Glass")];
 
+    /// <summary>The pictures that travel in the exe, by the prefix a design stores them with: the open-source library and the DVDFab / Leawo / Yuhan pictures.</summary>
+    static IEnumerable<(string Prefix, string? Root)> Carried() => [("lib:", OpenLibrary.Dir()), ("carried:", Tools.TemplatesDir())];
+
     /// <summary>
-    /// What a design stores for a library picture: a picture that travels in the exe is kept as "lib:&lt;path in the library&gt;", because its unpacked
-    /// folder changes with every build; any other picture (yours, or a template installed on this PC) is kept by its full path.
+    /// What a design stores for a library picture: a picture that travels in the exe is kept as "lib:&lt;path&gt;" (open library) or "carried:&lt;path&gt;"
+    /// (template pictures), because the unpacked folder is not the same on every PC; any other picture (yours, or a template installed on this PC)
+    /// is kept by its full path.
     /// </summary>
     public static string Reference(string file)
     {
-        var lib = OpenLibrary.Dir();
-        return lib != null && file.StartsWith(lib + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-            ? "lib:" + file[(lib.Length + 1)..].Replace('\\', '/') : file;
+        foreach (var (prefix, root) in Carried())
+            if (root != null && file.StartsWith(root + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                return prefix + file[(root.Length + 1)..].Replace('\\', '/');
+        return file;
     }
 
     /// <summary>The file a stored picture reference points to (null when there is none).</summary>
-    public static string? Resolve(string? reference) =>
-        reference != null && reference.StartsWith("lib:", StringComparison.Ordinal)
-            ? OpenLibrary.Dir() is { } lib ? System.IO.Path.Combine(lib, reference[4..].Replace('/', System.IO.Path.DirectorySeparatorChar)) : null
-            : reference;
+    public static string? Resolve(string? reference)
+    {
+        if (reference == null) return null;
+        // the roots are only looked up for a reference that names one: a plain path must not make the exe unpack its pictures
+        string prefix, dir;
+        if (reference.StartsWith("lib:", StringComparison.Ordinal)) { prefix = "lib:"; dir = OpenLibrary.Dir()!; }
+        else if (reference.StartsWith("carried:", StringComparison.Ordinal)) { prefix = "carried:"; dir = Tools.TemplatesDir()!; }
+        else return reference;
+        return dir == null ? null : System.IO.Path.Combine(dir, reference[prefix.Length..].Replace('/', System.IO.Path.DirectorySeparatorChar));
+    }
 
     /// <summary>Every background, grouped by source (the order of the sources is the order of the list).</summary>
     public static List<Element> Backgrounds((List<TemplateCatalog.Found> Usable, List<TemplateCatalog.Skipped> Skipped)? scan = null)
@@ -68,6 +79,89 @@ public static class ElementLibrary
     {
         var s = stem.Contains('_') && char.IsDigit(stem[0]) ? stem[(stem.IndexOf('_') + 1)..] : stem;
         return s.Replace('_', ' ');
+    }
+
+    // ---------------------------------------------------------------- buttons (kept apart from the backgrounds)
+
+    /// <summary>
+    /// One button of the library: a look BurnSmith draws itself (<see cref="Style"/>), or a picture (<see cref="Normal"/>) with the one shown
+    /// when it is selected (<see cref="Focus"/>, null = the design's accent frame).
+    /// </summary>
+    public sealed record ButtonItem(string Name, string Source, string? Normal = null, string? Focus = null, string? Style = null, bool Removable = false);
+
+    public const string Styles = "Styles BurnSmith", MyButtons = "Mes boutons";
+
+    /// <summary>The user's own buttons: Documents\BurnSmith\Templates\buttons, "name.png" and, for its selected state, "name.sub.png".</summary>
+    public static string UserButtonsDir { get; } = AppFiles.UserFolder("buttons", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BurnSmith", "library", "buttons"));
+
+    static bool IsSub(string file) => System.IO.Path.GetFileNameWithoutExtension(file).EndsWith(".sub", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The "name.sub.*" picture beside "name.*", or null.</summary>
+    static string? SubOf(string file) =>
+        Directory.EnumerateFiles(System.IO.Path.GetDirectoryName(file)!, System.IO.Path.GetFileNameWithoutExtension(file) + ".sub.*").FirstOrDefault(IsPicture);
+
+    /// <summary>The button pictures a template folder carries: DVDFab's "play\0.normal.png" with its "0.sub.png", Leawo's and Yuhan's arrows (one picture, no selected state).</summary>
+    static IEnumerable<(string Role, string Normal, string? Focus)> VendorButtons(string dir)
+    {
+        foreach (var (folder, role) in new[] { ("play", "Lecture"), ("scenes", "Scènes"), ("home", "Accueil"), ("setup", "Réglages"), ("left", "Précédent"), ("right", "Suivant") })
+        {
+            var normal = System.IO.Path.Combine(dir, folder, "0.normal.png");
+            var sub = System.IO.Path.Combine(dir, folder, "0.sub.png");
+            if (File.Exists(normal)) yield return (role, normal, File.Exists(sub) ? sub : null);
+        }
+        foreach (var folder in new[] { "Scene", "1920x1080" })
+            foreach (var (name, role) in new[] { ("back", "Retour"), ("previous", "Précédent"), ("next", "Suivant") })
+                if (System.IO.Path.Combine(dir, folder, name + ".png") is var file && File.Exists(file)) yield return (role, file, null);
+    }
+
+    /// <summary>
+    /// Every button, grouped by source: BurnSmith's own looks, the user's imports, then the button pictures of the templates (DVDFab, Leawo, Yuhan;
+    /// a picture several templates share is listed once). Unreadable pictures are left out.
+    /// </summary>
+    public static List<ButtonItem> Buttons((List<TemplateCatalog.Found> Usable, List<TemplateCatalog.Skipped> Skipped)? scan = null)
+    {
+        var list = ButtonStyles.Select(s => new ButtonItem(s.Label, Styles, Style: s.Value)).ToList();
+        if (Directory.Exists(UserButtonsDir))
+            list.AddRange(Directory.EnumerateFiles(UserButtonsDir).Where(f => IsPicture(f) && !IsSub(f)).Order()
+                .Select(f => new ButtonItem(System.IO.Path.GetFileNameWithoutExtension(f), MyButtons, f, SubOf(f), Removable: true)));
+
+        var seen = new HashSet<string>();
+        foreach (var found in (scan ?? TemplateCatalog.Scan()).Usable)
+            if (found.Design.TemplateDir is { } dir && Directory.Exists(dir))
+                foreach (var (role, normal, focus) in VendorButtons(dir))
+                {
+                    if (MenuRenderer.Size(normal) == null || (focus != null && MenuRenderer.Size(focus) == null)) continue; // a damaged picture
+                    var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(normal))) + (focus == null ? "" : "+" + new FileInfo(focus).Length);
+                    if (seen.Add(key)) list.Add(new ButtonItem($"{found.Design.Name} · {role}", found.Design.Category, normal, focus));
+                }
+        return list;
+    }
+
+    /// <summary>Copies a button picture, and the one shown when it is selected, into the user's buttons.</summary>
+    public static ButtonItem ImportButton(string normal, string? focus = null)
+    {
+        foreach (var file in new[] { normal, focus }.OfType<string>())
+            if (!IsPicture(file) || !File.Exists(file)) throw new ArgumentException($"not a picture file (jpg, png, bmp): {file}");
+        Directory.CreateDirectory(UserButtonsDir);
+        var stem = System.IO.Path.GetFileNameWithoutExtension(normal).Replace(".sub", "", StringComparison.OrdinalIgnoreCase);
+        var target = System.IO.Path.Combine(UserButtonsDir, stem + System.IO.Path.GetExtension(normal));
+        for (var n = 2; File.Exists(target); n++) target = System.IO.Path.Combine(UserButtonsDir, $"{stem} ({n}){System.IO.Path.GetExtension(normal)}");
+        File.Copy(normal, target);
+        string? twin = null;
+        if (focus != null)
+        {
+            twin = System.IO.Path.Combine(UserButtonsDir, System.IO.Path.GetFileNameWithoutExtension(target) + ".sub" + System.IO.Path.GetExtension(focus));
+            File.Copy(focus, twin, true);
+        }
+        return new ButtonItem(System.IO.Path.GetFileNameWithoutExtension(target), MyButtons, target, twin, Removable: true);
+    }
+
+    /// <summary>Removes one of the user's own buttons (with its selected picture); the others are not the library's to delete.</summary>
+    public static void RemoveButton(ButtonItem b)
+    {
+        if (!b.Removable || b.Normal == null || !b.Normal.StartsWith(UserButtonsDir, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("only your own buttons can be removed");
+        File.Delete(b.Normal);
+        if (b.Focus != null && File.Exists(b.Focus)) File.Delete(b.Focus);
     }
 
     /// <summary>Copies a picture into the user's library (a name that exists is kept apart with a number).</summary>

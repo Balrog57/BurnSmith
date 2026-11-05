@@ -48,6 +48,13 @@ public sealed class MenuElement
     /// Otherwise the element goes over everything, like a caption or a badge.
     /// </summary>
     public bool Behind { get; set; }
+    /// <summary>
+    /// A "button" drawn from a picture (<see cref="Image"/>, a library button) is selected on the disc with this picture, the "sub" twin of the
+    /// button's own (a DVD subpicture is made from it too); null = the design's accent frame around the button.
+    /// </summary>
+    public string? Focus { get; set; }
+    /// <summary>A "button" without a picture takes this look (Pill, Text, Card, Frame, Glass: <see cref="ElementLibrary.ButtonStyles"/>) instead of the design's; empty = the design's.</summary>
+    public string Look { get; set; } = "";
 
     public const string AllPages = "all";
 
@@ -92,8 +99,18 @@ public sealed class MenuElement
                 if (BorderWidth > 0) yield return new Border(box, Border, BorderWidth, Radius);
                 break;
             case "button":
-                // the design's own button look (card, label), so a hand-placed button sits beside the template's own
-                foreach (var op in MenuBuilder.Button(d, box, Text.Length > 0 ? Text : "Button", Math.Clamp(Size, 20, 80))) yield return op;
+                if (ElementLibrary.Resolve(Image) is { } art && File.Exists(art))
+                {
+                    // a library button: its picture is the look, the label (if any) goes over it
+                    yield return new Image(art, box);
+                    if (Text.Length > 0) yield return new Label(Text, box, Math.Clamp(Size, 20, 80), true);
+                    break;
+                }
+                // the button's own look, else the design's (card, label), so a hand-placed button sits beside the template's own
+                var look = ElementLibrary.ButtonStyles.Any(s => s.Value == Look) ? Look : "";
+                var styled = look.Length == 0 ? d : d.Clone();
+                styled.ButtonStyle = look.Length == 0 ? d.ButtonStyle : look;
+                foreach (var op in MenuBuilder.Button(styled, box, Text.Length > 0 ? Text : "Button", Math.Clamp(Size, 20, 80))) yield return op;
                 break;
             default:
                 if (Text.Length == 0) yield break;
@@ -106,7 +123,7 @@ public sealed class MenuElement
     /// <summary>
     /// Reads a command-line element: "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;color=#FFE6AE;align=center".
     /// Keys: kind, page, rect (x,y,w,h in pixels of the 1920x1080 canvas), text, file, font, size, color, align, bold, italic, outline,
-    /// outlinew, fill, opacity, radius, border, borderw, fit. Unknown keys are ignored, so a misspelt one is not silently a different element.
+    /// outlinew, fill, opacity, radius, border, borderw, fit, behind, target, focus, look. Unknown keys are ignored, so a misspelt one is not silently a different element.
     /// </summary>
     public static MenuElement Parse(string spec)
     {
@@ -143,6 +160,8 @@ public sealed class MenuElement
                 case "fit": e.Fit = value is not ("0" or "false" or "non"); break;
                 case "behind": e.Behind = value is "1" or "true" or "oui"; break;
                 case "target": e.Target = value.ToLowerInvariant(); break;
+                case "focus": e.Focus = value; break;
+                case "look": e.Look = value; break;
             }
         }
         if (e.Kind is not ("text" or "image" or "box" or "button")) throw new ArgumentException($"element kind unknown: {e.Kind} (text, image, box or button)");
