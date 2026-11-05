@@ -76,10 +76,11 @@ if (a.Count >= 3 && a[0] is "slideshow" or "song" or "join")
     Console.WriteLine("ok   " + made);
     return 0;
 }
-// burnsmith check-bd : short clips through the real builds, then what a player needs of them read with ffprobe (sound rate, bit depth, level, sync), the DVD refusals, the work folder, damaged PGS
-if (a.Count >= 1 && a[0] == "check-bd") return BdCheck.Run();
-// burnsmith check-reliability : Cancel on real Blu-ray and DVD encodes (how fast, no process left, no work folder, not a tool failure), half an image, a source gone, the error log, closing
-if (a.Count >= 1 && a[0] == "check-reliability") return ReliabilityCheck.Run();
+// --no-dvd, for CI only (dvdauthor and spumux are not redistributable): check-bd, check-edit and check-reliability name and pass over what needs them; without it a missing tool is a failure
+// burnsmith check-bd [--no-dvd] : short clips through the real builds, then what a player needs of them read with ffprobe (sound rate, bit depth, level, sync), the DVD refusals, the work folder, damaged PGS
+if (a.Count >= 1 && a[0] == "check-bd") return BdCheck.Run(a.Contains("--no-dvd"));
+// burnsmith check-reliability [--no-dvd] : Cancel on real Blu-ray and DVD encodes (how fast, no process left, no work folder, not a tool failure), half an image, a source gone, the error log, closing
+if (a.Count >= 1 && a[0] == "check-reliability") return ReliabilityCheck.Run(a.Contains("--no-dvd"));
 // burnsmith check-templates [--matrix] [--only NAME] [--picture frame.jpg] (--only: the templates whose name contains NAME, no composed designs) : builds every template as film and series and checks pages, buttons, remote moves, pictures;
 // --matrix = every disc shape (1..40 chapters, 2..60 episodes, 1..9 audio, 0..9 subtitles) and 200 designs the menu editor can compose
 if (a.Count >= 1 && a[0] == "check-templates") return TemplateCheck.Run(Opt("--picture") is { } cp ? Path.GetFullPath(cp) : null, a.Contains("--matrix"), Opt("--only"));
@@ -550,7 +551,7 @@ if (a.Count >= 1 && a[0] == "check-update")
     static bool Throws(Action act) { try { act(); return false; } catch (InvalidOperationException) { return true; } }
 }
 
-// burnsmith check-edit : the arithmetic of a cut (length, chapters shifted by the start, typed times) without any video
+// burnsmith check-edit [--no-dvd] : the arithmetic of a cut (length, chapters shifted by the start, typed times) without any video, then what needs the tools: videos made by ffmpeg, DVDs with a start video
 if (a.Count >= 1 && a[0] == "check-edit")
 {
     var failed = 0;
@@ -694,11 +695,12 @@ if (a.Count >= 1 && a[0] == "check-edit")
         Check("two clips of one size and codec but another H.264 profile or reordering are not joined; the same clip is",
               !MediaMaker.SameLayout(BluRay.Probe(F("x.mkv")), BluRay.Probe(F("y.mkv"))) && MediaMaker.SameLayout(BluRay.Probe(F("x.mkv")), BluRay.Probe(F("x.mkv"))));
     }
-    catch (FileNotFoundException) { Console.WriteLine("skip slideshow and song videos (no ffmpeg)"); }
+    catch (FileNotFoundException e) { Check($"slideshow and song videos: {e.Message}", false); }
     finally { if (Directory.Exists(mediaDir)) Directory.Delete(mediaDir, true); }
     // a DVD with a start video, made for real when ffmpeg and dvdauthor are there: the first-play command jumps to the title after the film, with and without a menu
     var introDir = Path.Combine(Path.GetTempPath(), "bs_dvdintro_" + Guid.NewGuid().ToString("N")[..8]);
-    try
+    if (a.Contains("--no-dvd")) Console.WriteLine("skip a DVD's start video, the Settings page after it, an NTSC start video on a PAL film (--no-dvd)");
+    else try
     {
         var ffmpeg = Tools.Find("ffmpeg.exe");
         Tools.Find("dvdauthor.exe"); Tools.Find("spumux.exe");
@@ -724,7 +726,8 @@ if (a.Count >= 1 && a[0] == "check-edit")
               noMenu == (2, "3002000000020000") && withMenu == (2, "3002000000020000")
               && DiscCheck.Folder(Path.Combine(introDir, "plain")).Count == 0 && DiscCheck.Folder(Path.Combine(introDir, "menu")).Count == 0);
     }
-    catch (FileNotFoundException) { Console.WriteLine("skip DVD start video (no ffmpeg or dvdauthor)"); }
+    catch (FileNotFoundException e) { Check($"a DVD's start video: {e.Message}", false); }
+    catch (InvalidOperationException e) { Check($"a DVD's start video: {e.Message.Split('\n')[0]}", false); } // a tool that failed: this disc cannot be made, which is a finding, not a crash of the check
     finally { if (Directory.Exists(introDir)) Directory.Delete(introDir, true); }
     Check("custom times in whole seconds, unique", Show(new DiscTitle("x", ChapterAt: [10.2, 10.4, 5]).ChapterList(600, 5)) == "0,5,10");
     var dir = Path.Combine(Path.GetTempPath(), "bs_extsub_" + Guid.NewGuid().ToString("N")[..8]);

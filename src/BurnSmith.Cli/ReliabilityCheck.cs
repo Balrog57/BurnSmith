@@ -67,7 +67,7 @@ static class ReliabilityCheck
         if (!ended) { Alive(kill: true); Task.WaitAny([running], 30_000); } // the defect is back: the next parts must not see this encode
     }
 
-    public static int Run()
+    public static int Run(bool noDvd)
     {
         root = Path.Combine(Path.GetTempPath(), "bs_rel_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(root);
@@ -79,7 +79,8 @@ static class ReliabilityCheck
             var encode = new EncodeOptions(true, Preset: "veryslow");
 
             Part("Blu-ray", () => CancelBuild("bd", (o, l, c) => BluRay.Build(new BluRayJob([new DiscTitle(clip)], o, null, false, "CHECK", 5, encode, 23.3), l, c)));
-            Part("DVD", () => CancelBuild("dvd", (o, l, c) => Dvd.Build(new DvdJob([new DiscTitle(clip)], o), l, c)));
+            if (noDvd) Console.WriteLine("skip Cancel on a real DVD encode (--no-dvd)");
+            else Part("DVD", () => CancelBuild("dvd", (o, l, c) => Dvd.Build(new DvdJob([new DiscTitle(clip)], o), l, c)));
 
             Part("already cancelled", () =>
             {

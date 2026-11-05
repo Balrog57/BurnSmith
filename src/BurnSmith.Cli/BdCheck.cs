@@ -15,6 +15,7 @@ static class BdCheck
 {
     static int failed;
     static string root = "", ffmpeg = "", ffprobe = "";
+    static bool noDvd;
 
     static void Check(string what, bool ok, string shown = "")
     {
@@ -27,6 +28,13 @@ static class BdCheck
     {
         try { work(); }
         catch (Exception e) { Check(what, false, $"{e.GetType().Name}: {e.Message.Split('\n')[0]}"); }
+    }
+
+    /// <summary>A part that needs dvdauthor or spumux, not redistributable, so absent from CI: only --no-dvd passes over it, and says so; otherwise a missing tool fails it.</summary>
+    static void DvdPart(string what, Action work)
+    {
+        if (noDvd) Console.WriteLine($"skip {what} (--no-dvd)");
+        else Part(what, work);
     }
 
     static string F(string name) => Path.Combine(root, name);
@@ -84,8 +92,9 @@ static class BdCheck
         return disc;
     }
 
-    public static int Run()
+    public static int Run(bool skipDvd)
     {
+        noDvd = skipDvd;
         root = Path.Combine(Path.GetTempPath(), "bs_bd_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(root);
         try
@@ -254,7 +263,7 @@ static class BdCheck
             var cues = PgsSubtitles.Cues(output.ToArray(), out var skipped);
             Check("a .sup with one picture cut short: that one is left out, the other stays", cues.Count == 1 && skipped == 1, $"{cues.Count} cues, {skipped} skipped");
         });
-        Part("a DVD with a damaged .sup", () =>
+        DvdPart("a DVD with a damaged .sup", () =>
         {
             var lines = new List<string>();
             var clip = Clip("subclip.mkv", "testsrc=s=320x240:r=25:d=2", 48000, ["-pix_fmt", "yuv420p"], Ac3At48);
@@ -277,6 +286,7 @@ static class BdCheck
         };
         foreach (var (name, build) in builds)
         {
+            if (noDvd && name == "DVD") { Console.WriteLine("skip DVD: a failed build leaves no work folder, nothing of an earlier crash is reused (--no-dvd)"); continue; }
             var failing = F("failing" + name);
             var threw = false;
             try { build(broken, failing); }
@@ -334,12 +344,8 @@ static class BdCheck
             var cli = F("cli");
             Directory.CreateDirectory(cli);
             foreach (var file in Directory.EnumerateFiles(AppContext.BaseDirectory)) File.Copy(file, Path.Combine(cli, Path.GetFileName(file)));
-            var real = Path.GetDirectoryName(Tools.Find("dvdauthor.exe"))!;
             var nothing = F("no-tools");
-            var noSpumux = F("no-spumux");
             Directory.CreateDirectory(nothing);
-            Directory.CreateDirectory(noSpumux);
-            foreach (var file in Directory.EnumerateFiles(real).Where(x => !Path.GetFileName(x).Equals("spumux.exe", StringComparison.OrdinalIgnoreCase))) File.Copy(file, Path.Combine(noSpumux, Path.GetFileName(file)));
             var clip = Clip("dvdclip.mkv", "testsrc=s=320x240:r=25:d=2", 48000, ["-pix_fmt", "yuv420p"], Ac3At48);
             File.WriteAllText(F("dvdclip.fr.srt"), "1\n00:00:00,500 --> 00:00:01,500\nBonjour\n");
 
@@ -350,6 +356,11 @@ static class BdCheck
                       $"exit {result.Exit}, {(result.Output.Contains("encode 1") ? "it encoded first" : "nothing encoded")}, {(result.Output.Contains(missing) ? "names " + missing : "does not name " + missing)}");
             }
             Refused("no dvdauthor: refused before anything is encoded", "dvdauthor.exe", nothing, "nodvdauthor", "--no-menu");
+            if (noDvd) { Console.WriteLine("skip no spumux refused or still building, no room on the drive (--no-dvd)"); return; }
+            var real = Path.GetDirectoryName(Tools.Find("dvdauthor.exe"))!;
+            var noSpumux = F("no-spumux");
+            Directory.CreateDirectory(noSpumux);
+            foreach (var file in Directory.EnumerateFiles(real).Where(x => !Path.GetFileName(x).Equals("spumux.exe", StringComparison.OrdinalIgnoreCase))) File.Copy(file, Path.Combine(noSpumux, Path.GetFileName(file)));
             Refused("no spumux, a subtitle: refused before anything is encoded, not \"subtitles dropped\"", "spumux.exe", noSpumux, "nospumuxsub", "--no-menu", "--sub-file", F("dvdclip.fr.srt"));
             Refused("no spumux, a menu: refused before anything is encoded", "spumux.exe", noSpumux, "nospumuxmenu");
             var plain = Isolated(cli, noSpumux, 120, "dvd", "--video", clip, "--out", F("plaindvd"), "--no-menu");
