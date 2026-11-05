@@ -124,8 +124,14 @@ public static class BluRay
         var sources = job.Titles.Select(t => t.Cut(Probe(t.Video))).ToList(); // durations from here on are the parts kept
         var work = job.OutDir + "_work";
         Tools.PrepareOutput(job.OutDir);
-        Directory.CreateDirectory(work);
+        Tools.FreshFolder(work);
+        try { Author(job, intro, sources, mainCount, work, log); }
+        finally { Tools.TryDelete(work); } // temporary videos of many GB: a failed build must not leave them behind
+        log("done: " + job.OutDir);
+    }
 
+    static void Author(BluRayJob job, DiscTitle? intro, List<SourceInfo> sources, int mainCount, string work, Action<string> log)
+    {
         var kbps = TargetKbps(job, sources, log);
         var muxed = new List<Muxed>();
         for (var i = 0; i < job.Titles.Count; i++)
@@ -211,8 +217,6 @@ public static class BluRay
             if (intro != null) log($"intro: {intro.DisplayName} plays first");
             if (muxed[0].DefaultSubtitle > 0) log($"subtitle {muxed[0].DefaultSubtitle} shown from the start");
         }
-        Tools.TryDelete(work);
-        log("done: " + job.OutDir);
     }
 
     /// <summary>

@@ -50,8 +50,14 @@ public static class Dvd
         var pal = Math.Abs(sources[0].Fps - 25) < 0.5 || Math.Abs(sources[0].Fps - 50) < 0.5; // the disc follows its first video
         var work = job.OutDir + "_work";
         Tools.PrepareOutput(job.OutDir);
-        Directory.CreateDirectory(work);
+        Tools.FreshFolder(work);
+        try { Author(job, intro, introSource, sources, items, pal, mainCount, work, log); }
+        finally { Tools.TryDelete(work); } // temporary videos of many GB: a failed build must not leave them behind
+        log("done: " + job.OutDir);
+    }
 
+    static void Author(DvdJob job, DiscTitle? intro, SourceInfo? introSource, List<SourceInfo> sources, List<(SourceInfo Src, DiscTitle Title)> items, bool pal, int mainCount, string work, Action<string> log)
+    {
         var videoBps = job.Encode is { DvdKbps: > 0 } manual ? Math.Clamp(manual.DvdKbps, 1500, 9000) * 1000 : VideoBitrate(items, job.CapacityGB); // by hand, else what fills the disc
         log($"movie: {(pal ? "PAL" : "NTSC")} {videoBps / 1000} kb/s");
         var movies = new List<Movie>();
@@ -81,8 +87,6 @@ public static class Dvd
         // this dvdauthor build wants exactly "-o dest -x script -h N" plus one more argument (it reads argv[7] unchecked and crashes without)
         Tools.Run(Tools.Find("dvdauthor.exe"), ["-o", job.OutDir, "-x", xml, "-h", "0", "-q"], log, env: new Dictionary<string, string> { ["VIDEO_FORMAT"] = pal ? "PAL" : "NTSC" });
         Directory.CreateDirectory(Path.Combine(job.OutDir, "AUDIO_TS")); // empty, but players and tools expect it
-        Tools.TryDelete(work);
-        log("done: " + job.OutDir);
     }
 
     static Movie EncodeTitle(DvdJob job, int number, SourceInfo src, DiscTitle title, bool pal, int videoBps, string work, Action<string> log)

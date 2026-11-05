@@ -72,6 +72,13 @@ public static class Tools
         Directory.Delete(dir, true);
     }
 
+    /// <summary>A work folder of ours, created empty: what a crashed build left there must never be reused, so unlike <see cref="TryDelete"/> this one fails on a locked file.</summary>
+    public static void FreshFolder(string dir)
+    {
+        if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        Directory.CreateDirectory(dir);
+    }
+
     /// <summary>Removes a temporary folder of ours; a locked file must not fail a build that already succeeded.</summary>
     public static void TryDelete(string dir)
     {
