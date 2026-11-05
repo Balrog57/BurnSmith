@@ -30,6 +30,92 @@ public static class PgsSubtitles
 
     static int Be16(ReadOnlySpan<byte> b) => BinaryPrimitives.ReadUInt16BigEndian(b);
 
+    /// <summary>
+    /// Writes a .sup the way the stream a disc is mastered with looks: every picture is an epoch of its own (a whole composition, its window, its palette,
+    /// one object) and a set with no object takes it off the screen when it ends. All the segments of a set carry the same times, the DTS a few
+    /// milliseconds before the PTS (the time the decoder needs for the object), and a DTS never goes back.
+    /// </summary>
+    public sealed class Writer(int planeWidth, int planeHeight)
+    {
+        readonly MemoryStream output = new();
+        ushort number;
+        long last;               // the last time written: no DTS goes below it
+        long clearAt = -1;       // when the picture on screen ends (-1 = none)
+        (int X, int Y, int W, int H) window;
+
+        void Segment(byte kind, long pts, long dts, byte[] body) => output.Write(Pgs.Segment(kind, (uint)pts, (uint)dts, body));
+
+        byte[] Composition(byte state, int objects, int x, int y)
+        {
+            var body = new List<byte>();
+            body.AddRange(Be(planeWidth, 2)); body.AddRange(Be(planeHeight, 2));
+            body.AddRange([0x10]);                                // frame rate code (the player ignores it)
+            body.AddRange(Be(number++, 2));
+            body.AddRange([state, 0, 0, (byte)objects]);          // state, palette update flag, palette id, number of objects
+            if (objects > 0) { body.AddRange(Be(0, 2)); body.AddRange([0, 0]); body.AddRange(Be(x, 2)); body.AddRange(Be(y, 2)); } // object 0, window 0, not cropped, place
+            return [.. body];
+        }
+
+        static byte[] Be(int value, int bytes) => bytes == 2 ? [(byte)(value >> 8), (byte)value] : [(byte)(value >> 16), (byte)(value >> 8), (byte)value];
+
+        byte[] Window() => [1, 0, .. Be(window.X, 2), .. Be(window.Y, 2), .. Be(window.W, 2), .. Be(window.H, 2)];
+
+        void Clear()
+        {
+            Segment(CompositionKind, clearAt, clearAt, Composition(0, 0, 0, 0));
+            Segment(0x17, clearAt, clearAt, Window());
+            Segment(EndKind, clearAt, clearAt, []);
+            (last, clearAt) = (clearAt, -1);
+        }
+
+        /// <summary>
+        /// A picture to show from <paramref name="start"/> to <paramref name="end"/> (seconds): <paramref name="index"/> are numbers into <paramref name="palette"/>
+        /// (0 = transparent), pictures in the order they show.
+        /// </summary>
+        public void Add(double start, double end, int x, int y, int w, int h, byte[] index, (byte R, byte G, byte B, byte A)[] palette)
+        {
+            var pts = (long)Math.Round(start * Clock);
+            if (clearAt >= 0 && clearAt < pts) Clear(); // when the next picture comes right at the end, it simply replaces this one
+            clearAt = -1;
+            var data = Pgs.Rle(index, w, h);
+            var dts = Math.Max(Math.Max(0, pts - (long)Math.Ceiling(w * h * 0.005625)), last); // 90000 * 8 / 128 Mb/s per pixel
+            window = (x, y, w, h);
+            Segment(CompositionKind, pts, dts, Composition(0x80, 1, x, y));
+            Segment(0x17, pts, dts, Window());
+            var colors = new List<byte> { 0, 0 };                                // palette 0, version 0
+            for (var i = 0; i < palette.Length; i++)
+            {
+                var (r, g, b, a) = palette[i];
+                var (yy, cb, cr) = i == 0 ? (16, 128, 128) : Pgs.YCbCr(r, g, b);
+                colors.AddRange([(byte)i, (byte)yy, (byte)cr, (byte)cb, i == 0 ? (byte)0 : a]); // index, Y, Cr, Cb, opacity
+            }
+            Segment(PaletteKind, pts, dts, [.. colors]);
+            // the object: the first piece says how long the whole is and how big the picture, the others only go on
+            const int firstRoom = Pgs.MaxSegment - 11, nextRoom = Pgs.MaxSegment - 4;
+            for (int at = 0, id = 0; ; id++)
+            {
+                var room = id == 0 ? firstRoom : nextRoom;
+                var piece = data.AsSpan(at, Math.Min(room, data.Length - at)).ToArray();
+                var final = at + piece.Length >= data.Length;
+                var body = new List<byte>(Be(0, 2)) { 0, (byte)((id == 0 ? 0x80 : 0) | (final ? 0x40 : 0)) };
+                if (id == 0) { body.AddRange(Be(data.Length + 4, 3)); body.AddRange(Be(w, 2)); body.AddRange(Be(h, 2)); }
+                body.AddRange(piece);
+                Segment(ObjectKind, pts, dts, [.. body]);
+                at += piece.Length;
+                if (final) break;
+            }
+            Segment(EndKind, pts, dts, []);
+            (this.last, clearAt) = (pts, Math.Max(pts + 1, (long)Math.Round(end * Clock)));
+        }
+
+        /// <summary>The stream, with the last picture taken off the screen.</summary>
+        public byte[] Finish()
+        {
+            if (clearAt >= 0) Clear();
+            return output.ToArray();
+        }
+    }
+
     static List<Set> Read(byte[] sup)
     {
         var sets = new List<Set>();

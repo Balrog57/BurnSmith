@@ -470,7 +470,7 @@ public static class BluRay
             args.AddRange(["-f", t.IsPgs ? "sup" : "srt", file]);
         }
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
-        foreach (var (t, file) in subs.Where(x => x.Track.File != null)) WriteExternalSubtitle(title, t, s.Duration, file, log);
+        foreach (var (t, file) in subs.Where(x => x.Track.File != null)) WriteExternalSubtitle(title, t, s.Duration, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
         foreach (var (t, file) in subs.Where(x => !x.Track.IsPgs)) TidySubtitle(file);
     }
 
@@ -486,15 +486,20 @@ public static class BluRay
     }
 
     /// <summary>
-    /// A subtitle file beside the video as the SRT the disc tools take (a .sup stays one, cut by <see cref="PgsSubtitles.Cut"/>): cut like the video (<see cref="ExternalSubtitle.Cut"/>), read as
+    /// A subtitle file beside the video as the SRT the disc tools take (a .sup stays one, cut by <see cref="PgsSubtitles.Cut"/>; an .idx + .sub is made into one for a
+    /// <paramref name="plane"/>-sized screen first, <see cref="VobSub.ToSup"/>): cut like the video (<see cref="ExternalSubtitle.Cut"/>), read as
     /// Unicode when it is one, else as Windows-1252 (what French subtitle files usually are),
     /// (on a Blu-ray the text tracks are then tidied by <see cref="TidySubtitle"/>).
     /// </summary>
-    internal static void WriteExternalSubtitle(DiscTitle title, SubtitleTrack track, double length, string output, Action<string> log)
+    internal static void WriteExternalSubtitle(DiscTitle title, SubtitleTrack track, double length, string output, (int Width, int Height) plane, Action<string> log)
     {
         if (track.IsPgs) // pictures: cut by their own timing, not converted
         {
-            File.WriteAllBytes(output, PgsSubtitles.Cut(File.ReadAllBytes(track.File!), title.Start, length));
+            var vobSub = Path.GetExtension(track.File!).Equals(".idx", StringComparison.OrdinalIgnoreCase);
+            var skipped = 0;
+            var sup = vobSub ? VobSub.ToSup(track.File!, track.Stream, plane.Width, plane.Height, out skipped) : File.ReadAllBytes(track.File!);
+            if (vobSub) log($"VobSub {Path.GetFileName(track.File!)}: {track.Name}, made into PGS for a {plane.Width}x{plane.Height} screen" + (skipped > 0 ? $"; {skipped} picture(s) could not be read and are left out" : ""));
+            File.WriteAllBytes(output, PgsSubtitles.Cut(sup, title.Start, length));
             return;
         }
         var args = new List<string> { "-y", "-v", "error" };

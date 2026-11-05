@@ -4,7 +4,8 @@ using BurnSmith.Core.Menu;
 // burnsmith bd|dvd --video <file> [--video <file2> ...] --out <folder> [--design Midnight] [--title "My Disc"] [--no-menu]
 //                  [--chapters 5] [--audio 0,1] [--sub 0] [bd only: --uhd --label X]
 // --audio / --sub: 0-based track numbers of each source, kept in that order (default: first audio, no subtitles). Several --video need a menu.
-// --sub-file: a subtitle file (srt, ass, ssa, vtt, or sup = PGS pictures) of the video written before it, kept after those tracks; its language comes from the name ("film.fr.srt") or "fra=film.srt"
+// --sub-file: a subtitle file (srt, ass, ssa, vtt, sup = PGS pictures, or idx = VobSub with its .sub, one track per language it holds) of the video written before it, kept after those tracks;
+//             its language comes from the name ("film.fr.srt") or "fra=film.srt" (for an .idx: only that language)
 // --default-audio N / --default-sub N: after a --video, the audio track that plays / the subtitle that shows when the disc starts (numbers as in --audio / --sub, so among the ones kept);
 //                  the default audio goes first on the disc, the default subtitle is selected by the disc (a menu's settings page shows it chosen)
 // --bonus: after a --video, that video is an extra (trailer, making-of): it goes after the main videos, off "Play" / "Play all", on the menu's Bonus page (needs another, main, video)
@@ -126,6 +127,110 @@ if (a.Count >= 1 && a[0] == "check-edit")
     try { PgsSubtitles.Cues([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], out _); } catch (InvalidDataException) { notSup = true; }
     var pgsFile = new ExternalSubtitle("a.fr.sup", "fre").Track(2);
     Check("a .sup is a PGS track the disc can carry, named after its language; text tracks are not PGS", notSup && pgsFile.IsPgs && pgsFile.Supported && ExternalSubtitle.Extensions.Contains(".sup") && !new ExternalSubtitle("a.srt").Track(0).IsPgs);
+    // VobSub built by hand: pictures in four colours, run-length coded in nibbles, field by field, cut into packs of a program stream
+    static byte[] SpuField(byte[] px, int w, int h, int first, bool toEnd)
+    {
+        var n = new List<int>();
+        for (var y = first; y < h; y += 2)
+        {
+            for (var x = 0; x < w;)
+            {
+                int c = px[y * w + x], run = 1;
+                while (x + run < w && px[y * w + x + run] == c) run++;
+                if (x + run == w && run > 3 && toEnd) { n.AddRange([0, 0, 0, c]); break; } // 0 = to the end of the row
+                run = Math.Min(run, 255);
+                var code = run << 2 | c;
+                for (var d = (run < 4 ? 1 : run < 16 ? 2 : run < 64 ? 3 : 4) - 1; d >= 0; d--) n.Add(code >> 4 * d & 15);
+                x += run;
+            }
+            if (n.Count % 2 == 1) n.Add(0);
+        }
+        return [.. Enumerable.Range(0, n.Count / 2).Select(i => (byte)(n[2 * i] << 4 | n[2 * i + 1]))];
+    }
+    byte[] Spu(byte[] px, int w, int h, int x0, int y0, int stopTicks, bool toEnd)
+    {
+        byte[] top = SpuField(px, w, h, 0, toEnd), bottom = SpuField(px, w, h, 1, toEnd);
+        var first = 4 + top.Length + bottom.Length;
+        byte[] area = [(byte)(x0 >> 4), (byte)((x0 & 15) << 4 | (x0 + w - 1) >> 8), (byte)(x0 + w - 1), (byte)(y0 >> 4), (byte)((y0 & 15) << 4 | (y0 + h - 1) >> 8), (byte)(y0 + h - 1)];
+        byte[] commands = [0x01, 0x03, 0x32, 0x10, 0x04, 0x8F, 0xF0, 0x05, .. area, 0x06, .. Be(4, 2), .. Be(4 + top.Length, 2), 0xFF];
+        var second = first + 4 + commands.Length; // the sequence that hides it (none when stopTicks < 0: the sequence then points to itself)
+        byte[] stop = stopTicks < 0 ? [] : [.. Be(stopTicks, 2), .. Be(second, 2), 0x02, 0xFF];
+        return [.. Be(second + stop.Length, 2), .. Be(first, 2), .. top, .. bottom, .. Be(0, 2), .. Be(stopTicks < 0 ? first : second, 2), .. commands, .. stop];
+    }
+    static byte[] Pack(int substream, byte[] data, double? seconds)
+    {
+        var pts = seconds is { } t ? (long)(t * 90000) : 0;
+        byte[] stamp = seconds == null ? [] : [(byte)(0x21 | (pts >> 30 & 7) << 1), (byte)(pts >> 22), (byte)((pts >> 15 & 0x7F) << 1 | 1), (byte)(pts >> 7), (byte)((pts & 0x7F) << 1 | 1)];
+        byte[] pes = [0, 0, 1, 0xBD, .. Be(3 + stamp.Length + 1 + data.Length, 2), 0x81, (byte)(seconds == null ? 0 : 0x80), (byte)stamp.Length, .. stamp, (byte)substream, .. data];
+        return [0, 0, 1, 0xBA, 0x44, 0, 4, 0, 4, 1, 1, 0x89, 0xC3, 0xF8, .. pes];
+    }
+    byte[] vobA = [.. Enumerable.Range(0, 12 * 6).Select(i => (byte)((i % 12 / 3 + i / 12) % 4))];
+    for (var i = 24; i < 36; i++) vobA[i] = 2; // a whole row of one colour
+    byte[] vobB = new byte[300 * 4];
+    for (var x = 0; x < 300; x++) (vobB[x], vobB[300 + x], vobB[600 + x], vobB[900 + x]) = (1, (byte)(x < 70 ? 0 : 3), (byte)(x < 20 ? 2 : 1), (byte)(x % 2 == 0 ? 3 : 0));
+    var vobDir = Path.Combine(Path.GetTempPath(), "bs_vobsub_" + Guid.NewGuid().ToString("N")[..8]);
+    Directory.CreateDirectory(vobDir);
+    try
+    {
+        byte[] spuA = Spu(vobA, 12, 6, 100, 400, 200, false), spuB = Spu(vobB, 300, 4, 20, 30, -1, true), spuC = Spu(vobA, 12, 6, 7, 9, 100, false);
+        var sub = new List<byte>();
+        long at1 = sub.Count;
+        sub.AddRange(Pack(0x20, spuA[..30], 1.5));                // the first subpicture in two packs, a packet of another stream between them
+        long at3 = sub.Count;
+        sub.AddRange(Pack(0x21, spuC, 2.0));
+        sub.AddRange(Pack(0x20, spuA[30..], null));
+        long at2 = sub.Count;
+        sub.AddRange(Pack(0x20, spuB, 5.0));
+        File.WriteAllBytes(Path.Combine(vobDir, "v.sub"), [.. sub]);
+        File.WriteAllText(Path.Combine(vobDir, "v.idx"), $"# VobSub index file, v7 (do not modify this line!)\nsize: 720x480\npalette: 000000, ffffff, ff0000, 00ff00, 000000, 000000, 000000, 000000, 000000, 000000, 000000, 000000, 000000, 000000, 000000, 000000\n\nid: fr, index: 0\n"
+            + $"timestamp: 00:00:01:500, filepos: {at1:x9}\ntimestamp: 00:00:05:000, filepos: {at2:x9}\n\nid: xx, index: 1\ntimestamp: 00:00:02:000, filepos: {at3:x9}\n");
+        var idx = VobSub.ReadIndex(Path.Combine(vobDir, "v.idx"));
+        Check("VobSub index: size, 16 colours, one track per id with its language, its pictures' times and places",
+              idx.Width == 720 && idx.Height == 480 && idx.Palette.Length == 16 && idx.Palette[2] == 0xFF0000 && idx.Streams.Count == 2 && idx.Streams[0].Lang == "fre" && idx.Streams[1].Lang == "und" && idx.Streams[1].Number == 1
+              && idx.Streams[0].Cues.Count == 2 && idx.Streams[0].Cues[0] == (1.5, at1) && idx.Streams[0].Cues[1] == (5.0, at2));
+        var decodedA = VobSub.Decode(spuA, idx.Palette);
+        var decodedB = VobSub.Decode(spuB, idx.Palette);
+        Check("VobSub picture: place and size, every pixel through the nibble codes of all lengths and the two fields, colours and opacity",
+              decodedA is { X: 100, Y: 400, Width: 12, Height: 6 } && decodedA.Pixels.SequenceEqual(vobA) && decodedA.Colors[1] == (255, 255, 255, 255) && decodedA.Colors[2] == (255, 0, 0, 255) && decodedA.Colors[3] == (0, 255, 0, 136) && decodedA.Colors[0].A == 0
+              && decodedB is { X: 20, Y: 30, Width: 300, Height: 4 } && decodedB.Pixels.SequenceEqual(vobB) && Math.Abs(decodedA.End - 200 * 1024 / 90000.0) < 1e-9 && double.IsNaN(decodedB.End));
+        Check("VobSub: not a subpicture gives nothing, not an error", VobSub.Decode([1, 2, 3], idx.Palette) == null && VobSub.Decode([.. spuA[..20]], idx.Palette) == null && VobSub.ReadSpu([.. sub], 0, 0x25) == null);
+        var vobPictures = VobSub.Read(Path.Combine(vobDir, "v.idx"), 0, out var vobSkipped);
+        Check("VobSub: a subpicture cut into two packs with another stream's packet between them is read whole; shown at its time, hidden by its own command, else after 3 s or when the next shows",
+              vobSkipped == 0 && vobPictures.Count == 2 && vobPictures[0].Pixels.SequenceEqual(vobA) && Math.Abs(vobPictures[0].Start - 1.5) < 1e-9 && Math.Abs(vobPictures[0].End - (1.5 + 200 * 1024 / 90000.0)) < 1e-6
+              && Math.Abs(vobPictures[1].Start - 5.0) < 1e-9 && Math.Abs(vobPictures[1].End - 8.0) < 1e-9 && VobSub.Read(Path.Combine(vobDir, "v.idx"), 1, out _) is [{ X: 7, Y: 9 }]);
+        var vobSup = VobSub.ToSup(Path.Combine(vobDir, "v.idx"), 0, 720, 480, out _);
+        var vobCues = PgsSubtitles.Cues(vobSup, out var vobBad);
+        Check("VobSub as PGS: same times, place and size on a 720x480 plane, white kept, the clear colour transparent",
+              vobBad == 0 && vobCues.Count == 2 && Math.Abs(vobCues[0].Start - 1.5) < 0.001 && Math.Abs(vobCues[0].End - vobPictures[0].End) < 0.001 && vobCues[0] is { X: 100, Y: 400, Width: 12, Height: 6, PlaneWidth: 720, PlaneHeight: 480 }
+              && Enumerable.Range(0, 72).All(i => vobCues[0].Alpha[i] == (vobA[i] == 0 ? 0 : vobA[i] == 3 ? 136 : 255)) && Enumerable.Range(0, 72).Where(i => vobA[i] == 1).All(i => vobCues[0].Luma[i] == 255)
+              && vobCues[1].Width == 300 && vobCues[1].Alpha[0] == 255 && vobCues[1].Alpha[300] == 0 && PgsSubtitles.PlaneSize(vobSup) == (720, 480));
+        var vobBig = PgsSubtitles.Cues(VobSub.ToSup(Path.Combine(vobDir, "v.idx"), 0, 1440, 960, out _), out _);
+        Check("VobSub scaled to a bigger plane: the picture grows with the frame, its middle keeps its opacity", vobBig.Count == 2 && vobBig[0] is { X: 200, Y: 800, Width: 24, Height: 12, PlaneWidth: 1440 } && vobBig[0].Alpha[6 * 24 + 6] > 0 && vobBig[1].Width == 600);
+        var idxFile = Path.Combine(vobDir, "v.idx");
+        var tracks = ExternalSubtitle.ParseAll(idxFile);
+        var typedTrack = ExternalSubtitle.ParseAll("ger=" + idxFile);
+        var missingSub = false;
+        File.Move(Path.Combine(vobDir, "v.sub"), Path.Combine(vobDir, "w.sub"));
+        try { ExternalSubtitle.ParseAll(idxFile); } catch (FileNotFoundException) { missingSub = true; }
+        File.Move(Path.Combine(vobDir, "w.sub"), Path.Combine(vobDir, "v.sub"));
+        var nearIdx = ExternalSubtitle.Near(Path.Combine(vobDir, "v.mkv"));
+        File.Move(Path.Combine(vobDir, "v.sub"), Path.Combine(vobDir, "w.sub"));
+        var nearNoSub = ExternalSubtitle.Near(Path.Combine(vobDir, "v.mkv"));
+        File.Move(Path.Combine(vobDir, "w.sub"), Path.Combine(vobDir, "v.sub"));
+        Check("an .idx beside the video is found with its .sub (one track per stream), and ignored without it", nearIdx.Count == 2 && nearIdx[1].Stream == 1 && nearNoSub.Count == 0);
+        Check("an .idx is one track per stream, in the language it gives (and a .sub chosen stands for its .idx); typed language: one track; without its .sub: refused",
+              tracks is [{ Lang: "fre", Stream: 0 }, { Lang: "und", Stream: 1 }] && tracks[1].Track(5).IsPgs && typedTrack is [{ Lang: "ger", Stream: 0 }] && missingSub
+              && ExternalSubtitle.ForAll(Path.Combine(vobDir, "film.mkv"), Path.Combine(vobDir, "v.sub")).Count == 2 && ExternalSubtitle.Extensions.Contains(".idx"));
+        // an object too big for one segment goes in pieces and reads back whole
+        var noise = new byte[1500 * 300];
+        for (var i = 0; i < noise.Length; i++) noise[i] = (byte)(1 + (i * 7 + i / 3) % 200);
+        var writer = new PgsSubtitles.Writer(1920, 1080);
+        writer.Add(1, 2, 10, 20, 1500, 300, noise, [.. Enumerable.Range(0, 201).Select(i => ((byte)i, (byte)(255 - i), (byte)(i / 2), (byte)255))]);
+        var bigSup = writer.Finish();
+        var bigCues = PgsSubtitles.Cues(bigSup, out var bigBad);
+        Check("PGS written in pieces: a picture bigger than one segment reads back whole", bigBad == 0 && bigCues.Count == 1 && bigCues[0] is { X: 10, Y: 20, Width: 1500, Height: 300 } && bigCues[0].Alpha.All(a => a == 255) && bigSup.Length > 2 * 65535);
+    }
+    finally { Directory.Delete(vobDir, true); }
     var choices = Languages.Choices.ToList();
     Check("languages to choose from: one per language, each code read back as itself, a name for each", choices.Count >= 20 && choices.Select(c => c.Name).Distinct().Count() == choices.Count
           && choices.All(c => c.Name.Length > 0 && Languages.Code(c.Code) == c.Code) && choices.Any(c => c.Code == "fre" && c.Name == "Français"));
@@ -229,7 +334,7 @@ var titles = videos.Select((v, k) =>
     var volume = int.TryParse(Own("--volume"), out var vol) ? Math.Clamp(vol, 10, 300) : 100;
     IReadOnlyList<double>? chapterAt = own.Contains("--no-chapters") ? [] : Own("--chapter-at")?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => Time(t.Trim()) ?? 0).ToList();
     // --sub-file FILE | --sub-file fra=FILE (repeatable): a subtitle file kept as one more track, after the video's own and the --sub ones
-    var files = own.Select((x, i) => (x, i)).Where(x => x.x == "--sub-file" && x.i + 1 < own.Count).Select(x => ExternalSubtitle.Parse(own[x.i + 1])).ToList();
+    var files = own.Select((x, i) => (x, i)).Where(x => x.x == "--sub-file" && x.i + 1 < own.Count).SelectMany(x => ExternalSubtitle.ParseAll(own[x.i + 1])).ToList();
     var subs = Numbers("--sub");
     if (files.Count > 0) subs = [.. subs ?? [], .. Enumerable.Range(BluRay.Probe(v).Subtitles.Count, files.Count)];
     int? defaultAudio = int.TryParse(Own("--default-audio"), out var da) ? da : null, defaultSub = int.TryParse(Own("--default-sub"), out var ds) ? ds : null;

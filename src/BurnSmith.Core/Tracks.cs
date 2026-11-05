@@ -10,27 +10,52 @@ public sealed record AudioTrack(int Index, string Codec, int Channels, string La
 
 /// <summary>
 /// <see cref="Index"/> counts subtitle streams of the source file (ffmpeg's 0:s:N); a track read from a subtitle file
-/// (<see cref="File"/>, see <see cref="ExternalSubtitle"/>) comes after those.
+/// (<see cref="File"/>, see <see cref="ExternalSubtitle"/>) comes after those. <see cref="Stream"/>: which track of a VobSub .idx (one holds several languages).
 /// </summary>
-public sealed record SubtitleTrack(int Index, string Codec, string Lang, string Title, bool Forced, string? File = null)
+public sealed record SubtitleTrack(int Index, string Codec, string Lang, string Title, bool Forced, string? File = null, int Stream = 0)
 {
     public bool IsPgs => Codec == "hdmv_pgs_subtitle";
     public bool IsText => Codec is "subrip" or "srt" or "ass" or "ssa" or "mov_text" or "webvtt" or "text";
-    /// <summary>PGS is copied on a Blu-ray and redrawn on a DVD; other image subtitles (DVD VobSub, DVB) would need OCR: not carried.</summary>
+    /// <summary>PGS is copied on a Blu-ray and redrawn on a DVD (a VobSub file is made into PGS first); other image subtitles (a VobSub inside a video, DVB) would need OCR: not carried.</summary>
     public bool Supported => IsPgs || IsText;
     public string Name => Languages.Display(Lang, Title) + (Forced ? " (forcés)" : "");
 }
 
 /// <summary>
-/// A subtitle file kept beside the video (SRT, ASS, SSA, WebVTT, or PGS as a .sup; the other bitmap ones would need OCR): one more track of that
-/// video, numbered after the video's own. <see cref="Lang"/> is an ISO 639-2 code, "und" when unknown.
+/// A subtitle file kept beside the video (SRT, ASS, SSA, WebVTT, PGS as a .sup, or VobSub as an .idx with its .sub; the other bitmap ones would need OCR): one more
+/// track of that video, numbered after the video's own. <see cref="Lang"/> is an ISO 639-2 code, "und" when unknown. An .idx holds one track per language:
+/// <see cref="Stream"/> says which one this is.
 /// </summary>
-public sealed record ExternalSubtitle(string File, string Lang = "und", bool Forced = false)
+public sealed record ExternalSubtitle(string File, string Lang = "und", bool Forced = false, int Stream = 0)
 {
-    public static readonly string[] Extensions = [".srt", ".ass", ".ssa", ".vtt", ".sup"];
+    public static readonly string[] Extensions = [".srt", ".ass", ".ssa", ".vtt", ".sup", ".idx"];
 
-    public SubtitleTrack Track(int index) => new(index, Path.GetExtension(File).ToLowerInvariant() switch { ".ass" => "ass", ".ssa" => "ssa", ".vtt" => "webvtt", ".sup" => "hdmv_pgs_subtitle", _ => "subrip" },
-                                                  Lang, Path.GetFileNameWithoutExtension(File), Forced, File); // the name stands in for the language the file does not say
+    public SubtitleTrack Track(int index) => new(index, Path.GetExtension(File).ToLowerInvariant() switch { ".ass" => "ass", ".ssa" => "ssa", ".vtt" => "webvtt", ".sup" or ".idx" => "hdmv_pgs_subtitle", _ => "subrip" },
+                                                  Lang, Path.GetFileNameWithoutExtension(File), Forced, File, Stream); // the name stands in for the language the file does not say
+
+    /// <summary>
+    /// What a file stands for: itself, or for an .idx one track per language it holds (the language the .idx gives, else the one the name says; with
+    /// <paramref name="typed"/> the language was typed by hand: only the track in that language, else the first). An .idx needs its .sub.
+    /// </summary>
+    static List<ExternalSubtitle> Split(ExternalSubtitle e, bool typed = false)
+    {
+        if (!Path.GetExtension(e.File).Equals(".idx", StringComparison.OrdinalIgnoreCase)) return [e];
+        if (!System.IO.File.Exists(VobSub.SubFile(e.File))) throw new FileNotFoundException($"the .sub of {Path.GetFileName(e.File)} is missing", VobSub.SubFile(e.File));
+        var streams = VobSub.ReadIndex(e.File).Streams;
+        if (streams.Count == 0) return [e];
+        if (typed) return [e with { Stream = Math.Max(0, streams.ToList().FindIndex(s => Languages.Same(s.Lang, e.Lang))) }];
+        return [.. streams.Select((s, i) => e with { Stream = i, Lang = streams.Count > 1 && s.Lang != "und" || e.Lang == "und" ? s.Lang : e.Lang })];
+    }
+
+    /// <summary><see cref="Parse"/> for a file that may stand for several tracks (an .idx).</summary>
+    public static List<ExternalSubtitle> ParseAll(string text) => Split(Parse(text), text.IndexOf('=') is 2 or 3 && Languages.Code(text[..text.IndexOf('=')]) != null);
+
+    /// <summary><see cref="For"/> for a file that may stand for several tracks (an .idx; a chosen .sub stands for its .idx).</summary>
+    public static List<ExternalSubtitle> ForAll(string video, string file)
+    {
+        if (Path.GetExtension(file).Equals(".sub", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(Path.ChangeExtension(file, ".idx"))) file = Path.ChangeExtension(file, ".idx");
+        return Split(For(video, file));
+    }
 
     /// <summary>
     /// A file as typed: "fra=film.srt" (language by hand), else the language at the end of its name ("film.fr.srt", "Dr.No.1962.en.srt",
@@ -71,7 +96,8 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
             foreach (var file in Directory.EnumerateFiles(Path.GetDirectoryName(Path.GetFullPath(video))!).Order(StringComparer.OrdinalIgnoreCase))
             {
                 var name = Path.GetFileNameWithoutExtension(file);
-                if (Extensions.Contains(Path.GetExtension(file).ToLowerInvariant()) && Sibling(stem, name)) list.Add(Describe(file, name[stem.Length..])); // "Episode 10.srt" is not for "Episode 1"
+                if (Extensions.Contains(Path.GetExtension(file).ToLowerInvariant()) && Sibling(stem, name) && (!file.EndsWith(".idx", StringComparison.OrdinalIgnoreCase) || System.IO.File.Exists(VobSub.SubFile(file))))
+                    list.AddRange(Split(Describe(file, name[stem.Length..]))); // "Episode 10.srt" is not for "Episode 1"; an .idx without its .sub is no subtitle
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // a folder that went away or cannot be listed: no sidecar files

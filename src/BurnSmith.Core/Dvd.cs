@@ -120,7 +120,7 @@ public static class Dvd
         }
         log($"encode {number}: {title.DisplayName} (audio {audio.Count}, subtitles {subs.Count})");
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
-        foreach (var (s, file) in subs.Where(x => x.Track.File != null)) BluRay.WriteExternalSubtitle(title, s, src.Duration, file, log);
+        foreach (var (s, file) in subs.Where(x => x.Track.File != null)) BluRay.WriteExternalSubtitle(title, s, src.Duration, file, (720, 480), log); // a VobSub becomes PGS on a 720x480 plane, which PgsStream maps onto the frame whatever its height
         // spumux refuses a file with no cue, and then the whole movie would lose its subtitles: a track with nothing to show in the part kept is left out
         subs.RemoveAll(x =>
         {

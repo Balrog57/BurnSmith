@@ -460,7 +460,7 @@ public partial class MainWindow : Window
             for (var k = 0; k < entry.Extra.Count; k++)
             {
                 var (at, file) = (k, entry.Extra[k]);
-                var languages = new MenuItem { Header = $"Langue de « {Path.GetFileName(file.File)} »" };
+                var languages = new MenuItem { Header = $"Langue de « {Path.GetFileName(file.File)} »" + (file.Stream > 0 ? $" (piste {file.Stream + 1})" : "") };
                 foreach (var (code, name) in Languages.Choices.Prepend(("und", "Inconnue")))
                 {
                     var choice = new MenuItem { Header = name, IsCheckable = true, IsChecked = Languages.Same(code, file.Lang) };
@@ -514,21 +514,29 @@ public partial class MainWindow : Window
         entry.Refresh();
     }
 
-    /// <summary>Adds subtitle files (srt, ass, ssa, vtt, sup) to one video, ticked: they are tracks like the video's own, after them.</summary>
+    /// <summary>Adds subtitle files (srt, ass, ssa, vtt, sup, idx + sub) to one video, ticked: they are tracks like the video's own, after them (an .idx holds one per language).</summary>
     void AddSubtitleFiles(Entry entry)
     {
         var dialog = new OpenFileDialog
         {
             Title = $"Sous-titres de {entry.Name}", Multiselect = true, InitialDirectory = Path.GetDirectoryName(entry.Path),
-            Filter = "Sous-titres (*.srt;*.ass;*.ssa;*.vtt;*.sup)|*.srt;*.ass;*.ssa;*.vtt;*.sup|Tous les fichiers|*.*",
+            Filter = "Sous-titres (*.srt;*.ass;*.ssa;*.vtt;*.sup;*.idx;*.sub)|*.srt;*.ass;*.ssa;*.vtt;*.sup;*.idx;*.sub|Tous les fichiers|*.*",
         };
         if (dialog.ShowDialog(this) != true) return;
-        foreach (var file in dialog.FileNames.Where(f => !entry.Extra.Any(x => x.File.Equals(f, StringComparison.OrdinalIgnoreCase))))
+        foreach (var chosen in dialog.FileNames)
         {
-            if (!ExternalSubtitle.Extensions.Contains(Path.GetExtension(file).ToLowerInvariant())) { Warn($"{Path.GetFileName(file)} : seuls les sous-titres srt, ass, ssa, vtt et sup (PGS) sont pris en charge."); continue; }
-            entry.Extra = [.. entry.Extra, ExternalSubtitle.For(entry.Path, file)];
-            var index = entry.Info.Subtitles.Count + entry.Extra.Count - 1;
-            if (entry.Subs.Count < MenuBuilder.MaxSubtitles) { entry.Subs.Add(index); entry.Subs.Sort(); }
+            var file = Path.GetExtension(chosen).Equals(".sub", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.ChangeExtension(chosen, ".idx")) ? Path.ChangeExtension(chosen, ".idx") : chosen; // a VobSub is its .idx
+            if (entry.Extra.Any(x => x.File.Equals(file, StringComparison.OrdinalIgnoreCase))) continue;
+            if (!ExternalSubtitle.Extensions.Contains(Path.GetExtension(file).ToLowerInvariant())) { Warn($"{Path.GetFileName(file)} : seuls les sous-titres srt, ass, ssa, vtt, sup (PGS) et idx + sub (VobSub) sont pris en charge."); continue; }
+            List<ExternalSubtitle> added;
+            try { added = ExternalSubtitle.ForAll(entry.Path, file); }
+            catch (Exception e) when (e is IOException or InvalidDataException or FormatException) { Warn($"{Path.GetFileName(file)} : {e.Message}"); continue; }
+            foreach (var one in added)
+            {
+                entry.Extra = [.. entry.Extra, one];
+                var index = entry.Info.Subtitles.Count + entry.Extra.Count - 1;
+                if (entry.Subs.Count < MenuBuilder.MaxSubtitles) { entry.Subs.Add(index); entry.Subs.Sort(); }
+            }
         }
         entry.Refresh();
         Update();
