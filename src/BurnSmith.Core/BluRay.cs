@@ -132,9 +132,8 @@ public static class BluRay
         var sources = job.Titles.Select(t => t.Cut(Probe(t.Video))).ToList(); // durations from here on are the parts kept
         var introSource = intro?.Cut(Probe(intro.Video));
         var work = job.OutDir + "_work";
-        Tools.PrepareOutput(job.OutDir);
-        Tools.FreshFolder(work);
-        try { Author(job, intro, introSource, sources, mainCount, work, log); }
+        Tools.FreshFolder(work); // first: a locked file there must not cost the earlier disc
+        try { Tools.PrepareOutput(job.OutDir); Author(job, intro, introSource, sources, mainCount, work, log); }
         finally { Tools.TryDelete(work); } // temporary videos of many GB: a failed build must not leave them behind
         log("done: " + job.OutDir);
     }

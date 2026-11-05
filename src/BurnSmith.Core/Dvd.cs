@@ -53,9 +53,8 @@ public static class Dvd
         // before the earlier disc is emptied and anything is encoded: a job that cannot finish is told at once
         foreach (var tool in NeededTools(job)) Tools.Find(tool);
         CheckRoom(job.OutDir, NeededBytes(job, items, videoBps));
-        Tools.PrepareOutput(job.OutDir);
-        Tools.FreshFolder(work);
-        try { Author(job, intro, introSource, sources, videoBps, pal, mainCount, work, log); }
+        Tools.FreshFolder(work); // first: a locked file there must not cost the earlier disc
+        try { Tools.PrepareOutput(job.OutDir); Author(job, intro, introSource, sources, videoBps, pal, mainCount, work, log); }
         finally { Tools.TryDelete(work); } // temporary videos of many GB: a failed build must not leave them behind
         log("done: " + job.OutDir);
     }
