@@ -48,6 +48,11 @@ public sealed record MenuButton(string Id, Box Rect, MenuAction Action)
     public string? DvdHighlightImage { get; init; }
     /// <summary>The shape of that artwork (<c>frame/0.dvd.mask.png</c>, 1-bit); null = the whole rectangle.</summary>
     public string? DvdHighlightMask { get; init; }
+    /// <summary>
+    /// The template's own picture for the <em>chosen</em> state (DVDFab's <c>selection/0.png</c>, spumux's <c>select</c> image, Yuhan's
+    /// <c>select</c> attribute). Null = the silhouette of <see cref="DvdHighlightImage"/> stands for both states.
+    /// </summary>
+    public string? DvdSelectImage { get; init; }
 }
 
 public sealed record MenuPage(string Id, List<Op> Ops, List<MenuButton> Buttons);

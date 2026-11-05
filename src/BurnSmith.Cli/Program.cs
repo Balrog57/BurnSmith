@@ -8,7 +8,7 @@ using BurnSmith.Core.Menu;
 //             its language comes from the name ("film.fr.srt") or "fra=film.srt" (for an .idx: only that language)
 // --default-audio N / --default-sub N: after a --video, the audio track that plays / the subtitle that shows when the disc starts (numbers as in --audio / --sub, so among the ones kept);
 //                  the default audio goes first on the disc, the default subtitle is selected by the disc (a menu's settings page shows it chosen)
-// --intro: after a --video, that video plays first when the disc starts, before the menu (before the film when there is no menu); not a title of the menu. Blu-ray only
+// --intro: after a --video, that video plays first when the disc starts, before the menu (before the film when there is no menu); not a title of the menu (Blu-ray and DVD)
 // --bonus: after a --video, that video is an extra (trailer, making-of): it goes after the main videos, off "Play" / "Play all", on the menu's Bonus page (needs another, main, video)
 var a = args.ToList();
 string? Opt(string name) => a.IndexOf(name) is var i and >= 0 && i + 1 < a.Count ? a[i + 1] : null;
@@ -106,6 +106,46 @@ if (a.Count >= 1 && a[0] == "check-highlights")
         var hlOpaque = hlPx.Where((_, i) => i % 4 == 3).Count(alpha => alpha >= 128);
         Check("le raster a la taille du bouton et des pixels visibles (c'est ce que spumux affichera)",
               hlW == 120 && hlH == 80 && hlOpaque > 0);
+        // l'état choisi vient du modèle : son propre marqueur (selection/0.png), pas la silhouette du survol
+        var hlSel = hlButtons.Select(b => b.DvdSelectImage).FirstOrDefault(i => i != null);
+        Check("le modèle nomme l'image de l'état choisi, et son marqueur donne une forme visible", hlSel != null && File.Exists(hlSel));
+
+        // --out DOSSIER : écrit les deux images de page (survol et choisi) telles que spumux les recevra, pour les regarder
+        if (Opt("--out") is { } hlDir)
+        {
+            Directory.CreateDirectory(hlDir);
+            var (hw, hh) = (720, 576);
+            double psx = hw / (double)MenuBuilder.W, psy = hh / (double)MenuBuilder.H;
+            var hovered = new IndexedPng.Canvas(hw, hh);
+            var chosen = new IndexedPng.Canvas(hw, hh);
+            var page = hlPages.First(q => q.Buttons.Any(b => b.DvdHighlightImage != null));
+            var shots = MenuRenderer.Sta(() => page.Buttons.Select(b =>
+            {
+                int bw = (int)Math.Round(b.Rect.W * psx), bh = (int)Math.Round(b.Rect.H * psy);
+                (byte[] Px, int W, int H)? At(string? image, string? mask) => image == null ? null : MenuRenderer.Raster(image, mask, bw, bh);
+                (byte[] Px, int W, int H)? Marker(string? image)
+                {
+                    if (image == null) return null;
+                    var natural = MenuRenderer.Size(image) is var (iw, ih) ? ((int)Math.Round(iw * psx), (int)Math.Round(ih * psy)) : (bw, bh);
+                    return MenuRenderer.Raster(image, null, Math.Min(bw, Math.Max(1, natural.Item1)), Math.Min(bh, Math.Max(1, natural.Item2)));
+                }
+                return (Hl: At(b.DvdHighlightImage, b.DvdHighlightMask), Sel: Marker(b.DvdSelectImage), b.Rect);
+            }).ToList());
+            foreach (var s in shots)
+            {
+                if (s.Hl is not { } hover) continue;
+                int x0 = (int)(s.Rect.X * psx) & ~1, y0 = (int)(s.Rect.Y * psy) & ~1;
+                hovered.Stamp(hover.Px, hover.W, hover.H, x0, y0, 1);
+                var c = s.Sel ?? hover;
+                var at = ReferenceEquals(c, hover) ? (x0, y0) : (x0 + (hover.W - c.W) / 2, y0 + (hover.H - c.H) / 2);
+                chosen.Stamp(c.Px, c.W, c.H, at.Item1, at.Item2, 2);
+            }
+            var tint = shots.Select(s => s.Hl).FirstOrDefault(x => x != null) is { } f ? IndexedPng.Average(f.Px, f.W, f.H) : new IndexedPng.Rgba(255, 255, 255, 255);
+            IndexedPng.Rgba[] pal = [new(0, 0, 0, 0), tint, new(255, 255, 255, 255), new(0, 0, 0, 0)];
+            File.WriteAllBytes(Path.Combine(hlDir, $"hl_{page.Id}.png"), IndexedPng.Encode(hovered, pal));
+            File.WriteAllBytes(Path.Combine(hlDir, $"sel_{page.Id}.png"), IndexedPng.Encode(chosen, pal));
+            Console.WriteLine($"écrit {hlDir}\\hl_{page.Id}.png et sel_{page.Id}.png (page {page.Id}, {page.Buttons.Count} boutons)");
+        }
         var hlPage = new IndexedPng.Canvas(720, 576);
         hlPage.Stamp(hlPx, hlW, hlH, 200, 200, 1);
         Check($"collée sur la page, la forme du modèle est reprise telle quelle ({hlOpaque} pixels) et rien n'est ajouté ailleurs",

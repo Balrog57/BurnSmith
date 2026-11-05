@@ -103,6 +103,17 @@ public static class MenuRenderer
     public static byte[] Marker(MenuDesign d, int size, double scale = 1) =>
         Encode(new PngBitmapEncoder(), size, size, dc => dc.DrawEllipse(new SolidColorBrush(Col(d.Accent)), null, new Point(size / 2.0, size / 2.0), size / 2.0, size / 2.0), scale);
 
+    /// <summary>Pixel size of an image file, or null when it cannot be read (a template picture can be damaged).</summary>
+    public static (int W, int H)? Size(string image)
+    {
+        try
+        {
+            var frame = BitmapDecoder.Create(new Uri(image), BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).Frames[0];
+            return (frame.PixelWidth, frame.PixelHeight);
+        }
+        catch (Exception e) when (e is NotSupportedException or FileFormatException or IOException or ArgumentException) { return null; }
+    }
+
     /// <summary>
     /// A template's button artwork as raw pixels at the size a DVD subpicture needs (BGRA, premultiplied — WPF's own order), cut by its mask
     /// when it has one. Runs on an STA thread: callers wrap it in <see cref="Sta{T}"/>.

@@ -357,11 +357,12 @@ public sealed class InstalledTemplate
     /// exactly spumux's <c>highlight</c> image, and its <c>.mask.</c> twin gives the shape. Only artwork that has such a twin qualifies — a star
     /// marker beside a text button is not a button picture, and there BurnSmith keeps its own four-colour frame.
     /// </summary>
-    static MenuButton Dvd(MenuButton b)
+    MenuButton Dvd(MenuButton b)
     {
         if (b.FocusImage is not { } art || !art.Contains(".sub.", StringComparison.Ordinal)) return b;
         var mask = art.Replace(".sub.", ".mask.");
-        return b with { DvdHighlightImage = art, DvdHighlightMask = IsImage(mask) && !IsBlank(mask) ? mask : null };
+        // the chosen state has its own picture in the template; Asset gives null when it is missing or not a picture
+        return b with { DvdHighlightImage = art, DvdHighlightMask = IsImage(mask) && !IsBlank(mask) ? mask : null, DvdSelectImage = Asset(common.Child("selection")?.Text) };
     }
 
     /// <summary>DVDFab draws a button picture at its own size, centred on the rectangle of the XML (which is often smaller).</summary>

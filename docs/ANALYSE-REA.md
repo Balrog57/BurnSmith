@@ -268,3 +268,12 @@ C'est le modèle IG complet : un menu = un clip de fond + de l'audio + des bouto
 | Liste de lecture 99 comme fond de menu | non (BurnSmith brûle un clip par page) | écart de conception, sans gain visible |
 | Modes de menu 0/1/2 (`root` + `scene`, tout-en-un, scène en racine) | partiellement (« Streaming ») | écart d'ergonomie |
 | Pipeline DVD `spumux` + `dvdauthor` | oui, à l'identique | — |
+### 11.5 Reproduit : l'état « choisi » d'un bouton DVD vient du modèle (2026-11-05)
+
+Écart comblé, avec ce que la décompilation a montré (Leawo : `setHighLightImageList` **et** `setSelectedImageList` ; DVDFab : `selection/0.png` ; Yuhan : attributs `highlight` et `select`).
+
+- `MenuButton.DvdSelectImage` porte le marqueur du modèle (`<selection>` du `template.xml`, lu par `InstalledTemplate.Dvd`, devenu méthode d'instance pour atteindre `common`).
+- `Dvd.cs` rastérise deux images par bouton : le survol (index 1, teinte moyenne de l'artwork) et l'état choisi (index 2). Le marqueur **garde sa taille naturelle**, centré sur le bouton : `selection/0.png` est un glyphe de 180 × 180 dont 4 375 pixels sur 32 400 sont opaques (une seule couleur, 158,114,217) ; l'étirer à la boîte d'un bouton de 390 × 260 en faisait un bloc plein. Sans marqueur, on retombe sur la silhouette du survol, comme avant.
+- Nouveau `MenuRenderer.Size` (taille d'une image, null si illisible) ; `check-highlights --out DOSSIER` écrit les deux images de page telles que spumux les recevra.
+
+**Épreuves** : `check-highlights` 8/8 ; `sel_scenes1.png` montre désormais un petit marqueur à chaque bouton (531 octets) au lieu des blocs précédents (628 octets, même page) ; un DVD construit avec `01movie` passe spumux et dvdauthor (« disc structure checked: no problem ») ; `check-elements` 14/14.

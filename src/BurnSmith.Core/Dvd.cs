@@ -36,17 +36,17 @@ public static class Dvd
     public static void Build(DvdJob job, Action<string>? log = null)
     {
         log ??= _ => { };
-        if (job.Titles.Any(t => t.Intro)) // shortcut: a DVD has no start video yet (it would be a first-play PGC), so the video is left off rather than put in the menu
-        {
-            log("warning: the start video is left out: only a Blu-ray plays one before the menu");
-            job = job with { Titles = [.. job.Titles.Where(t => !t.Intro)] };
-        }
+        var intro = job.Titles.FirstOrDefault(t => t.Intro);
+        if (job.Titles.Count(t => t.Intro) > 1) throw new ArgumentException("une seule vidéo de début est possible");
+        job = job with { Titles = [.. job.Titles.Where(t => !t.Intro)] }; // the start video is no title of the menu: it is the title the first-play jump goes to
         if (job.Titles.Count == 0) throw new ArgumentException("no video to put on the disc");
         if (job.Titles.Count > 1 && job.Menu == null) throw new InvalidOperationException("several videos need a menu to choose from");
         job = job with { Titles = DiscTitle.MainFirst(job.Titles) }; // titles 1..mainCount are the feature, the bonus ones follow
         var mainCount = job.Titles.Count(t => !t.Bonus);
         var sources = job.Titles.Select(t => t.Cut(BluRay.Probe(t.Video))).ToList(); // durations from here on are the parts kept
         var items = sources.Zip(job.Titles, (s, t) => (Src: s, Title: t)).ToList();
+        var introSource = intro?.Cut(BluRay.Probe(intro.Video));
+        if (introSource != null) items.Add((introSource, intro!)); // it takes room on the disc too
         var pal = Math.Abs(sources[0].Fps - 25) < 0.5 || Math.Abs(sources[0].Fps - 50) < 0.5; // the disc follows its first video
         var work = job.OutDir + "_work";
         Tools.PrepareOutput(job.OutDir);
@@ -58,6 +58,9 @@ public static class Dvd
         for (var i = 0; i < job.Titles.Count; i++) movies.Add(EncodeTitle(job, i + 1, sources[i], job.Titles[i], pal, videoBps, work, log));
         if (movies.Any(m => m.Audio.Count != movies[0].Audio.Count || m.Subtitles.Count != movies[0].Subtitles.Count))
             log("warning: the videos do not have the same number of audio/subtitle tracks; the menu follows the first one");
+        Movie? introMovie = null;
+        if (intro != null) // one audio track and no subtitles: nothing to choose while it plays, and no spumux pass
+            introMovie = EncodeTitle(job, movies.Count + 1, introSource!, intro with { Audio = [.. intro.KeptAudio(introSource!).Take(1).Select(a => a.Index)], Subtitles = null, External = null, DefaultAudio = null, DefaultSubtitle = null }, pal, videoBps, work, log);
 
         var menuPages = new List<(MenuPage Page, string Mpg)>();
         // a menu that plays on its own (moving clip or music) starts again when it ends: each page is its own PGC, so the sound restarts when another page opens
@@ -74,7 +77,7 @@ public static class Dvd
 
         log("author: dvdauthor");
         var xml = Path.Combine(work, "dvd.xml");
-        File.WriteAllText(xml, AuthorXml(job.OutDir, pal, movies, mainCount, menuPages, restarts).ToString());
+        File.WriteAllText(xml, AuthorXml(job.OutDir, pal, movies, mainCount, menuPages, restarts, introMovie).ToString());
         // this dvdauthor build wants exactly "-o dest -x script -h N" plus one more argument (it reads argv[7] unchecked and crashes without)
         Tools.Run(Tools.Find("dvdauthor.exe"), ["-o", job.OutDir, "-x", xml, "-h", "0", "-q"], log, env: new Dictionary<string, string> { ["VIDEO_FORMAT"] = pal ? "PAL" : "NTSC" });
         Directory.CreateDirectory(Path.Combine(job.OutDir, "AUDIO_TS")); // empty, but players and tools expect it
@@ -269,9 +272,24 @@ public static class Dvd
             // spumux reads the page button by button, so the model's per-button artwork is rasterised at the button's size on the page
             var art = MenuRenderer.Sta(() => p.Buttons.Select(b =>
             {
-                if (b.DvdHighlightImage is not { } image) return ((byte[] Px, int W, int H)?)null;
-                try { return MenuRenderer.Raster(image, b.DvdHighlightMask, (int)Math.Round(b.Rect.W * sx), (int)Math.Round(b.Rect.H * sy)); }
-                catch (InvalidDataException) { return null; } // an unreadable picture must not cost the whole disc: the frame stands in
+                int bw = (int)Math.Round(b.Rect.W * sx), bh = (int)Math.Round(b.Rect.H * sy);
+                (byte[] Px, int W, int H)? At(string? image, string? mask)
+                {
+                    if (image == null) return null;
+                    try { return MenuRenderer.Raster(image, mask, bw, bh); }
+                    catch (InvalidDataException) { return null; } // an unreadable picture must not cost the whole disc: the frame stands in
+                }
+                // the artwork of the hovered state, and the model's own picture for the chosen state when it carries one
+                // (a marker such as DVDFab's selection/0.png is a small glyph: it keeps its own size instead of being stretched to the button)
+                (byte[] Px, int W, int H)? Marker(string? image)
+                {
+                    if (image == null) return null;
+                    var natural = MenuRenderer.Size(image) is var (iw, ih) ? ((int)Math.Round(iw * sx), (int)Math.Round(ih * sy)) : (bw, bh);
+                    var (mw, mh) = (Math.Min(bw, Math.Max(1, natural.Item1)), Math.Min(bh, Math.Max(1, natural.Item2)));
+                    try { return MenuRenderer.Raster(image, null, mw, mh); }
+                    catch (InvalidDataException) { return null; }
+                }
+                return (Hl: At(b.DvdHighlightImage, b.DvdHighlightMask), Sel: Marker(b.DvdSelectImage), W: bw, H: bh);
             }).ToList());
             var sub = new XElement("spu", new XAttribute("start", "00:00:00.00"), new XAttribute("highlight", $"hl_{p.Id}.png"),
                 new XAttribute("select", $"sel_{p.Id}.png"), new XAttribute("force", "yes"));
@@ -281,10 +299,13 @@ public static class Dvd
                 var r = b.Rect.Inflate(MenuBuilder.FocusMargin / 2);
                 int x0 = (int)(r.X * sx) & ~1, y0 = (int)(r.Y * sy) & ~1;
                 int x1 = (int)((r.X + r.W) * sx), y1 = (int)((r.Y + r.H) * sy) & ~1;
-                if (art[k] is { } a)
+                if (art[k].Hl is { } a)
                 {
                     hl.Stamp(a.Px, a.W, a.H, x0, y0, 1); // the artwork's shape, in the one tint a subpicture can spend on it
-                    sel.Stamp(a.Px, a.W, a.H, x0, y0, 2);
+                    var s = art[k].Sel ?? a; // the model's marker for the chosen state, else the silhouette of the hovered artwork
+                    // a marker keeps its own size, centred on the button, instead of covering it
+                    var at = ReferenceEquals(s, a) ? (x0, y0) : (x0 + (art[k].W - s.W) / 2, y0 + (art[k].H - s.H) / 2);
+                    sel.Stamp(s.Px, s.W, s.H, at.Item1, at.Item2, 2);
                 }
                 else
                 {
@@ -296,7 +317,7 @@ public static class Dvd
                     Nav("up", b.Up), Nav("down", b.Down), Nav("left", b.Left), Nav("right", b.Right)));
             }
             // one tint for the whole page (a subpicture has four colours): the artwork's own average, else the design's accent
-            var accent = art.FirstOrDefault(a => a != null) is { } first ? Average(first.Px, first.W, first.H) : Hex(job.Menu!.Accent);
+            var accent = art.Select(x => x.Hl).FirstOrDefault(x => x != null) is { } first ? Average(first.Px, first.W, first.H) : Hex(job.Menu!.Accent);
             Rgba[] palette = [new(0, 0, 0, 0), accent, new(255, 255, 255, 255), new(0, 0, 0, 0)];
             File.WriteAllBytes(Path.Combine(work, $"hl_{p.Id}.png"), Encode(hl, palette));
             File.WriteAllBytes(Path.Combine(work, $"sel_{p.Id}.png"), Encode(sel, palette));
@@ -316,7 +337,8 @@ public static class Dvd
     static Rgba Hex(string s) => new(Convert.ToByte(s.Substring(1, 2), 16), Convert.ToByte(s.Substring(3, 2), 16), Convert.ToByte(s.Substring(5, 2), 16), 255);
 
     /// <param name="mainCount">The first titles are the feature; the ones after them are bonus: "play all" stops at the last main title.</param>
-    static XDocument AuthorXml(string dest, bool pal, List<Movie> movies, int mainCount, List<(MenuPage Page, string Mpg)> menus, bool loop)
+    /// <param name="intro">The start video: the title after the last one, which the first-play jump goes to; it ends on the menu (or on the first title when there is none).</param>
+    static XDocument AuthorXml(string dest, bool pal, List<Movie> movies, int mainCount, List<(MenuPage Page, string Mpg)> menus, bool loop, Movie? intro = null)
     {
         var fmt = pal ? "pal" : "ntsc";
         var series = movies.Count > 1;
@@ -382,10 +404,15 @@ public static class Dvd
                 pgc.Add(new XElement("post", (i < mainCount - 1 ? $"if (g1 == 1) jump title {i + 2}; " : "") + "call menu;")); // after an episode of "play all": the next one, never a bonus
             titles.Add(pgc);
         }
+        var setSubtitle = first.DefaultSubtitle > 0 ? $"subtitle = {63 + first.DefaultSubtitle}; " : "";
+        if (intro != null) // after the last title; the film's default subtitle is chosen when it is over, not while it plays
+            titles.Add(new XElement("pgc", new XElement("vob", new XAttribute("file", intro.Mpg)), new XElement("post", menus.Count > 0 ? setSubtitle + "call menu;" : "jump title 1;")));
         titleset.Add(titles);
 
         var vmgm = new XElement("vmgm");
-        if (menus.Count > 0) vmgm.Add(new XElement("fpc", $"g1 = 0; g2 = 1; g3 = {first.DefaultSubtitle}; g4 = 1024; g5 = 0; {(first.DefaultSubtitle > 0 ? $"subtitle = {63 + first.DefaultSubtitle}; " : "")}jump titleset 1 menu;"));
+        var toIntro = $"jump title {movies.Count + 1};";
+        if (menus.Count > 0) vmgm.Add(new XElement("fpc", $"g1 = 0; g2 = 1; g3 = {first.DefaultSubtitle}; g4 = 1024; g5 = 0; " + (intro != null ? toIntro : setSubtitle + "jump titleset 1 menu;")));
+        else if (intro != null) vmgm.Add(new XElement("fpc", toIntro));
         return new XDocument(new XElement("dvdauthor", new XAttribute("dest", dest), vmgm, titleset));
     }
 }
