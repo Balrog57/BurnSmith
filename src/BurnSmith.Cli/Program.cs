@@ -389,6 +389,7 @@ if (a.Count >= 1 && a[0] == "check-elements")
     Check("une référence « carried: » se range sous le dossier des images des modèles, ou ne mène à rien quand l'exe n'en porte pas",
           Tools.TemplatesDir() is { } carriedRoot ? ElementLibrary.Resolve("carried:x/y.png") == Path.Combine(carriedRoot, "x", "y.png") : ElementLibrary.Resolve("carried:x/y.png") == null);
     Check("un chemin ordinaire reste tel quel", ElementLibrary.Resolve(@"C:\a\b.png") == @"C:\a\b.png" && ElementLibrary.Resolve(null) == null);
+    SettingsCheck.Model(Check);
     Console.WriteLine(elFailed == 0 ? "all ok" : $"{elFailed} failed");
     return elFailed == 0 ? 0 : 1;
 }
@@ -784,6 +785,7 @@ if (a.Count >= 1 && a[0] == "check-edit")
     catch (FileNotFoundException e) { Check($"a DVD's start video: {e.Message}", false); }
     catch (InvalidOperationException e) { Check($"a DVD's start video: {e.Message.Split('\n')[0]}", false); } // a tool that failed: this disc cannot be made, which is a finding, not a crash of the check
     finally { if (Directory.Exists(introDir)) Directory.Delete(introDir, true); }
+    SettingsCheck.Disc(Check, a.Contains("--no-dvd"));
     Check("custom times in whole seconds, unique", Show(new DiscTitle("x", ChapterAt: [10.2, 10.4, 5]).ChapterList(600, 5)) == "0,5,10");
     var dir = Path.Combine(Path.GetTempPath(), "bs_extsub_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(dir);

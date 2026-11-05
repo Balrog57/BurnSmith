@@ -68,7 +68,7 @@ public sealed class MenuElement
     {
         var page = Page.Trim().ToLowerInvariant();
         if (page.Length == 0 || page == AllPages) return true;
-        if (page is "scenes" or "bonus") return pageId.StartsWith(page, StringComparison.Ordinal);
+        if (page is "scenes" or "bonus" or "settings") return pageId.StartsWith(page, StringComparison.Ordinal); // "settings" : aussi settings_audio, et les pages par choix d'un DVD
         return pageId.Equals(page, StringComparison.OrdinalIgnoreCase);
     }
 

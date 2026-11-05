@@ -106,6 +106,21 @@ public static class MenuBuilder
     /// <summary>Distance of the "active track" dot from the left edge of its button, as written to the BD-J menu file.</summary>
     public static int MarkerOffset(MenuDesign d) => Pack(d) is { HasSetupLists: true } p ? p.MarkerOffset : FocusMargin - MarkerSize - MarkerGap;
 
+    /// <summary>Les pages de réglages de ce disque, celle où mène le bouton « Réglages » d'abord : une seule, <c>settings</c>, sauf pour un modèle à liste unique.</summary>
+    public static List<string> SettingsIds(MenuDesign d, MenuContent c) => !c.HasSettings ? [] : Pack(d)?.SettingsIds(c) ?? ["settings"];
+
+    /// <summary>Le message à donner quand des pistes du disque n'ont pas de ligne au menu (elles restent sur le disque, on ne peut seulement pas les y choisir) ; null quand toutes en ont une.</summary>
+    public static string? TracksLeftOut(IEnumerable<MenuPage> pages, MenuContent c)
+    {
+        var buttons = pages.SelectMany(p => p.Buttons).ToList();
+        int Rows(string kind) => buttons.Where(b => b.Action.Kind == kind && b.Action.Mark > 0).Select(b => b.Action.Mark).Distinct().Count();
+        var (audio, subs) = (c.Audio?.Count ?? 0, c.Subtitles?.Count ?? 0);
+        var missing = new List<string>();
+        if (audio > 1 && Rows("audio") < audio) missing.Add($"{Rows("audio")} pistes audio sur {audio}");
+        if (Rows("sub") < subs) missing.Add($"{Rows("sub")} sous-titres sur {subs}");
+        return missing.Count == 0 ? null : $"attention : le menu ne propose que {string.Join(" et ", missing)} ; les autres restent sur le disque, sans ligne pour les choisir";
+    }
+
     public static List<MenuPage> Build(MenuDesign d, MenuContent c)
     {
         var pages = BuildCore(d, c);
@@ -138,7 +153,7 @@ public static class MenuBuilder
             {
                 // a picture button is selected with its own "sub" picture: on a Blu-ray menu it is the focus image, on a DVD the highlight a subpicture is made from
                 var focus = ElementLibrary.Resolve(e.Focus) is { } f && File.Exists(f) && ElementLibrary.Resolve(e.Image) is { } art && File.Exists(art) ? f : null;
-                buttons.Add(new MenuButton(id, e.Box(), Action(e, c)) { FocusImage = focus, DvdHighlightImage = focus });
+                buttons.Add(new MenuButton(id, e.Box(), Action(d, e, c)) { FocusImage = focus, DvdHighlightImage = focus });
             }
         }
         var result = page with { Ops = ops, Buttons = buttons };
@@ -146,7 +161,7 @@ public static class MenuBuilder
     }
 
     /// <summary>What a hand-placed button does: the film, every title in turn, a page, or a chapter of the film.</summary>
-    static MenuAction Action(MenuElement e, MenuContent c)
+    static MenuAction Action(MenuDesign d, MenuElement e, MenuContent c)
     {
         var target = e.Target.Trim().ToLowerInvariant();
         MenuAction Film() => c.Series
@@ -155,7 +170,7 @@ public static class MenuBuilder
         if (target is "movie" or "play" or "all" or "playall" or "") return Film();
         if (target.StartsWith("chapter", StringComparison.Ordinal))
             return new MenuAction("chapter", Playlist: c.Playlist, Mark: Math.Max(0, (int.TryParse(target[7..].TrimStart(':'), out var n) ? n : 1) - 1));
-        return new MenuAction("page", target);
+        return new MenuAction("page", target == "settings" && SettingsIds(d, c) is [var entry, ..] ? entry : target);
     }
 
     /// <summary>
@@ -392,7 +407,7 @@ public static class MenuBuilder
     public static MenuPage Settings(MenuDesign d, MenuContent c, int? activeAudio, int? activeSub, string id = "settings")
     {
         var pack = Pack(d);
-        if (pack is { HasSetupLists: true }) return pack.Settings(d, c, activeAudio, activeSub, id);
+        if (pack is { HasSetupLists: true } or { HasSetupPages: true }) return pack.Settings(d, c, activeAudio, activeSub, id);
         const int colW = 680, rowH = 84, pitch = 100, top = 300;
         var audio = c.AudioNames.Count > 1 ? c.AudioNames : [];
         var subs = c.SubtitleNames;

@@ -212,7 +212,9 @@ public static class BluRay
             var moving = job.Menu.Loop;
             if ((moving || job.Menu.ExistingMusic() != null) && job.Uhd) log("moving menu and music skipped: a 4K disc needs a 2160p clip, which BurnSmith does not make yet");
             else if (moving || job.Menu.ExistingMusic() != null) { MuxLoop(job, work, log); loop = LoopPlaylist; }
-            MenuFiles.WriteBdj(job.Menu, MenuBuilder.Build(job.Menu, content), menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle); // the xlet chains only the main titles
+            var menuPages = MenuBuilder.Build(job.Menu, content);
+            if (MenuBuilder.TracksLeftOut(menuPages, content) is { } leftOut) log(leftOut);
+            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle); // the xlet chains only the main titles
             AddMenu(job, menuDir, log);
             if (intro != null) StartWithIntro(job.OutDir);
         }

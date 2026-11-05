@@ -214,6 +214,8 @@ public partial class MenuEditorWindow : Window
     {
         "root" => "Menu principal",
         "settings" => "Réglages",
+        "settings_audio" => "Réglages · Audio",
+        "settings_sub" => "Réglages · Sous-titres",
         "credits" => "Crédits",
         _ when id.StartsWith("scenes") => "Scènes " + id[6..],
         _ when id.StartsWith("bonus") => "Bonus " + id[5..],
@@ -231,8 +233,8 @@ public partial class MenuEditorWindow : Window
             var (pages, page, images) = await Task.Run(() => MenuRenderer.Sta(() =>
             {
                 var built = MenuBuilder.Build(d, content);
-                var settings = built.FindIndex(p => p.Id == "settings");
-                if (settings >= 0) built[settings] = MenuBuilder.WithElements(d, MenuBuilder.Settings(d, content, audio, sub), content);
+                foreach (var id in MenuBuilder.SettingsIds(d, content)) // une page ou deux, selon le modèle : chacune marque le choix en cours
+                    if (built.FindIndex(p => p.Id == id) is >= 0 and var at) built[at] = MenuBuilder.WithElements(d, MenuBuilder.Settings(d, content, audio, sub, id), content);
                 var shown = built.FirstOrDefault(p => p.Id == wanted) ?? built[0];
                 return (built, shown, DrawPage(d, shown));
             }));

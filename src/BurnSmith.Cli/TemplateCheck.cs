@@ -132,7 +132,7 @@ static class TemplateCheck
         if (!c.HasBonus && (ids.Any(i => i.StartsWith("bonus")) || pages.Any(p => p.Buttons.Any(b => b.Id == "bonus")))) issues.Add($"{label}: une page ou un bouton Bonus sans bonus");
         foreach (var all in pages.SelectMany(p => p.Buttons).Where(b => b.Action.Kind == "playall"))
             if (c.Series && (all.Action.Playlist != c.Titles![0].Playlist || all.Action.Mark != c.Titles.Count)) issues.Add($"{label}: « tout lire » ne couvre pas exactement les épisodes");
-        if (c.HasSettings && !ids.Contains("settings")) issues.Add($"{label}: pas de page de réglages");
+        if (c.HasSettings && (MenuBuilder.SettingsIds(design, c) is not { Count: > 0 } wanted || !wanted.All(ids.Contains))) issues.Add($"{label}: pas de page de réglages");
         if (design.CreditLines().Count > 0 && (!ids.Contains("credits") || !pages[0].Buttons.Any(b => b.Id == "credits"))) issues.Add($"{label}: pas de page ou de bouton crédits");
         // DVDFab Streaming has no menu of its own: its first page of thumbnails is the root page
         if (cells > 1 && !ids.Contains("scenes1") && !pages[0].Buttons.Any(b => b.Id != "play" && b.Action.Kind is "play" or "chapter")) issues.Add($"{label}: pas de page de scènes");

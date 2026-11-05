@@ -387,6 +387,16 @@ public sealed class InstalledTemplate
 
     public bool HasSetupLists => (template.Child("setup")?.Child("audiolist")?.Children("title").Any() ?? false) || (template.Child("setup")?.Child("subtitlelist")?.Children("title").Any() ?? false);
 
+    /// <summary>
+    /// Le modèle décrit une seule liste de langues (Yuhan, <c>LangItemText</c>) : une page par catégorie au lieu d'une page à deux colonnes.
+    /// C'est le seul interrupteur de ce mode : <see cref="SettingsIds"/>, donc les disques, l'aperçu et l'éditeur, en découlent.
+    /// </summary>
+    public bool HasSetupPages => template.Child("setup")?.Child("langitems")?.Children("item").Any() ?? false;
+
+    /// <summary>Les pages de réglages de ce disque, celle où mène le bouton « Réglages » d'abord : une catégorie sans choix n'a pas de page.</summary>
+    public List<string> SettingsIds(MenuContent c) => !HasSetupPages ? ["settings"]
+        : [.. c.AudioNames.Count > 1 ? new[] { "settings_audio" } : [], .. c.SubtitleNames.Count > 0 ? new[] { "settings_sub" } : []];
+
     /// <summary>Artwork of the audio / subtitle page for BurnSmith's own rows: the template's background under a dark veil.</summary>
     public List<Op> SetupBackdrop(string? film = null)
     {
@@ -511,7 +521,7 @@ public sealed class InstalledTemplate
             var bonusPages = MenuBuilder.PageCount(bonus.Count, perPage);
             for (var i = 1; i <= bonusPages; i++) pages.Add(Scenes(d, bonus, i, bonusPages, perPage, d.BonusLabel, c.PreviewPicture, prefix: "bonus"));
         }
-        if (c.HasSettings) pages.Add(MenuBuilder.Settings(d, c, null, null, "settings")); // BurnSmith's own rows when the template has none
+        if (c.HasSettings) pages.AddRange(SettingsIds(c).Select(id => MenuBuilder.Settings(d, c, null, null, id))); // BurnSmith's own rows when the template has none
         if (d.CreditLines().Count > 0) pages.Add(MenuBuilder.Credits(d, SetupBackdrop(c.PreviewPicture))); // the template has no such page: its background under a veil
         return pages;
     }
@@ -607,8 +617,9 @@ public sealed class InstalledTemplate
         }
         if (c.HasSettings)
         {
-            if (Button("setupbuttontimage") != null || n.Child("setup")?.Attr("textbutton") == "1") Add("settings", n.Child("setup"), Button("setupbuttontimage"), new MenuAction("page", "settings"), d.SettingsLabel);
-            else pills.Add(("settings", d.SettingsLabel, new MenuAction("page", "settings")));
+            var settings = new MenuAction("page", SettingsIds(c)[0]);
+            if (Button("setupbuttontimage") != null || n.Child("setup")?.Attr("textbutton") == "1") Add("settings", n.Child("setup"), Button("setupbuttontimage"), settings, d.SettingsLabel);
+            else pills.Add(("settings", d.SettingsLabel, settings));
         }
         if (d.CreditLines().Count > 0) pills.Add(("credits", d.CreditsLabel, new MenuAction("page", "credits")));
         if (pills.Count > 0)
@@ -654,7 +665,7 @@ public sealed class InstalledTemplate
                 ("play", root.Series ? d.PlayAllLabel : d.PlayLabel, root.Series ? new MenuAction("playall", Playlist: root.Titles![0].Playlist, Mark: root.Titles.Count) : new MenuAction("play", Playlist: root.Playlist))
             };
             if (root.HasBonus) capsules.Add(("bonus", d.BonusLabel, new MenuAction("page", "bonus1")));
-            if (root.HasSettings) capsules.Add(("settings", d.SettingsLabel, new MenuAction("page", "settings")));
+            if (root.HasSettings) capsules.Add(("settings", d.SettingsLabel, new MenuAction("page", SettingsIds(root)[0])));
             if (d.CreditLines().Count > 0) capsules.Add(("credits", d.CreditsLabel, new MenuAction("page", "credits")));
             const int w = 190, gap = 12;
             Capsules(ops, buttons, d, capsules, MenuBuilder.W - 60 - capsules.Count * w - (capsules.Count - 1) * gap, 118, w, 56, gap, 28);
@@ -711,6 +722,7 @@ public sealed class InstalledTemplate
 
     public MenuPage Settings(MenuDesign d, MenuContent c, int? activeAudio, int? activeSub, string id)
     {
+        if (HasSetupPages) return SetupPage(d, c, activeAudio, activeSub, id);
         var n = template.Child("setup") ?? throw new InvalidOperationException("this template has no audio / subtitle page");
         var audioRows = n.Child("audiolist")?.Children("title").ToList() ?? [];
         var subRows = n.Child("subtitlelist")?.Children("title").ToList() ?? [];
@@ -767,6 +779,57 @@ public sealed class InstalledTemplate
             ops.Add(new Image(file, box));
             buttons.Add(Dvd(new MenuButton(navId, box, action) { FocusImage = Selected(file) }));
         }
+        return new MenuPage(id, ops, Link(buttons));
+    }
+
+    /// <summary>
+    /// Une page de réglages à une liste : celle de l'audio (<c>settings_audio…</c>) ou celle des sous-titres (<c>settings_sub…</c>), aux coordonnées du thème.
+    /// Le point de la piste active est à gauche de la ligne, comme dans les colonnes de BurnSmith : c'est là que <see cref="MenuBuilder.MarkerOffset"/> place celui du xlet.
+    /// </summary>
+    MenuPage SetupPage(MenuDesign d, MenuContent c, int? activeAudio, int? activeSub, string id)
+    {
+        var n = template.Child("setup")!;
+        var isSub = id.StartsWith("settings_sub", StringComparison.Ordinal);
+        var rows = n.Child("langitems")!.Children("item").ToList();
+        var names = isSub ? new[] { d.OffLabel }.Concat(c.SubtitleNames).ToList() : c.AudioNames.ToList();
+        var ops = new List<Op>();
+        Background(ops, n);
+        if (n.Child("setuptitle") is { } title) ops.Add(Txt(title, d.SettingsLabel));
+        // shortcut: le libellé garde la place donnée par le thème, où il recouvre une ligne dès la 3e en audio (y 400 contre 420), la 4e en sous-titres ; à déplacer sur une page de choix si Marc en veut une
+        if (n.Child(isSub ? "sublabel" : "audiolabel") is { } label) ops.Add(Txt(label, isSub ? d.SubtitlesLabel : d.AudioLabel));
+
+        var buttons = new List<MenuButton>();
+        var first = isSub ? 0 : 1;
+        var active = isSub ? activeSub : activeAudio;
+        // les plafonds de MenuContent (6 pistes audio, 5 sous-titres) laissent moins de lignes que les huit du thème : pas de pagination à faire
+        for (var i = 0; i < names.Count && i < rows.Count; i++)
+        {
+            var box = rows[i].Rect();
+            ops.Add(Txt(rows[i], names[i]));
+            if (active == first + i)
+                ops.Add(new Fill(new Box(box.X - MenuBuilder.MarkerSize - MenuBuilder.MarkerGap, box.Y + (box.H - MenuBuilder.MarkerSize) / 2, MenuBuilder.MarkerSize, MenuBuilder.MarkerSize), d.Accent, 1, MenuBuilder.MarkerSize / 2));
+            buttons.Add(new MenuButton((isSub ? "s" : "a") + (first + i), box, new MenuAction(isSub ? "sub" : "audio", Mark: first + i)));
+        }
+        void Nav(string key, string glyph, MenuAction action, string? caption)
+        {
+            if (n.Child(key) is not { } node) return;
+            var r = node.Rect();
+            if (Asset(node.Attr("image")) is { } file) ops.Add(new Image(file, r));
+            else ops.AddRange(MenuBuilder.Button(d, r, glyph, Math.Max(24, r.H * 2 / 3)));
+            // la flèche du thème ne dit pas où elle mène : son nom à côté d'elle, en dehors du bouton
+            if (caption != null && rows.Count > 0)
+            {
+                const int gap = 16;
+                var left = key == "prev";
+                var room = left ? new Box(40, r.Y, r.X - gap - 40, r.H) : new Box(r.X + r.W + gap, r.Y, MenuBuilder.W - 40 - r.X - r.W - gap, r.H);
+                ops.Add(Txt(rows[0], caption, left ? "right" : "left") with { Rect = room });
+            }
+            buttons.Add(new MenuButton(key == "Return" ? "back" : key, r, action));
+        }
+        var both = SettingsIds(c).Count > 1;
+        if (both && isSub) Nav("prev", "<", new MenuAction("page", "settings_audio"), d.AudioLabel);
+        Nav("Return", "⌂", new MenuAction("page", "root"), null);
+        if (both && !isSub) Nav("next", ">", new MenuAction("page", "settings_sub"), d.SubtitlesLabel);
         return new MenuPage(id, ops, Link(buttons));
     }
 
