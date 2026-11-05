@@ -101,6 +101,8 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private int loopPlaylist; // menu video playing behind the pages, 0 = none
     private final Hashtable pages = new Hashtable();
     private Page firstPage, page;
+    /** Button of the first page the viewer last started something from, so the menu opens on it again (DVDFab's GPR108). */
+    private int lastButton = -1;
     private Button focus;
     private int width = 1920, height = 1080;
     private boolean listening;
@@ -165,6 +167,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             }
         }
         tracker.waitForAll();
+        lastButton = readGpr(108) - 1; // the register holds index + 1, so 0 means "nothing remembered"
         if (startFirst && titleCount > 0 && firstPlayback()) startSequence();
         else showMenu();
     }
@@ -222,7 +225,29 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         log("page " + p.id);
         page = p;
         focus = p.buttons.isEmpty() ? null : (Button) p.buttons.elementAt(0);
+        // back from a title: the button that started it is focused again, as DVDFab does with its GPR108
+        if (p == firstPage && lastButton >= 0 && lastButton < p.buttons.size()) {
+            focus = (Button) p.buttons.elementAt(lastButton);
+            log("resume on button " + lastButton);
+        }
         view.repaint();
+    }
+
+    /** A GPR the player may refuse: -1 then, and the menu simply starts on its first button. */
+    private int readGpr(int n) {
+        try {
+            return RegisterAccess.getInstance().getGPR(n);
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
+    private void writeGpr(int n, int value) {
+        try {
+            RegisterAccess.getInstance().setGPR(n, value);
+        } catch (Throwable t) {
+            // no register access: the menu still works, it just forgets where the viewer was
+        }
     }
 
     private void startListening() {
@@ -271,12 +296,15 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             Page p = (Page) pages.get(b.arg);
             if (p != null) show(p);
         } else if (b.action.equals("play")) {
+            remember(b);
             follow(b.n1);
             play(b.n1, -1);
         } else if (b.action.equals("chapter")) {
+            remember(b);
             follow(b.n1);
             play(b.n1, b.n2);
         } else if (b.action.equals("playall")) {
+            remember(b);
             nextPlaylist = b.n1 + 1;
             endPlaylist = b.n1 + b.n2;
             play(b.n1, -1);
@@ -289,6 +317,15 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             log("subtitle choice " + sub);
             view.repaint();
         }
+    }
+
+    /** Remembers where the viewer started from, so the menu reopens on that button (DVDFab keeps it in GPR108 too). */
+    private void remember(Button b) {
+        if (page != firstPage) return; // the index only means something on the page the menu reopens on
+        int i = page.buttons.indexOf(b);
+        if (i < 0) return;
+        lastButton = i;
+        writeGpr(108, i + 1);
     }
 
     /** The title picked in the menu is followed by the next ones when the disc plays everything in a row. */

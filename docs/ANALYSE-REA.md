@@ -374,7 +374,7 @@ Donc : un modèle = `MenuTemplate\<Type>\<Aspect>\<Thème>\{Menu,Scene}` plus un
 | **Page Bonus** décrite par le modèle | partielle (BurnSmith dessine la sienne) | `BonusText` sur les 30 thèmes |
 | **3 styles de surbrillance** (cadre, soulignement, changement de couleur) | **fait** (§17) | `EButtonSelectedHighlightType` |
 | Bouton **« choisir la langue »** de la page de réglages | partiel | `LangItemText`, `ASLangTitleText` |
-| **Reprise au dernier bouton** | non | GPR100/GPR108, `MenuTo` |
+| **Reprise au dernier bouton** | **fait** (§19, effet observé sur l'indice 0) | GPR100/GPR108, `MenuTo` |
 | **Modes de menu** 0 / 1 / 2 | partiel | `menu_mode`, classes `g_0`, `i_0`, `y_0` |
 | Vignettes du modèle **au-delà de 3** (4 à 10) | **oui, vérifié** : `YuhanSkin` lit `Frame0..N` et place chaque vignette à ses coordonnées (Natural 02 = 4 cases en 2 x 2, Birthday 01 = 3) | `Frame3..Frame9`, `Thumb3..Thumb9` ; `dump` des deux thèmes |
 | Images de survol **et** de sélection par bouton | fait (commit `01ceddf`) | `selection/0.png`, `setSelectedImageList` |
@@ -497,3 +497,15 @@ Détails qui ne se devinaient pas :
 ## 18.1 Preuve de bout en bout du style de surbrillance (même date)
 
 `burnsmith bd --design "Cinema Dark" --highlight textcolor` sur un film d'essai produit un disque Blu-ray complet (`disc structure checked: no problem`) dont le **`BDMV\JAR\00000.jar` contient `hl_root_play.png` de 2 218 octets** — exactement la taille mesurée pour le style « texte en couleur » (§17), et non les 2 349 du cadre. Le réglage traverse donc tout la chaîne : ligne de commande → `MenuDesign` → `MenuRenderer.Focus` → `MenuFiles.WriteBdj` → jar du disque.
+## 19. Reproduit (partiellement prouvé) : la reprise au dernier bouton (2026-11-05)
+
+DVDFab garde le bouton de départ dans **GPR108** et le relit au retour au menu (§12.4). Même mécanisme dans le xlet de BurnSmith (`bdj\src\org\burnsmith\menu\Menu.java`) :
+
+- `remember(b)` écrit `GPR108 = index + 1` (0 = rien de mémorisé, sinon le premier bouton passerait toujours pour « mémorisé ») ;
+- `show(firstPage)` relit le registre et remet le focus sur ce bouton, en journalisant `resume on button N` ;
+- `readGpr` / `writeGpr` avalent l'échec : un lecteur sans accès aux registres garde un menu fonctionnel, il oublie seulement la position ;
+- la mémoire ne vaut que pour la **page d'accueil** : un indice de la page de scènes appliqué à la racine désignerait un autre bouton (défaut trouvé en essai, corrigé).
+
+**Preuves** : `bdj\build.ps1` reconstruit `assets\bdj\menu.jar` (10 907 octets, classes majeures **47** = Java 1.3) ; `javap` montre `bipush 108`, `RegisterAccess.getGPR/setGPR` et les trois appels à `remember` ; le disque Blu-ray construit embarque ce `Menu.class` (14 690 octets dans le jar du disque). En lecture dans le VLC portable (libbluray, JDK 8) : le journal donne `page root` → `play playlist 1` → `playback ended` → `page root` → **`resume on button 0`**.
+
+**Ce qui n'est pas prouvé** : la différence de bouton. Les touches de navigation envoyées par l'interface RC de VLC (`key-nav-right`, `key-nav-down`) n'ont pas déplacé le focus dans cet essai (le journal joue toujours le bouton 0), donc la reprise a été observée sur l'indice 0, celui qui était mémorisé. La mécanique (écriture, lecture, réapplication) est établie ; le cas « on revient sur un autre bouton » ne l'est pas.
