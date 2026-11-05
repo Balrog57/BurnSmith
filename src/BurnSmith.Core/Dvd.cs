@@ -183,6 +183,26 @@ public static class Dvd
     /// <summary>Settings pages: one per (audio, subtitle) choice, so the page itself can show what is chosen.</summary>
     static string SettingsId(int audio, int sub) => $"settings_{audio}_{sub}";
 
+    /// <summary>
+    /// The chapter buttons of a scene page with the excerpt that should play in each: the movie's MPEG, the chapter's time on the disc, and the
+    /// button's rectangle. Empty when the page has no chapter button (a menu page, a settings page) or the chapter is unknown.
+    /// </summary>
+    static List<(string Movie, double Time, Box Rect)> Clips(MenuPage page, List<Movie> movies)
+    {
+        var clips = new List<(string, double, Box)>();
+        if (!page.Id.StartsWith("scenes", StringComparison.Ordinal)) return clips;
+        foreach (var b in page.Buttons)
+        {
+            if (b.Action.Kind != "chapter") continue;
+            var title = b.Action.Playlist - 1;
+            if (title < 0 || title >= movies.Count) continue;
+            var times = movies[title].ChapterTimes;
+            if (b.Action.Mark < 0 || b.Action.Mark >= times.Count) continue;
+            clips.Add((movies[title].Mpg, times[b.Action.Mark], b.Rect));
+        }
+        return clips;
+    }
+
     static List<(MenuPage, string)> BuildMenus(DvdJob job, List<SourceInfo> sources, List<Movie> movies, string work, bool pal, Action<string> log)
     {
         log("menu: render");
@@ -237,7 +257,36 @@ public static class Dvd
             File.WriteAllBytes(bg, backgrounds[i]);
             var plain = Path.Combine(work, $"menu_{p.Id}_plain.mpg");
             var sar = pal ? "64/45" : "32/27";
-            if (!loop)
+            // animated thumbnails: each chapter button shows a short excerpt of its chapter inside its own frame (DVDFab's dynamic thumbnail)
+            var clips = !loop && job.Menu!.AnimatedThumbs && music == null ? Clips(p, movies) : [];
+            if (!loop && clips.Count > 0)
+            {
+                var dur = 8.0; // the page lasts as long as a still one; every excerpt is cut to that length
+                var args = new List<string> { "-y", "-v", "warning", "-loop", "1", "-framerate", pal ? "25" : "30000/1001", "-i", bg };
+                var fc = new System.Text.StringBuilder($"[0:v]scale={w}:{h},setsar={sar}[base0];");
+                var last = "base0";
+                var k = 1;
+                foreach (var (movie, time, rect) in clips)
+                {
+                    args.AddRange(["-ss", time.ToString(Inv), "-t", dur.ToString(Inv), "-i", movie]);
+                    int Sx(double v, int size) => Math.Max(2, ((int)Math.Round(v * size / (double)MenuBuilder.W)) & ~1);
+                    int Sy(double v, int size) => Math.Max(2, ((int)Math.Round(v * size / (double)MenuBuilder.H)) & ~1);
+                    var bw = Sx(rect.W, w); var bh = Sy(rect.H, h);
+                    var bx = (int)Math.Round(rect.X * w / (double)MenuBuilder.W) & ~1;
+                    var by = (int)Math.Round(rect.Y * h / (double)MenuBuilder.H) & ~1;
+                    fc.Append($"[{k}:v]scale={bw}:{bh},setsar=1,setpts=PTS-STARTPTS,fps={(pal ? "25" : "30000/1001")}[v{k}];");
+                    fc.Append($"[{last}][v{k}]overlay={bx}:{by}[b{k}];");
+                    last = $"b{k}";
+                    k++;
+                }
+                fc.Append($"[{last}]format=yuv420p[out]");
+                args.AddRange(["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]);
+                args.AddRange(["-filter_complex", fc.ToString(), "-map", "[out]", "-map", $"{k}:a:0", "-t", dur.ToString(Inv),
+                    "-ac", "2", "-c:a", "ac3", "-b:a", "192k", "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9", "-b:v", "4000k", plain]);
+                Tools.Run(ffmpeg, args, log);
+                log($"menu: {clips.Count} vignettes animées sur {p.Id}");
+            }
+            else if (!loop)
             {
                 // still image + the music, else silent AC-3 so the menu VOB carries the same streams as a normal title
                 var still = new List<string> { "-y", "-v", "warning", "-loop", "1", "-framerate", pal ? "25" : "30000/1001", "-i", bg };

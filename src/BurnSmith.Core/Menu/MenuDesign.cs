@@ -55,6 +55,12 @@ public sealed class MenuDesign
     public string SelectionColor { get; set; } = "";
     /// <summary>Opacity of the fill drawn inside the highlight, in percent (DVDFab's <c>selected_default_transparency</c>, 0 = a bare outline).</summary>
     public int SelectionOpacity { get; set; } = 18;
+    /// <summary>
+    /// Scene thumbnails as short moving excerpts of their chapter instead of still pictures (DVDFab's "dynamic thumbnail"). The DVD menu is then
+    /// built as a short clip: each thumbnail plays inside its own frame while the page stays still. Ignored on a moving menu (the page is already a
+    /// video overlay) and on Blu-ray, where the menu is drawn by the xlet and cannot play several videos at once.
+    /// </summary>
+    public bool AnimatedThumbs { get; set; }
 
     /// <summary>The colour the selected state is drawn in: <see cref="SelectionColor"/> when set, else <see cref="Accent"/>.</summary>
     public string SelectionInk => SelectionColor.Length > 0 ? SelectionColor : Accent;
@@ -141,7 +147,7 @@ public sealed class MenuDesign
     public void TakeLook(MenuDesign t)
     {
         Name = t.Name; Category = t.Category; TemplateDir = t.TemplateDir; BackgroundImage = t.BackgroundImage;
-        Top = t.Top; Bottom = t.Bottom; TextColor = t.TextColor; Accent = t.Accent; HighlightStyle = t.HighlightStyle; SelectionColor = t.SelectionColor; SelectionOpacity = t.SelectionOpacity; Font = t.Font;
+        Top = t.Top; Bottom = t.Bottom; TextColor = t.TextColor; Accent = t.Accent; HighlightStyle = t.HighlightStyle; SelectionColor = t.SelectionColor; SelectionOpacity = t.SelectionOpacity; AnimatedThumbs = t.AnimatedThumbs; Font = t.Font;
         ButtonStyle = t.ButtonStyle; Cols = t.Cols; Rows = t.Rows; Thumbnails = t.Thumbnails; Square = t.Square;
         CardFill = t.CardFill; Glow = t.Glow; Dim = t.Dim;
         MarginX = t.MarginX; MarginY = t.MarginY; Gap = t.Gap; Header = t.Header; Footer = t.Footer;

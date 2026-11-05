@@ -698,6 +698,7 @@ var design = a.Contains("--no-menu") ? null
 if (design != null && Opt("--title") is { } title) design.Title = title;
 if (design != null && Opt("--highlight") is { } hlStyle) design.HighlightStyle = hlStyle; // box | underline | textcolor
 if (design != null && a.Contains("--list")) design.SceneList = true; // page de scènes en liste (modèles Yuhan qui la décrivent)
+if (design != null && a.Contains("--animated-thumbs")) design.AnimatedThumbs = true; // vignettes animées (DVD : un extrait par case)
 if (design != null && Opt("--credits") is { } credits) design.Credits = credits.Replace('|', '\n'); // --credits "Directed by A|Music by B"
 foreach (var spec in OptAll("--element")) design?.Elements.Add(MenuElement.Parse(spec)); // --element "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;align=center"
 if (design != null && Opt("--titles") is { } byLanguage) design.TitlesByLanguage = byLanguage.Replace('=', ':').Replace('|', '\n'); // --titles "fra=Mon disque|eng=My disc"

@@ -299,6 +299,7 @@
         <TextBlock Text="Assombrir le fond (%)" Style="{StaticResource Caption}"/>
         <Slider Minimum="0" Maximum="80" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding Dim}"/>
         </StackPanel>
+        <CheckBox Content="Vignettes animées : un extrait du chapitre dans chaque case (DVD)" IsChecked="{Binding AnimatedThumbs}" Margin="0,8,0,0"/>
         <CheckBox Content="Afficher l'aperçu du film" IsChecked="{Binding ShowPreview}" Margin="0,16,0,0"/>
       </StackPanel>
     </ScrollViewer>

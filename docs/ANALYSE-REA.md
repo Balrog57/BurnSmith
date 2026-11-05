@@ -369,7 +369,7 @@ Donc : un modèle = `MenuTemplate\<Type>\<Aspect>\<Thème>\{Menu,Scene}` plus un
 
 | Fonction, prouvée par la décompilation | BurnSmith | Où c'est prouvé |
 |---|---|---|
-| Vignettes **animées** dans la page de scènes | non | `ECreatorTempType…DynamicThumbnail`, `videoCount` |
+| Vignettes **animées** dans la page de scènes | **fait pour le DVD** (§27) | `ECreatorTempType…DynamicThumbnail`, `videoCount` |
 | Page de scènes en **liste** (10 lignes + description) | **fait** (§15.2) | `ListTypeText`/`ItemText0..9` (30 thèmes Yuhan), `PlaylistScene`, classe `o` du jar |
 | **Page Bonus** décrite par le modèle | partielle (BurnSmith dessine la sienne) | `BonusText` sur les 30 thèmes |
 | **3 styles de surbrillance** + couleur et transparence de sélection | **fait** (§17, §21) | `EButtonSelectedHighlightType`, `selected_*_style_color`, `selected_*_transparency` |
@@ -705,3 +705,16 @@ Bilan de tout ce que la décompilation a établi et de ce que BurnSmith en a fai
 ### Ce que la décompilation a coûté, en une phrase
 
 Trois suites, six formats de fichiers compris (AuthorData, template.bd.xml, template.xml DVDFab DVD et Leawo, config.dat Yuhan, dvdauthor.xml), deux jars BD-J (DVDFab et BurnSmith) et trois pipelines d'outils (dvdauthor/spumux chez Yuhan, Leawo et BurnSmith) — et **une seule différence de fond** entre les trois produits et BurnSmith : Leawo encode ses images lui-même, DVDFab écrit son menu en BD-J signé avec un format de projet propre, Yuhan décrit ses thèmes dans un XML chiffré.
+## 27. Reproduit : vignettes animées (DVDFab « dynamic thumbnail ») (2026-11-05)
+
+DVDFab distingue `StaticBacKground_StaticThumbnail` de `StaticBacKground_DynamicThumbnail` (§12.1) : dans le second, la case d'une scène joue un extrait au lieu de montrer une image. Reproduit pour la voie **DVD** :
+
+- `MenuDesign.AnimatedThumbs` (repris par `TakeLook`), case dans l'éditeur, `--animated-thumbs` en ligne de commande.
+- `Dvd.Clips(page, movies)` associe chaque bouton de chapitre de la page de scènes à **son extrait** : le MPEG du film, le temps du chapitre sur le disque, le rectangle du bouton.
+- La page de menu n'est alors plus une image fixe : ffmpeg reçoit l'image de page en boucle, puis un flux par case (`-ss <chapitre> -t 8`), et compose
+  `[0:v]scale=720x576[base0]; [k:v]scale=bw:bh,setpts=PTS-STARTPTS[vk]; [base(k-1)][vk]overlay=bx:by[bk]` — chaque extrait dans sa case, sur la page immobile.
+- Le son reste celui d'un menu ordinaire (silence AC-3, ou la musique).
+
+**Pourquoi DVD seulement** : le menu Blu-ray est dessiné par le xlet BD-J, qui ne sait pas jouer plusieurs vidéos à la fois ; un menu animé y est déjà un fond vidéo plein cadre. Et quand un menu est déjà animé (`Loop`), la page est une surcouche transparente : les vignettes animées n'ont pas de support. Le code le dit : `!loop && AnimatedThumbs`.
+
+**Épreuves** : disque construit avec `--chapter-at 0,3,6,9,12 --animated-thumbs` — le journal annonce « 4 vignettes animées sur scenes1 » et « 1 vignettes animées sur scenes2 » ; le `VTS_01_0.VOB` pèse **5 687 296** octets contre **3 418 112** sans l'option ; les images extraites à 9 s et 13 s montrent les quatre cases à des instants différents (le motif de test a bougé), alors que la page racine, elle, reste identique d'une seconde à l'autre. `check-elements` 15/15, `check-highlights` 13/13, `check-templates` inchangé (l'option est éteinte par défaut).
