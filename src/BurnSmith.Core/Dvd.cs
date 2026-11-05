@@ -219,12 +219,10 @@ public static class Dvd
     }
 
     /// <summary>
-    /// Settings pages: one per (audio, subtitle) choice, so the page itself can show what is chosen. <paramref name="page"/> is what <see cref="MenuBuilder.SettingsIds"/> names:
-    /// <c>settings</c>, or <c>settings_audio</c> and <c>settings_sub</c> for a template with one list, each then existing once per choice.
+    /// Settings pages: one per (audio, subtitle) choice, so the page itself can show what is chosen.
+    /// Un modèle à liste unique a <c>settings_audio_A</c> et <c>settings_sub_S</c> à la place : chacune ne marque que sa catégorie, le produit des deux ferait dépasser 1 Go à un menu animé.
     /// </summary>
-    static string SettingsId(string page, int audio, int sub) => $"{page}_{audio}_{sub}";
-
-    static Match SettingsState(string pageId) => Regex.Match(pageId, @"^(settings(?:_audio|_sub)?)_(\d+)_(\d+)$");
+    static string SettingsId(int audio, int sub) => $"settings_{audio}_{sub}";
 
     /// <summary>
     /// The chapter buttons of a scene page with the excerpt that should play in each: the movie's MPEG, the chapter's time on the disc, and the
@@ -280,10 +278,16 @@ public static class Dvd
         {
             var audioStates = content.AudioNames.Count > 1 ? content.AudioNames.Count : 1;
             var subStates = content.SubtitleNames.Count > 0 ? content.SubtitleNames.Count + 1 : 1;
-            for (var a = 1; a <= audioStates; a++)
+            if (settingsPages.Contains("settings"))
+                for (var a = 1; a <= audioStates; a++)
+                    for (var s = 0; s < subStates; s++)
+                        pages.Add(MenuBuilder.WithElements(job.Menu!, MenuBuilder.Settings(job.Menu!, content, a, s, SettingsId(a, s)), content));
+            if (settingsPages.Contains("settings_audio"))
+                for (var a = 1; a <= audioStates; a++)
+                    pages.Add(MenuBuilder.WithElements(job.Menu!, MenuBuilder.Settings(job.Menu!, content, a, null, $"settings_audio_{a}"), content));
+            if (settingsPages.Contains("settings_sub"))
                 for (var s = 0; s < subStates; s++)
-                    foreach (var page in settingsPages)
-                        pages.Add(MenuBuilder.WithElements(job.Menu!, MenuBuilder.Settings(job.Menu!, content, a, s, SettingsId(page, a, s)), content));
+                    pages.Add(MenuBuilder.WithElements(job.Menu!, MenuBuilder.Settings(job.Menu!, content, null, s, $"settings_sub_{s}"), content));
         }
         var loop = job.Menu!.Loop;
         // a moving menu: the pages are transparent overlays burned onto a clip of the film (or the design's own video) that plays and repeats
@@ -443,35 +447,43 @@ public static class Dvd
 
         // menu PGCs are numbered in order: 1 = root, then the scene/episode pages, then the settings pages
         int MenuNumber(string pageId) => menus.FindIndex(m => m.Page.Id == pageId) + 1;
-        var states = menus.Select(m => SettingsState(m.Page.Id)).Where(m => m.Success).Select(m => (Page: m.Groups[1].Value, A: int.Parse(m.Groups[2].Value), S: int.Parse(m.Groups[3].Value), Id: m.Value)).ToList();
+        var settings = menus.Where(m => m.Page.Id.StartsWith("settings_")).Select(m => m.Page.Id).ToList();
+        var states = settings.Select(id => Regex.Match(id, @"settings_(\d+)_(\d+)")).Where(m => m.Success).Select(m => (A: int.Parse(m.Groups[1].Value), S: int.Parse(m.Groups[2].Value), Id: m.Value)).ToList();
 
         // g1 = 1 while "play all" runs, g2 = chosen audio (1-based), g3 = chosen subtitle (0 = off); they select the settings page to show
         // one compare per jump, on g6 = 64 * g2 + g3: dvdauthor compiles "if (g2 == A && g3 == S) jump menu N" (and the nested form) into a link that tests g2 only,
         // so the page always showed the first subtitle choice whatever g3 was
-        string Enter(string target)
+        string Enter() => states.Count == 0 ? "" :
+            "g6 = g2; g6 *= 64; g6 += g3; " + string.Concat(states.Select(s => $"if (g6 == {64 * s.A + s.S}) jump menu {MenuNumber(s.Id)}; ")) + $"jump menu {MenuNumber(states[0].Id)};";
+
+        // la page d'une catégorie, celle du choix en cours : l'autre registre n'y entre pas
+        string EnterChoice(string target, string register)
         {
-            var mine = states.Where(s => s.Page == target).ToList();
-            return mine.Count == 0 ? "" :
-                "g6 = g2; g6 *= 64; g6 += g3; " + string.Concat(mine.Select(s => $"if (g6 == {64 * s.A + s.S}) jump menu {MenuNumber(s.Id)}; ")) + $"jump menu {MenuNumber(mine[0].Id)};";
+            var mine = settings.Where(id => id.StartsWith(target + "_", StringComparison.Ordinal)).ToList();
+            return mine.Count == 0 ? "" : string.Concat(mine.Select(id => $"if ({register} == {id[(target.Length + 1)..]}) jump menu {MenuNumber(id)}; ")) + $"jump menu {MenuNumber(mine[0])};";
         }
 
         string Command(MenuPage page, MenuButton b)
         {
             var a = b.Action;
-            var here = SettingsState(page.Id);
-            var (kind, heldAudio, heldSub) = here.Success ? (here.Groups[1].Value, int.Parse(here.Groups[2].Value), int.Parse(here.Groups[3].Value)) : ("", 0, 0);
+            var here = Regex.Match(page.Id, @"settings_(\d+)_(\d+)");
             switch (a.Kind)
             {
                 case "play": return (series ? "g1 = 0; " : "") + $"jump title {a.Playlist};";
                 case "chapter": return $"jump title {a.Playlist} chapter {a.Mark + 1};";
                 case "playall": return $"g1 = 1; jump title {a.Playlist};";
                 case "audio": // stream numbers are 0-based on a DVD
-                    return $"g2 = {a.Mark}; audio = {a.Mark - 1}; jump menu {MenuNumber(SettingsId(kind, a.Mark, heldSub))};";
+                    return $"g2 = {a.Mark}; audio = {a.Mark - 1}; jump menu {MenuNumber(here.Success ? SettingsId(a.Mark, int.Parse(here.Groups[2].Value)) : $"settings_audio_{a.Mark}")};";
                 case "sub": // 62 = none; with the display bit (64) the stream number follows
-                    return $"g3 = {a.Mark}; subtitle = {(a.Mark == 0 ? 62 : 64 + a.Mark - 1)}; jump menu {MenuNumber(SettingsId(kind, heldAudio, a.Mark))};";
+                    return $"g3 = {a.Mark}; subtitle = {(a.Mark == 0 ? 62 : 64 + a.Mark - 1)}; jump menu {MenuNumber(here.Success ? SettingsId(int.Parse(here.Groups[1].Value), a.Mark) : $"settings_sub_{a.Mark}")};";
                 default:
-                    if (a.Page is not ("settings" or "settings_audio" or "settings_sub")) return $"jump menu {MenuNumber(a.Page!)};";
-                    return here.Success ? $"jump menu {MenuNumber(SettingsId(a.Page, heldAudio, heldSub))};" : Enter(a.Page); // from a settings page the choice is known: no chain of compares on each of its buttons
+                    return a.Page switch
+                    {
+                        "settings" => Enter(),
+                        "settings_audio" => EnterChoice(a.Page, "g2"),
+                        "settings_sub" => EnterChoice(a.Page, "g3"),
+                        _ => $"jump menu {MenuNumber(a.Page!)};",
+                    };
             }
         }
 

@@ -95,13 +95,19 @@ static class SettingsCheck
               Shape(2, 0) == "settings_audio>settings_audio:0" && Shape(1, 2) == "settings_sub>settings_sub:0" && Shape(1, 0) == ">:0");
 
         // le marqueur : le xlet le dessine à (bouton inflaté + MarkerOffset), un DVD dans la page ; les deux doivent tomber au même endroit, à l'écran et hors de la ligne
-        var active = MenuBuilder.Settings(d, c, 2, 1, "settings_audio_2_1");
+        var active = MenuBuilder.Settings(d, c, 2, null, "settings_audio_2");
         var row = active.Buttons.First(b => b.Id == "a2");
         var dot = active.Ops.OfType<Fill>().Where(f => f.Rect.W == MenuBuilder.MarkerSize && f.Rect.H == MenuBuilder.MarkerSize).ToList();
         var xlet = row.Rect.X - MenuBuilder.FocusMargin + MenuBuilder.MarkerOffset(d);
         Check("le point de la piste active : le DVD le dessine une fois, là où le xlet le dessine, à gauche de la ligne",
               dot.Count == 1 && dot[0].Rect.X == xlet && dot[0].Rect.Y == row.Rect.Y + (row.Rect.H - MenuBuilder.MarkerSize) / 2 && dot[0].Rect.X + dot[0].Rect.W <= row.Rect.X && dot[0].Rect.X >= 0);
         Check("le Blu-ray ne fige aucun point dans ses pages : c'est le xlet qui le dessine", !audio.Ops.OfType<Fill>().Any(f => f.Rect.W == MenuBuilder.MarkerSize) && !sub.Ops.OfType<Fill>().Any(f => f.Rect.W == MenuBuilder.MarkerSize));
+
+        // un DVD n'a qu'une page par choix d'une catégorie : l'autre choix ne doit rien changer à ses octets, et son propre choix doit les changer
+        byte[] Drawn(int? a, int? s, string id) => MenuRenderer.Sta(() => MenuRenderer.Background(d, MenuBuilder.Settings(d, c, a, s, id)));
+        Check("la page audio ne dépend que de l'audio, la page sous-titres que du sous-titre (octets du rendu)",
+              Drawn(2, 0, "settings_audio_2").SequenceEqual(Drawn(2, 1, "settings_audio_2")) && !Drawn(2, 0, "settings_audio_2").SequenceEqual(Drawn(3, 0, "settings_audio_2"))
+              && Drawn(1, 1, "settings_sub_1").SequenceEqual(Drawn(3, 1, "settings_sub_1")) && !Drawn(1, 1, "settings_sub_1").SequenceEqual(Drawn(1, 2, "settings_sub_1")));
 
         var menu = Path.Combine(Path.GetTempPath(), "bs_settings_menu_" + Guid.NewGuid().ToString("N")[..8]);
         try
@@ -126,7 +132,7 @@ static class SettingsCheck
         Check("un bouton posé qui vise « settings » mène à la page audio, un élément des Réglages est sur les deux pages et sur celles d'un DVD",
               withElements[0].Buttons.Any(b => b.Id == "u0" && b.Action.Page == "settings_audio")
               && withElements.Where(p => MenuDesign.PageKind(p.Id) == "settings").All(p => p.Ops.OfType<Label>().Any(l => l.Value == "Note") || p.Ops.OfType<Text>().Any(t => t.Value == "Note"))
-              && new MenuElement { Page = "settings" }.AppliesTo("settings_sub_1_0"));
+              && new MenuElement { Page = "settings" }.AppliesTo("settings_sub_1"));
     }
 
     static void OnePage(Action<string, bool> check, string name, MenuDesign d)
@@ -138,7 +144,7 @@ static class SettingsCheck
               && mine[0].Buttons.All(b => b.Id is not ("next" or "prev")) && pages.Any(p => p.Buttons.Any(b => b.Action is { Kind: "page", Page: "settings" })));
     }
 
-    /// <summary>Un vrai DVD (2 audio, 1 sous-titre) : huit pages de réglages, et les commandes qui y mènent et les relient, relues dans l'IFO.</summary>
+    /// <summary>De vrais DVD : 2 audio et 1 sous-titre, les commandes qui mènent aux pages et les relient, relues dans l'IFO ; 6 audio et 5 sous-titres, le nombre de pages.</summary>
     public static void Disc(Action<string, bool> check, bool noDvd)
     {
         if (noDvd) { Console.WriteLine("skip réglages à deux pages sur un vrai DVD (--no-dvd)"); return; }
@@ -171,18 +177,32 @@ static class SettingsCheck
             }
             static string Jump(int page) => $"200400000000{page:X4}";
 
-            // numéros : 1 = racine, puis pour chaque état (a,s) sa page audio et sa page sous-titres ; 2 et 3 = (1,0), 4 et 5 = (1,1), 6 et 7 = (2,0), 8 et 9 = (2,1)
-            check("réglages, vrai DVD : la racine et huit pages (2 audio x 2 choix de sous-titres x 2 pages)", pages.Count == 9);
-            if (pages.Count != 9) return; // la suite lit les pages par leur numéro
-            check("réglages, vrai DVD : un bouton de la racine calcule l'état et saute à la page audio de cet état (64 > 2, 65 > 4, 128 > 6, 129 > 8)",
-                  Buttons(pages[0]).Any(b => b.StartsWith("7101000F", StringComparison.Ordinal)) && Post(pages[0]).Contains("20A4000600400002 20A4000600410004 20A4000600800006 20A4000600810008"));
-            check("réglages, vrai DVD : pages audio et sous-titres de chaque état reliées par leurs boutons, dans le même état, et Retour vers la racine",
-                  new[] { (2, 3), (4, 5), (6, 7), (8, 9) }.All(s => Buttons(pages[s.Item1 - 1]).Contains(Jump(s.Item2)) && Buttons(pages[s.Item2 - 1]).Contains(Jump(s.Item1))
-                                                                     && Buttons(pages[s.Item1 - 1]).Contains(Jump(1)) && Buttons(pages[s.Item2 - 1]).Contains(Jump(1))));
-            check("réglages, vrai DVD : choisir l'audio 2 sur la page audio de (1,1) mène à la page audio de (2,1) ; désactiver les sous-titres sur la page de (1,1) mène à celle de (1,0)",
-                  Post(pages[3]).Contains("7100000200020000 5104008100000008") && Post(pages[4]).Contains("7100000300000000 51040000BE000003"));
-            check("réglages, vrai DVD : la page audio porte ses 2 lignes, Retour et « Sous-titres » ; celle des sous-titres ses 2 lignes, « Audio » et Retour", Buttons(pages[1]).Count == 4 && Buttons(pages[2]).Count == 4);
+            // numéros : 1 = racine, 2 et 3 = audio 1 et 2, 4 et 5 = sous-titres désactivés et 1
+            check("réglages, vrai DVD : la racine et quatre pages (2 audio + 2 choix de sous-titres), pas leur produit", pages.Count == 5);
+            if (pages.Count != 5) return; // la suite lit les pages par leur numéro
+            const string toAudio = "20A4000200010002 20A4000200020003", toSub = "20A4000300000004 20A4000300010005"; // si g2 = 1, page 2 ; si g2 = 2, page 3 ; si g3 = 0, page 4 ; si g3 = 1, page 5
+            static bool Goes(List<string> buttons) => buttons.Any(b => b.StartsWith("7101000F", StringComparison.Ordinal)); // le bouton part vers ses commandes dans la fin de chaîne
+            check("réglages, vrai DVD : le bouton de la racine compare g2 et saute à la page audio du choix en cours, sans regarder le sous-titre",
+                  Goes(Buttons(pages[0])) && Post(pages[0]).Contains(toAudio) && !Post(pages[0]).Contains(toSub));
+            check("réglages, vrai DVD : « Sous-titres » compare g3 sur chaque page audio, « Audio » compare g2 sur chaque page sous-titres, et Retour mène à la racine",
+                  new[] { 2, 3 }.All(n => Post(pages[n - 1]).Contains(toSub)) && new[] { 4, 5 }.All(n => Post(pages[n - 1]).Contains(toAudio)) && Enumerable.Range(2, 4).All(n => Buttons(pages[n - 1]).Contains(Jump(1))));
+            check("réglages, vrai DVD : choisir l'audio 2 écrit g2 et le flux 1, et mène à sa page ; choisir un sous-titre écrit g3 et le flux, et mène à sa page",
+                  Post(pages[1]).Contains("7100000200020000 5104008100000003") && Post(pages[4]).Contains("7100000300000000 51040000BE000004") && Post(pages[3]).Contains("7100000300010000 51040000C0000005"));
+            check("réglages, vrai DVD : un choix garde l'autre registre : la page audio n'écrit jamais g3, celle des sous-titres jamais g2",
+                  new[] { 2, 3 }.All(n => !Post(pages[n - 1]).Contains("71000003")) && new[] { 4, 5 }.All(n => !Post(pages[n - 1]).Contains("71000002")));
+            check("réglages, vrai DVD : la page audio porte ses 2 lignes, Retour et « Sous-titres » ; celle des sous-titres ses 2 lignes, « Audio » et Retour", Buttons(pages[1]).Count == 4 && Buttons(pages[3]).Count == 4);
             check("réglages, vrai DVD : le disque passe le contrôle de structure", DiscCheck.Folder(disc).Count == 0);
+
+            var (film6, worst) = (Path.Combine(dir, "film6.mkv"), Path.Combine(dir, "worst"));
+            var sources = Enumerable.Range(0, 6).SelectMany(i => new[] { "-f", "lavfi", "-i", $"sine=f={300 + 100 * i}:d=2" });
+            var streams = Enumerable.Range(1, 6).SelectMany(i => new[] { "-map", $"{i}:a" });
+            Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=2", .. sources, "-map", "0:v", .. streams, "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "ac3", film6]);
+            Dvd.Build(new DvdJob([new DiscTitle(film6, Audio: [0, 1, 2, 3, 4, 5], Subtitles: [0, 1, 2, 3, 4], External: [.. new[] { "fre", "eng", "spa", "ger", "ita" }.Select(l => new ExternalSubtitle(srt, l))])], worst, Theme(dir, "THEME04", true)));
+            var ifo = File.ReadAllBytes(Path.Combine(worst, "VIDEO_TS", "VTS_01_0.IFO"));
+            int Word(int o) => (int)BinaryPrimitives.ReadUInt32BigEndian(ifo.AsSpan(o));
+            var chains = Word(0xD0) * 2048 + Word(Word(0xD0) * 2048 + 12);
+            var count = Enumerable.Range(1, BinaryPrimitives.ReadUInt16BigEndian(ifo.AsSpan(chains))).Count(n => ifo[chains + Word(chains + 8 * n + 4) + 3] > 0);
+            check($"réglages, vrai DVD au pire cas (6 audio, 5 sous-titres) : la racine et 12 pages, pas 72 ({count} chaînes de menu)", count == 13);
         }
         catch (FileNotFoundException e) { check($"réglages, vrai DVD : {e.Message}", false); }
         catch (InvalidOperationException e) { check($"réglages, vrai DVD : {e.Message.Split('\n')[0]}", false); }
