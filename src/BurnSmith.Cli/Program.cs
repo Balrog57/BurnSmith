@@ -49,6 +49,13 @@ if (a.Count >= 2 && a[0] == "dump")
     return 0;
 }
 
+// burnsmith check-disc <disc folder | .iso> : the structure of a finished disc (files present, headers, whole packets, IFO sizes), without a player; 1 when something is wrong
+if (a.Count >= 2 && a[0] == "check-disc")
+{
+    var found = Directory.Exists(a[1]) ? DiscCheck.Folder(a[1]) : DiscCheck.Image(a[1]);
+    Console.WriteLine(found.Count == 0 ? "ok   disc structure" : string.Join(Environment.NewLine, found.Select(p => "FAIL " + p)));
+    return found.Count == 0 ? 0 : 1;
+}
 // burnsmith check-templates [--matrix] [--only NAME] [--picture frame.jpg] (--only: the templates whose name contains NAME, no composed designs) : builds every template as film and series and checks pages, buttons, remote moves, pictures;
 // --matrix = every disc shape (1..40 chapters, 2..60 episodes, 1..9 audio, 0..9 subtitles) and 200 designs the menu editor can compose
 if (a.Count >= 1 && a[0] == "check-templates") return TemplateCheck.Run(Opt("--picture") is { } cp ? Path.GetFullPath(cp) : null, a.Contains("--matrix"), Opt("--only"));
@@ -163,6 +170,13 @@ if (a.Count >= 1 && a[0] == "check-elements")
     var elTwo = elTwoPage.Buttons.Where(b => b.Id.StartsWith("u")).ToList();
     Check("deux boutons posés côte à côte se pointent l'un l'autre à la télécommande, et la page visée est celle demandée",
           elTwo.Count == 2 && elTwo[0].Right == elTwo[1].Id && elTwo[1].Left == elTwo[0].Id && elTwo[1].Action is { Kind: "page", Page: "scenes1" });
+
+    // what "Enregistrer le modèle" writes must come back whole: the elements and the hand-placed buttons are part of the template
+    var elJson = System.Text.Json.JsonSerializer.Serialize(elButton);
+    var elBack = System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(elJson)!;
+    Check("un modèle enregistré revient entier (éléments, bouton ajouté et sa cible)",
+          elBack.Elements.Count == elButton.Elements.Count && elBack.Elements[^1] is { Kind: "button", Target: "scenes1", Text: "Scènes" }
+          && elBack.Elements[0].X == elButton.Elements[0].X && elBack.Title == elButton.Title);
     Console.WriteLine(elFailed == 0 ? "all ok" : $"{elFailed} failed");
     return elFailed == 0 ? 0 : 1;
 }
@@ -480,4 +494,6 @@ if (a[0] == "bd")
     BluRay.Build(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback), Console.WriteLine);
 else
     Dvd.Build(new DvdJob(titles, Path.GetFullPath(outDir), design, chapters, Encode: encode), Console.WriteLine);
-return 0;
+var problems = DiscCheck.Folder(Path.GetFullPath(outDir));
+Console.WriteLine(problems.Count == 0 ? "disc structure checked: no problem" : "disc structure: " + string.Join(" ; ", problems));
+return problems.Count == 0 ? 0 : 1;

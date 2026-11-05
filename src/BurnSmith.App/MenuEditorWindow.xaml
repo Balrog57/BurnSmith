@@ -123,12 +123,12 @@
         <TextBox Text="{Binding TitlesByLanguage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" VerticalScrollBarVisibility="Auto"/>
 
         <TextBlock Text="Éléments libres : texte, image ou cadre posés à la main sur une page (comme dans DVDStyler)" Style="{StaticResource Caption}" Margin="0,16,0,3" TextWrapping="Wrap"/>
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-          <Button Content="+ Texte" Click="OnAddText" Margin="0,0,6,0"/>
-          <Button Content="+ Image" Click="OnAddImage" Margin="0,0,6,0"/>
-          <Button Content="+ Cadre" Click="OnAddBox"/>
-          <Button Content="+ Bouton" Click="OnAddButton" Margin="6,0,0,0"/>
-        </StackPanel>
+        <WrapPanel Margin="0,0,0,4">
+          <Button Content="+ Texte" Click="OnAddText" Margin="0,0,6,6"/>
+          <Button Content="+ Image" Click="OnAddImage" Margin="0,0,6,6"/>
+          <Button Content="+ Cadre" Click="OnAddBox" Margin="0,0,6,6"/>
+          <Button Content="+ Bouton" Click="OnAddButton" Margin="0,0,0,6"/>
+        </WrapPanel>
         <ListBox x:Name="ElemList" Height="88" SelectionChanged="OnElemPick"/>
         <DockPanel Margin="0,4,0,0">
           <TextBlock Text="Page" Width="76" VerticalAlignment="Center"/>
