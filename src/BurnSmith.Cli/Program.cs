@@ -6,6 +6,7 @@ using BurnSmith.Core.Menu;
 // --audio / --sub: 0-based track numbers of each source, kept in that order (default: first audio, no subtitles). Several --video need a menu.
 // --sub-file: a subtitle file (srt, ass, ssa, vtt, sup = PGS pictures, or idx = VobSub with its .sub, one track per language it holds) of the video written before it, kept after those tracks;
 //             its language comes from the name ("film.fr.srt") or "fra=film.srt" (for an .idx: only that language)
+// --track-lang a0=fre,s1=eng: after a --video, the language of one of that file's own tracks (a = audio, s = subtitle, numbered as in --audio / --sub), for one left "und" or mislabelled;
 // --default-audio N / --default-sub N: after a --video, the audio track that plays / the subtitle that shows when the disc starts (numbers as in --audio / --sub, so among the ones kept);
 //                  the default audio goes first on the disc, the default subtitle is selected by the disc (a menu's settings page shows it chosen)
 // --intro: after a --video, that video plays first when the disc starts, before the menu (before the film when there is no menu); not a title of the menu (Blu-ray and DVD)
@@ -338,6 +339,13 @@ if (a.Count >= 1 && a[0] == "check-edit")
     Check("disc setting: one every 5 min from 0", Show(whole.ChapterList(600, 5)) == "0,300");
     Check("no chapters: only 0", Show(new DiscTitle("x", ChapterAt: []).ChapterList(600, 5)) == "0");
     Check("custom times are shifted by the start, 0 added, outside dropped", Show(new DiscTitle("x", Start: 100, End: 400, ChapterAt: [50, 100, 160, 250.4, 399.5, 500]).ChapterList(300, 5)) == "0,60,150");
+    var tracked = new SourceInfo("h264", 1920, 1080, 24, "ac3", 6, 600, [new(0, "dts", 6, "und", ""), new(1, "ac3", 2, "eng", "")], [new(0, "subrip", "und", "", false), new(1, "hdmv_pgs_subtitle", "fre", "", false)]);
+    var relabel = new DiscTitle("x", Audio: [0, 1], Subtitles: [0, 1], External: [new ExternalSubtitle("s.srt", "ger")], TrackLanguage: new Dictionary<string, string> { ["a0"] = "fre", ["s0"] = "eng", ["s2"] = "spa" });
+    var relabelled = relabel.Cut(tracked);
+    Check("a language set by hand goes on the video's own audio and subtitle tracks, the others keep theirs", relabelled.Audio[0].Lang == "fre" && relabelled.Audio[1].Lang == "eng" && relabelled.Subtitles[0].Lang == "eng" && relabelled.Subtitles[1].Lang == "fre");
+    Check("a subtitle file keeps its own language (its track number is not a key of the video's tracks)", relabelled.Subtitles[2].File != null && relabelled.Subtitles[2].Lang == "ger");
+    Check("the disc reads the new language: kept tracks and their names", relabel.KeptAudio(relabelled)[0].Name.StartsWith("Français") && relabel.KeptSubtitles(relabelled)[0].Name == "English" && new DiscTitle("x").KeptAudio(tracked)[0].Lang == "und");
+    Check("no language set: the source is returned as it is", new DiscTitle("x", TrackLanguage: new Dictionary<string, string>()).Cut(tracked) == tracked);
     Check("one video's own interval replaces the disc's; a list wins over it", Show(new DiscTitle("x", ChapterMinutes: 2).ChapterList(600, 5)) == "0,120,240,360,480" && Show(new DiscTitle("x", ChapterAt: [30], ChapterMinutes: 2).ChapterList(600, 5)) == "0,30" && Show(new DiscTitle("x").ChapterList(600, 5)) == "0,300");
     // the structure check on a disc built by hand: a tiny Blu-ray folder, then the same with something wrong
     var discDir = Path.Combine(Path.GetTempPath(), "bs_disc_" + Guid.NewGuid().ToString("N")[..8]);
@@ -738,7 +746,16 @@ var titles = videos.Select((v, k) =>
     int? defaultAudio = int.TryParse(Own("--default-audio"), out var da) ? da : null, defaultSub = int.TryParse(Own("--default-sub"), out var ds) ? ds : null;
     if (defaultAudio is { } wanted && !(Numbers("--audio") ?? [0]).Contains(wanted)) throw new ArgumentException($"--default-audio {wanted} is not one of the audio tracks kept (--audio)");
     if (defaultSub is { } wantedSub && !(subs ?? []).Contains(wantedSub)) throw new ArgumentException($"--default-sub {wantedSub} is not one of the subtitles kept (--sub / --sub-file)");
-    return new DiscTitle(v, null, Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes, own.Contains("--intro"));
+    // --track-lang a0=fre,s1=eng (this video): the language of one of the file's own tracks (a = audio, s = subtitle, numbered as --audio / --sub), for a track left "und" or mislabelled
+    Dictionary<string, string>? trackLanguage = null;
+    foreach (var pair in Own("--track-lang")?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [])
+    {
+        var kv = pair.Split('=', 2);
+        var code = kv.Length == 2 ? (kv[1].Trim() == "und" ? "und" : Languages.Code(kv[1].Trim())) : null;
+        if (!System.Text.RegularExpressions.Regex.IsMatch(kv[0].Trim(), "^[as][0-9]+$") || code == null) throw new ArgumentException($"--track-lang: a track and a language are expected (a0=fre,s1=eng), not '{pair}'");
+        (trackLanguage ??= [])[kv[0].Trim()] = code;
+    }
+    return new DiscTitle(v, null, Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes, own.Contains("--intro"), trackLanguage);
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
 // bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (fit = "Adapter au disque"),

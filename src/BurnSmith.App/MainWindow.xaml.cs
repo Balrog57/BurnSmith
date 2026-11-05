@@ -44,6 +44,8 @@ public partial class MainWindow : Window
         /// <summary>The audio track that plays and the subtitle that shows when the disc starts (source track numbers among those kept; null = the first audio, no subtitle).</summary>
         public int? DefaultAudio { get; set; }
         public int? DefaultSub { get; set; }
+        /// <summary>Languages set by hand on the video's own tracks (see <see cref="DiscTitle.TrackLanguage"/>).</summary>
+        public Dictionary<string, string> TrackLanguage { get; set; } = [];
         /// <summary>The name as the table shows it.</summary>
         public string Shown => Intro ? $"Début · {Name}" : Bonus ? $"Bonus · {Name}" : Name;
 
@@ -57,17 +59,17 @@ public partial class MainWindow : Window
         public string DurationText => Timecode.Format(Math.Floor(OnDisc.Duration));
         public string? DurationTip => ToDisc() is { Trimmed: true } ? $"Durée d'origine : {Timecode.Format(Math.Floor(Info.Duration))}" : null;
         public string Hdr => Info.Hdr;
-        public string AudioText => Summary(ToDisc().KeptAudio(Info).Select(a => a.Name).ToList()); // in disc order: the default one first
+        public string AudioText => Summary(ToDisc().KeptAudio(Tracks).Select(a => a.Name).ToList()); // in disc order: the default one first
         public string SubText => Summary(Subs.OrderBy(i => i == DefaultSub ? 0 : 1).Select(i => (Tracks.Subtitles.FirstOrDefault(t => t.Index == i)?.Name ?? "?") + (i == DefaultSub ? " (défaut)" : "")).ToList());
 
         static string Summary(List<string> names) => names.Count == 0 ? "Aucun" : names.Count == 1 ? names[0] : $"{names[0]} +{names.Count - 1}";
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro);
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage);
 
         /// <summary>Another row for the same video with the same settings (a title cut in two).</summary>
         public Entry Clone() => new(Path, Info)
         {
             Name = Name, Audio = [.. Audio], Subs = [.. Subs], Extra = [.. Extra], Start = Start, End = End, Volume = Volume, ChapterAt = ChapterAt,
-            ChapterMinutes = ChapterMinutes, Bonus = Bonus, Intro = Intro, DefaultAudio = DefaultAudio, DefaultSub = DefaultSub,
+            ChapterMinutes = ChapterMinutes, Bonus = Bonus, Intro = Intro, DefaultAudio = DefaultAudio, DefaultSub = DefaultSub, TrackLanguage = new(TrackLanguage),
         };
     }
 
@@ -155,7 +157,7 @@ public partial class MainWindow : Window
         var chapters = series ? 0 : disc.ChapterList(first.OnDisc.Duration, chapterMinutes).Count;
         return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, chapters).ToList(),
             series ? main.Select((t, i) => new TitleEntry(t.Name, i + 1, null)).ToList() : null,
-            disc.KeptAudio(first.Info).Select(a => a.Name).ToList(), disc.KeptSubtitles(first.Tracks).Where(s => s.Supported).Select(s => s.Name).ToList(),
+            disc.KeptAudio(first.Tracks).Select(a => a.Name).ToList(), disc.KeptSubtitles(first.Tracks).Where(s => s.Supported).Select(s => s.Name).ToList(),
             extras.Count > 0 ? extras.Select((t, i) => new TitleEntry(t.Name, main.Count + i + 1, null)).ToList() : null);
     }
 
@@ -549,7 +551,7 @@ public partial class MainWindow : Window
             var joined = new Entry(file, info)
             {
                 Name = entry.Name, Audio = [.. entry.Audio.Where(a => a < info.Audio.Count)], Subs = [.. entry.Subs.Where(s => s < info.Subtitles.Count)],
-                Volume = entry.Volume, Bonus = entry.Bonus, Intro = entry.Intro, DefaultAudio = entry.DefaultAudio, DefaultSub = entry.DefaultSub,
+                Volume = entry.Volume, Bonus = entry.Bonus, Intro = entry.Intro, DefaultAudio = entry.DefaultAudio, DefaultSub = entry.DefaultSub, TrackLanguage = new(entry.TrackLanguage), // the join keeps both videos' (equal) streams
             };
             if (entry.Extra.Count + next.Extra.Count > 0) Warn("Les fichiers de sous-titres ajoutés aux deux vidéos ne suivent pas la fusion.");
             titles[i] = joined;
@@ -626,7 +628,7 @@ public partial class MainWindow : Window
         if (Row(button) is not { } entry) return;
         var kept = audio ? entry.Audio : entry.Subs;
         IEnumerable<(int Index, string Text, bool Enabled)> tracks = audio
-            ? entry.Info.Audio.Select(a => (a.Index, $"{a.Name}  ({a.Codec})", true))
+            ? entry.Tracks.Audio.Select(a => (a.Index, $"{a.Name}  ({a.Codec})", true))
             : entry.Tracks.Subtitles.Select(t => (t.Index, t.Supported ? $"{t.Name}  ({(t.File != null ? Path.GetFileName(t.File) : t.Codec)})" : $"{t.Name}  ({t.Codec}, non pris en charge)", t.Supported));
         var menu = new ContextMenu { PlacementTarget = button, Placement = PlacementMode.Bottom };
         foreach (var (index, text, enabled) in tracks)
@@ -637,6 +639,9 @@ public partial class MainWindow : Window
         }
         if (menu.Items.Count == 0) menu.Items.Add(new MenuItem { Header = audio ? "Aucune piste audio" : "Aucun sous-titre", IsEnabled = false });
         AddDefaultMenu(menu, entry, audio);
+        // a track the file leaves "und" or labels wrongly: one submenu per track of the video itself (a subtitle file's language is set further down)
+        var own = audio ? entry.Tracks.Audio.Select(a => (a.Index, a.Name, a.Lang)) : entry.Tracks.Subtitles.Where(t => t.File == null).Select(t => (t.Index, t.Name, t.Lang));
+        foreach (var (index, name, _) in own) menu.Items.Add(LanguageMenu(entry, audio, index, name));
         if (!audio)
         {
             menu.Items.Add(new Separator());
@@ -689,9 +694,30 @@ public partial class MainWindow : Window
             parent.Items.Add(item);
         }
         if (!audio) Add("Aucun", -1);
-        foreach (var index in kept) Add(audio ? entry.Info.Audio.First(a => a.Index == index).Name : entry.Tracks.Subtitles.First(t => t.Index == index).Name, index);
+        foreach (var index in kept) Add(audio ? entry.Tracks.Audio.First(a => a.Index == index).Name : entry.Tracks.Subtitles.First(t => t.Index == index).Name, index);
         menu.Items.Add(new Separator());
         menu.Items.Add(parent);
+    }
+
+    /// <summary>"Langue de « … »" for one track of the video itself: the language it is read as on the disc; "Langue d'origine" gives back the file's own.</summary>
+    MenuItem LanguageMenu(Entry entry, bool audio, int index, string track)
+    {
+        var key = DiscTitle.LanguageKey(audio, index);
+        var menu = new MenuItem { Header = $"Langue de « {track} »" };
+        void Add(string name, string? code)
+        {
+            var set = entry.TrackLanguage.GetValueOrDefault(key);
+            var item = new MenuItem { Header = name, IsCheckable = true, IsChecked = code == null ? set == null : set != null && Languages.Same(set, code) };
+            item.Click += (_, _) =>
+            {
+                if (code == null) entry.TrackLanguage.Remove(key); else entry.TrackLanguage[key] = code;
+                entry.Refresh();
+            };
+            menu.Items.Add(item);
+        }
+        Add("Langue d'origine", null);
+        foreach (var (code, name) in Languages.Choices.Prepend(("und", "Inconnue"))) Add(name, code);
+        return menu;
     }
 
     /// <summary>Sets the language of the <paramref name="at"/>th subtitle file of a video: its name in the lists, on the settings page and the disc's language code follow.</summary>
@@ -761,6 +787,7 @@ public partial class MainWindow : Window
         {
             other.Audio = cur.Audio.Where(i => other.Info.Audio.Any(a => a.Index == i)).ToList();
             other.Subs = cur.Subs.Where(i => other.Tracks.Subtitles.Any(t => t.Index == i && t.Supported)).ToList();
+            other.TrackLanguage = cur.TrackLanguage.Where(kv => int.Parse(kv.Key[1..]) is var n && (kv.Key[0] == 'a' ? other.Info.Audio.Any(a => a.Index == n) : other.Info.Subtitles.Any(t => t.Index == n))).ToDictionary(kv => kv.Key, kv => kv.Value);
             other.DefaultAudio = other.Audio.Contains(cur.DefaultAudio ?? -1) ? cur.DefaultAudio : null;
             other.DefaultSub = other.Subs.Contains(cur.DefaultSub ?? -1) ? cur.DefaultSub : null;
             other.Refresh();
