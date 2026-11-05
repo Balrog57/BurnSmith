@@ -362,6 +362,36 @@ if (a.Count >= 1 && a[0] == "check-edit")
     }
     catch (FileNotFoundException) { Console.WriteLine("skip slideshow and song videos (no ffmpeg)"); }
     finally { if (Directory.Exists(mediaDir)) Directory.Delete(mediaDir, true); }
+    // a DVD with a start video, made for real when ffmpeg and dvdauthor are there: the first-play command jumps to the title after the film, with and without a menu
+    var introDir = Path.Combine(Path.GetTempPath(), "bs_dvdintro_" + Guid.NewGuid().ToString("N")[..8]);
+    try
+    {
+        var ffmpeg = Tools.Find("ffmpeg.exe");
+        Tools.Find("dvdauthor.exe"); Tools.Find("spumux.exe");
+        Directory.CreateDirectory(introDir);
+        foreach (var (name, source) in new[] { ("film.mkv", "testsrc2=s=320x240:d=2"), ("intro.mkv", "smptebars=s=320x240:d=2") })
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", source, "-f", "lavfi", "-i", "sine=f=440:d=2", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "ac3", Path.Combine(introDir, name)]);
+        (int Titles, string LastFirstPlayCommand) FirstPlay(string disc)
+        {
+            var d = File.ReadAllBytes(Path.Combine(disc, "VIDEO_TS", "VIDEO_TS.IFO"));
+            int U32(int o) => (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(d.AsSpan(o));
+            int U16(int o) => System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(d.AsSpan(o));
+            var (fp, titleTable) = (U32(0x84), U32(0xC4) * 2048);
+            var commands = fp + U16(fp + 0xE4); // the first-play chain's command table: counts, then 8 bytes a command
+            var last = commands + 8 + 8 * (U16(commands) - 1);
+            return (U16(titleTable), Convert.ToHexString(d.AsSpan(last, 8)));
+        }
+        var titles2 = new[] { new DiscTitle(Path.Combine(introDir, "film.mkv")), new DiscTitle(Path.Combine(introDir, "intro.mkv"), Intro: true) };
+        Dvd.Build(new DvdJob(titles2, Path.Combine(introDir, "plain"), null));
+        var noMenu = FirstPlay(Path.Combine(introDir, "plain"));
+        Dvd.Build(new DvdJob(titles2, Path.Combine(introDir, "menu"), TemplateCatalog.Default().Clone()));
+        var withMenu = FirstPlay(Path.Combine(introDir, "menu"));
+        Check("a DVD's start video is the title after the film, which the first-play command jumps to (title 2 of 2), with a menu or without; the discs pass the structure check",
+              noMenu == (2, "3002000000020000") && withMenu == (2, "3002000000020000")
+              && DiscCheck.Folder(Path.Combine(introDir, "plain")).Count == 0 && DiscCheck.Folder(Path.Combine(introDir, "menu")).Count == 0);
+    }
+    catch (FileNotFoundException) { Console.WriteLine("skip DVD start video (no ffmpeg or dvdauthor)"); }
+    finally { if (Directory.Exists(introDir)) Directory.Delete(introDir, true); }
     Check("custom times in whole seconds, unique", Show(new DiscTitle("x", ChapterAt: [10.2, 10.4, 5]).ChapterList(600, 5)) == "0,5,10");
     var dir = Path.Combine(Path.GetTempPath(), "bs_extsub_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(dir);

@@ -210,7 +210,6 @@ public partial class MainWindow : Window
             t.Subs = t.Subs.Where(i => t.Tracks.Subtitles.First(x => x.Index == i).Supported).ToList();
             t.Refresh();
         }
-        if (k == "dvd" && titles.Any(t => t.Intro)) Warn("La vidéo de début ne passe que sur Blu-ray : elle sera laissée de côté sur un DVD.");
         Update();
     }
 
@@ -494,8 +493,8 @@ public partial class MainWindow : Window
         menu.Items.Add(bonus);
         var intro = new MenuItem
         {
-            Header = "Vidéo de début (lue avant le menu, Blu-ray seulement)", IsCheckable = true, IsChecked = entry.Intro,
-            IsEnabled = kind != "dvd" && (entry.Intro || titles.Count(t => !t.Bonus && !t.Intro && t != entry) > 0),
+            Header = "Vidéo de début (lue avant le menu)", IsCheckable = true, IsChecked = entry.Intro,
+            IsEnabled = entry.Intro || titles.Count(t => !t.Bonus && !t.Intro && t != entry) > 0,
         };
         intro.Click += (_, _) => SetIntro(entry, intro.IsChecked);
         menu.Items.Add(intro);

@@ -163,7 +163,7 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// <see cref="Volume"/> a percentage of the sound, <see cref="ChapterAt"/> the chapter times in seconds of the source (null = the disc's
 /// "one every N minutes", empty = no chapters). <see cref="ChapterMinutes"/>: with no <see cref="ChapterAt"/>, one every N minutes for this video
 /// (null = the disc's setting). <see cref="Intro"/>: a video that plays once when the disc starts, before the menu (before the film when there is no menu);
-/// it is no title of the menu or of "Play all" (Blu-ray only).
+/// it is no title of the menu or of "Play all". On a DVD it is the title after the last one, which the first-play command jumps to.
 /// <see cref="Bonus"/>: an extra (trailer, making-of) that is not part of the main feature: it comes after the main videos on the disc, is left out of
 /// "Play" / "Play all", and is listed on the menu's Bonus page.
 /// <see cref="DefaultAudio"/> / <see cref="DefaultSubtitle"/> (an <see cref="AudioTrack.Index"/> / <see cref="SubtitleTrack.Index"/> among those kept): what
