@@ -392,7 +392,8 @@ public static class MenuBuilder
         var audio = c.AudioNames.Count > 1 ? c.AudioNames : [];
         var subs = c.SubtitleNames;
         var ops = pack?.SetupBackdrop(c.PreviewPicture) ?? []; // a template without audio / subtitle rows: its background, BurnSmith's rows
-        ops.Add(new Label(d.SettingsLabel, new Box(0, 60, W, 120), 80, true));
+        // a template that places the page title or its Back button (Yuhan's ASLangTitleText / Return) has them used where it says
+        ops.Add(new Label(d.SettingsLabel, pack?.SetupTitle ?? new Box(0, 60, W, 120), 80, true));
         var buttons = new List<MenuButton>();
         var both = audio.Count > 0 && subs.Count > 0;
         int AudioX() => both ? 200 : (W - colW) / 2;
@@ -419,7 +420,7 @@ public static class MenuBuilder
         var subNames = subs.Count > 0 ? new[] { d.OffLabel }.Concat(subs).ToList() : [];
         var right = subs.Count > 0 ? Column(d.SubtitlesLabel, SubX(), subNames, 0, "s", "sub", activeSub) : [];
 
-        var back = new Box((W - 300) / 2, 950, 300, 90);
+        var back = pack?.SetupBack ?? new Box((W - 300) / 2, 950, 300, 90);
         ops.AddRange(Button(d, back, d.BackLabel, 46));
         var last = (left.Count > 0 ? left : right)[^1];
         buttons.Add(new MenuButton("back", back, new MenuAction("page", "root")) { Up = last });

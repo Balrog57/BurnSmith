@@ -379,6 +379,12 @@ public sealed class InstalledTemplate
     }
 
     /// <summary>The template has rows for the audio / subtitle choice (the UHD ones lay that page out differently).</summary>
+    /// <summary>The page title the template places on its audio / subtitle page (Yuhan's <c>ASLangTitleText</c>), null when it has none.</summary>
+    public Box? SetupTitle => template.Child("setup")?.Child("setuptitle") is { } n ? n.Rect() : null;
+
+    /// <summary>The Back button the template places on that page (Yuhan's <c>Return</c>), null when it has none.</summary>
+    public Box? SetupBack => template.Child("setup")?.Child("Return") is { } n ? n.Rect() : null;
+
     public bool HasSetupLists => (template.Child("setup")?.Child("audiolist")?.Children("title").Any() ?? false) || (template.Child("setup")?.Child("subtitlelist")?.Children("title").Any() ?? false);
 
     /// <summary>Artwork of the audio / subtitle page for BurnSmith's own rows: the template's background under a dark veil.</summary>

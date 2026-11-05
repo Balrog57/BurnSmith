@@ -718,3 +718,15 @@ DVDFab distingue `StaticBacKground_StaticThumbnail` de `StaticBacKground_Dynamic
 **Pourquoi DVD seulement** : le menu Blu-ray est dessiné par le xlet BD-J, qui ne sait pas jouer plusieurs vidéos à la fois ; un menu animé y est déjà un fond vidéo plein cadre. Et quand un menu est déjà animé (`Loop`), la page est une surcouche transparente : les vignettes animées n'ont pas de support. Le code le dit : `!loop && AnimatedThumbs`.
 
 **Épreuves** : disque construit avec `--chapter-at 0,3,6,9,12 --animated-thumbs` — le journal annonce « 4 vignettes animées sur scenes1 » et « 1 vignettes animées sur scenes2 » ; le `VTS_01_0.VOB` pèse **5 687 296** octets contre **3 418 112** sans l'option ; les images extraites à 9 s et 13 s montrent les quatre cases à des instants différents (le motif de test a bougé), alors que la page racine, elle, reste identique d'une seconde à l'autre. `check-elements` 15/15, `check-highlights` 13/13, `check-templates` inchangé (l'option est éteinte par défaut).
+## 28. Yuhan : la page de réglages prend son titre et son bouton Retour au thème (2026-11-05)
+
+Décision, après l'impasse du §16.2. Le `<Setup>` d'un thème Yuhan ne décrit **pas** deux colonnes de listes : c'est une liste unique de huit langues (`ItemText0..7`, x = 750, y de 270 à 795) avec un titre (`ASLangTitleText`, 750,150) et un bouton Retour (`Return`, 927,900). Les deux libellés `SetupAudioText` / `SetupSubtitleText` tombent **sur** les lignes 2 et 4 : les afficher en même temps que la liste est impossible, et BurnSmith n'a pas de modèle de sous-pages pour les séparer.
+
+Plutôt que d'inventer des sous-pages ou de produire une page qui se chevauche, les deux ancres **compatibles** sont reprises :
+
+- `InstalledTemplate.SetupTitle` (nœud `setuptitle`) et `SetupBack` (nœud `Return`) ;
+- `MenuBuilder.Settings` les utilise pour le titre de la page et le bouton Retour quand le modèle les porte, et garde ses positions sinon (tous les modèles DVDFab, Leawo et DVDStyler).
+
+**Épreuve** : rendu de `Birthday 01` — le titre « Settings » se place à **750,150** et le bouton « Back » à **927,900**, aux coordonnées du thème, les deux colonnes restant dans la zone libre. `check-elements` 15/15, `check-highlights` 13/13, `check-templates` 144/0.
+
+**Ce qui reste refusé** : les lignes de la liste et les deux libellés. Le faire proprement demande des **sous-pages** (une page audio, une page sous-titres, chacune avec ses huit lignes et un bouton de bascule) — c'est un modèle que BurnSmith n'a pas, et la page de réglages actuelle est déjà éprouvée sur les trois suites. Le gain d'une implémentation à moitié faite serait une page cassée ; le coût d'une implémentation complète dépasse cette session.
