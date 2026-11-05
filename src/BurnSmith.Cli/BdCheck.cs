@@ -250,10 +250,12 @@ static class BdCheck
                 else output.Write(whole, p, 13 + size);
                 p += 13 + size;
             }
-            var sup = output.ToArray();
-            var cues = PgsSubtitles.Cues(sup, out var skipped);
+            File.WriteAllBytes(F("damaged.sup"), output.ToArray());
+            var cues = PgsSubtitles.Cues(output.ToArray(), out var skipped);
             Check("a .sup with one picture cut short: that one is left out, the other stays", cues.Count == 1 && skipped == 1, $"{cues.Count} cues, {skipped} skipped");
-            File.WriteAllBytes(F("damaged.sup"), sup);
+        });
+        Part("a DVD with a damaged .sup", () =>
+        {
             var lines = new List<string>();
             var clip = Clip("subclip.mkv", "testsrc=s=320x240:r=25:d=2", 48000, ["-pix_fmt", "yuv420p"], Ac3At48);
             Dvd.Build(new DvdJob([new DiscTitle(clip, Subtitles: [0], External: [new ExternalSubtitle(F("damaged.sup"), "fre")])], F("subdvd")), l => { lock (lines) lines.Add(l); });
