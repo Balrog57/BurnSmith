@@ -257,6 +257,8 @@
           <TextBlock Text="Sélection" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
           <TextBox Text="{Binding Accent, UpdateSourceTrigger=PropertyChanged}"/>
         </DockPanel>
+        <TextBlock Text="Surbrillance du bouton choisi" Style="{StaticResource Caption}"/>
+        <ComboBox x:Name="HlBox" SelectionChanged="OnPickHighlight" DisplayMemberPath="Label" SelectedValuePath="Value"/>
         <DockPanel Margin="0,2">
           <Border Style="{StaticResource Swatch}" Background="{Binding CardFill}"/>
           <TextBlock Text="Cartes" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>

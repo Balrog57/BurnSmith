@@ -372,7 +372,7 @@ Donc : un modèle = `MenuTemplate\<Type>\<Aspect>\<Thème>\{Menu,Scene}` plus un
 | Vignettes **animées** dans la page de scènes | non | `ECreatorTempType…DynamicThumbnail`, `videoCount` |
 | Page de scènes en **liste** (10 lignes + description) | **fait** (§15.2) | `ListTypeText`/`ItemText0..9` (30 thèmes Yuhan), `PlaylistScene`, classe `o` du jar |
 | **Page Bonus** décrite par le modèle | partielle (BurnSmith dessine la sienne) | `BonusText` sur les 30 thèmes |
-| **3 styles de surbrillance** (cadre, soulignement, changement de couleur) | un seul (cadre d'accent) | `EButtonSelectedHighlightType` |
+| **3 styles de surbrillance** (cadre, soulignement, changement de couleur) | **fait** (§17) | `EButtonSelectedHighlightType` |
 | Bouton **« choisir la langue »** de la page de réglages | partiel | `LangItemText`, `ASLangTitleText` |
 | **Reprise au dernier bouton** | non | GPR100/GPR108, `MenuTo` |
 | **Modes de menu** 0 / 1 / 2 | partiel | `menu_mode`, classes `g_0`, `i_0`, `y_0` |
@@ -439,3 +439,13 @@ Une reproduction « deux colonnes sous les deux en-têtes » — ce que proposai
 ### 16.3 État de la délégation
 
 Trois tentatives de faire écrire Claude Code dans ce dépôt ont échoué de la même façon : `Edit` et `Write` sont refusés par son bac à sable (« don't ask mode »), et `dotnet` aussi. Les deux dernières ont rendu des **patchs utilisables** (le second avec une analyse juste de la chaîne d'appel `HasSetupLists` → `MenuBuilder.Settings`), mais rien n'a pu être appliqué ni compilé par lui. Tant que ces droits ne sont pas ouverts, la reproduction reste faite par l'orchestrateur.
+## 17. Reproduit : les trois styles de surbrillance de DVDFab (2026-11-05)
+
+`EButtonSelectedHighlightType` (§12.1) énumère `DrawBox`, `DrawUnderline`, `ChangeTextColor`. BurnSmith n'en avait qu'un (le cadre d'accent).
+
+- `MenuDesign.HighlightStyle` : `box` (défaut, le cadre d'accent), `underline` (une barre sous le bouton), `textcolor` (le libellé redessiné en couleur d'accent, sans cadre). Repris par `TakeLook`, donc un modèle qui l'a réglé le transmet.
+- `MenuRenderer.Focus` dessine les trois ; il reçoit le libellé du bouton, que `MenuFiles.WriteBdj` retrouve dans les opérations de la page (`LabelOf` : l'étiquette dont le rectangle est celui du bouton) — c'est ce qui permet à `textcolor` d'exister, une image de focus ne connaissant pas le texte par ailleurs.
+- Éditeur : liste « Surbrillance du bouton choisi » ; ligne de commande : `--highlight box|underline|textcolor`.
+- Un modèle qui apporte sa propre image de survol garde la priorité : les styles ne concernent que les boutons sans artwork.
+
+**Épreuves** : `check-highlights` 11/11, dont « trois styles distincts, tous dessinés », « le style texte en couleur est plus léger que le cadre » (2 218 octets contre 2 349) et « le menu Blu-ray reçoit l'image du style choisi, libellé compris » (fichier `hl_root_play.png` réellement écrit par `MenuFiles.WriteBdj`). Images côte à côte dans `analysis\out\styles` : le soulignement fait 387 octets (une barre), le texte en couleur 2 218 (le mot « Play » en accent).

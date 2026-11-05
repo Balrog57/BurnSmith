@@ -43,6 +43,11 @@ public sealed class MenuDesign
     public string TextColor { get; set; } = "#FFFFFF";
     /// <summary>Colour of the focus frame around the selected button.</summary>
     public string Accent { get; set; } = "#FFC83D";
+    /// <summary>
+    /// How the selected button is marked when the template brings no picture for it, as DVDFab's <c>EButtonSelectedHighlightType</c>:
+    /// "box" (an accent frame, BurnSmith's own), "underline" (a bar under the button), "textcolor" (the label in the accent colour, no frame).
+    /// </summary>
+    public string HighlightStyle { get; set; } = "box";
     public bool ShowPreview { get; set; } = true;
     /// <summary>
     /// "Pill" = translucent rounded buttons, "Text" = bare labels (only the focus frame shows the selection),
@@ -126,7 +131,7 @@ public sealed class MenuDesign
     public void TakeLook(MenuDesign t)
     {
         Name = t.Name; Category = t.Category; TemplateDir = t.TemplateDir; BackgroundImage = t.BackgroundImage;
-        Top = t.Top; Bottom = t.Bottom; TextColor = t.TextColor; Accent = t.Accent; Font = t.Font;
+        Top = t.Top; Bottom = t.Bottom; TextColor = t.TextColor; Accent = t.Accent; HighlightStyle = t.HighlightStyle; Font = t.Font;
         ButtonStyle = t.ButtonStyle; Cols = t.Cols; Rows = t.Rows; Thumbnails = t.Thumbnails; Square = t.Square;
         CardFill = t.CardFill; Glow = t.Glow; Dim = t.Dim;
         MarginX = t.MarginX; MarginY = t.MarginY; Gap = t.Gap; Header = t.Header; Footer = t.Footer;

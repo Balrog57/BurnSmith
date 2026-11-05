@@ -146,6 +146,7 @@ if (a.Count >= 1 && a[0] == "check-highlights")
             File.WriteAllBytes(Path.Combine(hlDir, $"hl_{page.Id}.png"), IndexedPng.Encode(hovered, pal));
             File.WriteAllBytes(Path.Combine(hlDir, $"sel_{page.Id}.png"), IndexedPng.Encode(chosen, pal));
             Console.WriteLine($"écrit {hlDir}\\hl_{page.Id}.png et sel_{page.Id}.png (page {page.Id}, {page.Buttons.Count} boutons)");
+
         }
         var hlPage = new IndexedPng.Canvas(720, 576);
         hlPage.Stamp(hlPx, hlW, hlH, 200, 200, 1);
@@ -167,6 +168,40 @@ if (a.Count >= 1 && a[0] == "check-highlights")
     var hlPlain = TemplateCatalog.Find("Cinema Dark") ?? new MenuDesign();
     Check("un modèle sans artwork garde le cadre à quatre couleurs (aucune image de surbrillance nommée)",
           hlPlain.TemplateDir == null && MenuBuilder.Build(hlPlain, hlContent).All(p => p.Buttons.All(b => b.DvdHighlightImage == null)));
+
+    // les trois styles de surbrillance de DVDFab (EButtonSelectedHighlightType) : cadre, soulignement, texte en couleur
+    var hlPageRoot = MenuBuilder.Build(hlPlain, hlContent).First(q => q.Id == "root");
+    var hlBtn = hlPageRoot.Buttons.First(b => b.Id == "play");
+    var hlName = hlPageRoot.Ops.OfType<Label>().First(l => l.Rect == hlBtn.Rect).Value;
+    var hlShots = new[] { "box", "underline", "textcolor" }.ToDictionary(st => st, st =>
+    {
+        var styled = hlPlain.Clone();
+        styled.HighlightStyle = st;
+        return MenuRenderer.Sta(() => MenuRenderer.Focus(styled, hlBtn, 1, hlName));
+    });
+    Check("trois styles de surbrillance distincts, tous dessinés (cadre, soulignement, texte en couleur)",
+          hlShots.Values.All(v => v.Length > 0) && hlShots.Values.Select(v => v.Length).Distinct().Count() == 3);
+    Check("le style « texte en couleur » ne dessine pas de cadre : son image est plus légère que celle du cadre",
+          hlShots["textcolor"].Length < hlShots["box"].Length);
+    if (Opt("--out") is { } styleDir)
+    {
+        Directory.CreateDirectory(styleDir);
+        foreach (var (st, png) in hlShots) File.WriteAllBytes(Path.Combine(styleDir, $"style_{st}.png"), png);
+        Console.WriteLine("écrit style_box.png, style_underline.png et style_textcolor.png dans " + styleDir);
+    }
+
+    // le menu Blu-ray reçoit bien l'image du style choisi (et le libellé du bouton pour « texte en couleur »)
+    var hlBdj = Path.Combine(Path.GetTempPath(), "bs_hl_" + Guid.NewGuid().ToString("N")[..8]);
+    try
+    {
+        var styled = hlPlain.Clone();
+        styled.HighlightStyle = "textcolor";
+        MenuRenderer.Sta(() => { MenuFiles.WriteBdj(styled, [hlPageRoot], hlBdj); return 0; });
+        var focus = Path.Combine(hlBdj, $"hl_root_play.png");
+        Check("le menu Blu-ray reçoit l'image du style choisi, libellé compris", File.Exists(focus) && new FileInfo(focus).Length > 0
+              && !File.ReadAllBytes(focus).SequenceEqual(hlShots["box"]));
+    }
+    finally { try { Directory.Delete(hlBdj, true); } catch (IOException) { } }
 
     Console.WriteLine(hlFailed == 0 ? "all ok" : $"{hlFailed} failed");
     return hlFailed == 0 ? 0 : 1;
@@ -646,6 +681,7 @@ if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || Opt("--o
 var design = a.Contains("--no-menu") ? null
     : (TemplateCatalog.Find(Opt("--design")) ?? (Opt("--design") is { } unknown ? throw new InvalidOperationException($"unknown template: {unknown}") : TemplateCatalog.Default())).Clone();
 if (design != null && Opt("--title") is { } title) design.Title = title;
+if (design != null && Opt("--highlight") is { } hlStyle) design.HighlightStyle = hlStyle; // box | underline | textcolor
 if (design != null && Opt("--credits") is { } credits) design.Credits = credits.Replace('|', '\n'); // --credits "Directed by A|Music by B"
 foreach (var spec in OptAll("--element")) design?.Elements.Add(MenuElement.Parse(spec)); // --element "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;align=center"
 if (design != null && Opt("--titles") is { } byLanguage) design.TitlesByLanguage = byLanguage.Replace('=', ':').Replace('|', '\n'); // --titles "fra=Mon disque|eng=My disc"

@@ -81,11 +81,16 @@ public static class MenuRenderer
     public static byte[] Overlay(MenuDesign d, MenuPage page, double scale = 1) =>
         Encode(new PngBitmapEncoder(), MenuBuilder.W, MenuBuilder.H, dc => DrawPage(dc, d, page, true), scale);
 
-    /// <summary>Transparent PNG with the focus frame, sized like the button plus the focus margin.</summary>
-    public static byte[] Focus(MenuDesign d, MenuButton b, double scale = 1)
+    /// <summary>
+    /// Transparent PNG of a button's selected state, sized like the button plus the focus margin. A template's own artwork wins; otherwise the
+    /// design's highlight style draws it — DVDFab's three kinds (<c>EButtonSelectedHighlightType</c>): a box, an underline, or the label in the accent
+    /// colour. <paramref name="label"/> is the button's text, needed by the last one; null = the frame.
+    /// </summary>
+    public static byte[] Focus(MenuDesign d, MenuButton b, double scale = 1, string? label = null)
     {
         var m = MenuBuilder.FocusMargin;
         var box = b.Rect.Inflate(m);
+        var style = label == null ? "box" : d.HighlightStyle;
         return Encode(new PngBitmapEncoder(), box.W, box.H, dc =>
         {
             if (b.FocusImage != null)
@@ -94,8 +99,19 @@ public static class MenuRenderer
                 dc.DrawImage(Load(b.FocusImage), at);
                 return;
             }
-            var pen = new Pen(new SolidColorBrush(Col(d.Accent)), 6);
-            dc.DrawRoundedRectangle(new SolidColorBrush(Col(d.Accent, 0.18)), pen, new Rect(3, 3, box.W - 6, box.H - 6), 22, 22);
+            switch (style)
+            {
+                case "underline": // a bar under the button, as DVDFab's DrawUnderline
+                    dc.DrawRectangle(new SolidColorBrush(Col(d.Accent)), null, new Rect(m, box.H - 12, b.Rect.W, 8));
+                    break;
+                case "textcolor": // no frame: the label is redrawn in the accent colour (DVDFab's ChangeTextColor)
+                    DrawLabel(dc, d, new Label(label!, new Box(m, m, b.Rect.W, b.Rect.H), Math.Clamp(b.Rect.H / 3, 20, 54), true), Col(d.Accent));
+                    break;
+                default: // "box": the accent frame BurnSmith has always drawn
+                    var pen = new Pen(new SolidColorBrush(Col(d.Accent)), 6);
+                    dc.DrawRoundedRectangle(new SolidColorBrush(Col(d.Accent, 0.18)), pen, new Rect(3, 3, box.W - 6, box.H - 6), 22, 22);
+                    break;
+            }
         }, scale);
     }
 
@@ -244,11 +260,11 @@ public static class MenuRenderer
         return sb.ToString();
     }
 
-    static void DrawLabel(DrawingContext dc, MenuDesign d, Label l)
+    static void DrawLabel(DrawingContext dc, MenuDesign d, Label l, Color? colour = null)
     {
         var face = new Typeface(new FontFamily(d.Font), FontStyles.Normal, l.Bold ? FontWeights.Bold : FontWeights.SemiBold, FontStretches.Normal);
         var text = new FormattedText(l.Value, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                                     face, l.Size, new SolidColorBrush(Col(d.TextColor)), 1.0)
+                                     face, l.Size, new SolidColorBrush(colour ?? Col(d.TextColor)), 1.0)
         { MaxTextWidth = l.Rect.W, MaxLineCount = 1, Trimming = TextTrimming.CharacterEllipsis };
         var x = l.Align == "left" ? l.Rect.X : l.Rect.X + (l.Rect.W - text.Width) / 2;
         dc.DrawText(text, new Point(x, l.Rect.Y + (l.Rect.H - text.Height) / 2));

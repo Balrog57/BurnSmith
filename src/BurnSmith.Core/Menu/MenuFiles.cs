@@ -4,6 +4,9 @@ namespace BurnSmith.Core.Menu;
 
 public static class MenuFiles
 {
+    /// <summary>The text drawn on a button, for the highlight styles that recolour it (DVDFab's ChangeTextColor). Null = no label of its own.</summary>
+    static string? LabelOf(MenuPage p, MenuButton b) => p.Ops.OfType<Label>().FirstOrDefault(l => l.Rect == b.Rect)?.Value;
+
     /// <summary>
     /// Writes what the BD-J xlet reads (bdj/.../Menu.java): menu.txt plus one JPEG per page and one PNG per button focus frame.
     /// With <paramref name="loopPlaylist"/> the xlet plays that playlist behind the pages; they are then transparent PNG overlays when
@@ -25,7 +28,7 @@ public static class MenuFiles
             foreach (var p in pages)
             {
                 list.Add(($"bg_{p.Id}.{ext}", overlay ? MenuRenderer.Overlay(design, p, scale) : MenuRenderer.Background(design, p, scale)));
-                foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", MenuRenderer.Focus(design, b, scale)));
+                foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", MenuRenderer.Focus(design, b, scale, LabelOf(p, b))));
             }
             list.Add(("mark.png", MenuRenderer.Marker(design, MenuBuilder.MarkerSize, scale)));
             return list;

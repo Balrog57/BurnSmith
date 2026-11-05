@@ -51,6 +51,7 @@ public partial class MenuEditorWindow : Window
         InitializeComponent();
         FontBox.ItemsSource = System.Windows.Media.Fonts.SystemFontFamilies.Select(f => f.Source).Order().ToList();
         StyleBox.ItemsSource = ElementLibrary.ButtonStyles.Select(b => new { b.Label, b.Value }).ToList();
+        HlBox.ItemsSource = new[] { new { Value = "box", Label = "Cadre (comme avant)" }, new { Value = "underline", Label = "Soulignement" }, new { Value = "textcolor", Label = "Texte en couleur" } };
         ColsBox.ItemsSource = new[] { 1, 2, 3, 4, 5 };
         RowsBox.ItemsSource = new[] { 1, 2, 3, 4 };
         working = design.Clone();
@@ -78,6 +79,7 @@ public partial class MenuEditorWindow : Window
         Look.IsEnabled = working.TemplateDir == null;
         LookNote.Visibility = Detach.Visibility = working.TemplateDir == null ? Visibility.Collapsed : Visibility.Visible;
         SelectBackground();
+        HlBox.SelectedValue = working.HighlightStyle;
         RefreshElemList();
         ShowElem();
         Dirty();
@@ -561,6 +563,14 @@ public partial class MenuEditorWindow : Window
 
     void OnPrev(object s, RoutedEventArgs e) => Step(-1);
     void OnNext(object s, RoutedEventArgs e) => Step(1);
+
+    /// <summary>Which of DVDFab's three highlight styles marks the chosen button (a template with its own artwork keeps it).</summary>
+    void OnPickHighlight(object s, SelectionChangedEventArgs e)
+    {
+        if (syncing || HlBox.SelectedValue is not string style) return;
+        working.HighlightStyle = style;
+        Dirty();
+    }
 
     void OnBgPick(object s, SelectionChangedEventArgs e)
     {
