@@ -449,3 +449,51 @@ Trois tentatives de faire écrire Claude Code dans ce dépôt ont échoué de la
 - Un modèle qui apporte sa propre image de survol garde la priorité : les styles ne concernent que les boutons sans artwork.
 
 **Épreuves** : `check-highlights` 11/11, dont « trois styles distincts, tous dessinés », « le style texte en couleur est plus léger que le cadre » (2 218 octets contre 2 349) et « le menu Blu-ray reçoit l'image du style choisi, libellé compris » (fichier `hl_root_play.png` réellement écrit par `MenuFiles.WriteBdj`). Images côte à côte dans `analysis\out\styles` : le soulignement fait 387 octets (une barre), le texte en couleur 2 218 (le mot « Play » en accent).
+## 18. `AuthorData.xml` : le schéma complet, tiré du jar (2026-11-05)
+
+Relevé attribut par attribut dans les classes décompilées. C'est le format de projet que DVDFab écrit pour son menu BD-J, et il correspond trait pour trait à ce qu'un menu HDMV devrait porter.
+
+```xml
+<AuthorData>                     <!-- classe m : a = playlist_count, c = loop_play, d = no_menu, b = scence_capacity,
+                                      g = preview, h = play_mode, e/f = resolution_x/y, i = menu_mode -->
+
+  <!-- menu_mode 0 : un <root> et un <scene> ; 1 : un seul <root> « tout en un » ; 2 : une seule <scene> servant de racine -->
+  <root id="0" bg_image="…">                     <!-- classe g_0 (G) -->
+    <button id="0" type="6" highlight="play.png" left="…" top="…" right="…" bottom="…"
+            up_id="…" down_id="…" left_id="…" right_id="…"/>
+    <video  id="1" type="6" highlight="v1.png"   left="…" top="…" right="…" bottom="…"
+            up_id="…" down_id="…" left_id="…" right_id="…" playlist="3"/>
+  </root>
+
+  <scene>                                        <!-- classe h_0 : une page par enfant, mode 0 = grille, 1 = liste -->
+    <page mode="0" id="0" bg_image="…">          <!-- mode 0 : classe g_0, mêmes enfants que <root> -->
+      <button …/> <video …/>
+    </page>
+    <page mode="1" id="1" bg_image="…">          <!-- mode 1 : classe o, une liste de films -->
+      <infos top="…" left="…" bottom="…" right="…">
+        <info video_id="3" image="thumb3.png"/>
+      </infos>
+    </page>
+  </scene>
+
+  <setup selection_margin_left="100">            <!-- classe n_0 -->
+    <audios top="…" left="…" bottom="…" right="…" item_height="80">
+      <audio id="0" type="…" name="English" lang_code="1" normal="a.png" highlight="ah.png"/>
+    </audios>
+    <subtitles top="…" left="…" bottom="…" right="…" item_height="80">
+      <subtitle id="0" type="…" name="Français" lang_code="2" normal="s.png" highlight="sh.png"/>
+    </subtitles>
+  </setup>
+</AuthorData>
+```
+
+Détails qui ne se devinaient pas :
+
+- **Le marqueur de piste active n'est pas dans le XML** : `n_0` charge `selection.png`, un nom **fixe**, dans le dossier du menu (à côté des images du modèle).
+- **Chaque entrée audio / sous-titre porte ses deux images** (`normal`, `highlight`) et son `lang_code` numérique ; `type` est le genre de piste.
+- **Le menu « tout en un »** (classe `i_0`) a ses propres enfants : `video_frame` (`top`, `bottom`, `left`, `right`, `item_height`, `arrow_mode`), `description_frame`, `videos` → `video` (`id`, `highlight`, `playlist`), et un `button` ; c'est le `PlaylistScene` de §12.1.
+- **La page de réglages défile dans chaque colonne** (classe `c`) au lieu de paginer : deux panneaux (`n_0.e` audio, `n_0.f` sous-titres), un compteur par colonne, et le choix part par `SET_STREAM`. C'est le modèle que BurnSmith devrait imiter s'il veut dépasser ses six pistes audio.
+
+## 18.1 Preuve de bout en bout du style de surbrillance (même date)
+
+`burnsmith bd --design "Cinema Dark" --highlight textcolor` sur un film d'essai produit un disque Blu-ray complet (`disc structure checked: no problem`) dont le **`BDMV\JAR\00000.jar` contient `hl_root_play.png` de 2 218 octets** — exactement la taille mesurée pour le style « texte en couleur » (§17), et non les 2 349 du cadre. Le réglage traverse donc tout la chaîne : ligne de commande → `MenuDesign` → `MenuRenderer.Focus` → `MenuFiles.WriteBdj` → jar du disque.
