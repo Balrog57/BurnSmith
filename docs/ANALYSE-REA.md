@@ -615,3 +615,42 @@ Autrement dit : **`spumux script.xml entrée.mpg sortie.mpg`** — exactement la
 Confirmé pour BurnSmith : la chaîne DVD (image → MPEG-2 → mux → spumux → dvdauthor) est la bonne, et l'appel de spumux est identique. Le « fond vidéo » de Leawo correspond au menu animé de BurnSmith, mais Leawo le traite **par page** (un MPEG de fond par page) là où BurnSmith brûle une seule boucle pour toutes les pages.
 
 Reste non lu : `generateXml` (l'écriture du script dvdauthor) et `Img2m2v` (l'encodeur maison), qui sont les deux endroits où Leawo pourrait différer.
+## 24. Leawo : le script dvdauthor, décompilé (2026-11-05)
+
+`DVDMenuMgr::generateXml(QStringList&, QVector<QStringList>&)` (0x1800010c3) construit un `QDomDocument` et l'écrit en UTF-8 (`QDomNode::save`, indentation 4) dans `this+0x140` (`dvdauthor.xml`).
+
+### 24.1 Structure produite
+
+```xml
+<dvdauthor>
+  <vmgm>                                     <!-- premier document, quand un menu existe (this[0xc5]) -->
+    <titleset><titles>
+      <video aspect="…" format="…"/>          <!-- aspectDesc / normDesc -->
+      <audio lang="en"/>
+      <pgc>
+        <vob file="…"/>                       <!-- 99 VOB au plus par pgc : (nombre-1)/99 -->
+        <vob file="…" chapters="0:00,1:23,2:45"/>
+        <post>if(g8==0){call vmgm menu;}if(g8==1){call titleset 1 menu;}…</post>
+      </pgc>
+    </titles></titleset>
+  </vmgm>
+</dvdauthor>
+```
+
+- **Chapitres** : la liste est écrite `minutes:secondes`, secondes sur deux chiffres, séparées par des virgules, et **préfixée de `0:00,`** quand le premier repère n'est pas zéro (le code ajoute `"0:00,"` si le premier élément est non nul). Les temps viennent d'un tableau d'entiers en millisecondes : `total/60000` pour les minutes, `(total % 60000)/1000` pour les secondes.
+- **Retour de menu par registre** : le `<post>` du menu est `if(g8==0){call vmgm menu;}` puis, pour chaque titreset, `if(g8==%1){call titleset %1 menu;}` — **g8 retient le menu courant**, et au-delà de 32 titresets le code retombe sur `call vmgm menu;` seul.
+- **Sinon** (pas de menu) : `<post>jump titleset %1 title 1;</post>`.
+- **Second document** (le disque lui-même) : `titleset/titles` avec `video` (`aspect`, `format`), un `audio` par langue (la langue est prise en tête de liste, mise en majuscules, `EN` si « unknown »), un `subpicture` par langue de sous-titre, puis un `pgc` par bloc de 99 films, chacun avec ses `vob file` + `chapters` et un `<post>jump title %1;</post>`.
+
+### 24.2 Comparaison avec BurnSmith
+
+| | Leawo | BurnSmith |
+|---|---|---|
+| Menu courant | registre **g8**, `call titleset N menu` | registres **g1..g6**, `call menu` / `jump menu` |
+| Chapitres | `minutes:secondes` dans `chapters=""` | même attribut, même format |
+| Langues | `audio lang=` (2 lettres, majuscules) | `audio lang=` (3 lettres, minuscules) |
+| Limite | 99 VOB par `pgc` | découpage par menus et titres |
+
+Aucun manque côté BurnSmith : sa gestion de menu (g2/g3 pour audio et sous-titres, g6 combiné) est plus fine que le simple g8 de Leawo. La seule différence notable est la **langue audio en deux lettres majuscules** chez Leawo, alors que BurnSmith écrit le code ISO 639-2 sur trois lettres — les deux sont acceptés par dvdauthor, mais le second est plus précis.
+
+Reste non lu : `Img2m2v` (l'encodeur image → MPEG-2 de Leawo), seule brique encore inconnue de son pipeline DVD.
