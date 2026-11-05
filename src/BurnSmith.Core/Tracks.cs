@@ -16,8 +16,12 @@ public sealed record SubtitleTrack(int Index, string Codec, string Lang, string 
 {
     public bool IsPgs => Codec == "hdmv_pgs_subtitle";
     public bool IsText => Codec is "subrip" or "srt" or "ass" or "ssa" or "mov_text" or "webvtt" or "text";
-    /// <summary>PGS is copied on a Blu-ray and redrawn on a DVD (a VobSub file is made into PGS first); other image subtitles (a VobSub inside a video, DVB) would need OCR: not carried.</summary>
-    public bool Supported => IsPgs || IsText;
+    /// <summary>A VobSub inside the video (what a DVD rip keeps in an mkv): made into PGS like an .idx.</summary>
+    public bool IsVobSub => Codec == "dvd_subtitle";
+    /// <summary>Pictures, carried as a .sup file once they are PGS.</summary>
+    public bool IsPicture => IsPgs || IsVobSub;
+    /// <summary>PGS is copied on a Blu-ray and redrawn on a DVD (a VobSub is made into PGS first); other image subtitles (DVB, Teletext) would need OCR: not carried.</summary>
+    public bool Supported => IsPicture || IsText;
     public string Name => Languages.Display(Lang, Title) + (Forced ? " (forcés)" : "");
 }
 
@@ -31,7 +35,7 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
     public static readonly string[] Extensions = [".srt", ".ass", ".ssa", ".vtt", ".sup", ".idx"];
 
     public SubtitleTrack Track(int index) => new(index, Path.GetExtension(File).ToLowerInvariant() switch { ".ass" => "ass", ".ssa" => "ssa", ".vtt" => "webvtt", ".sup" or ".idx" => "hdmv_pgs_subtitle", _ => "subrip" },
-                                                  Lang, Path.GetFileNameWithoutExtension(File), Forced, File, Stream); // the name stands in for the language the file does not say
+                                                  Lang, Path.GetFileNameWithoutExtension(File) + (Stream > 0 ? $" ({Stream + 1})" : ""), Forced, File, Stream); // the name stands in for the language the file does not say; an .idx has one track per stream
 
     /// <summary>
     /// What a file stands for: itself, or for an .idx one track per language it holds (the language the .idx gives, else the one the name says; with

@@ -109,8 +109,8 @@ public static class Dvd
         foreach (var s in title.KeptSubtitles(src))
         {
             if (!s.Supported) { log($"subtitle '{s.Name}' skipped: {s.Codec} is an image format that needs OCR"); continue; }
-            var file = Path.Combine(work, $"sub{number}_{subs.Count + 1}.{(s.IsPgs ? "sup" : "srt")}");
-            if (s.File == null) // the video's own track; a subtitle file is converted apart, below
+            var file = Path.Combine(work, $"sub{number}_{subs.Count + 1}.{(s.IsPicture ? "sup" : "srt")}");
+            if (s.File == null && !s.IsVobSub) // the video's own track; a VobSub or a subtitle file is converted apart, below
             {
                 args.AddRange(["-map", $"0:s:{s.Index}", "-c:s", s.IsPgs ? "copy" : "srt"]);
                 if (title.End != null) args.AddRange(["-t", src.Duration.ToString("0.###", Inv)]); // the input's -t lets later subtitle cues through
@@ -120,6 +120,7 @@ public static class Dvd
         }
         log($"encode {number}: {title.DisplayName} (audio {audio.Count}, subtitles {subs.Count})");
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
+        foreach (var (s, file) in subs.Where(x => x.Track.File == null && x.Track.IsVobSub)) BluRay.WriteEmbeddedVobSub(title, s, src.Duration, file, (720, 480), log);
         foreach (var (s, file) in subs.Where(x => x.Track.File != null)) BluRay.WriteExternalSubtitle(title, s, src.Duration, file, (720, 480), log); // a VobSub becomes PGS on a 720x480 plane, which PgsStream maps onto the frame whatever its height
         // spumux refuses a file with no cue, and then the whole movie would lose its subtitles: a track with nothing to show in the part kept is left out
         subs.RemoveAll(x =>
@@ -157,7 +158,7 @@ public static class Dvd
         for (var k = subs.Count - 1; k >= 0; k--)
         {
             var (prefix, h) = ($"{name}_s{k + 1}_", pal ? 576 : 480);
-            var spu = new XElement("subpictures", subs[k].Track.IsPgs ? DvdSubtitles.PgsStream(subs[k].File, work, prefix, 720, h, log)
+            var spu = new XElement("subpictures", subs[k].Track.IsPicture ? DvdSubtitles.PgsStream(subs[k].File, work, prefix, 720, h, log)
                                                                         : DvdSubtitles.Stream(subs[k].File, work, prefix, 720, h, pal ? 64.0 / 45 : 32.0 / 27));
             var xml = Path.Combine(work, $"{name}_s{k + 1}.xml");
             new XDocument(spu).Save(xml);

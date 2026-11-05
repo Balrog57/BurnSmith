@@ -258,7 +258,7 @@ public static class BluRay
         foreach (var s in title.KeptSubtitles(src))
         {
             if (!s.Supported) { log($"subtitle '{s.Name}' skipped: {s.Codec} is an image format that needs OCR"); continue; }
-            subs.Add((s, Path.Combine(work, $"sub{playlist}_{subs.Count + 1}.{(s.IsPgs ? "sup" : "srt")}")));
+            subs.Add((s, Path.Combine(work, $"sub{playlist}_{subs.Count + 1}.{(s.IsPicture ? "sup" : "srt")}")));
         }
         log($"prepare {playlist}: {src.VideoCodec} {src.Width}x{src.Height} {src.Fps:0.###}fps, audio {(audio.Count == 0 ? "none" : string.Join('+', audio.Select(a => a.Codec)))}, subtitles {subs.Count}");
         Prepare(job, title, src, audio, subs, prepared, kbps, log);
@@ -289,7 +289,7 @@ public static class BluRay
         for (var j = 0; j < audio.Count; j++)
             lines.Add($"{AudioTag(BdAudio(audio[j], title))}, \"{prepared}\", track={257 + j}, lang={Languages.Iso2(audio[j].Lang)}");
         foreach (var (s, file) in subs)
-            lines.Add(s.IsPgs
+            lines.Add(s.IsPicture
                 ? $"S_HDMV/PGS, \"{file}\", fps={fps}, lang={Languages.Iso2(s.Lang)}"
                 : $"S_TEXT/UTF8, \"{file}\", font-name=\"Arial\", font-size={65 * h / 1080}, font-color=0xffffffff, bottom-offset=24, font-border=5, text-align=center, video-width={w}, video-height={h}, fps={fps}, lang={Languages.Iso2(s.Lang)}");
         var meta = Path.Combine(work, $"disc{playlist}.meta");
@@ -463,7 +463,7 @@ public static class BluRay
             }
         }
         args.AddRange(["-sn", "-dn", output]);
-        foreach (var (t, file) in subs.Where(x => x.Track.File == null)) // the video's own tracks; the subtitle files are converted apart
+        foreach (var (t, file) in subs.Where(x => x.Track.File == null && !x.Track.IsVobSub)) // the video's own tracks (a VobSub is made apart); the subtitle files are converted apart
         {
             args.AddRange(["-map", $"0:s:{t.Index}", "-c:s", t.IsPgs ? "copy" : "srt"]);
             if (title.End != null) args.AddRange(["-t", s.Duration.ToString("0.###", Inv)]); // the input's -t lets later subtitle cues through
@@ -471,7 +471,8 @@ public static class BluRay
         }
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
         foreach (var (t, file) in subs.Where(x => x.Track.File != null)) WriteExternalSubtitle(title, t, s.Duration, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
-        foreach (var (t, file) in subs.Where(x => !x.Track.IsPgs)) TidySubtitle(file);
+        foreach (var (t, file) in subs.Where(x => x.Track.File == null && x.Track.IsVobSub)) WriteEmbeddedVobSub(title, t, s.Duration, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
+        foreach (var (t, file) in subs.Where(x => !x.Track.IsPicture)) TidySubtitle(file);
     }
 
     /// <summary>
@@ -483,6 +484,14 @@ public static class BluRay
         var text = File.ReadAllText(file);
         var clean = System.Text.RegularExpressions.Regex.Replace(text, @"\{\\[^}]*\}|</?font[^>]*>", "");
         if (clean != text) File.WriteAllText(file, clean);
+    }
+
+    /// <summary>A VobSub inside the video as the PGS file the disc tools take: made for a <paramref name="plane"/>-sized screen (<see cref="VobSub.FromVideo"/>), cut like the video.</summary>
+    internal static void WriteEmbeddedVobSub(DiscTitle title, SubtitleTrack track, double length, string output, (int Width, int Height) plane, Action<string> log)
+    {
+        var sup = VobSub.FromVideo(title.Video, track.Index, plane.Width, plane.Height, Path.GetDirectoryName(output)!, out var skipped);
+        log($"VobSub in {Path.GetFileName(title.Video)}: {track.Name}, made into PGS for a {plane.Width}x{plane.Height} screen" + (skipped > 0 ? $"; {skipped} picture(s) could not be read and are left out" : ""));
+        File.WriteAllBytes(output, PgsSubtitles.Cut(sup, title.Start, length));
     }
 
     /// <summary>

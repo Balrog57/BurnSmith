@@ -188,16 +188,19 @@ public static class VobSub
     }
 
     /// <summary>The pictures of track <paramref name="stream"/> in order (null for one that could not be read), each hidden by its own command, else when the next shows.</summary>
-    static IEnumerable<Picture?> Each(Index index, Stream stream, byte[] sub)
+    static IEnumerable<Picture?> Each(Index index, Stream stream, byte[] sub) =>
+        Each(index, [.. stream.Cues.Select(c => c.Time)], i => ReadSpu(sub, stream.Cues[i].Position, 0x20 + stream.Number));
+
+    /// <summary>The same for subpictures given one at a time: <paramref name="times"/> says when each one comes, <paramref name="spu"/> gives the data of the one at that number.</summary>
+    static IEnumerable<Picture?> Each(Index index, IReadOnlyList<double> times, Func<int, byte[]?> spu)
     {
-        for (var i = 0; i < stream.Cues.Count; i++)
+        for (var i = 0; i < times.Count; i++)
         {
-            var (time, position) = stream.Cues[i];
-            var picture = ReadSpu(sub, position, 0x20 + stream.Number) is { } spu ? Decode(spu, index.Palette) : null;
+            var picture = spu(i) is { } data ? Decode(data, index.Palette) : null;
             if (picture == null) { yield return null; continue; }
-            var start = Math.Max(0, time) + picture.Start;
-            var end = double.IsNaN(picture.End) ? start + 3 : Math.Max(0, time) + picture.End; // a picture that never says when to hide lasts three seconds
-            if (i + 1 < stream.Cues.Count) end = Math.Min(end, Math.Max(0, stream.Cues[i + 1].Time));
+            var start = Math.Max(0, times[i]) + picture.Start;
+            var end = double.IsNaN(picture.End) ? start + 3 : Math.Max(0, times[i]) + picture.End; // a picture that never says when to hide lasts three seconds
+            if (i + 1 < times.Count) end = Math.Min(end, Math.Max(0, times[i + 1]));
             yield return picture with { Start = start, End = Math.Max(end, start + 0.1) };
         }
     }
@@ -219,10 +222,15 @@ public static class VobSub
     {
         var index = ReadIndex(idxFile);
         if (stream < 0 || stream >= index.Streams.Count) { skipped = 0; return []; }
+        return ToSup(index, Each(index, index.Streams[stream], File.ReadAllBytes(SubFile(idxFile))), planeWidth, planeHeight, out skipped);
+    }
+
+    static byte[] ToSup(Index index, IEnumerable<Picture?> pictures, int planeWidth, int planeHeight, out int skipped)
+    {
         double sx = (double)planeWidth / index.Width, sy = (double)planeHeight / index.Height;
         var writer = new PgsSubtitles.Writer(planeWidth, planeHeight);
         var bad = 0;
-        foreach (var picture in Each(index, index.Streams[stream], File.ReadAllBytes(SubFile(idxFile))))
+        foreach (var picture in pictures)
         {
             if (picture == null) { bad++; continue; }
             var (px, py, pw, ph, indexed, colors) = Scale(picture, sx, sy, planeWidth, planeHeight);
@@ -230,6 +238,44 @@ public static class VobSub
         }
         skipped = bad;
         return writer.Finish();
+    }
+
+    /// <summary>
+    /// The text ffprobe's <c>-show_data</c> dumps the codec data of a stream as ("00000000: 7369 7a65 ...  size"): the bytes, as ASCII. For a VobSub in
+    /// Matroska that text is the head of an .idx (size, palette).
+    /// </summary>
+    public static string ExtradataText(string dump)
+    {
+        var bytes = new List<byte>();
+        foreach (var line in dump.Split('\n'))
+            if (Regex.IsMatch(line, "^[0-9a-f]{8}: "))
+                bytes.AddRange(Regex.Matches(line[10..Math.Min(line.Length, 49)], "[0-9a-f]{2}").Select(m => Convert.ToByte(m.Value, 16)));
+        return System.Text.Encoding.ASCII.GetString([.. bytes]);
+    }
+
+    /// <summary>
+    /// Subtitle track number <paramref name="track"/> (ffmpeg's 0:s:N) of a video that keeps a VobSub (Matroska: one subpicture per packet, the screen size and the
+    /// colours in the codec data) as PGS, like <see cref="ToSup"/> does for an .idx. The packets are taken out with ffmpeg into a file in <paramref name="work"/>,
+    /// their times and sizes read with ffprobe.
+    /// </summary>
+    public static byte[] FromVideo(string video, int track, int planeWidth, int planeHeight, string work, out int skipped)
+    {
+        var (ffprobe, select) = (Tools.Find("ffprobe.exe"), $"s:{track}");
+        var index = ParseIndex(ExtradataText(Tools.Run(ffprobe, ["-v", "error", "-select_streams", select, "-show_streams", "-show_data", video])));
+        var packets = Tools.Run(ffprobe, ["-v", "error", "-select_streams", select, "-show_entries", "packet=pts_time,size", "-of", "csv=p=0", video])
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(l => l.Split(','))
+            .Select(f => (Time: double.TryParse(f[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var t) ? t : 0, Size: int.Parse(f[1], CultureInfo.InvariantCulture))).ToList();
+        var raw = Path.Combine(work, $"vobsub_{track}.bin");
+        try
+        {
+            Tools.Run(Tools.Find("ffmpeg.exe"), ["-v", "error", "-y", "-i", video, "-map", $"0:s:{track}", "-c", "copy", "-f", "data", raw]);
+            var data = File.ReadAllBytes(raw);
+            var starts = new long[packets.Count];
+            for (var i = 1; i < starts.Length; i++) starts[i] = starts[i - 1] + packets[i - 1].Size;
+            if (packets.Sum(p => (long)p.Size) != data.Length) throw new InvalidDataException("the subtitle packets ffprobe lists are not the ones ffmpeg wrote");
+            return ToSup(index, Each(index, [.. packets.Select(p => p.Time)], i => data[(int)starts[i]..(int)(starts[i] + packets[i].Size)]), planeWidth, planeHeight, out skipped);
+        }
+        finally { File.Delete(raw); }
     }
 
     /// <summary>
