@@ -579,3 +579,39 @@ Pour observer « on revient sur un autre bouton » (§19), il faut une page raci
 Résultat : `key-nav-activate` fonctionne (le journal joue `playlist 1`, puis `playlist 2` par enchaînement), mais **`key-nav-right` ne déplace pas le focus** — le journal ne montre jamais `page root` avec un autre bouton, ni `resume on button 1`. Le blocage est donc dans l'envoi des touches par l'interface RC de VLC (ou dans leur traduction par libbluray), pas dans le xlet : les voisins existent, l'activation marche, la lecture du registre et l'écriture sont établies.
 
 Piste pour lever la limite : piloter le disque par un autre canal (fenêtre VLC au premier plan avec de vraies frappes, ou un lecteur qui expose une API de touches), ou écrire un petit programme BD-J de test qui lit un registre et le journalise — la seconde option ne prouve pas la reprise du menu, seulement la mécanique des registres.
+## 23. Leawo : le pipeline de création des menus DVD, décompilé (2026-11-05)
+
+`DVDMaker.dll` n'est pas dépouillé : Ghidra y lit les symboles, donc les fonctions de `DVDMenuMgr` se décompilent **avec leurs noms**. Deux ont été lues en entier.
+
+### 23.1 `DVDMenuMgr::generateMenusMpegs()` (0x1800013c0)
+
+Une page de menu à la fois, dans une liste de pages (`this+0x80` = images, `this+0x78` = sorties) :
+
+| Étape | Ce que fait le code |
+|---|---|
+| 1 | `Img2m2v(image de la page)` → vidéo MPEG-2 de la page (`maker-m2v.tmp`), **ou**, si un fond vidéo est demandé (`this[199]`), `Video2Mpg(backgroundVideo)` puis `Video2Mpg(page)` par-dessus |
+| 2 | `mplex()` : mux de la vidéo avec le son |
+| 3 | `spumux(menu-%2.mpg)` : surcouche des boutons (DVD seulement) |
+| 4 | sur Blu-ray (`this+0x44 == 0`) : `Video2Mpg` → `menu-%2.m2ts`, **sans** mplex ni spumux |
+
+Autres faits relevés :
+
+- **Musique** : `MixAudio(this, this+400, *(this+0xbc) * 1000, "", -1)` — le fichier de musique est mixé dans le MPEG de menu, avec une durée en secondes (`+0xbc`) convertie en millisecondes.
+- **Noms temporaires** : `%1/maker-m2v.tmp`, `%1/maker-mpg.tmp`, `%1/backgroundVideo.tmp`, `%1/menu-%2.mpg` / `%1/menu-%2.m2ts`.
+- **Progression** : le nombre d'étapes vaut 2 × le nombre de pages quand un fond vidéo est utilisé, sinon 1 × (et 2 × encore dans un troisième cas, `this+0x44 == 1`).
+- **Erreurs** : `Failed to mplex`, `Failed to spumux`, `Img2m2v is fail, file: %1`, `Video2Mpg is fail, file: %1`, et des messages de diagnostic (`m_xml_ws=====`, `m_backgroundMpg===`, `result===`).
+- **Outils** : `%1/dvdauthor/dvdauthor.exe`, `%1/dvdauthor/mplex.exe`, `%1/dvdauthor/spumux.exe`, plus `Img2m2v` (l'outil maison de conversion image → MPEG-2).
+
+### 23.2 `DVDMenuMgr::spumux(QString const& result)` (0x18000187a)
+
+- Vérifie que `spumux.exe` existe (`this+0x168`), sinon « spumux is not exist ».
+- Construit **trois arguments** : `this+0x148` (le script XML), `this+0x120` (le MPEG de fond), `param_1` (la sortie), puis `executeAndCatchError(...)`.
+- En cas d'échec, journalise le script, le fond, le résultat, puis « spumux » et le code d'erreur.
+
+Autrement dit : **`spumux script.xml entrée.mpg sortie.mpg`** — exactement la ligne de commande que BurnSmith utilise (`Tools.Run(Tools.Find("spumux.exe"), [script, plain, final])`) et celle de Yuhan (§6). Trois produits indépendants, un seul appel.
+
+### 23.3 Ce que cela confirme, et ce qui reste propre à Leawo
+
+Confirmé pour BurnSmith : la chaîne DVD (image → MPEG-2 → mux → spumux → dvdauthor) est la bonne, et l'appel de spumux est identique. Le « fond vidéo » de Leawo correspond au menu animé de BurnSmith, mais Leawo le traite **par page** (un MPEG de fond par page) là où BurnSmith brûle une seule boucle pour toutes les pages.
+
+Reste non lu : `generateXml` (l'écriture du script dvdauthor) et `Img2m2v` (l'encodeur maison), qui sont les deux endroits où Leawo pourrait différer.
