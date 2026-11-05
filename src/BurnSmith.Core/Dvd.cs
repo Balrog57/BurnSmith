@@ -304,7 +304,8 @@ public static class Dvd
                     hl.Stamp(a.Px, a.W, a.H, x0, y0, 1); // the artwork's shape, in the one tint a subpicture can spend on it
                     var s = art[k].Sel ?? a; // the model's marker for the chosen state, else the silhouette of the hovered artwork
                     // a marker keeps its own size, centred on the button, instead of covering it
-                    var at = ReferenceEquals(s, a) ? (x0, y0) : (x0 + (art[k].W - s.W) / 2, y0 + (art[k].H - s.H) / 2);
+                    var centred = art[k].Sel != null; // a marker of its own is centred; the hover silhouette fills the button
+                    var at = centred ? (x0 + (art[k].W - s.W) / 2, y0 + (art[k].H - s.H) / 2) : (x0, y0);
                     sel.Stamp(s.Px, s.W, s.H, at.Item1, at.Item2, 2);
                 }
                 else

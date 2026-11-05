@@ -590,7 +590,12 @@ public sealed class InstalledTemplate
         if (withScenes) Add("scenes", n.Child("scenes"), Button("scenebuttontimage"), new MenuAction("page", "scenes1"), c.Series ? d.EpisodesLabel : d.ScenesLabel);
         // "none_setup" templates have no picture for Settings, and none has one for Bonus or Credits: plain capsules in a row under the other buttons, BurnSmith's own addition
         var pills = new List<(string Id, string Label, MenuAction Action)>();
-        if (c.HasBonus) pills.Add(("bonus", d.BonusLabel, new MenuAction("page", "bonus1")));
+        // a template that draws a Bonus button (Yuhan's BonusText) puts it where it says; the others get BurnSmith's capsule
+        if (c.HasBonus)
+        {
+            if (n.Child("bonus")?.Attr("textbutton") == "1") Add("bonus", n.Child("bonus"), null, new MenuAction("page", "bonus1"), d.BonusLabel);
+            else pills.Add(("bonus", d.BonusLabel, new MenuAction("page", "bonus1")));
+        }
         if (c.HasSettings)
         {
             if (Button("setupbuttontimage") != null || n.Child("setup")?.Attr("textbutton") == "1") Add("settings", n.Child("setup"), Button("setupbuttontimage"), new MenuAction("page", "settings"), d.SettingsLabel);

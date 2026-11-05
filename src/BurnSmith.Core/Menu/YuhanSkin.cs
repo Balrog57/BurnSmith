@@ -80,7 +80,7 @@ static class YuhanSkin
         var title = menu?.Child("TitleText");
         var overFrame = I(title, "Left") < I(frame, "Left") && I(title, "Top") < I(frame, "Top") + I(frame, "Height") && I(title, "Top") + I(title, "Size") * 3 / 2 > I(frame, "Top");
         root.Kids.Add(Text("label", title, overFrame ? Math.Max(200, I(frame, "Left") - I(title, "Left") - 20) : Room(title), "left"));
-        foreach (var (role, key) in new[] { ("play", "PlayText"), ("scenes", "ScenesText"), ("setup", "SetupText") })
+        foreach (var (role, key) in new[] { ("play", "PlayText"), ("scenes", "ScenesText"), ("setup", "SetupText"), ("bonus", "BonusText") })
             root.Kids.Add(Text(role, menu?.Child(key), I(menu?.Child(key), "Size") * 7, "left", ("textbutton", "1")));
 
         // ---- scene page: a frame per thumbnail (the thumbnail's position is an offset inside it), its name under it, previous / back / next

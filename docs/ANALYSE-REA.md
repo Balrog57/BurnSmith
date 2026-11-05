@@ -376,7 +376,12 @@ Donc : un modèle = `MenuTemplate\<Type>\<Aspect>\<Thème>\{Menu,Scene}` plus un
 | Bouton **« choisir la langue »** de la page de réglages | partiel | `LangItemText`, `ASLangTitleText` |
 | **Reprise au dernier bouton** | non | GPR100/GPR108, `MenuTo` |
 | **Modes de menu** 0 / 1 / 2 | partiel | `menu_mode`, classes `g_0`, `i_0`, `y_0` |
-| Vignettes du modèle **au-delà de 3** (4 à 10) | non | `Frame3..Frame9`, `Thumb3..Thumb9` |
+| Vignettes du modèle **au-delà de 3** (4 à 10) | **oui, vérifié** : `YuhanSkin` lit `Frame0..N` et place chaque vignette à ses coordonnées (Natural 02 = 4 cases en 2 x 2, Birthday 01 = 3) | `Frame3..Frame9`, `Thumb3..Thumb9` ; `dump` des deux thèmes |
 | Images de survol **et** de sélection par bouton | fait (commit `01ceddf`) | `selection/0.png`, `setSelectedImageList` |
 
 Rien n'a été reproduit dans ce passage : cette note est le cahier des charges. Les artefacts de travail (sources Java décompilées, XML de thème, CFR) sont dans `analysis\`, hors dépôt.
+### 15.1 Reproduit : le bouton Bonus des thèmes Yuhan (2026-11-05)
+
+`YuhanSkin` lit maintenant `Menu/BonusText` (présent dans les **30** thèmes, §13) et l'émet comme bouton-texte ; `InstalledTemplate.Root` l'utilise au lieu d'ajouter une pastille. Vérifié par rendu : sur `Birthday 01`, « Bonus » se place à **1494, 720**, sous « Settings » (1494, 630), dans la police et la couleur du thème — la position que le modèle donne, et non plus une capsule de BurnSmith.
+
+Reste de ce côté : le **mode liste** (`ListTypeText` + `ItemText0..9`) et la page de réglages décrite par `SetupAudioText` / `SetupSubtitleText` / `ASLangTitleText`, que `YuhanSkin` n'exploite pas encore.

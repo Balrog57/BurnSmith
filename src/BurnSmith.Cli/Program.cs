@@ -137,7 +137,7 @@ if (a.Count >= 1 && a[0] == "check-highlights")
                 int x0 = (int)(s.Rect.X * psx) & ~1, y0 = (int)(s.Rect.Y * psy) & ~1;
                 hovered.Stamp(hover.Px, hover.W, hover.H, x0, y0, 1);
                 var c = s.Sel ?? hover;
-                var at = ReferenceEquals(c, hover) ? (x0, y0) : (x0 + (hover.W - c.W) / 2, y0 + (hover.H - c.H) / 2);
+                var at = s.Sel != null ? (x0 + (hover.W - c.W) / 2, y0 + (hover.H - c.H) / 2) : (x0, y0);
                 chosen.Stamp(c.Px, c.W, c.H, at.Item1, at.Item2, 2);
             }
             var tint = shots.Select(s => s.Hl).FirstOrDefault(x => x != null) is { } f ? IndexedPng.Average(f.Px, f.W, f.H) : new IndexedPng.Rgba(255, 255, 255, 255);
