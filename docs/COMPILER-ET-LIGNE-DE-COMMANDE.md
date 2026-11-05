@@ -17,11 +17,11 @@ Télécharger `BurnSmith-Setup-<version>.exe` dans [Releases](https://github.com
 - **Les programmes** (ffmpeg, ffprobe, tsMuxeR) sont décompressés au premier lancement de chaque version : dans `BurnSmith-data`, à côté de l'exe, pour une copie portable ; dans `%LOCALAPPDATA%\BurnSmith\files` pour une copie installée (`Program Files` n'est pas inscriptible). On peut supprimer ce dossier, il sera refait. Un dossier `tools\` à côté de l'exe ou la variable `BURNSMITH_TOOLS` remplacent les outils si besoin.
 - **La bibliothèque de modèles** est dans **`Documents\BurnSmith\Templates`**, un dossier visible qu'on peut sauvegarder et enrichir : voir [MODELES.md](MODELES.md#où-sont-les-modèles-sur-le-disque). Elle n'est pas effacée à la désinstallation.
 
-Le mode **DVD** reste hors de l'exe : il demande `dvdauthor.exe` et `spumux.exe` (builds Windows dont la ligne de commande est `spumux script entrée sortie` et `dvdauthor -o dest -x script.xml -h 0 -q`), à placer dans `tools\` ou le `PATH`. Les licences des programmes embarqués sont dans [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Le mode **DVD** reste hors de l'exe : il demande `dvdauthor.exe` et `spumux.exe` (builds Windows dont la ligne de commande est `spumux script entrée sortie` et `dvdauthor -o dest -x script.xml -h 0 -q`). Sans droits d'administrateur, pour une copie installée : `setx BURNSMITH_TOOLS "C:\dossier\de\dvdauthor"` (ou ce dossier ajouté au `PATH`), puis relancez BurnSmith. Une copie portable accepte aussi un dossier `tools\` à côté de l'exe. Seule une compilation de développement cherche un dossier `tools\` dans les dossiers parents. Les licences des programmes embarqués sont dans [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Compiler
 
-Prérequis : SDK .NET 10, un dossier contenant `ffmpeg.exe` et `ffprobe.exe` (dans le `PATH` ou `-FfmpegDir`) et `tools\tsmuxer\bin\tsMuxeR.exe` (ou `-TsMuxer`). Ces binaires ne sont pas dans le dépôt : `publish.ps1` les zippe depuis votre PC. Pour l'installateur : [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`).
+Prérequis : SDK .NET 10, un dossier contenant `ffmpeg.exe` et `ffprobe.exe` (dans le `PATH` ou `-FfmpegDir`), exactement le build 8.1.1 « full » de gyan.dev que promet [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) (`publish.ps1` s'arrête sinon ; pour en changer, modifiez ses hashes et cette notice ensemble), et `tools\tsmuxer\bin\tsMuxeR.exe` (ou `-TsMuxer`). Ces binaires ne sont pas dans le dépôt : `publish.ps1` les zippe depuis votre PC. Pour l'installateur : [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`).
 
 ```powershell
 .\publish.ps1      # produit dist\BurnSmith.exe (portable, autonome, un seul fichier, plus de 350 Mo)
@@ -32,7 +32,7 @@ Sans Inno Setup, `publish.ps1` prévient et s'arrête après l'exe portable. L'i
 
 **Publier une version** : la mise à jour automatique lit la dernière release GitHub. Le **tag** de la release doit être `vX.Y.Z` (la version de l'exe) et l'**asset** de l'installateur doit s'appeler `BurnSmith-Setup-X.Y.Z.exe`, comme `publish.ps1` le nomme.
 
-`publish.ps1` zippe aussi les **images et fichiers de mise en page des modèles DVDFab et Leawo trouvés sur ce PC** (`BurnSmith.Cli pack-templates` : ni polices ni programmes) et les embarque dans l'exe. Ils ne sont pas dans le dépôt ; sans ces logiciels sur la machine de publication, l'exe n'embarque que les modèles libres.
+`publish.ps1` zippe aussi les **images et fichiers de mise en page des modèles DVDFab et Leawo trouvés sur ce PC** (`BurnSmith.Cli pack-templates` : ni polices ni programmes) et les embarque dans l'exe. Ils ne sont pas dans le dépôt ; sans ces logiciels sur la machine de publication, `publish.ps1` s'arrête au lieu de produire un exe sans eux.
 
 Le menu Blu-ray est un xlet Java 1.3 (`bdj/`). `assets/bdj/menu.jar` est déjà compilé et embarqué dans l'exe ; `bdj\build.ps1` le reconstruit avec un JDK 8 (`tools\jdk8`).
 

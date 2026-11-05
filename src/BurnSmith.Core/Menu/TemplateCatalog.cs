@@ -140,15 +140,16 @@ public static class TemplateCatalog
 
     /// <summary>
     /// Zips the DVDFab and Leawo template folders found on this PC into <paramref name="zip"/>: pictures and layout files only (no fonts, no programs),
-    /// as "DVDFab Blu-ray|DVDFab DVD|Leawo/[shape/]name/...". publish.ps1 embeds it in the exe. Returns the number of templates written.
+    /// as "DVDFab Blu-ray|DVDFab DVD|Leawo/[shape/]name/...". publish.ps1 embeds it in the exe. Returns the number of templates written; none is an error, so that a release never ships without them unnoticed.
+    /// <paramref name="roots"/> replaces this PC's installs (for a check).
     /// </summary>
-    public static int Pack(string zip, Action<string>? log = null)
+    public static int Pack(string zip, Action<string>? log = null, IEnumerable<string>? roots = null)
     {
         string[] keep = [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".xml"];
         if (File.Exists(zip)) File.Delete(zip);
         using var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create);
         var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var dir in InstalledRoots().SelectMany(r => TemplateFolders(r)).Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var dir in (roots ?? InstalledRoots()).SelectMany(r => TemplateFolders(r)).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (InstalledTemplate.Load(dir) is not { Unsupported: null } pack) continue;
             var name = Path.GetFileName(dir);
@@ -165,6 +166,7 @@ public static class TemplateCatalog
                 System.IO.Compression.ZipFileExtensions.CreateEntryFromFile(archive, f, $"{prefix}/{Path.GetRelativePath(dir, f).Replace('\\', '/')}", System.IO.Compression.CompressionLevel.Optimal);
             log?.Invoke($"{prefix}: {files.Count} fichiers");
         }
+        if (done.Count == 0) throw new InvalidOperationException("no DVDFab, Leawo or Yuhan template found on this PC: a release must carry them");
         using (var w = new StreamWriter(archive.CreateEntry("NOTICE.txt").Open()))
             w.Write("Images and layout files of DVDFab, Leawo and Yuhan menu templates, kept as published by their owners.\nThey are not part of BurnSmith's GPL-licensed code and belong to their owners.\nNo program, font or interface of these products is included.\n");
         return done.Count;
