@@ -8,7 +8,7 @@ namespace BurnSmith.Core.Menu;
 /// </summary>
 public sealed class MenuElement
 {
-    /// <summary>"text", "image" or "box".</summary>
+    /// <summary>"text", "image", "box" or "button".</summary>
     public string Kind { get; set; } = "text";
     /// <summary>"all" (every page), "root", "scenes", "bonus", "settings" or "credits".</summary>
     public string Page { get; set; } = "all";
@@ -39,12 +39,20 @@ public sealed class MenuElement
     /// <summary>An image keeps its proportions inside the box instead of being stretched to it.</summary>
     public bool Fit { get; set; } = true;
     /// <summary>
+    /// Where a "button" element leads: "movie" (the disc's title), "all" (every title in turn, a series), a page id
+    /// ("root", "scenes1", "settings", "credits", "bonus1"), or "chapter3" (the third chapter of the film).
+    /// </summary>
+    public string Target { get; set; } = "movie";
+    /// <summary>
     /// Drawn under the page's own buttons (over its background): the place for a panel or a frame that the buttons sit on.
     /// Otherwise the element goes over everything, like a caption or a badge.
     /// </summary>
     public bool Behind { get; set; }
 
     public const string AllPages = "all";
+
+    /// <summary>True for an element the player can press (it becomes a real menu button, not just a drawing).</summary>
+    public bool IsButton => Kind.Trim().ToLowerInvariant() == "button";
 
     public MenuElement Copy() => (MenuElement)MemberwiseClone();
 
@@ -82,6 +90,10 @@ public sealed class MenuElement
             case "box":
                 yield return new Fill(box, Fill, Math.Clamp(Opacity, 0, 100) / 100.0, Math.Max(0, Radius));
                 if (BorderWidth > 0) yield return new Border(box, Border, BorderWidth, Radius);
+                break;
+            case "button":
+                // the design's own button look (card, label), so a hand-placed button sits beside the template's own
+                foreach (var op in MenuBuilder.Button(d, box, Text.Length > 0 ? Text : "Button", Math.Clamp(Size, 20, 80))) yield return op;
                 break;
             default:
                 if (Text.Length == 0) yield break;
@@ -130,9 +142,10 @@ public sealed class MenuElement
                 case "borderw": if (int.TryParse(value, out var bw)) e.BorderWidth = bw; break;
                 case "fit": e.Fit = value is not ("0" or "false" or "non"); break;
                 case "behind": e.Behind = value is "1" or "true" or "oui"; break;
+                case "target": e.Target = value.ToLowerInvariant(); break;
             }
         }
-        if (e.Kind is not ("text" or "image" or "box")) throw new ArgumentException($"element kind unknown: {e.Kind} (text, image or box)");
+        if (e.Kind is not ("text" or "image" or "box" or "button")) throw new ArgumentException($"element kind unknown: {e.Kind} (text, image, box or button)");
         return e;
     }
 }

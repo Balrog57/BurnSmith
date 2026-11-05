@@ -209,7 +209,7 @@ public static class Dvd
             var subStates = content.SubtitleNames.Count > 0 ? content.SubtitleNames.Count + 1 : 1;
             for (var a = 1; a <= audioStates; a++)
                 for (var s = 0; s < subStates; s++)
-                    pages.Add(MenuBuilder.WithElements(job.Menu!, MenuBuilder.Settings(job.Menu!, content, a, s, SettingsId(a, s))));
+                    pages.Add(MenuBuilder.WithElements(job.Menu!, MenuBuilder.Settings(job.Menu!, content, a, s, SettingsId(a, s)), content));
         }
         var loop = job.Menu!.Loop;
         // a moving menu: the pages are transparent overlays burned onto a clip of the film (or the design's own video) that plays and repeats

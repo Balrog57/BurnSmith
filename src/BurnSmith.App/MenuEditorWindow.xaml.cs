@@ -165,7 +165,7 @@ public partial class MenuEditorWindow : Window
             {
                 var built = MenuBuilder.Build(d, content);
                 var settings = built.FindIndex(p => p.Id == "settings");
-                if (settings >= 0) built[settings] = MenuBuilder.WithElements(d, MenuBuilder.Settings(d, content, audio, sub));
+                if (settings >= 0) built[settings] = MenuBuilder.WithElements(d, MenuBuilder.Settings(d, content, audio, sub), content);
                 var shown = built.FirstOrDefault(p => p.Id == wanted) ?? built[0];
                 return (built, shown, DrawPage(d, shown));
             }));
@@ -297,7 +297,7 @@ public partial class MenuEditorWindow : Window
                 var at = s.Pages.FindIndex(p => p.Id == current?.Id);
                 if (at < 0) return;
                 var (audio, sub, design) = (audioSel, subSel, s.Design);
-                var page = await Task.Run(() => MenuRenderer.Sta(() => MenuBuilder.WithElements(design, MenuBuilder.Settings(design, content, audio, sub, current!.Id))));
+                var page = await Task.Run(() => MenuRenderer.Sta(() => MenuBuilder.WithElements(design, MenuBuilder.Settings(design, content, audio, sub, current!.Id), content)));
                 if (shot != s) return;
                 s.Pages[at] = page;
                 s.Cache.Remove(page.Id);
@@ -323,12 +323,14 @@ public partial class MenuEditorWindow : Window
         ElemPage.SelectedValuePath = "Value";
         ElemPage.DisplayMemberPath = "Label";
         ElemAlign.ItemsSource = new[] { "left", "center", "right" };
+        ElemTarget.ItemsSource = new[] { "movie", "all", "root", "scenes1", "settings", "credits", "bonus1" };
         RefreshElemList();
         ShowElem();
     }
 
     static string Describe(MenuElement e) => e.Kind switch
     {
+        "button" => $"Bouton · {e.Page} · {e.Text} → {e.Target}",
         "image" => $"Image · {e.Page} · {Path.GetFileName(e.Image ?? "")}",
         "box" => $"Cadre · {e.Page} · {e.W}×{e.H}",
         _ => $"Texte · {e.Page} · {(e.Text.Length > 24 ? e.Text[..24] + "…" : e.Text)}",
@@ -347,7 +349,7 @@ public partial class MenuEditorWindow : Window
     {
         elemSync = true;
         var on = sel != null;
-        foreach (var c in new FrameworkElement[] { ElemPage, ElemText, ElemImage, ElemX, ElemY, ElemW, ElemH, ElemSize, ElemColor, ElemFill, ElemBorder, ElemBorderW, ElemOpacity, ElemAlign, ElemBold, ElemItalic, ElemBehind })
+        foreach (var c in new FrameworkElement[] { ElemPage, ElemText, ElemImage, ElemX, ElemY, ElemW, ElemH, ElemSize, ElemColor, ElemFill, ElemBorder, ElemBorderW, ElemOpacity, ElemAlign, ElemTarget, ElemBold, ElemItalic, ElemBehind })
             c.IsEnabled = on;
         if (sel is { } e)
         {
@@ -365,6 +367,7 @@ public partial class MenuEditorWindow : Window
             ElemBorderW.Value = Math.Clamp(e.BorderWidth, 0, 16);
             ElemOpacity.Value = Math.Clamp(e.Opacity, 0, 100);
             ElemAlign.SelectedItem = e.Align;
+            ElemTarget.SelectedItem = e.Target;
             ElemBold.IsChecked = e.Bold;
             ElemItalic.IsChecked = e.Italic;
             ElemBehind.IsChecked = e.Behind;
@@ -391,6 +394,7 @@ public partial class MenuEditorWindow : Window
         e.BorderWidth = (int)ElemBorderW.Value;
         e.Opacity = (int)ElemOpacity.Value;
         e.Align = ElemAlign.SelectedItem as string ?? "left";
+        e.Target = ElemTarget.SelectedItem as string ?? "movie";
         e.Bold = ElemBold.IsChecked == true;
         e.Italic = ElemItalic.IsChecked == true;
         e.Behind = ElemBehind.IsChecked == true;
@@ -426,6 +430,8 @@ public partial class MenuEditorWindow : Window
     void OnAddText(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "text", Page = current?.Id == "root" ? "root" : MenuElement.AllPages, Text = "Votre texte", X = 140, Y = 140, W = 700, H = 90, Size = 48 });
 
     void OnAddBox(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "box", Page = current?.Id == "root" ? "root" : MenuElement.AllPages, X = 120, Y = 780, W = 1680, H = 200, Opacity = 45, Radius = 24, BorderWidth = 0, Behind = true });
+
+    void OnAddButton(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "button", Page = current?.Id == "root" ? "root" : MenuElement.AllPages, Text = "Bouton", Target = "movie", X = 300, Y = 620, W = 400, H = 110, Size = 44 });
 
     void OnAddImage(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "image", Page = MenuElement.AllPages, X = 1500, Y = 60, W = 300, H = 300, Fit = true, BorderWidth = 0 });
 

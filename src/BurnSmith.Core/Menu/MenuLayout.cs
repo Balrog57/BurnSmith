@@ -104,28 +104,83 @@ public static class MenuBuilder
     public static List<MenuPage> Build(MenuDesign d, MenuContent c)
     {
         var pages = BuildCore(d, c);
-        return d.Elements.Count == 0 ? pages : pages.Select(p => WithElements(d, p)).ToList();
+        return d.Elements.Count == 0 ? pages : pages.Select(p => WithElements(d, p, c)).ToList();
     }
 
     /// <summary>
-    /// The page with the design's free elements drawn over it. Call it on every page built outside <see cref="Build"/> (the audio / subtitle
-    /// pages a DVD makes per choice), or the elements would be missing there.
+    /// The page with the design's free elements drawn over it, and its hand-placed buttons registered as real buttons. Call it on every page built
+    /// outside <see cref="Build"/> (the audio / subtitle pages a DVD makes per choice), or the elements would be missing there.
     /// </summary>
-    public static MenuPage WithElements(MenuDesign d, MenuPage page)
+    public static MenuPage WithElements(MenuDesign d, MenuPage page, MenuContent c)
     {
         if (d.Elements.Count == 0) return page;
         var mine = d.Elements.Where(e => e.AppliesTo(page.Id)).ToList();
         if (mine.Count == 0) return page;
-        var behind = mine.Where(e => e.Behind).SelectMany(e => e.Ops(d)).ToList();
-        var front = mine.Where(e => !e.Behind).SelectMany(e => e.Ops(d)).ToList();
-        if (behind.Count == 0 && front.Count == 0) return page;
+        var behind = mine.Where(e => e.Behind && !e.IsButton).SelectMany(e => e.Ops(d)).ToList();
+        var front = mine.Where(e => !e.Behind || e.IsButton).SelectMany(e => e.Ops(d)).ToList();
         var ops = page.Ops.ToList();
         // a template's own artwork is the page's first op: a "behind" element goes over it, under the buttons drawn after it
         var at = 0;
         while (at < ops.Count && ops[at] is Image { Backdrop: true }) at++;
         ops.InsertRange(at, behind);
         ops.AddRange(front);
-        return page with { Ops = ops };
+
+        var buttons = page.Buttons.ToList();
+        foreach (var e in mine.Where(x => x.IsButton))
+        {
+            var id = "u" + d.Elements.IndexOf(e); // stable across pages: the same element is the same button wherever it is drawn
+            if (buttons.All(b => b.Id != id)) buttons.Add(new MenuButton(id, e.Box(), Action(e, c)));
+        }
+        var result = page with { Ops = ops, Buttons = buttons };
+        return mine.Any(x => x.IsButton) ? Relink(result) : result;
+    }
+
+    /// <summary>What a hand-placed button does: the film, every title in turn, a page, or a chapter of the film.</summary>
+    static MenuAction Action(MenuElement e, MenuContent c)
+    {
+        var target = e.Target.Trim().ToLowerInvariant();
+        MenuAction Film() => c.Series
+            ? new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count)
+            : new MenuAction("play", Playlist: c.Playlist);
+        if (target is "movie" or "play" or "all" or "playall" or "") return Film();
+        if (target.StartsWith("chapter", StringComparison.Ordinal))
+            return new MenuAction("chapter", Playlist: c.Playlist, Mark: Math.Max(0, (int.TryParse(target[7..].TrimStart(':'), out var n) ? n : 1) - 1));
+        return new MenuAction("page", target);
+    }
+
+    /// <summary>
+    /// Neighbours by geometry, for a page carrying hand-placed buttons: each button points at the nearest one in each direction, so the remote
+    /// reaches everything whatever order they were added in. Only those pages are re-linked; a template keeps the navigation its own layout wrote.
+    /// </summary>
+    static MenuPage Relink(MenuPage page)
+    {
+        var list = page.Buttons;
+        (int X, int Y) Centre(MenuButton b) => (b.Rect.X + b.Rect.W / 2, b.Rect.Y + b.Rect.H / 2);
+        MenuButton? Near(MenuButton b, int dx, int dy)
+        {
+            var (x, y) = Centre(b);
+            MenuButton? best = null;
+            long score = long.MaxValue;
+            foreach (var o in list)
+            {
+                if (ReferenceEquals(o, b)) continue;
+                var (ox, oy) = Centre(o);
+                int ax = ox - x, ay = oy - y;
+                if (dx != 0 && Math.Sign(ax) != dx) continue;
+                if (dy != 0 && Math.Sign(ay) != dy) continue;
+                var along = dx != 0 ? Math.Abs(ax) : Math.Abs(ay);
+                var across = dx != 0 ? Math.Abs(ay) : Math.Abs(ax);
+                var s = along + 3L * across;
+                if (s < score) { score = s; best = o; }
+            }
+            return best;
+        }
+        for (var i = 0; i < list.Count; i++)
+        {
+            var b = list[i];
+            list[i] = b with { Left = Near(b, -1, 0)?.Id, Right = Near(b, 1, 0)?.Id, Up = Near(b, 0, -1)?.Id, Down = Near(b, 0, 1)?.Id };
+        }
+        return page with { Buttons = list };
     }
 
     static List<MenuPage> BuildCore(MenuDesign d, MenuContent c)

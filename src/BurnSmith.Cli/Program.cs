@@ -149,6 +149,20 @@ if (a.Count >= 1 && a[0] == "check-elements")
     elOver.Elements.Add(MenuElement.Parse("kind=box;page=root;rect=0,700,1920,380;fill=#123456;opacity=100"));
     static int Panel(MenuDesign dd, MenuContent cc) => MenuBuilder.Build(dd, cc).First(p => p.Id == "root").Ops.FindIndex(o => o is Fill { Color: "#123456" });
     Check("a box told to stay behind the buttons is drawn before them, otherwise over them", Panel(elUnder, elContent) < Panel(elOver, elContent));
+
+    // a hand-placed button is a real menu button, not a drawing
+    var elButton = elDesign.Clone();
+    elButton.Elements.Add(MenuElement.Parse("kind=button;page=root;rect=120,600,300,100;text=Lire;target=movie"));
+    var elButtonPage = MenuBuilder.Build(elButton, elContent).First(p => p.Id == "root");
+    var elButtonOne = elButtonPage.Buttons.Where(b => b.Id.StartsWith("u")).ToList();
+    Check("un élément bouton devient un vrai bouton du menu, avec son libellé et l'action choisie",
+          elButtonOne.Count == 1 && elButtonOne[0].Action.Kind == "play" && elButtonPage.Ops.OfType<Label>().Any(l => l.Value == "Lire"));
+
+    elButton.Elements.Add(MenuElement.Parse("kind=button;page=root;rect=520,600,300,100;text=Scènes;target=scenes1"));
+    var elTwoPage = MenuBuilder.Build(elButton, elContent).First(p => p.Id == "root");
+    var elTwo = elTwoPage.Buttons.Where(b => b.Id.StartsWith("u")).ToList();
+    Check("deux boutons posés côte à côte se pointent l'un l'autre à la télécommande, et la page visée est celle demandée",
+          elTwo.Count == 2 && elTwo[0].Right == elTwo[1].Id && elTwo[1].Left == elTwo[0].Id && elTwo[1].Action is { Kind: "page", Page: "scenes1" });
     Console.WriteLine(elFailed == 0 ? "all ok" : $"{elFailed} failed");
     return elFailed == 0 ? 0 : 1;
 }
