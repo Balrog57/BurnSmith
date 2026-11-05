@@ -150,7 +150,7 @@ public static class MenuRenderer
         else if (shown != null)
         {
             dc.DrawRectangle(new ImageBrush(Load(shown)) { Stretch = Stretch.UniformToFill }, null, full);
-            if (d.Dim > 0) dc.DrawRectangle(new SolidColorBrush(Col("#000000", d.Dim / 100.0)), null, full); // keeps text readable on any picture
+            if (d.Dim > 0 && d.TemplateDir == null) dc.DrawRectangle(new SolidColorBrush(Col("#000000", d.Dim / 100.0)), null, full); // keeps text readable on any picture (a template has no dim setting: its pages are not darkened)
         }
         else
         {
