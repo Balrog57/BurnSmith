@@ -169,11 +169,12 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// <see cref="DefaultAudio"/> / <see cref="DefaultSubtitle"/> (an <see cref="AudioTrack.Index"/> / <see cref="SubtitleTrack.Index"/> among those kept): what
 /// plays and shows when the disc starts. Null: the first audio, no subtitles. The default audio goes first, so it is audio 1 everywhere (the menu's
 /// pages, a DVD's first stream, the first of a Blu-ray's list); the default subtitle is selected by the disc itself (<see cref="DefaultSubtitleNumber"/>).
+/// <see cref="TrackLanguage"/>: languages set by hand on the video's own tracks (key <see cref="LanguageKey"/>, value an ISO 639-2 code), for a track the file leaves "und" or mislabels.
 /// </summary>
 public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<int>? Audio = null, IReadOnlyList<int>? Subtitles = null,
                                double Start = 0, double? End = null, int Volume = 100, IReadOnlyList<double>? ChapterAt = null,
                                IReadOnlyList<ExternalSubtitle>? External = null, bool Bonus = false, int? DefaultAudio = null, int? DefaultSubtitle = null,
-                               int? ChapterMinutes = null, bool Intro = false)
+                               int? ChapterMinutes = null, bool Intro = false, IReadOnlyDictionary<string, string>? TrackLanguage = null)
 {
     public string DisplayName => Name ?? Path.GetFileNameWithoutExtension(Video);
 
@@ -206,8 +207,20 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
     }
 
     /// <summary>The source with this video's <see cref="External"/> subtitle files added to its own subtitle tracks, numbered on from them.</summary>
-    public SourceInfo WithSubtitleFiles(SourceInfo s) =>
-        External is not { Count: > 0 } ? s : s with { Subtitles = [.. s.Subtitles, .. External.Select((e, k) => e.Track(s.Subtitles.Count + k))] };
+    public SourceInfo WithSubtitleFiles(SourceInfo s)
+    {
+        if (External is { Count: > 0 }) s = s with { Subtitles = [.. s.Subtitles, .. External.Select((e, k) => e.Track(s.Subtitles.Count + k))] };
+        if (TrackLanguage is not { Count: > 0 }) return s;
+        // a subtitle file has its own language (see ExternalSubtitle), so only the video's own tracks are relabelled; every list, menu and disc reads the tracks through here
+        return s with
+        {
+            Audio = [.. s.Audio.Select(a => a with { Lang = TrackLanguage.GetValueOrDefault(LanguageKey(true, a.Index), a.Lang) })],
+            Subtitles = [.. s.Subtitles.Select(t => t.File != null ? t : t with { Lang = TrackLanguage.GetValueOrDefault(LanguageKey(false, t.Index), t.Lang) })],
+        };
+    }
+
+    /// <summary>The key of a track in <see cref="TrackLanguage"/>: "a0" is audio track 0 of the file, "s1" its subtitle track 1.</summary>
+    public static string LanguageKey(bool audio, int index) => (audio ? "a" : "s") + index;
 
     /// <summary>Chapter starts on the disc (seconds from the start of the part kept): always begins with 0, whole seconds, so no two share a second.</summary>
     public List<double> ChapterList(double length, int minutes) =>
