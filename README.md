@@ -34,7 +34,7 @@ Des menus **prêts à l'emploi** pour un film, une série (page d'épisodes) ou 
 L'éditeur dessine **en direct** les pages du disque (menu, scènes, réglages, crédits) et se parcourt comme sur le disque, à la souris ou aux flèches.
 
 - **Composez** : fond (bibliothèque de fonds, ou vos images), police, style de boutons, grille des scènes, couleurs.
-- **Trois styles de surbrillance** pour le bouton choisi, comme DVDFab : cadre d'accent, soulignement, ou libellé en couleur (quand le modèle n'apporte pas sa propre image de survol). `--highlight` en ligne de commande.
+- **Trois styles de surbrillance** pour le bouton choisi, comme DVDFab : cadre d'accent, soulignement, ou libellé en couleur (quand le modèle n'apporte pas sa propre image de survol), avec une **couleur de sélection distincte** de l'accent et sa **transparence** réglable (les `selected_*_style_color` / `selected_*_transparency` de DVDFab). `--highlight` en ligne de commande.
 - **Page de scènes en liste** : les chapitres ou les épisodes s'affichent en lignes de texte au lieu d'une grille de vignettes (le « PlaylistScene » de DVDFab, le mode liste des thèmes Yuhan) ; quand le modèle décrit cette liste (`ListTypeText` et ses dix `ItemText`), les lignes prennent ses positions, sa police et ses couleurs. `--list` en ligne de commande.
 - **Posez des éléments libres**, comme dans DVDStyler : texte, image, cadre, ou **bouton** avec son action (« Mène à » : le film, un chapitre, une page). On les place à la souris sur l'aperçu ; ils sont fondus dans l'image du menu, donc identiques sur DVD et sur Blu-ray.
 - **Enregistrez vos modèles** (« Mes modèles ») et réutilisez-les d'un disque à l'autre.

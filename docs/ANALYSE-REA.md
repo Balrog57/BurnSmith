@@ -372,7 +372,7 @@ Donc : un modèle = `MenuTemplate\<Type>\<Aspect>\<Thème>\{Menu,Scene}` plus un
 | Vignettes **animées** dans la page de scènes | non | `ECreatorTempType…DynamicThumbnail`, `videoCount` |
 | Page de scènes en **liste** (10 lignes + description) | **fait** (§15.2) | `ListTypeText`/`ItemText0..9` (30 thèmes Yuhan), `PlaylistScene`, classe `o` du jar |
 | **Page Bonus** décrite par le modèle | partielle (BurnSmith dessine la sienne) | `BonusText` sur les 30 thèmes |
-| **3 styles de surbrillance** (cadre, soulignement, changement de couleur) | **fait** (§17) | `EButtonSelectedHighlightType` |
+| **3 styles de surbrillance** + couleur et transparence de sélection | **fait** (§17, §21) | `EButtonSelectedHighlightType`, `selected_*_style_color`, `selected_*_transparency` |
 | Bouton **« choisir la langue »** de la page de réglages | partiel | `LangItemText`, `ASLangTitleText` |
 | **Reprise au dernier bouton** | **fait** (§19, effet observé sur l'indice 0) | GPR100/GPR108, `MenuTo` |
 | **Modes de menu** 0 / 1 / 2 | partiel | `menu_mode`, classes `g_0`, `i_0`, `y_0` |
@@ -539,3 +539,13 @@ Trois choses que cela établit et qui manquaient :
 1. **DVDFab distingue trois natures de fond** — image fixe, image animée, vidéo plein cadre (`still_image` / `image_video` / `frame_video`) — et un drapeau `use_menu_background_video`. BurnSmith n'a que « image » ou « boucle vidéo ».
 2. **La surbrillance est réglée par style et par transparence** (`selected_default_style_color` + `selected_default_transparency`, et une variante « custom »), ce qui complète les trois styles du §12.1 : le modèle porte aussi l'opacité.
 3. **Un modèle sauvegardé garde sa vignette 4:3** (`thumb4x3.bd.png`) et son fond (`backgroud1.png`) à côté de son XML — la structure exacte des dossiers `author/templates` et `author/bdtemplates` observée sur le disque.
+## 21. Reproduit : couleur de sélection distincte et transparence (2026-11-05)
+
+DVDFab règle la surbrillance par **style**, **couleur** et **transparence** (§20.3 : `selected_default_style_color`, `selected_custom_style_color`, `selected_default_transparency`, `selected_custom_transparency`). BurnSmith n'avait qu'une couleur d'accent et un remplissage figé à 18 %.
+
+- `MenuDesign.SelectionColor` (vide = l'accent) et `MenuDesign.SelectionOpacity` (0-100, 18 par défaut), repris par `TakeLook` ; `SelectionInk` donne la couleur effective.
+- `MenuRenderer.Focus` s'en sert dans les trois styles : le cadre, le soulignement et le texte en couleur ; une transparence à 0 % laisse un contour nu.
+- `Dvd.cs` prend `SelectionInk` pour la teinte de la surbrillance DVD quand le modèle n'apporte pas d'artwork.
+- Éditeur : un second sélecteur de couleur « Sélection (2e) » et un curseur « Transparence de la sélection (%) ».
+
+**Épreuves** : `check-highlights` **13/13**, dont « une couleur de sélection distincte change l'image » et « une transparence de sélection différente change l'image (0 % ne remplit plus le cadre) ». Images dans `analysis\out\styles2` : `style_custom.png` (382 octets) montre le soulignement en vert au lieu de l'ambre, `style_faint.png` (2 385 octets) le cadre sans remplissage contre 2 349 avec.

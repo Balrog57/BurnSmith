@@ -48,6 +48,16 @@ public sealed class MenuDesign
     /// "box" (an accent frame, BurnSmith's own), "underline" (a bar under the button), "textcolor" (the label in the accent colour, no frame).
     /// </summary>
     public string HighlightStyle { get; set; } = "box";
+    /// <summary>
+    /// Colour of the selected button when it differs from <see cref="Accent"/> (DVDFab's <c>selected_custom_style_color</c>); empty = the accent.
+    /// A template that brings its own artwork for a button keeps that artwork.
+    /// </summary>
+    public string SelectionColor { get; set; } = "";
+    /// <summary>Opacity of the fill drawn inside the highlight, in percent (DVDFab's <c>selected_default_transparency</c>, 0 = a bare outline).</summary>
+    public int SelectionOpacity { get; set; } = 18;
+
+    /// <summary>The colour the selected state is drawn in: <see cref="SelectionColor"/> when set, else <see cref="Accent"/>.</summary>
+    public string SelectionInk => SelectionColor.Length > 0 ? SelectionColor : Accent;
     public bool ShowPreview { get; set; } = true;
     /// <summary>
     /// "Pill" = translucent rounded buttons, "Text" = bare labels (only the focus frame shows the selection),
@@ -131,7 +141,7 @@ public sealed class MenuDesign
     public void TakeLook(MenuDesign t)
     {
         Name = t.Name; Category = t.Category; TemplateDir = t.TemplateDir; BackgroundImage = t.BackgroundImage;
-        Top = t.Top; Bottom = t.Bottom; TextColor = t.TextColor; Accent = t.Accent; HighlightStyle = t.HighlightStyle; Font = t.Font;
+        Top = t.Top; Bottom = t.Bottom; TextColor = t.TextColor; Accent = t.Accent; HighlightStyle = t.HighlightStyle; SelectionColor = t.SelectionColor; SelectionOpacity = t.SelectionOpacity; Font = t.Font;
         ButtonStyle = t.ButtonStyle; Cols = t.Cols; Rows = t.Rows; Thumbnails = t.Thumbnails; Square = t.Square;
         CardFill = t.CardFill; Glow = t.Glow; Dim = t.Dim;
         MarginX = t.MarginX; MarginY = t.MarginY; Gap = t.Gap; Header = t.Header; Footer = t.Footer;

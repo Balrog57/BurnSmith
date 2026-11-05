@@ -183,10 +183,25 @@ if (a.Count >= 1 && a[0] == "check-highlights")
           hlShots.Values.All(v => v.Length > 0) && hlShots.Values.Select(v => v.Length).Distinct().Count() == 3);
     Check("le style « texte en couleur » ne dessine pas de cadre : son image est plus légère que celle du cadre",
           hlShots["textcolor"].Length < hlShots["box"].Length);
+
+    // couleur de sélection distincte et transparence (DVDFab : selected_custom_style_color, selected_default_transparency)
+    var hlInk = hlPlain.Clone();
+    hlInk.SelectionColor = "#00FF00";
+    hlInk.HighlightStyle = "underline";
+    var hlInkShot = MenuRenderer.Sta(() => MenuRenderer.Focus(hlInk, hlBtn, 1, hlName));
+    Check("une couleur de sélection distincte change l'image (le soulignement n'a plus la teinte d'accent)",
+          !hlInkShot.SequenceEqual(hlShots["underline"]) && hlInk.SelectionInk == "#00FF00");
+    var hlFaint = hlPlain.Clone();
+    hlFaint.SelectionOpacity = 0;
+    var hlFaintShot = MenuRenderer.Sta(() => MenuRenderer.Focus(hlFaint, hlBtn, 1, hlName));
+    Check("une transparence de sélection différente change l'image (0 % ne remplit plus le cadre)",
+          !hlFaintShot.SequenceEqual(hlShots["box"]));
     if (Opt("--out") is { } styleDir)
     {
         Directory.CreateDirectory(styleDir);
         foreach (var (st, png) in hlShots) File.WriteAllBytes(Path.Combine(styleDir, $"style_{st}.png"), png);
+        File.WriteAllBytes(Path.Combine(styleDir, "style_custom.png"), hlInkShot);
+        File.WriteAllBytes(Path.Combine(styleDir, "style_faint.png"), hlFaintShot);
         Console.WriteLine("écrit style_box.png, style_underline.png et style_textcolor.png dans " + styleDir);
     }
 

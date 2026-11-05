@@ -102,14 +102,14 @@ public static class MenuRenderer
             switch (style)
             {
                 case "underline": // a bar under the button, as DVDFab's DrawUnderline
-                    dc.DrawRectangle(new SolidColorBrush(Col(d.Accent)), null, new Rect(m, box.H - 12, b.Rect.W, 8));
+                    dc.DrawRectangle(new SolidColorBrush(Col(d.SelectionInk, Math.Max(0.15, d.SelectionOpacity / 100.0))), null, new Rect(m, box.H - 12, b.Rect.W, 8));
                     break;
                 case "textcolor": // no frame: the label is redrawn in the accent colour (DVDFab's ChangeTextColor)
-                    DrawLabel(dc, d, new Label(label!, new Box(m, m, b.Rect.W, b.Rect.H), Math.Clamp(b.Rect.H / 3, 20, 54), true), Col(d.Accent));
+                    DrawLabel(dc, d, new Label(label!, new Box(m, m, b.Rect.W, b.Rect.H), Math.Clamp(b.Rect.H / 3, 20, 54), true), Col(d.SelectionInk));
                     break;
                 default: // "box": the accent frame BurnSmith has always drawn
-                    var pen = new Pen(new SolidColorBrush(Col(d.Accent)), 6);
-                    dc.DrawRoundedRectangle(new SolidColorBrush(Col(d.Accent, 0.18)), pen, new Rect(3, 3, box.W - 6, box.H - 6), 22, 22);
+                    var pen = new Pen(new SolidColorBrush(Col(d.SelectionInk)), 6);
+                    dc.DrawRoundedRectangle(new SolidColorBrush(Col(d.SelectionInk, Math.Clamp(d.SelectionOpacity, 0, 100) / 100.0)), pen, new Rect(3, 3, box.W - 6, box.H - 6), 22, 22);
                     break;
             }
         }, scale);

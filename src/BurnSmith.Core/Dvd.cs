@@ -318,7 +318,7 @@ public static class Dvd
                     Nav("up", b.Up), Nav("down", b.Down), Nav("left", b.Left), Nav("right", b.Right)));
             }
             // one tint for the whole page (a subpicture has four colours): the artwork's own average, else the design's accent
-            var accent = art.Select(x => x.Hl).FirstOrDefault(x => x != null) is { } first ? Average(first.Px, first.W, first.H) : Hex(job.Menu!.Accent);
+            var accent = art.Select(x => x.Hl).FirstOrDefault(x => x != null) is { } first ? Average(first.Px, first.W, first.H) : Hex(job.Menu!.SelectionInk);
             Rgba[] palette = [new(0, 0, 0, 0), accent, new(255, 255, 255, 255), new(0, 0, 0, 0)];
             File.WriteAllBytes(Path.Combine(work, $"hl_{p.Id}.png"), Encode(hl, palette));
             File.WriteAllBytes(Path.Combine(work, $"sel_{p.Id}.png"), Encode(sel, palette));

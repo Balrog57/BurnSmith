@@ -257,6 +257,13 @@
           <TextBlock Text="Sélection" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
           <TextBox Text="{Binding Accent, UpdateSourceTrigger=PropertyChanged}"/>
         </DockPanel>
+        <DockPanel Margin="0,2">
+          <Border Style="{StaticResource Swatch}" Background="{Binding SelectionColor}"/>
+          <TextBlock Text="Sélection (2e)" Width="90" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBox Text="{Binding SelectionColor, UpdateSourceTrigger=PropertyChanged}"/>
+        </DockPanel>
+        <TextBlock Text="Transparence de la sélection (%)" Style="{StaticResource Caption}"/>
+        <Slider Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding SelectionOpacity}"/>
         <TextBlock Text="Surbrillance du bouton choisi" Style="{StaticResource Caption}"/>
         <ComboBox x:Name="HlBox" SelectionChanged="OnPickHighlight" DisplayMemberPath="Label" SelectedValuePath="Value"/>
         <DockPanel Margin="0,2">
