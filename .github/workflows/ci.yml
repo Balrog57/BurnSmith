@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-check:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache the tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            tools/ffmpeg
+            tools/tsmuxer
+          key: tools-ffmpeg-8.1.1-49b28c5f-tsmuxer-2.7.0-e3cf117d
+
+      # in tools\ the dev build finds them by its parent walk, before anything on the runner's PATH; a hash that differs stops the job
+      - name: Fetch ffmpeg, ffprobe and tsMuxeR
+        run: |
+          $tar = "$env:SystemRoot\System32\tar.exe" # the runner's PATH may give Git's, which cannot read a zip
+          function Fetch($url, $zip, $sha256) {
+            curl.exe -fsSL --retry 3 -o $zip $url
+            if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $sha256) { throw "$url is not the pinned file" }
+          }
+          if (-not (Test-Path tools\ffmpeg\ffmpeg.exe)) {
+            New-Item -ItemType Directory -Force tools\ffmpeg | Out-Null
+            Fetch https://github.com/GyanD/codexffmpeg/releases/download/8.1.1/ffmpeg-8.1.1-full_build.zip tools\ffmpeg.zip 49B28C5F16ADDD40239A66949973458769B7056FB7752C30AC0D53389D09A552
+            & $tar -xf tools\ffmpeg.zip -C tools\ffmpeg --strip-components=2 ffmpeg-8.1.1-full_build/bin/ffmpeg.exe ffmpeg-8.1.1-full_build/bin/ffprobe.exe
+            Remove-Item tools\ffmpeg.zip
+          }
+          if (-not (Test-Path tools\tsmuxer\bin\tsMuxeR.exe)) {
+            New-Item -ItemType Directory -Force tools\tsmuxer\bin | Out-Null
+            Fetch https://github.com/justdan96/tsMuxer/releases/download/2.7.0/tsMuxer-2.7.0-win64.zip tools\tsmuxer.zip E3CF117D2C6F01332188123641C63FE38AB9731AE7AA23645F6F9A261A7A301C
+            & $tar -xf tools\tsmuxer.zip -C tools\tsmuxer\bin tsMuxeR.exe
+            Remove-Item tools\tsmuxer.zip
+          }
+          $publish = Get-Content publish.ps1 -Raw
+          foreach ($tool in 'ffmpeg.exe', 'ffprobe.exe') {
+            $pin = [regex]::Match($publish, "'$tool'\s*=\s*'([0-9A-F]{64})'").Groups[1].Value
+            if ((Get-FileHash tools\ffmpeg\$tool -Algorithm SHA256).Hash -ne $pin) { throw "$tool is not the build pinned in publish.ps1" }
+          }
+          if ((Get-FileHash tools\tsmuxer\bin\tsMuxeR.exe -Algorithm SHA256).Hash -ne '12434DB81E879927D78FAD932BF37B5BE5DCA911B4BF741B1D8E0D98609CC2AB') { throw 'tsMuxeR.exe is not the pinned build' }
+
+      - name: Build, a warning is a failure
+        run: dotnet build BurnSmith.slnx -c Release -warnaserror
+
+      - name: Build BurnSmith.HdmvCheck, which is not in the solution
+        run: dotnet build src/BurnSmith.HdmvCheck -c Release -warnaserror
+
+      # one check a step: a pwsh step reports only the exit code of its last command
+      - name: check-update
+        run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-update
+
+      # --no-dvd: dvdauthor and spumux are not redistributable, so what needs them runs only on a PC that has them; each check names what it passes over
+      - name: check-edit
+        run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-edit --no-dvd
+
+      - name: check-elements
+        run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-elements
+
+      - name: check-highlights
+        run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-highlights
+
+      # only the templates in git here (DVD Forge, DVDStyler), no vendor one
+      - name: check-templates
+        run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-templates
+
+      - name: check-bd
+        run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-bd --no-dvd
+
+      - name: check-reliability
+        run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-reliability --no-dvd
+
+      - name: BurnSmith.HdmvCheck
+        run: ./src/BurnSmith.HdmvCheck/bin/Release/net10.0-windows/BurnSmith.HdmvCheck.exe
