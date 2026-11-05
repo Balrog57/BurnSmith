@@ -104,7 +104,7 @@ public static class BluRay
     }
 
     /// <summary>What one muxed title gives the menu: its preview source and the names of the tracks that really went on the disc.</summary>
-    sealed record Muxed(string Prepared, List<string> Audio, List<string> Subtitles, List<double> ChapterTimes);
+    sealed record Muxed(string Prepared, List<string> Audio, List<string> Subtitles, List<double> ChapterTimes, int DefaultSubtitle);
 
     public static void Build(BluRayJob job, Action<string>? log = null)
     {
@@ -182,8 +182,15 @@ public static class BluRay
             var moving = job.Menu.Loop;
             if ((moving || job.Menu.ExistingMusic() != null) && job.Uhd) log("moving menu and music skipped: a 4K disc needs a 2160p clip, which BurnSmith does not make yet");
             else if (moving || job.Menu.ExistingMusic() != null) { MuxLoop(job, work, log); loop = LoopPlaylist; }
-            MenuFiles.WriteBdj(job.Menu, MenuBuilder.Build(job.Menu, content), menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, mainCount, overlay: moving && loop > 0); // the xlet chains only the main titles
+            MenuFiles.WriteBdj(job.Menu, MenuBuilder.Build(job.Menu, content), menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle); // the xlet chains only the main titles
             AddMenu(job, menuDir, log);
+        }
+        else if (muxed[0].DefaultSubtitle > 0)
+        {
+            // no menu: the film's own movie object selects the subtitle before it plays (the BACKUP copy is kept alike)
+            foreach (var movieObject in new[] { Path.Combine(job.OutDir, "BDMV", "MovieObject.bdmv"), Path.Combine(job.OutDir, "BDMV", "BACKUP", "MovieObject.bdmv") }.Where(File.Exists))
+                File.WriteAllBytes(movieObject, Bdmv.PrependToFilm(File.ReadAllBytes(movieObject), Hdmv.HdmvCommand.SetStreams(subtitle: muxed[0].DefaultSubtitle)));
+            log($"subtitle {muxed[0].DefaultSubtitle} shown from the start");
         }
         Tools.TryDelete(work);
         log("done: " + job.OutDir);
@@ -289,7 +296,7 @@ public static class BluRay
         File.WriteAllLines(meta, lines);
         log($"mux {playlist}: tsMuxeR");
         Tools.Run(Tools.Find("tsMuxeR.exe"), [meta, dest], log);
-        return new Muxed(prepared, audio.Select(a => a.Name).ToList(), subs.Select(s => s.Track.Name).ToList(), chapterTimes);
+        return new Muxed(prepared, audio.Select(a => a.Name).ToList(), subs.Select(s => s.Track.Name).ToList(), chapterTimes, title.DefaultSubtitleNumber(subs.Select(s => s.Track).ToList()));
     }
 
     /// <summary>

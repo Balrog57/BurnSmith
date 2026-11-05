@@ -37,6 +37,9 @@ public partial class MainWindow : Window
         public IReadOnlyList<double>? ChapterAt { get; set; }
         /// <summary>An extra (trailer, making-of): after the feature on the disc, off "Lecture" / "Tout lire", on the menu's Bonus page.</summary>
         public bool Bonus { get; set; }
+        /// <summary>The audio track that plays and the subtitle that shows when the disc starts (source track numbers among those kept; null = the first audio, no subtitle).</summary>
+        public int? DefaultAudio { get; set; }
+        public int? DefaultSub { get; set; }
         /// <summary>The name as the table shows it.</summary>
         public string Shown => Bonus ? $"Bonus · {Name}" : Name;
 
@@ -50,11 +53,11 @@ public partial class MainWindow : Window
         public string DurationText => Timecode.Format(Math.Floor(OnDisc.Duration));
         public string? DurationTip => ToDisc() is { Trimmed: true } ? $"Durée d'origine : {Timecode.Format(Math.Floor(Info.Duration))}" : null;
         public string Hdr => Info.Hdr;
-        public string AudioText => Summary(Audio.Select(i => Info.Audio.FirstOrDefault(a => a.Index == i)?.Name ?? "?").ToList());
-        public string SubText => Summary(Subs.Select(i => Tracks.Subtitles.FirstOrDefault(t => t.Index == i)?.Name ?? "?").ToList());
+        public string AudioText => Summary(ToDisc().KeptAudio(Info).Select(a => a.Name).ToList()); // in disc order: the default one first
+        public string SubText => Summary(Subs.OrderBy(i => i == DefaultSub ? 0 : 1).Select(i => (Tracks.Subtitles.FirstOrDefault(t => t.Index == i)?.Name ?? "?") + (i == DefaultSub ? " (défaut)" : "")).ToList());
 
         static string Summary(List<string> names) => names.Count == 0 ? "Aucun" : names.Count == 1 ? names[0] : $"{names[0]} +{names.Count - 1}";
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus);
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub);
     }
 
     readonly ObservableCollection<Entry> titles = [];
@@ -446,6 +449,7 @@ public partial class MainWindow : Window
             menu.Items.Add(item);
         }
         if (menu.Items.Count == 0) menu.Items.Add(new MenuItem { Header = audio ? "Aucune piste audio" : "Aucun sous-titre", IsEnabled = false });
+        AddDefaultMenu(menu, entry, audio);
         if (!audio)
         {
             menu.Items.Add(new Separator());
@@ -474,6 +478,33 @@ public partial class MainWindow : Window
             menu.Items.Add(all);
         }
         menu.IsOpen = true;
+    }
+
+    /// <summary>
+    /// "Piste audio par défaut" / "Sous-titre par défaut": which kept track plays (shows) when the disc starts. Nothing to choose from with one audio track;
+    /// for subtitles "Aucun" is the other choice.
+    /// </summary>
+    void AddDefaultMenu(ContextMenu menu, Entry entry, bool audio)
+    {
+        var kept = audio ? entry.Audio : entry.Subs;
+        if (audio ? kept.Count < 2 : kept.Count == 0) return;
+        var current = audio ? (entry.DefaultAudio is { } d && kept.Contains(d) ? d : kept[0]) : entry.DefaultSub is { } s && kept.Contains(s) ? s : -1;
+        var parent = new MenuItem { Header = audio ? "Piste audio par défaut" : "Sous-titre par défaut" };
+        void Add(string name, int index)
+        {
+            var item = new MenuItem { Header = name, IsCheckable = true, IsChecked = current == index };
+            item.Click += (_, _) =>
+            {
+                if (audio) entry.DefaultAudio = index; else entry.DefaultSub = index < 0 ? null : index;
+                entry.Refresh();
+                Update();
+            };
+            parent.Items.Add(item);
+        }
+        if (!audio) Add("Aucun", -1);
+        foreach (var index in kept) Add(audio ? entry.Info.Audio.First(a => a.Index == index).Name : entry.Tracks.Subtitles.First(t => t.Index == index).Name, index);
+        menu.Items.Add(new Separator());
+        menu.Items.Add(parent);
     }
 
     /// <summary>Sets the language of the <paramref name="at"/>th subtitle file of a video: its name in the lists, on the settings page and the disc's language code follow.</summary>
@@ -506,7 +537,12 @@ public partial class MainWindow : Window
     void ToggleTrack(Entry entry, bool audio, int index, MenuItem item)
     {
         var kept = audio ? entry.Audio : entry.Subs;
-        if (item.IsChecked != true) kept.Remove(index);
+        if (item.IsChecked != true)
+        {
+            kept.Remove(index);
+            if (audio && entry.DefaultAudio == index) entry.DefaultAudio = null;
+            if (!audio && entry.DefaultSub == index) entry.DefaultSub = null;
+        }
         else if (!kept.Contains(index))
         {
             var max = audio ? MenuBuilder.MaxAudio : MenuBuilder.MaxSubtitles;
@@ -530,6 +566,8 @@ public partial class MainWindow : Window
         {
             other.Audio = cur.Audio.Where(i => other.Info.Audio.Any(a => a.Index == i)).ToList();
             other.Subs = cur.Subs.Where(i => other.Tracks.Subtitles.Any(t => t.Index == i && t.Supported)).ToList();
+            other.DefaultAudio = other.Audio.Contains(cur.DefaultAudio ?? -1) ? cur.DefaultAudio : null;
+            other.DefaultSub = other.Subs.Contains(cur.DefaultSub ?? -1) ? cur.DefaultSub : null;
             other.Refresh();
         }
         Append("Pistes appliquées à toutes les vidéos (par numéro de piste).");

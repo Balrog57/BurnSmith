@@ -53,6 +53,7 @@ import org.havi.ui.event.HRcEvent;
  *   marker IMAGE W H DX
  *   loop PLAYLIST
  *   playback menu|first CHAIN REWIND FIRST_PLAYLIST COUNT   (CHAIN, REWIND: 1 or 0; absent = menu, no chaining, back to the menu)
+ *   defaults AUDIO SUB   (the audio / subtitle stream number the disc starts with; absent = 1 and 0, no subtitles)
  * ACTION is "play PLAYLIST", "chapter PLAYLIST MARK", "page PAGE", "playall FIRST_PLAYLIST COUNT" (plays them one
  * after the other), "audio N" (stream number, 1-based) or "sub N" (0 = no subtitles). The first page is shown
  * first and the first button of a page has the initial focus. The marker image is drawn DX pixels from the left
@@ -464,6 +465,9 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
                 rewind = t.nextToken().equals("1");
                 titleFirst = Integer.parseInt(t.nextToken());
                 titleCount = Integer.parseInt(t.nextToken());
+            } else if (cmd.equals("defaults")) {
+                audio = Integer.parseInt(t.nextToken());
+                sub = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("loop")) {
                 loopPlaylist = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("page")) {

@@ -13,6 +13,27 @@ public static class Bdmv
     public const int HaviHd1080 = 1, HaviHd720 = 2, HaviUhd1080 = 7;
 
     /// <summary>
+    /// A MovieObject.bdmv (the one tsMuxeR wrote for a disc with no menu) whose object 0, the one title 1 runs to start the film, begins with
+    /// <paramref name="commands"/>: a Set Stream there selects the subtitle before the film plays. The objects are written back as they were.
+    /// </summary>
+    public static byte[] PrependToFilm(byte[] movieObject, params byte[][] commands)
+    {
+        const int first = 8 + 4 + 28 + 4 + 4 + 2; // "MOBJ0200", extension start, reserved, body length, reserved, number of objects
+        if (movieObject.Length < first || !movieObject.AsSpan(0, 8).SequenceEqual("MOBJ0200"u8)) throw new InvalidDataException("not a MovieObject.bdmv");
+        var count = BinaryPrimitives.ReadUInt16BigEndian(movieObject.AsSpan(first - 2));
+        var objects = new List<IReadOnlyList<byte[]>>();
+        for (int at = first, i = 0; i < count; i++)
+        {
+            var n = BinaryPrimitives.ReadUInt16BigEndian(movieObject.AsSpan(at + 2));
+            objects.Add([.. Enumerable.Range(0, n).Select(c => movieObject.AsSpan(at + 4 + c * 12, 12).ToArray())]);
+            at += 4 + n * 12;
+        }
+        if (objects.Count == 0) throw new InvalidDataException("MovieObject.bdmv has no object");
+        objects[0] = [.. commands, .. objects[0]];
+        return Hdmv.HdmvNav.MovieObjects(objects);
+    }
+
+    /// <summary>
     /// Replaces the index table of an index.bdmv by: First Playback = Top Menu = BD-J title <paramref name="bdjoName"/>,
     /// plus that same BD-J object as title 1. Header, app info and extension data (UHD flags) are kept.
     /// </summary>

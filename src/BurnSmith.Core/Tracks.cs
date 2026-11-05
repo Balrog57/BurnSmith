@@ -134,10 +134,13 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// "one every N minutes", empty = no chapters).
 /// <see cref="Bonus"/>: an extra (trailer, making-of) that is not part of the main feature: it comes after the main videos on the disc, is left out of
 /// "Play" / "Play all", and is listed on the menu's Bonus page.
+/// <see cref="DefaultAudio"/> / <see cref="DefaultSubtitle"/> (an <see cref="AudioTrack.Index"/> / <see cref="SubtitleTrack.Index"/> among those kept): what
+/// plays and shows when the disc starts. Null: the first audio, no subtitles. The default audio goes first, so it is audio 1 everywhere (the menu's
+/// pages, a DVD's first stream, the first of a Blu-ray's list); the default subtitle is selected by the disc itself (<see cref="DefaultSubtitleNumber"/>).
 /// </summary>
 public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<int>? Audio = null, IReadOnlyList<int>? Subtitles = null,
                                double Start = 0, double? End = null, int Volume = 100, IReadOnlyList<double>? ChapterAt = null,
-                               IReadOnlyList<ExternalSubtitle>? External = null, bool Bonus = false)
+                               IReadOnlyList<ExternalSubtitle>? External = null, bool Bonus = false, int? DefaultAudio = null, int? DefaultSubtitle = null)
 {
     public string DisplayName => Name ?? Path.GetFileNameWithoutExtension(Video);
 
@@ -178,8 +181,16 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
         ChapterAt == null ? BluRay.Chapters(length, minutes)
         : ChapterAt.Select(t => Math.Round(t - Start)).Where(t => t > 0 && t < length - 1).Prepend(0).Distinct().Order().ToList();
 
-    public IReadOnlyList<AudioTrack> KeptAudio(SourceInfo s) =>
-        Audio == null ? s.Audio.Take(1).ToList() : Audio.Select(i => s.Audio.FirstOrDefault(a => a.Index == i)).OfType<AudioTrack>().ToList();
+    /// <summary>The audio tracks in disc order: the default one first, the others in the order kept.</summary>
+    public IReadOnlyList<AudioTrack> KeptAudio(SourceInfo s)
+    {
+        var kept = Audio == null ? s.Audio.Take(1).ToList() : Audio.Select(i => s.Audio.FirstOrDefault(a => a.Index == i)).OfType<AudioTrack>().ToList();
+        return kept.FindIndex(a => a.Index == DefaultAudio) is > 0 and var at ? [kept[at], .. kept.Where((_, i) => i != at)] : kept;
+    }
+
+    /// <summary>The default subtitle's number among the tracks that really went on the disc (1-based, as a player counts them); 0 = none shown.</summary>
+    public int DefaultSubtitleNumber(IReadOnlyList<SubtitleTrack> carried) =>
+        DefaultSubtitle is { } d ? carried.Select(t => t.Index).ToList().IndexOf(d) + 1 : 0;
 
     public IReadOnlyList<SubtitleTrack> KeptSubtitles(SourceInfo s) =>
         Subtitles == null ? [] : Subtitles.Select(i => s.Subtitles.FirstOrDefault(t => t.Index == i)).OfType<SubtitleTrack>().ToList();

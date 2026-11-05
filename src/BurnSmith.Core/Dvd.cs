@@ -31,7 +31,7 @@ public static class Dvd
     }
 
     /// <summary>One encoded title: the MPEG file, the audio and subtitle tracks that really are in it, its chapter times.</summary>
-    sealed record Movie(string Mpg, List<AudioTrack> Audio, List<SubtitleTrack> Subtitles, List<double> ChapterTimes);
+    sealed record Movie(string Mpg, List<AudioTrack> Audio, List<SubtitleTrack> Subtitles, List<double> ChapterTimes, int DefaultSubtitle);
 
     public static void Build(DvdJob job, Action<string>? log = null)
     {
@@ -144,7 +144,7 @@ public static class Dvd
                 log("subtitles dropped: " + e.Message.Split('\n')[0]);
             }
         }
-        return new Movie(movie, audio, carried, title.ChapterList(src.Duration, job.ChapterMinutes));
+        return new Movie(movie, audio, carried, title.ChapterList(src.Duration, job.ChapterMinutes), title.DefaultSubtitleNumber(carried));
     }
 
     /// <summary>One spumux pass that adds a subtitle stream per entry (cues drawn by <see cref="DvdSubtitles"/>).</summary>
@@ -306,8 +306,10 @@ public static class Dvd
         var states = settings.Select(id => Regex.Match(id, @"settings_(\d+)_(\d+)")).Select(m => (A: int.Parse(m.Groups[1].Value), S: int.Parse(m.Groups[2].Value), Id: m.Value)).ToList();
 
         // g1 = 1 while "play all" runs, g2 = chosen audio (1-based), g3 = chosen subtitle (0 = off); they select the settings page to show
+        // one compare per jump, on g6 = 64 * g2 + g3: dvdauthor compiles "if (g2 == A && g3 == S) jump menu N" (and the nested form) into a link that tests g2 only,
+        // so the page always showed the first subtitle choice whatever g3 was
         string Enter() => states.Count == 0 ? "" :
-            string.Concat(states.Select(s => $"if (g2 == {s.A} && g3 == {s.S}) jump menu {MenuNumber(s.Id)};")) + $" jump menu {MenuNumber(states[0].Id)};";
+            "g6 = g2; g6 *= 64; g6 += g3; " + string.Concat(states.Select(s => $"if (g6 == {64 * s.A + s.S}) jump menu {MenuNumber(s.Id)}; ")) + $"jump menu {MenuNumber(states[0].Id)};";
 
         string Command(MenuPage page, MenuButton b)
         {
@@ -352,6 +354,7 @@ public static class Dvd
         for (var i = 0; i < movies.Count; i++)
         {
             var pgc = new XElement("pgc", new XElement("vob", new XAttribute("file", movies[i].Mpg), new XAttribute("chapters", Chapters(movies[i]))));
+            if (menus.Count == 0 && first.DefaultSubtitle > 0) pgc.AddFirst(new XElement("pre", $"subtitle = {63 + first.DefaultSubtitle};")); // no menu to start it: the film does (stream numbers are 0-based, 64 = shown)
             if (menus.Count > 0)
                 pgc.Add(new XElement("post", (i < mainCount - 1 ? $"if (g1 == 1) jump title {i + 2}; " : "") + "call menu;")); // after an episode of "play all": the next one, never a bonus
             titles.Add(pgc);
@@ -359,7 +362,7 @@ public static class Dvd
         titleset.Add(titles);
 
         var vmgm = new XElement("vmgm");
-        if (menus.Count > 0) vmgm.Add(new XElement("fpc", "g1 = 0; g2 = 1; g3 = 0; g4 = 1024; g5 = 0; jump titleset 1 menu;"));
+        if (menus.Count > 0) vmgm.Add(new XElement("fpc", $"g1 = 0; g2 = 1; g3 = {first.DefaultSubtitle}; g4 = 1024; g5 = 0; {(first.DefaultSubtitle > 0 ? $"subtitle = {63 + first.DefaultSubtitle}; " : "")}jump titleset 1 menu;"));
         return new XDocument(new XElement("dvdauthor", new XAttribute("dest", dest), vmgm, titleset));
     }
 }

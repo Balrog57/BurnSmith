@@ -9,7 +9,7 @@ public static class MenuFiles
     /// With <paramref name="loopPlaylist"/> the xlet plays that playlist behind the pages; they are then transparent PNG overlays when
     /// <paramref name="overlay"/> (a moving menu), else opaque JPEGs as usual (the playlist only carries the menu music).
     /// </summary>
-    public static void WriteBdj(MenuDesign design, IReadOnlyList<MenuPage> pages, string dir, int loopPlaylist = 0, double scale = 1, PlaybackOptions? playback = null, int titles = 0, bool overlay = false)
+    public static void WriteBdj(MenuDesign design, IReadOnlyList<MenuPage> pages, string dir, int loopPlaylist = 0, double scale = 1, PlaybackOptions? playback = null, int titles = 0, bool overlay = false, int defaultSubtitle = 0)
     {
         Directory.CreateDirectory(dir);
         var ext = overlay ? "png" : "jpg";
@@ -18,6 +18,7 @@ public static class MenuFiles
         if (loopPlaylist > 0) txt.Append($"loop {loopPlaylist}\n");
         if (playback != null && titles > 0)
             txt.Append($"playback {(playback.StartAtFirstTitle ? "first" : "menu")} {(playback.PlayAll ? 1 : 0)} {(playback.Rewind ? 1 : 0)} {BluRay.MoviePlaylist} {titles}\n");
+        if (defaultSubtitle > 0) txt.Append($"defaults 1 {defaultSubtitle}\n"); // the audio is always the first (the default one goes first), the subtitle starts as chosen
         var images = MenuRenderer.Sta(() =>
         {
             var list = new List<(string Name, byte[] Data)>();
