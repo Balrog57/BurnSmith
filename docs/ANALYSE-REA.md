@@ -277,3 +277,106 @@ C'est le modèle IG complet : un menu = un clip de fond + de l'audio + des bouto
 - Nouveau `MenuRenderer.Size` (taille d'une image, null si illisible) ; `check-highlights --out DOSSIER` écrit les deux images de page telles que spumux les recevra.
 
 **Épreuves** : `check-highlights` 8/8 ; `sel_scenes1.png` montre désormais un petit marqueur à chaque bouton (531 octets) au lieu des blocs précédents (628 octets, même page) ; un DVD construit avec `01movie` passe spumux et dvdauthor (« disc structure checked: no problem ») ; `check-elements` 14/14.
+## 12. DVDFab : le modèle de menu du créateur Blu-ray, en clair dans l'exe (2026-11-05)
+
+`DVDFab64.exe` (93 Mo) n'est pas décompilable par le pont REA (délai), mais il contient son **modèle de données QML en clair**, et cela suffit à documenter la création de menu. Trois relevés, faits par recherche d'octets et extraction des chaînes voisines :
+
+### 12.1 Les énumérations du créateur (`BDCQmlNS`, à 0x3B70296)
+
+```
+SceneType.RootMenu, ThumbnailScene, PlaylistScene, SetupMenu, AudioSetupMenu, SubtitleSetupMenu
+CreatorItemType.Item_Video, Item_Button, Item_Picture, Item_Text, Item_Playlist,
+                Item_TSceneTitle, Item_SetupAudio, Item_SetupSubtitles, Item_TextButton
+ButtonType2.Button2_None, Button2_Play, Button2_Scene, Button2_Setup, Button2_AudioSetup,
+            Button2_SubtitleSetup, Button2_Left, Button2_Right, Button2_Home, Button2_Back
+ECreatorTempType.StaticBacKground_StaticThumbnail, StaticBacKground_DynamicThumbnail, DynamicBacKground_StaticThumbnail
+ECreatorButtonType.TextButton, ImageButton
+EButtonSelectedHighlightType.DrawBox, DrawUnderline, ChangeTextColor
+EBacKgroundType.Default_StaticBacKground, Default_DynamicBacKground, Custom_StaticBacKground, Custom_DynamicBacKground, Crop_DynamicBacKground
+```
+
+C'est le modèle complet : **six sortes de pages** (racine, scènes en vignettes, scènes en liste de lecture, réglages, réglages audio, réglages sous-titres), **neuf sortes d'éléments**, **dix rôles de bouton** (les mêmes que `buttontype` dans `template.bd.xml`), **trois genres de modèle** (fond fixe + vignettes fixes, fond fixe + vignettes animées, fond animé + vignettes fixes), **deux genres de bouton**, **trois styles de surbrillance** (cadre, soulignement, changement de couleur du texte) et **cinq genres de fond**.
+
+Deux enseignements qui manquaient : DVDFab propose **des vignettes animées** (un extrait qui tourne dans la case de la scène) et **trois styles de surbrillance** réglables. BurnSmith n'a ni l'un ni l'autre (voir §15).
+
+### 12.2 Le schéma `template.bd.xml`, tel que le lit le programme (125 attributs QML)
+
+Le créateur charge ses modèles par du QML (`author/BDAuthor.qml` dans l'exe) et les décrit avec des liaisons `<xmlattr>`. Les noms relevés dans tout l'exe donnent le vocabulaire exact du fichier :
+
+- en-tête : `template_version`, `templatetype` (cf. `ECreatorTempType`), `template_category`, `templatename`, `templateid`, `parentid`, `template_is_for_bd`, `template_is_for_uhd`, `buttontype`, `font`, `font_size`, `font_color`, `font_bold`, `font_italic`, `font_underline`, `list_hover_bg_color`, `list_hover_fg_color`, `pscene_list_hover_bg_image`, `selected_default_style_color`, `selected_custom_style_color`, `bdmv` ;
+- images de bouton : `playbuttontimage`, `scenebuttontimage`, `setupbuttontimage`, `leftbuttontimage`, `homebuttontimage`, `rightbuttontimage`, `frame`, `mask`, `selection` ;
+- pages : `rootmenu`, `scenes`, `setup`, `pscenes`, `tscenes`, `videoes`, `video_frame`, `description_frame`, `pics`, `texts`, `buttons`, `extra_pics`, `extra_texts`, `specialvideo`, `nomenu` ;
+- géométrie et style : `rect`, `frame_rect`, `move`, `remove`, `count`, `top`, `left`, `bottom`, `right`, `up_id`, `down_id`, `left_id`, `right_id`, `item_height`, `line_height`, `arrow_mode`, `alignment`, `horizontal_alignment`, `vertical_alignment`, `wrap`, `stroke_color`, `stroke_width`, `radius`, `pscenes_picture_radius`, `hover`, `normal`, `select`, `highlight`, `mode`, `type`, `image`, `text`, `tr_lang`, `mul_scene_op`, `videoCount`, `video_count`, `pic_num`, `bg_playlist`, `playing_time`…
+- conditions : `enable_when_output_res` (un élément ne s'affiche qu'à une résolution donnée), `cite`, `as` (liaison QML), `state`, `valid`, `normal_valid`.
+
+### 12.3 Où le programme range ses propres fichiers
+
+`AuthorData.xml` (menu engendré), `author/templates` (DVD), `author/bdtemplates` (Blu-ray, plus `/nomenu/background.png`), `author/BDAuthor.qml`, et `MenuTemplate` (modèles téléchargés). La chaîne `No menu.` et `bd-fulldisk:` accompagne les disques sans menu.
+
+### 12.4 Le menu BD-J : registres et types de bouton (jar décompilé, suite du §11)
+
+Lecture complète des classes de menu ; ce qui manquait au §11 :
+
+| Élément | Valeur observée |
+|---|---|
+| **Types de bouton** (attribut `type`) | **0** = lire tous les titres · **1** = aller aux scènes · **2** = aller aux réglages · **3** = menu audio · **4** = menu sous-titres · **5** = menu principal · **6** = lire la playlist `playlist` |
+| **GPR100** | numéro de reprise ; lu au démarrage, `64176` = pas de reprise ; écrit par un bouton « lire » avec `playlist + 1` |
+| **GPR108** | dernier bouton choisi (« last video stream » dans le code), relu au retour au menu |
+| **GPR16 / GPR17** | dernière piste audio / dernier sous-titre choisis |
+| **GPR15** | drapeau « choix audio initialisé » (0 = pas encore) |
+| **PSR4** | numéro du titre courant (menu « tout en un » qui liste les titres) |
+| **Mode de lecture** | `play_mode` 1 = jouer le titre choisi seul, sinon jouer depuis le titre choisi jusqu'à la fin (`playlist_count - n` éléments) |
+| **Aperçu** | `preview` ≠ 0 : les boutons « lire » sont désactivés (`m.g`) |
+| **Pages de scènes** | deux modes : `mode=0` = une page `g_0` classique, `mode=1` = page en **liste** (classe `o`, qui lit un nœud `infos` avec, par `info`, `video_id` et `image`), c'est le `PlaylistScene` du §12.1 |
+| **Réglages** | nœuds `audios` et `subtitles` avec `top/left/bottom/right` par colonne, `selection_margin_left`, panneaux `au_panel_n` / `su_panel_n` |
+
+Le comportement « reprise » est donc : un bouton de lecture écrit GPR100 = playlist+1 et GPR108 = son rang ; au retour, `MenuTo` relit GPR100, choisit l'opération 1 (menu) et `p.a(n)` réaffiche le menu avec le bouton mémorisé.
+
+## 13. Yuhan : le schéma complet des thèmes, déchiffré sur les 30 (2026-11-05)
+
+La clé AES de `BlurayDVDCreator.exe` (32 octets à l'octet de fichier **0x192420** : clé 16 octets puis IV 16 octets) ouvre les 30 `PresetMenu\THEMExx\config.dat`. Le clair commence par une longueur 16 bits petit-boutiste, puis le XML. Chaque fichier porte **quatre branches** `TemplateBranch` (768x576, 1280x720, 1920x1080, 3840x2160).
+
+**Vocabulaire relevé sur les 30 thèmes** — nœuds : `MenuTemplate`, `TemplateBranch`, `Color`, `Menu`, `Scene`, `Setup`, `Background`, `Frame`, `ThumbFrame`, `Thumb`, `Thumb0..9`, `Frame0..9`, `TitleText`, `PlayText`, `ScenesText`, `SetupText`, `BonusText`, `SetupAudioText`, `SetupSubtitleText`, `ListTypeText`, `ItemText0..9`, `LangItemText`, `ASLangTitleText`, `ThumbText0..9`, `ButtonNext`, `ButtonPre`, `Return` — attributs : `Name`, `Type`, `Resolution`, `FileName`, `Left`, `Top`, `Width`, `Height`, `Alignment`, `Color`, `Size`, `Bold`, `Italic`, `Underline`, `Hover`, `Select`, `encoding`, `version`.
+
+**Ce que chaque thème porte réellement** (compté sur les 30) :
+
+| Élément | Constat |
+|---|---|
+| `BonusText` | **les 30 thèmes** ont une page Bonus (bouton et libellé) |
+| `ListTypeText` + `ItemText0..9` | **les 30** ont le mode **liste** (10 lignes), en plus des vignettes |
+| `ThumbFrame` / `Thumb` / `ThumbText` | 3 à 10 vignettes par page selon le thème (12 à 39 `FrameN` comptés sur les quatre branches) |
+| `SetupAudioText`, `SetupSubtitleText`, `ASLangTitleText` | page de réglages décrite (deux colonnes + titre de langue) |
+| `Color` (`Text`, `Frame`, `Button` avec `Hover` et `Select`) | trois jeux de couleurs par thème, deux états chacun |
+| `ButtonNext`, `ButtonPre`, `Return` | images des boutons de navigation, avec leurs rectangles |
+
+C'est un schéma **plus riche que ce que BurnSmith dessine** pour ces thèmes : voir §15.
+
+## 14. Leawo : structure des modèles et où vit la mise en page
+
+Chaînes de `Leawo Prof. Media.exe` :
+
+```
+%1MenuTemplate/%2/%3/%4/%5/%6        %1MenuTemplate/%2/%3/%4/Menu        %1MenuTemplate/%2/%3/%4/Scene
+/Template.xml                        /DownloadTemplate.xml               "Template.xml" not found.
+%1/spumux_%2.xml                     ?setHighLightImageList@DVDMenuMgr@@  ?setSelectedImageList@DVDMenuMgr@@
+```
+
+Donc : un modèle = `MenuTemplate\<Type>\<Aspect>\<Thème>\{Menu,Scene}` plus un `Template.xml` (celui des 4 dossiers qui en ont un) ; le téléchargement écrit `DownloadTemplate.xml`. Le nommage `spumux_%2.xml` est **le même que chez Yuhan** (§6) : la lignée est la même.
+
+`panda.dll` porte `[BDJNeutral] firstplay_type=%d topmenu_type=%d jars=%d unsigned_jars=%d` et `[BDJNeutral] neutralization complete: FirstPlay/TopMenu -> HDMV obj0 -> PlayPL(%05d)` : Leawo **neutralise** les disques Blu-ray à menu BD-J en réécrivant le premier lancement et le menu principal vers un objet HDMV et une playlist. C'est une fonction de conversion de disque (BDFix), pas de création ; elle reste hors périmètre.
+
+## 15. Écarts établis entre les trois suites et BurnSmith (à reproduire)
+
+| Fonction, prouvée par la décompilation | BurnSmith | Où c'est prouvé |
+|---|---|---|
+| Vignettes **animées** dans la page de scènes | non | `ECreatorTempType…DynamicThumbnail`, `videoCount` |
+| Page de scènes en **liste** (10 lignes + description) | non | `ListTypeText`/`ItemText0..9` (30 thèmes Yuhan), `PlaylistScene`, classe `o` du jar |
+| **Page Bonus** décrite par le modèle | partielle (BurnSmith dessine la sienne) | `BonusText` sur les 30 thèmes |
+| **3 styles de surbrillance** (cadre, soulignement, changement de couleur) | un seul (cadre d'accent) | `EButtonSelectedHighlightType` |
+| Bouton **« choisir la langue »** de la page de réglages | partiel | `LangItemText`, `ASLangTitleText` |
+| **Reprise au dernier bouton** | non | GPR100/GPR108, `MenuTo` |
+| **Modes de menu** 0 / 1 / 2 | partiel | `menu_mode`, classes `g_0`, `i_0`, `y_0` |
+| Vignettes du modèle **au-delà de 3** (4 à 10) | non | `Frame3..Frame9`, `Thumb3..Thumb9` |
+| Images de survol **et** de sélection par bouton | fait (commit `01ceddf`) | `selection/0.png`, `setSelectedImageList` |
+
+Rien n'a été reproduit dans ce passage : cette note est le cahier des charges. Les artefacts de travail (sources Java décompilées, XML de thème, CFR) sont dans `analysis\`, hors dépôt.
