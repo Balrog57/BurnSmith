@@ -1,6 +1,6 @@
 # Third-party software and code
 
-BurnSmith is free software under the GNU General Public License v3 or later (see `LICENSE`).
+BurnSmith is free software under the GNU General Public License v3 or later (see `../LICENSE`).
 
 ## Programs carried by the released `BurnSmith.exe`
 

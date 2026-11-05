@@ -1,6 +1,6 @@
 # Menus Blu-ray natifs HDMV (Interactive Graphics)
 
-Port en C# de **bdmvkit** (kajisho5, LGPL-3.0-or-later, v0.7.0, commit 5789076 ; voir `THIRD-PARTY-NOTICES.md`) : un menu Blu-ray qui n'est **pas** du BD-J (non signé, risqué sur les lecteurs de salon) mais un flux *Interactive Graphics* lu par tout lecteur Blu-ray, avec ses commandes de navigation (HDMV). Phase 3 de `FEUILLE-DE-ROUTE-BLURAY.md`.
+Port en C# de **bdmvkit** (kajisho5, LGPL-3.0-or-later, v0.7.0, commit 5789076 ; voir `docs/THIRD-PARTY-NOTICES.md`) : un menu Blu-ray qui n'est **pas** du BD-J (non signé, risqué sur les lecteurs de salon) mais un flux *Interactive Graphics* lu par tout lecteur Blu-ray, avec ses commandes de navigation (HDMV). Phase 3 de `docs/FEUILLE-DE-ROUTE-BLURAY.md`.
 
 **Rien n'est branché** dans `BluRay.cs`, `MenuFiles.cs`, `Program.cs` ni l'application WPF : ce dossier est une bibliothèque, `src/BurnSmith.HdmvCheck` son programme de vérification.
 
@@ -43,7 +43,7 @@ Actions de bouton : `PlayTitle(n)`, `PlayChapter(n, c)` (le film joue depuis le 
 
 Toutes dans `IgOptions` (`HdmvMenuSet.Ig`) et `HdmvMenuSet.PlaylistUoMask`. Pour retrouver **exactement** la sortie de bdmvkit (c'est ce que fait le mode `disc` de `HdmvCheck`) il faut les trois réglages : `Ig = IgOptions.BdmvkitCompatible` (segments non datés, masque de page 0, son quantificateur), `PlaylistUoMask = UoMask.None` et `Fast = true` (x264 `ultrafast`, comme le clip joué de bdmvkit ; sans cela le PTS de départ du clip diffère : 1,4835 s au lieu de 1,4 s).
 
-« Disque de référence » ci-dessous = `BR_LBAMVFVOST.iso` (« La boîte à musique (Fans Edition) »), un disque Blu-ray **d'amateur**, HDMV pur, décodé ici (section 4 de `FEUILLE-DE-ROUTE-BLURAY.md`) ; ce n'est ni un disque commercial ni un disque DVDFab, et sa lecture sur lecteur de salon n'est pas établie.
+« Disque de référence » ci-dessous = `BR_LBAMVFVOST.iso` (« La boîte à musique (Fans Edition) »), un disque Blu-ray **d'amateur**, HDMV pur, décodé ici (section 4 de `docs/FEUILLE-DE-ROUTE-BLURAY.md`) ; ce n'est ni un disque commercial ni un disque DVDFab, et sa lecture sur lecteur de salon n'est pas établie.
 
 | Option | Défaut | bdmvkit | Pourquoi |
 |---|---|---|---|

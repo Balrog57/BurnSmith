@@ -2,12 +2,12 @@ using System.Text.Json;
 
 namespace BurnSmith.Core.Menu;
 
-/// <summary>User templates: one JSON file per <see cref="MenuDesign"/> in %APPDATA%\BurnSmith\templates.</summary>
+/// <summary>User templates: one JSON file per <see cref="MenuDesign"/> in Documents\BurnSmith\Templates\mine (earlier versions: %APPDATA%\BurnSmith\templates, copied over once).</summary>
 public static class Templates
 {
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
-    public static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BurnSmith", "templates");
+    public static string Dir { get; } = AppFiles.UserFolder("mine", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BurnSmith", "templates"));
 
     public static List<MenuDesign> List() =>
         !Directory.Exists(Dir) ? [] : Directory.EnumerateFiles(Dir, "*.json").Order()

@@ -86,15 +86,32 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        design.PlayLabel = "Lecture"; design.ScenesLabel = "Scènes"; design.HomeLabel = "Accueil"; design.ChapterLabel = "Chapitre";
-        design.PlayAllLabel = "Tout lire"; design.EpisodesLabel = "Épisodes"; design.SettingsLabel = "Réglages"; design.AudioLabel = "Audio";
-        design.SubtitlesLabel = "Sous-titres"; design.OffLabel = "Désactivés"; design.BackLabel = "Retour";
+        FrenchLabels();
         MenuName.Text = design.Name;
         TitleList.ItemsSource = titles;
         SetKind("bd");
         RefreshDrives();
         Activated += (_, _) => RefreshDrives(); // a burner plugged in meanwhile shows up when the user comes back
         AfterTitlesChanged();
+    }
+
+    void FrenchLabels()
+    {
+        design.PlayLabel = "Lecture"; design.ScenesLabel = "Scènes"; design.HomeLabel = "Accueil"; design.ChapterLabel = "Chapitre";
+        design.PlayAllLabel = "Tout lire"; design.EpisodesLabel = "Épisodes"; design.SettingsLabel = "Réglages"; design.AudioLabel = "Audio";
+        design.SubtitlesLabel = "Sous-titres"; design.OffLabel = "Désactivés"; design.BackLabel = "Retour";
+    }
+
+    /// <summary>For the off-screen snapshot (<c>design=NAME</c>): the project starts from this template instead of the default one.</summary>
+    public void UseDesign(MenuDesign d)
+    {
+        var title = design.Title; // the disc's name already taken from the videos
+        design = d.Clone();
+        design.Title = title;
+        FrenchLabels();
+        MenuName.Text = design.Name;
+        ProjectTitle.Text = titles.Count == 0 ? "Aucune source" : design.Title;
+        RefreshThumb();
     }
 
     /// <summary>Asks Windows (IMAPI2) for the burners off the UI thread: the first call can wait for a drive to spin up.</summary>

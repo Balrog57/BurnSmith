@@ -26,19 +26,19 @@ public static class Tools
     static readonly object bundledLock = new();
 
     /// <summary>The zip's contents unpacked under <see cref="AppFiles"/> (a few seconds on the first run of a build); null when this exe carries none.</summary>
-    static string? UnpackZip(string name, Func<Stream?>? open)
+    static string? UnpackZip(string name, Func<Stream?>? open, bool inLibrary = false)
     {
         if (open == null) return null;
         using var stream = open();
         if (stream == null) return null;
-        return AppFiles.Unpack(name, dir => System.IO.Compression.ZipFile.ExtractToDirectory(stream, dir));
+        return AppFiles.Unpack(name, dir => System.IO.Compression.ZipFile.ExtractToDirectory(stream, dir), inLibrary);
     }
 
     /// <summary>ffmpeg, ffprobe and tsMuxeR carried by the exe, unpacked to <c>BurnSmith-data\tools</c>; null when this exe carries none.</summary>
     public static string? BundledDir() { lock (bundledLock) return bundledDir ??= UnpackZip("tools", Payload); }
 
-    /// <summary>The DVDFab / Leawo template folders carried by the exe, unpacked to <c>BurnSmith-data\templates</c>; null when this exe carries none.</summary>
-    public static string? TemplatesDir() { lock (bundledLock) return templatesDir ??= UnpackZip("templates", TemplatePayload); }
+    /// <summary>The DVDFab / Leawo / Yuhan template folders carried by the exe, unpacked to <c>Documents\BurnSmith\Templates\carried</c>; null when this exe carries none.</summary>
+    public static string? TemplatesDir() { lock (bundledLock) return templatesDir ??= UnpackZip("carried", TemplatePayload, true); }
 
     public static string Find(string exe)
     {

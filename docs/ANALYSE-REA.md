@@ -200,3 +200,71 @@ Relevé des en-têtes PNG du modèle `templates\01movie` :
 | `mask/0.normal.png` | 720 × 480 | RGBA | masque de page entier ; `mask/0.mask.png` en est la version 1 bit |
 
 Conséquence, et c'est le point qui compte : les fichiers du modèle sont **par bouton**, alors que le `highlight` / `select` de spumux est **par page**. La composition est donc : un canevas de la taille de la page DVD (720 × 480 ou 720 × 576), chaque `.sub.png` collé à l'emplacement de son bouton (mis à l'échelle du rectangle), puis quantification en quatre couleurs ; le `select` se compose de la même façon avec le marqueur `selection/0.png` (ou le même cadre dans la couleur d'accent). C'est bien la structure que `FUN_180015840` écrit : une paire d'images par page, puis un `<button>` par bouton avec son rectangle et ses voisins.
+## 11. Décompilation du menu : DVDFab (BD-J), Leawo (DVD et Blu-ray), Yuhan (2026-11-05, second passage)
+
+Objectif de ce passage : aller au bout de la **création de menu et des templates** des trois suites, et non plus seulement de la navigation.
+
+### 11.1 DVDFab : le menu est une application BD-J signée, lue en entier
+
+`App\DVDFab13\BDMV\` porte `00000.jar` (75 025 octets, signé `SIG-BD00`) et `BDJO\00000.bdjo` qui désigne `org.homebrew.MenuTo`. Le jar contient **57 classes**, décompilées en Java lisible avec **CFR 0.152** (téléchargé depuis Maven Central : `org/benf/cfr/0.152`, exécuté hors ligne, `java -jar cfr.jar 00000.jar`). Les noms sont obfusqués (`g_0`, `i_0`, `n_0`, `p`, `w`, `o_0`…), les chaînes et la structure non.
+
+**`AuthorData.xml`** (chemin `r.a + "AuthorData.xml"`, classe `m`) est le **format de projet du menu**. Racine :
+
+| Clé | Sens |
+|---|---|
+| `playlist_count` | nombre de listes de lecture (films) |
+| `loop_play` | lecture en boucle |
+| `no_menu` | disque sans menu |
+| `scence_capacity` | nombre de vignettes de scènes par page (orthographe du fichier) |
+| `preview` | aperçu du film sur le menu principal |
+| `play_mode` | mode de lecture |
+| `resolution_x`, `resolution_y` | 1920 × 1080, ou 1280 × 720 |
+| `menu_mode` | **0** = menus `root` et `scene` séparés ; **1** = un seul menu `root` « tout en un » ; **2** = un seul élément `scene` qui sert des deux (il doit y en avoir exactement un) |
+
+Enfants : `root`, `scene`, `setup`. Le lecteur de XML (`ac`/`ad`) est un simple arbre balise → attributs/enfants.
+
+**Menu `root`** (classe `G`, décompilée `g_0`) : `bg_image` (image pleine page), puis des enfants `button` et `video` :
+
+- `button` : `id`, `type`, `highlight` (chemin de l'image de survol du bouton), rectangle par `left`, `top`, `right`, `bottom`, voisins `up_id`, `down_id`, `left_id`, `right_id` ;
+- `video` : `id`, `highlight`, rectangle, voisins, et **`playlist`** (le bouton lance directement une liste de lecture) ; son `type` vaut 6 ;
+- dessin : `g.a(bg_image, 0, 0, resolution_x, resolution_y)` pour le fond, puis chaque bouton dessine **sa propre image `highlight`** dans son rectangle ; la sélection passe par l'identifiant, la navigation par les quatre `*_id`.
+
+**Menu `setup`** (classe `n_0`) : `item_height`, `lang_code`, `name`, `normal`, `highlight`, `selection_margin_left`, rectangles et `id` — donc une liste de langues (audio / sous-titres) avec une hauteur de ligne et une marge de marqueur, exactement ce que BurnSmith dessine aujourd'hui à la main.
+
+**Menu « tout en un »** (classe `i_0`) : `bg_image`, `arrow_mode`, `description`, `item_height`, `mode`, `playlist`, `normal`, `highlight`.
+
+**Entrée de l'application** (`MenuTo`) : `initXlet` lit **GPR100**, le remet à 0, et en tire une opération (`64176` → 0, sinon 1) ; `startXlet` lance d'abord la **liste de lecture 99** (le clip de fond du menu) sauf si `no_menu`, puis applique l'opération : **1** = afficher le menu (et, si un second registre n'est pas nul, reprendre au bouton qu'il désigne), **0** = lire les listes 0 à `playlist_count-1` à la suite, **2** = lire le titre courant d'après le numéro de titre BD-J. C'est le mécanisme de **reprise au dernier bouton** et de **lecture enchaînée** de DVDFab, et il tient dans les registres, pas dans le disque.
+
+### 11.2 Leawo, DVD : `DVDMenuMgr`, 161 symboles décorés
+
+`DVDMaker.dll` expose les noms C++ non obfusqués de sa classe de menu (relevés par expression régulière sur les symboles `?méthode@DVDMenuMgr@@…`, 460 symboles décorés au total). Ce que la classe **reçoit** décrit le menu :
+
+`setBackgroundList`, `setHighLightImageList`, **`setSelectedImageList`**, **`setRectList`**, **`setIDList`**, **`setItemsPerPage`**, `setXmlList`, `setMenuDisabled`, `setLoopPlay`, `setHasMusic`, `setHasVideo`, `setFadeIn`, `setFadeOut`, `setMusicPath`, `setMusicLength`, `setImageVolume`, `setDvdAspect`, `setDvdStandard`, `setFrameRaite`, `setDvdAudioCodec`, `setDiscVolume`, `setMpegFileCaption`.
+
+Ce qu'elle **fait** ensuite : `generateXml` (script dvdauthor) → `Img2m2v` / `Video2Mpg` / `mplex` → **`spumux`** → **`dvdAuthor`**, puis gravure par `ImgBurn`, `StarBurn`, `growisofs` ou `VSO` (`CreateIso`, `CheckDiscType`, `ComputeCappedBurnSpeed`…).
+
+Deux conséquences, et elles répondent à une question restée ouverte :
+
+1. Leawo a **deux listes d'images** : `highLight` (survol) et `selected` (choisi). C'est la paire que `spumux` attend (`highlight` / `select`) — le même schéma que Yuhan (§6) et que BurnSmith.
+2. **La mise en page n'est pas dans la DLL** : elle arrive sous forme de `setRectList` + `setIDList` + `setItemsPerPage`. Les 27 thèmes sans `template.xml` n'ont donc pas de table de positions cachée dans un binaire : c'est le programme principal de Leawo qui la calcule à partir des images — exactement ce que fait BurnSmith en mesurant l'ouverture transparente des cadres. La recherche d'une table perdue est close.
+
+Les fonctions `setDVDCinava*` (filigrane Cinavia) existent bien ; elles restent hors périmètre, comme convenu.
+
+### 11.3 Leawo, Blu-ray : `BDFix.dll`, l'API de menu en clair
+
+`CBDMenu` : `width`, `height`, `frameRate`, `videoFile` (clip de fond), `audioFiles`, `addButton`, `createButton`, `button`, `buttonCount`. `CBDButton` : **`selectedImage`**, **`activatedImage`**, `buttonHeader`, `addCommand`, `command`, `commandCount`. `CBDMixInfo` : `addMenu`, `addVideo`, `createMenu`, `createBDMovie`, `menuCount`, `videoCount`, `videoMarks`, `setDVD2BD`, `setUHD`, `dispositionIndex`, `metaObject`, `errorMessage`, `onProgress`.
+
+C'est le modèle IG complet : un menu = un clip de fond + de l'audio + des boutons, chaque bouton portant **deux états d'image** et sa liste de commandes.
+
+### 11.4 Ce que cela change pour la reproduction
+
+| Élément des trois suites | BurnSmith aujourd'hui | Écart réel |
+|---|---|---|
+| Fond de menu + image de survol **par bouton** | oui (DVD et BD-J) | — |
+| Deux états d'image (survol / choisi) | DVD : survol du modèle, « choisi » = silhouette blanche ; BD-J : une seule image | **écart** : l'état « choisi » n'utilise pas `selection/0.png` |
+| Rectangles + voisins par bouton | oui | — |
+| Menu de réglages par listes (langues, hauteur de ligne, marge) | oui (DVDFab `audiolist`) | — |
+| Reprise au dernier bouton | non | **écart** (DVDFab : registre ; Yuhan/HDMV : `SET_BUTTON_PAGE`) |
+| Liste de lecture 99 comme fond de menu | non (BurnSmith brûle un clip par page) | écart de conception, sans gain visible |
+| Modes de menu 0/1/2 (`root` + `scene`, tout-en-un, scène en racine) | partiellement (« Streaming ») | écart d'ergonomie |
+| Pipeline DVD `spumux` + `dvdauthor` | oui, à l'identique | — |

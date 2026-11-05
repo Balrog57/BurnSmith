@@ -199,6 +199,21 @@ if (a.Count >= 1 && a[0] == "check-elements")
     return elFailed == 0 ? 0 : 1;
 }
 
+// burnsmith check-update [--live] : which release tags count as newer (a same version never does); --live also asks GitHub for the newest release
+if (a.Count >= 1 && a[0] == "check-update")
+{
+    var upFailed = 0;
+    void Up(string what, bool ok) { if (!ok) upFailed++; Console.WriteLine($"{(ok ? "ok  " : "FAIL")} {what}"); }
+    Up("0.1.0 is not newer than 0.1.0.0", !Updater.IsNewer("v0.1.0", new Version(0, 1, 0, 0)));
+    Up("0.1.1 is newer than 0.1.0.0", Updater.IsNewer("v0.1.1", new Version(0, 1, 0, 0)));
+    Up("0.2 is newer than 0.1.9", Updater.IsNewer("0.2", new Version(0, 1, 9)));
+    Up("a tag that is no version is ignored", !Updater.IsNewer("nightly", new Version(0, 1, 0)));
+    Up("a dev build is not installed", !Updater.IsInstalled());
+    if (a.Contains("--live"))
+        Console.WriteLine(await Updater.LatestAsync(new Version(0, 0, 0)) is { } r ? $"newest release: {r.Version} {r.Url} sha256={r.Sha256 ?? "(none given)"}" : "no release with a BurnSmith-Setup asset yet");
+    return upFailed == 0 ? 0 : 1;
+}
+
 // burnsmith check-edit : the arithmetic of a cut (length, chapters shifted by the start, typed times) without any video
 if (a.Count >= 1 && a[0] == "check-edit")
 {

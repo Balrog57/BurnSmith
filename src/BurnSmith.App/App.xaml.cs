@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -9,7 +10,7 @@ public partial class App : Application
 {
     /// <summary>
     /// burnsmith.exe [video]                      opens the window, optionally with a video already loaded
-    /// burnsmith.exe [video] --snapshot out.png [editor[=template name]] [scroll[=pixels]] | [advanced] | [edit] [focus]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; or the advanced settings; or the video edit)
+    /// burnsmith.exe [video] --snapshot out.png [design=template name] [editor[=template name]] [scroll[=pixels]] | [advanced] | [edit] [focus]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; or the advanced settings; or the video edit)
     ///                                            off screen to a PNG and exits; lets the UI be checked without touching the desktop
     /// </summary>
     protected override async void OnStartup(StartupEventArgs e)
@@ -26,8 +27,10 @@ public partial class App : Application
         static void OffScreen(Window w) { w.WindowStartupLocation = WindowStartupLocation.Manual; w.Left = -20000; w.ShowInTaskbar = false; }
         if (snapshot) OffScreen(main); // never flashes on the desktop
         main.Show();
+        if (!snapshot && BurnSmith.Core.Updater.IsInstalled()) _ = CheckForUpdate(main); // while the videos load; never in a portable or development copy
         foreach (var video in videos) await main.LoadSource(video);
         if (!snapshot) return;
+        if (e.Args.FirstOrDefault(a => a.StartsWith("design=")) is { } design && TemplateCatalog.Find(design[7..]) is { } start) main.UseDesign(start);
 
         Window window = main;
         if (e.Args.FirstOrDefault(a => a == "editor" || a.StartsWith("editor=")) is { } editor)
@@ -53,5 +56,29 @@ public partial class App : Application
         png.Frames.Add(BitmapFrame.Create(bmp));
         using (var f = File.Create(e.Args[snap + 1])) png.Save(f);
         Shutdown();
+    }
+
+    /// <summary>Once per start of an installed copy: offers the newest GitHub release. Offline or up to date, it says nothing.</summary>
+    static async Task CheckForUpdate(Window owner)
+    {
+        var current = typeof(App).Assembly.GetName().Version ?? new Version(0, 0);
+        BurnSmith.Core.Updater.Release? release;
+        try { release = await BurnSmith.Core.Updater.LatestAsync(current); }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { return; }
+        if (release == null || MessageBox.Show(owner,
+                $"BurnSmith {release.Version.ToString(3)} est disponible (vous avez la {current.ToString(3)}).\n\nLa télécharger et l'installer maintenant ? BurnSmith se ferme pendant l'installation puis redémarre.",
+                "Mise à jour", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes) return;
+        var title = owner.Title;
+        try
+        {
+            var setup = await BurnSmith.Core.Updater.DownloadAsync(release, new Progress<double>(p => owner.Title = $"Téléchargement de la mise à jour… {p:P0}"));
+            BurnSmith.Core.Updater.Install(setup); // Windows asks for administrator rights here
+            Current.Shutdown();
+        }
+        catch (Exception e)
+        {
+            owner.Title = title;
+            MessageBox.Show(owner, $"La mise à jour n'a pas pu être installée : {e.Message}", "Mise à jour", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 }

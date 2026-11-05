@@ -13,7 +13,8 @@ public static class ElementLibrary
     public const string Shipped = "DVDStyler", Mine = "Mes images";
     static readonly string[] Extensions = [".jpg", ".jpeg", ".png", ".bmp"];
 
-    public static string UserDir => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BurnSmith", "library", "backgrounds");
+    /// <summary>The user's own pictures: Documents\BurnSmith\Templates\images (earlier versions: %APPDATA%\BurnSmith\library\backgrounds, copied over once).</summary>
+    public static string UserDir { get; } = AppFiles.UserFolder("images", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BurnSmith", "library", "backgrounds"));
 
     static bool IsPicture(string file) => Extensions.Contains(System.IO.Path.GetExtension(file), StringComparer.OrdinalIgnoreCase);
 

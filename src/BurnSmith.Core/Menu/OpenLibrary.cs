@@ -2,7 +2,7 @@ namespace BurnSmith.Core.Menu;
 
 /// <summary>
 /// Open-source menu files that travel inside the exe (DVDStyler's templates and backgrounds, GPL, with their notices).
-/// They are unpacked once per build to BurnSmith-data\open (see <see cref="AppFiles"/>) so that image readers and the template reader get plain files.
+/// They are unpacked once per build to Documents\BurnSmith\Templates\open (see <see cref="AppFiles"/>) so that image readers and the template reader get plain files.
 /// </summary>
 public static class OpenLibrary
 {
@@ -28,7 +28,7 @@ public static class OpenLibrary
                     using var to = File.Create(file);
                     from.CopyTo(to);
                 }
-            });
+            }, inLibrary: true);
         }
     }
 }
