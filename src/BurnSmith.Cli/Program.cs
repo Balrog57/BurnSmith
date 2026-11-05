@@ -302,6 +302,32 @@ if (a.Count >= 1 && a[0] == "check-elements")
               listPage.Buttons.Count(b => b.Id.StartsWith("e")) == 10 && grid.Buttons.Count(b => b.Id.StartsWith("e")) < 10
               && listPage.Buttons.Where(b => b.Id.StartsWith("e")).Select(b => b.Rect.X).Distinct().Count() == 1);
     }
+
+    // a picture for one kind of page (the scenes pages): those are drawn from it, the root page keeps the design's own background; copies and saved models keep it
+    var pbPng = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "burnsmith-pagebg.png"));
+    var pbPx = new byte[16 * 9 * 4];
+    for (var i = 0; i < pbPx.Length; i += 4) { pbPx[i + 2] = 255; pbPx[i + 3] = 255; } // opaque red (BGRA)
+    var pbEnc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+    pbEnc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(System.Windows.Media.Imaging.BitmapSource.Create(16, 9, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null, pbPx, 64)));
+    using (var pbFile = File.Create(pbPng)) pbEnc.Save(pbFile);
+    var pbDesign = new MenuDesign();
+    pbDesign.PageBackgrounds["scenes"] = pbPng;
+    (int R, int B) Corner(MenuPage page) => MenuRenderer.Sta(() =>
+    {
+        var jpeg = new System.Windows.Media.Imaging.JpegBitmapDecoder(new MemoryStream(MenuRenderer.Background(pbDesign, page)), System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+        var px = new byte[4];
+        new System.Windows.Media.Imaging.FormatConvertedBitmap(jpeg.Frames[0], System.Windows.Media.PixelFormats.Bgra32, null, 0).CopyPixels(new System.Windows.Int32Rect(3, 3, 1, 1), px, 4, 0);
+        return (px[2], px[0]);
+    });
+    var pbPages = MenuBuilder.Build(pbDesign, new MenuContent(1, null, Enumerable.Repeat<string?>(null, 3).ToList(), null, ["Français", "English"], ["Français"])); // no thumbnails: nothing to load but the backgrounds
+    var (pbRoot, pbScenes) = (Corner(pbPages.First(p => p.Id == "root")), Corner(pbPages.First(p => p.Id == "scenes1")));
+    Check("a page with its own background is drawn from it (red), the root page keeps the gradient (blue)", pbScenes.R > 120 && pbScenes.B < 60 && pbRoot.B > pbRoot.R);
+    Check("the kind of a page is its id without the number or the choice", MenuDesign.PageKind("scenes12") == "scenes" && MenuDesign.PageKind("settings_1_2") == "settings" && MenuDesign.PageKind("root") == "root");
+    Check("a missing picture is no background (the page still builds)", new MenuDesign { PageBackgrounds = { ["root"] = "Z:\absent.png" } }.PageBackground("root") == null);
+    var pbCopy = pbDesign.Clone();
+    pbCopy.PageBackgrounds.Remove("scenes");
+    Check("the page backgrounds are copied with the design, not shared", pbDesign.PageBackgrounds.Count == 1 && pbCopy.PageBackgrounds.Count == 0);
+    Check("a saved model keeps its page backgrounds", System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(System.Text.Json.JsonSerializer.Serialize(pbDesign))!.PageBackgrounds["scenes"] == pbPng);
     Console.WriteLine(elFailed == 0 ? "all ok" : $"{elFailed} failed");
     return elFailed == 0 ? 0 : 1;
 }
@@ -708,6 +734,13 @@ if (design != null && Opt("--highlight") is { } hlStyle) design.HighlightStyle =
 if (design != null && a.Contains("--list")) design.SceneList = true; // page de scènes en liste (modèles Yuhan qui la décrivent)
 if (design != null && a.Contains("--animated-thumbs")) design.AnimatedThumbs = true; // vignettes animées (DVD : un extrait par case)
 if (design != null && Opt("--credits") is { } credits) design.Credits = credits.Replace('|', '\n'); // --credits "Directed by A|Music by B"
+// --page-bg KIND=PICTURE (repeatable; KIND = root | scenes | settings | credits | bonus): that kind of page gets its own background picture
+foreach (var spec in OptAll("--page-bg"))
+{
+    var eq = spec.IndexOf('=');
+    if (design == null || eq < 1 || !File.Exists(spec[(eq + 1)..])) throw new ArgumentException($"--page-bg: kind=picture expected (root=fond.jpg), with an existing picture and a menu: '{spec}'");
+    design.PageBackgrounds[spec[..eq].Trim().ToLowerInvariant()] = Path.GetFullPath(spec[(eq + 1)..]);
+}
 foreach (var spec in OptAll("--element")) design?.Elements.Add(MenuElement.Parse(spec)); // --element "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;align=center"
 if (design != null && Opt("--titles") is { } byLanguage) design.TitlesByLanguage = byLanguage.Replace('=', ':').Replace('|', '\n'); // --titles "fra=Mon disque|eng=My disc"
 if (design != null && a.Contains("--loop")) // moving menu: --loop [--loop-file video] [--loop-start S]

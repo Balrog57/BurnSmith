@@ -156,15 +156,17 @@ public static class MenuRenderer
     static void DrawPage(DrawingContext dc, MenuDesign d, MenuPage page, bool overlay = false)
     {
         var full = new Rect(0, 0, MenuBuilder.W, MenuBuilder.H);
+        var own = overlay ? null : d.PageBackground(page.Id); // this page's own picture replaces the design's background, a template's included
+        var shown = own ?? (overlay || d.TemplateDir != null ? null : ElementLibrary.Resolve(d.BackgroundImage) is { } picture && File.Exists(picture) ? picture : null);
         if (overlay)
         {
             if (d.TemplateDir == null && d.Dim > 0) dc.DrawRectangle(new SolidColorBrush(Col("#000000", d.Dim / 100.0)), null, full);
         }
-        else if (d.TemplateDir != null) { /* the template's own artwork is the first op of every page */ }
-        else if (ElementLibrary.Resolve(d.BackgroundImage) is { } picture && File.Exists(picture))
+        else if (shown == null && d.TemplateDir != null) { /* the template's own artwork is the first op of every page */ }
+        else if (shown != null)
         {
-            dc.DrawRectangle(new ImageBrush(Load(picture)) { Stretch = Stretch.UniformToFill }, null, full);
-            if (d.Dim > 0) dc.DrawRectangle(new SolidColorBrush(Col("#000000", d.Dim / 100.0)), null, full); // keeps text readable on any picture
+            dc.DrawRectangle(new ImageBrush(Load(shown)) { Stretch = Stretch.UniformToFill }, null, full);
+            if (d.Dim > 0 && d.TemplateDir == null) dc.DrawRectangle(new SolidColorBrush(Col("#000000", d.Dim / 100.0)), null, full); // keeps text readable on any picture (a template has no dim setting: its pages are not darkened)
         }
         else
         {
@@ -182,7 +184,7 @@ public static class MenuRenderer
             switch (op)
             {
                 case Image im:
-                    if (overlay && im.Backdrop) break;
+                    if ((overlay || own != null) && im.Backdrop) break; // a template's background picture: the page has its own, or the video is behind
                     if (im.Cover) dc.DrawRectangle(new ImageBrush(Load(im.Path)) { Stretch = Stretch.UniformToFill }, null, R(im.Rect));
                     else dc.DrawImage(Load(im.Path), R(im.Rect));
                     break;
