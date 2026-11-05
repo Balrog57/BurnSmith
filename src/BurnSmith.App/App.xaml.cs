@@ -38,7 +38,7 @@ public partial class App : Application
             window.Show();
             if (e.Args.FirstOrDefault(a => a == "scroll" || a.StartsWith("scroll=")) is { } scroll) win.ScrollProps(scroll.Length > 7 ? double.Parse(scroll[7..], System.Globalization.CultureInfo.InvariantCulture) : null);
         }
-        else if (e.Args.Contains("edit")) { window = new VideoEditWindow("Épisode 1", 5400, 90, 3600, 120, [600, 1800, 3000], 5); OffScreen(window); window.Show(); }
+        else if (e.Args.Contains("edit")) { window = new VideoEditWindow("Épisode 1", 5400, 90, 3600, 120, [600, 1800, 3000], null, 5); OffScreen(window); window.Show(); }
         else if (e.Args.Contains("advanced")) { window = new AdvancedWindow("MY_DISC", 5, new BurnSmith.Core.EncodeOptions(FitDisc: true), new BurnSmith.Core.PlaybackOptions(), "bd", Output.Bds, Output.DefaultBd); OffScreen(window); window.Show(); }
         if (e.Args.Contains("focus")) // selection and keyboard focus states: the second template of the list, the first text box (the output folder on the main window)
         {

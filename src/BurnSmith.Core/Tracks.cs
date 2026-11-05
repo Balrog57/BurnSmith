@@ -161,7 +161,8 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// <see cref="SubtitleTrack.Index"/> values in disc order; null = first audio only, no subtitles.
 /// The cut (DVDFab / Yuhan "video edit"): <see cref="Start"/> and <see cref="End"/> are seconds of the source file (End null = to the end),
 /// <see cref="Volume"/> a percentage of the sound, <see cref="ChapterAt"/> the chapter times in seconds of the source (null = the disc's
-/// "one every N minutes", empty = no chapters).
+/// "one every N minutes", empty = no chapters). <see cref="ChapterMinutes"/>: with no <see cref="ChapterAt"/>, one every N minutes for this video
+/// (null = the disc's setting).
 /// <see cref="Bonus"/>: an extra (trailer, making-of) that is not part of the main feature: it comes after the main videos on the disc, is left out of
 /// "Play" / "Play all", and is listed on the menu's Bonus page.
 /// <see cref="DefaultAudio"/> / <see cref="DefaultSubtitle"/> (an <see cref="AudioTrack.Index"/> / <see cref="SubtitleTrack.Index"/> among those kept): what
@@ -170,7 +171,8 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// </summary>
 public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<int>? Audio = null, IReadOnlyList<int>? Subtitles = null,
                                double Start = 0, double? End = null, int Volume = 100, IReadOnlyList<double>? ChapterAt = null,
-                               IReadOnlyList<ExternalSubtitle>? External = null, bool Bonus = false, int? DefaultAudio = null, int? DefaultSubtitle = null)
+                               IReadOnlyList<ExternalSubtitle>? External = null, bool Bonus = false, int? DefaultAudio = null, int? DefaultSubtitle = null,
+                               int? ChapterMinutes = null)
 {
     public string DisplayName => Name ?? Path.GetFileNameWithoutExtension(Video);
 
@@ -208,7 +210,7 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
 
     /// <summary>Chapter starts on the disc (seconds from the start of the part kept): always begins with 0, whole seconds, so no two share a second.</summary>
     public List<double> ChapterList(double length, int minutes) =>
-        ChapterAt == null ? BluRay.Chapters(length, minutes)
+        ChapterAt == null ? BluRay.Chapters(length, ChapterMinutes ?? minutes)
         : ChapterAt.Select(t => Math.Round(t - Start)).Where(t => t > 0 && t < length - 1).Prepend(0).Distinct().Order().ToList();
 
     /// <summary>The audio tracks in disc order: the default one first, the others in the order kept.</summary>

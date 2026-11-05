@@ -185,6 +185,7 @@ if (a.Count >= 1 && a[0] == "check-edit")
     Check("disc setting: one every 5 min from 0", Show(whole.ChapterList(600, 5)) == "0,300");
     Check("no chapters: only 0", Show(new DiscTitle("x", ChapterAt: []).ChapterList(600, 5)) == "0");
     Check("custom times are shifted by the start, 0 added, outside dropped", Show(new DiscTitle("x", Start: 100, End: 400, ChapterAt: [50, 100, 160, 250.4, 399.5, 500]).ChapterList(300, 5)) == "0,60,150");
+    Check("one video's own interval replaces the disc's; a list wins over it", Show(new DiscTitle("x", ChapterMinutes: 2).ChapterList(600, 5)) == "0,120,240,360,480" && Show(new DiscTitle("x", ChapterAt: [30], ChapterMinutes: 2).ChapterList(600, 5)) == "0,30" && Show(new DiscTitle("x").ChapterList(600, 5)) == "0,300");
     Check("custom times in whole seconds, unique", Show(new DiscTitle("x", ChapterAt: [10.2, 10.4, 5]).ChapterList(600, 5)) == "0,5,10");
     var dir = Path.Combine(Path.GetTempPath(), "bs_extsub_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(dir);
@@ -416,7 +417,7 @@ if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, ne
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || Opt("--out") is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B --volume N --chapter-at T,T|--no-chapters] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--bonus] [--credits 'A|B'] [bd: --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--bonus] [--credits 'A|B'] [bd: --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
     return 2;
 }
 
@@ -444,7 +445,7 @@ if (design != null && Opt("--music") is { } mu)
 var chapters = int.TryParse(Opt("--chapters"), out var m) ? m : 5;
 // cut, volume and chapters belong to one video: the flags written after a --video (up to the next one) are that video's; with a single video they may be anywhere
 // --trim START-END (seconds or h:mm:ss, either side may stay empty: --trim 90- | --trim -1:30:00), --volume PERCENT (100 = unchanged),
-// --chapter-at T,T,... (chapter times in the source video, replacing "one every N minutes") | --no-chapters
+// --chapter-at T,T,... (chapter times in the source video, replacing "one every N minutes") | --no-chapters | --chapter-every MIN (this video's own "one every N minutes")
 var videoAt = a.Select((v, i) => (v, i)).Where(x => x.v == "--video").Select(x => x.i).ToList();
 var titles = videos.Select((v, k) =>
 {
@@ -454,6 +455,7 @@ var titles = videos.Select((v, k) =>
     var trim = Own("--trim")?.Split('-', 2) ?? ["", ""];
     var volume = int.TryParse(Own("--volume"), out var vol) ? Math.Clamp(vol, 10, 300) : 100;
     IReadOnlyList<double>? chapterAt = own.Contains("--no-chapters") ? [] : Own("--chapter-at")?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => Time(t.Trim()) ?? 0).ToList();
+    int? chapterMinutes = int.TryParse(Own("--chapter-every"), out var every) ? Math.Clamp(every, 1, 600) : null;
     // --sub-file FILE | --sub-file fra=FILE (repeatable): a subtitle file kept as one more track, after the video's own and the --sub ones
     var files = own.Select((x, i) => (x, i)).Where(x => x.x == "--sub-file" && x.i + 1 < own.Count).SelectMany(x => ExternalSubtitle.ParseAll(own[x.i + 1])).ToList();
     var subs = Numbers("--sub");
@@ -461,7 +463,7 @@ var titles = videos.Select((v, k) =>
     int? defaultAudio = int.TryParse(Own("--default-audio"), out var da) ? da : null, defaultSub = int.TryParse(Own("--default-sub"), out var ds) ? ds : null;
     if (defaultAudio is { } wanted && !(Numbers("--audio") ?? [0]).Contains(wanted)) throw new ArgumentException($"--default-audio {wanted} is not one of the audio tracks kept (--audio)");
     if (defaultSub is { } wantedSub && !(subs ?? []).Contains(wantedSub)) throw new ArgumentException($"--default-sub {wantedSub} is not one of the subtitles kept (--sub / --sub-file)");
-    return new DiscTitle(v, null, Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub);
+    return new DiscTitle(v, null, Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes);
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
 // bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (fit = "Adapter au disque"),

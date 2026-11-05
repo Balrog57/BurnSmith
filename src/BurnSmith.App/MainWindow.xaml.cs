@@ -35,6 +35,8 @@ public partial class MainWindow : Window
         public double? End { get; set; }
         public int Volume { get; set; } = 100;
         public IReadOnlyList<double>? ChapterAt { get; set; }
+        /// <summary>One chapter every N minutes for this video (null = the disc's setting); used when there is no <see cref="ChapterAt"/> list.</summary>
+        public int? ChapterMinutes { get; set; }
         /// <summary>An extra (trailer, making-of): after the feature on the disc, off "Lecture" / "Tout lire", on the menu's Bonus page.</summary>
         public bool Bonus { get; set; }
         /// <summary>The audio track that plays and the subtitle that shows when the disc starts (source track numbers among those kept; null = the first audio, no subtitle).</summary>
@@ -57,7 +59,7 @@ public partial class MainWindow : Window
         public string SubText => Summary(Subs.OrderBy(i => i == DefaultSub ? 0 : 1).Select(i => (Tracks.Subtitles.FirstOrDefault(t => t.Index == i)?.Name ?? "?") + (i == DefaultSub ? " (défaut)" : "")).ToList());
 
         static string Summary(List<string> names) => names.Count == 0 ? "Aucun" : names.Count == 1 ? names[0] : $"{names[0]} +{names.Count - 1}";
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub);
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes);
     }
 
     readonly ObservableCollection<Entry> titles = [];
@@ -412,9 +414,9 @@ public partial class MainWindow : Window
     async void OnRowEdit(object s, RoutedEventArgs e)
     {
         if (Row(s) is not { } entry) return;
-        var dlg = new VideoEditWindow(entry.Name, entry.Info.Duration, entry.Start, entry.End, entry.Volume, entry.ChapterAt, chapterMinutes) { Owner = this };
+        var dlg = new VideoEditWindow(entry.Name, entry.Info.Duration, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes, chapterMinutes) { Owner = this };
         if (dlg.ShowDialog() != true) return;
-        (entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt) = (dlg.NameText, dlg.Start, dlg.End, dlg.Volume, dlg.ChapterAt);
+        (entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes) = (dlg.NameText, dlg.Start, dlg.End, dlg.Volume, dlg.ChapterAt, dlg.ChapterMinutes);
         entry.Refresh();
         Update(); // the size follows the length kept
         RefreshThumb(); // the name and the chapters are on the menu

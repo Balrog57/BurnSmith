@@ -39,6 +39,11 @@
 
         <TextBlock Text="Chapitres" Style="{StaticResource Section}"/>
         <RadioButton x:Name="ChapDisc" GroupName="chapters" Margin="0,8,0,0" Checked="OnChapterMode"/>
+        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+          <RadioButton x:Name="ChapEvery" GroupName="chapters" Content="Un chapitre toutes les" VerticalAlignment="Center" Checked="OnChapterMode"/>
+          <TextBox x:Name="EveryBox" Width="50" Margin="8,0,8,0" TextAlignment="Center"/>
+          <TextBlock Text="minutes" Style="{StaticResource Label}" VerticalAlignment="Center"/>
+        </StackPanel>
         <RadioButton x:Name="ChapNone" GroupName="chapters" Content="Aucun chapitre" Margin="0,10,0,0" Checked="OnChapterMode"/>
         <RadioButton x:Name="ChapCustom" GroupName="chapters" Content="Liste personnalisée (temps dans la vidéo d'origine)" Margin="0,10,0,0" Checked="OnChapterMode"/>
         <Grid x:Name="ListPanel" Margin="24,8,0,0">

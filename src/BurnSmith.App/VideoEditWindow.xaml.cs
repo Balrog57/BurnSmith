@@ -17,12 +17,14 @@ public partial class VideoEditWindow : Window
     public int Volume { get; private set; }
     /// <summary>Null = the disc's setting, empty = no chapters, else the chapter times.</summary>
     public IReadOnlyList<double>? ChapterAt { get; private set; }
+    /// <summary>With no chapter list: null = the disc's "one every N minutes", else this video's own N.</summary>
+    public int? ChapterMinutes { get; private set; }
 
     readonly double duration;
     readonly List<double> times;
     readonly bool ready;
 
-    public VideoEditWindow(string name, double duration, double start, double? end, int volume, IReadOnlyList<double>? chapterAt, int discMinutes)
+    public VideoEditWindow(string name, double duration, double start, double? end, int volume, IReadOnlyList<double>? chapterAt, int? chapterMinutes, int discMinutes)
     {
         InitializeComponent();
         this.duration = duration;
@@ -31,6 +33,7 @@ public partial class VideoEditWindow : Window
         End = end;
         Volume = volume;
         ChapterAt = chapterAt;
+        ChapterMinutes = chapterMinutes;
         NameBox.Text = name;
         SourceText.Text = $"Durée du fichier d'origine : {Timecode.Format(duration)}";
         StartCheck.IsChecked = start > 0;
@@ -40,7 +43,8 @@ public partial class VideoEditWindow : Window
         VolumeSlider.Value = volume;
         ChapDisc.Content = $"Comme le disque (un chapitre toutes les {discMinutes} min)";
         times = chapterAt?.Order().ToList() ?? [];
-        (chapterAt == null ? ChapDisc : chapterAt.Count == 0 ? ChapNone : ChapCustom).IsChecked = true;
+        EveryBox.Text = (chapterMinutes ?? discMinutes).ToString();
+        (chapterAt == null ? chapterMinutes == null ? ChapDisc : ChapEvery : chapterAt.Count == 0 ? ChapNone : ChapCustom).IsChecked = true;
         ready = true;
         OnCut(null!, null!);
         OnVolume(null!, null!);
@@ -123,7 +127,14 @@ public partial class VideoEditWindow : Window
         Start = start;
         End = end;
         Volume = (int)VolumeSlider.Value;
-        ChapterAt = ChapDisc.IsChecked == true ? null : ChapNone.IsChecked == true ? [] : times.ToList();
+        var minutes = 0;
+        if (ChapEvery.IsChecked == true && !(int.TryParse(EveryBox.Text.Trim(), out minutes) && minutes is >= 1 and <= 600))
+        {
+            MessageBox.Show(this, "Entrez un nombre de minutes entre 1 et 600.", "Chapitres", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        ChapterMinutes = ChapEvery.IsChecked == true ? minutes : null;
+        ChapterAt = ChapDisc.IsChecked == true || ChapEvery.IsChecked == true ? null : ChapNone.IsChecked == true ? [] : times.ToList();
         DialogResult = true;
     }
 }
