@@ -86,7 +86,8 @@ public partial class MainWindow : Window
     volatile bool writing; // a burn or an erase is under way: stopping it can ruin the disc
     bool closeAfterWork;
     int making; // slideshows, songs and joins being made: long ffmpeg runs without a Cancel button
-    MenuDesign design = TemplateCatalog.Default().Clone();
+    MenuDesign design = new();
+    readonly Task defaultDesign;
 
     /// <summary>A disc or a video is being made: nothing may shut the app down now.</summary>
     public bool Working => busy || making > 0;
@@ -102,6 +103,27 @@ public partial class MainWindow : Window
         Activated += (_, _) => RefreshDrives(); // a burner plugged in meanwhile shows up when the user comes back
         AfterTitlesChanged();
         Loaded += async (_, _) => await OfferDvdIfPossible();
+        defaultDesign = LoadDefaultDesign();
+    }
+
+    /// <summary>The default template, off the UI thread: the scan waits for the exe's files to unpack. A template chosen meanwhile stays; if the scan fails the blank design does.</summary>
+    async Task LoadDefaultDesign()
+    {
+        var blank = design;
+        try
+        {
+            var found = await Task.Run(() => MenuRenderer.Sta(() => TemplateCatalog.Default().Clone()));
+            if (ReferenceEquals(design, blank)) UseDesign(found);
+        }
+        catch (Exception e) { AppFiles.LogError("Modèle de menu par défaut", e); }
+    }
+
+    /// <summary>True when the default template is still loading: what the user would edit or build would not be it. Says so.</summary>
+    bool StillLoadingDesign()
+    {
+        if (defaultDesign.IsCompleted) return false;
+        MessageBox.Show(this, "Le modèle de menu se charge encore (au premier lancement, BurnSmith installe ses fichiers). Réessayez dans un instant.", "BurnSmith");
+        return true;
     }
 
     protected override void OnClosing(CancelEventArgs e)
@@ -861,6 +883,7 @@ public partial class MainWindow : Window
 
     void OnEditMenu(object s, RoutedEventArgs e)
     {
+        if (StillLoadingDesign()) return;
         var editor = new MenuEditorWindow(design, previewFrame, EditorContent()) { Owner = this };
         if (editor.ShowDialog() != true) return;
         design = editor.Result;
@@ -941,6 +964,7 @@ public partial class MainWindow : Window
     async void OnStart(object s, RoutedEventArgs e)
     {
         if (titles.Count == 0) { MessageBox.Show(this, "Ajoutez d'abord une vidéo.", "BurnSmith"); return; }
+        if (StillLoadingDesign()) return;
         var outDir = OutBox.Text.Trim();
         if (outDir.Length == 0) { MessageBox.Show(this, "Choisissez un dossier de sortie.", "BurnSmith"); return; }
         var cap = (Output)CapacityBox.SelectedItem;
