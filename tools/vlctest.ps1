@@ -1,8 +1,10 @@
 # Opens a BDMV/DVD folder in the portable VLC (BD-J enabled through JDK 8), drives it through VLC's own RC interface
 # (no OS key events, so no other window can receive them) and saves VLC snapshots + logs.
-# usage: vlctest.ps1 -Disc <folder> -OutDir <folder> [-Keys key-nav-right,key-nav-activate] [-Scheme bluray|dvd] [-Wait 15]
+# usage: vlctest.ps1 -Disc <folder> -OutDir <folder> [-Keys key-nav-down,key-nav-activate,sleep:25] [-Scheme bluray|dvd] [-Wait 15]
+# An arrow key does reach the xlet (see "Key posted" in libbluray.log), but moves the focus only where menu.txt gives a neighbour: first read the button's line. key-snapshot has only the video, never the BD-J page, and fails when no video plays.
 param([string]$Disc, [string]$OutDir, [string[]]$Keys = @(), [string]$Scheme = 'bluray', [int]$Wait = 15, [int]$Port = 4212)
-$root = Split-Path $PSScriptRoot -Parent
+$root = $PSScriptRoot # the tools (not in git) sit beside the main checkout: a worktree finds them higher up, as a development build does
+while ($root -and -not (Test-Path "$root\tools\vlc")) { $root = Split-Path $root -Parent }
 $jdk = (Get-ChildItem "$root\tools\jdk8\jdk" -Directory | Select-Object -First 1).FullName
 $vlc = (Get-ChildItem "$root\tools\vlc\vlc" -Recurse -Filter vlc.exe | Select-Object -First 1).FullName
 $env:JAVA_HOME = $jdk
