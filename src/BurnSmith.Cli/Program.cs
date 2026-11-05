@@ -328,6 +328,62 @@ if (a.Count >= 1 && a[0] == "check-elements")
     pbCopy.PageBackgrounds.Remove("scenes");
     Check("the page backgrounds are copied with the design, not shared", pbDesign.PageBackgrounds.Count == 1 && pbCopy.PageBackgrounds.Count == 0);
     Check("a saved model keeps its page backgrounds", System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(System.Text.Json.JsonSerializer.Serialize(pbDesign))!.PageBackgrounds["scenes"] == pbPng);
+
+    // a button drawn from a library picture, selected with its own picture (any two library pictures stand in for a button and its "sub" twin)
+    var elShown = ElementLibrary.Backgrounds().Where(x => x.Source == ElementLibrary.Shipped).Take(2).ToList();
+    Check("la bibliothèque livre des images pour les essais qui suivent", elShown.Count == 2);
+    if (elShown.Count == 2)
+    {
+        string normalPic = elShown[0].Path, focusPic = elShown[1].Path;
+        var elPic = elDesign.Clone();
+        elPic.Elements.Add(MenuElement.Parse($"kind=button;page=root;rect=120,600,300,100;text=Lire;target=movie;file={normalPic};focus={focusPic}"));
+        elPic.Elements.Add(MenuElement.Parse($"kind=button;page=root;rect=520,600,300,100;target=scenes1;file={normalPic}"));
+        elPic.Elements.Add(MenuElement.Parse($"kind=button;page=root;rect=920,600,300,100;text=Absent;file=Z:\\absent\\bouton.png;focus={focusPic}"));
+        var elPicPage = MenuBuilder.Build(elPic, elContent).First(p => p.Id == "root");
+        var elPics = elPicPage.Buttons.Where(b => b.Id.StartsWith("u")).ToList();
+        Check("un bouton image : son image occupe son rectangle et son libellé est écrit dessus",
+              elPicPage.Ops.OfType<Image>().Any(i => i.Path == normalPic && i.Rect == new Box(120, 600, 300, 100)) && elPicPage.Ops.OfType<Label>().Any(l => l.Value == "Lire"));
+        Check("son image « sub » devient l'image de sélection Blu-ray et la surbrillance DVD",
+              elPics.Count == 3 && elPics[0].FocusImage == focusPic && elPics[0].DvdHighlightImage == focusPic);
+        Check("sans image de sélection : le cadre du thème (rien n'est inventé)", elPics[1].FocusImage == null && elPics[1].DvdHighlightImage == null);
+        Check("une image de bouton absente : le bouton garde le look du thème et ne vise pas une image de sélection absente",
+              elPics[2].FocusImage == null && elPicPage.Ops.OfType<Label>().Any(l => l.Value == "Absent") && !elPicPage.Ops.OfType<Image>().Any(i => i.Path.Contains("bouton.png")));
+
+        // its own look, without touching the design's
+        var elStyled = elDesign.Clone();
+        elStyled.ButtonStyle = "Text";
+        elStyled.Elements.Add(MenuElement.Parse("kind=button;page=root;rect=120,600,300,100;text=Carte;look=Card"));
+        elStyled.Elements.Add(MenuElement.Parse("kind=button;page=root;rect=520,600,300,100;text=Nu;look=Inconnu"));
+        var elStyledOps = MenuBuilder.Build(elStyled, elContent).First(p => p.Id == "root").Ops;
+        Check("un bouton peut avoir son look (Cartes) alors que le thème est en « Texte seul » ; un look inconnu est ignoré",
+              elStyledOps.OfType<Fill>().Any(f => f.Rect == new Box(120, 600, 300, 100) && f.Color == elStyled.CardFill) && !elStyledOps.OfType<Fill>().Any(f => f.Rect == new Box(520, 600, 300, 100)) && elStyled.ButtonStyle == "Text");
+
+        var elPicBack = System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(System.Text.Json.JsonSerializer.Serialize(elPic))!;
+        Check("un modèle enregistré garde l'image du bouton et celle de sa sélection", elPicBack.Elements[^3] is { Image: { } i0, Focus: { } f0 } && i0 == normalPic && f0 == focusPic);
+
+        // the button library: BurnSmith's looks first, the user's imports, the template pictures; imports are copied and can be removed
+        var elButtons = ElementLibrary.Buttons();
+        Check("la bibliothèque de boutons commence par les looks de BurnSmith", elButtons.Take(ElementLibrary.ButtonStyles.Length).All(b => b.Source == ElementLibrary.Styles && b.Style != null && b.Normal == null));
+        Check("chaque bouton image existe, et sa sélection aussi", elButtons.Where(b => b.Style == null).All(b => b.Normal != null && File.Exists(b.Normal) && (b.Focus == null || File.Exists(b.Focus))));
+        Check("seuls les boutons de l'utilisateur peuvent être retirés", elButtons.Where(b => b.Removable).All(b => b.Source == ElementLibrary.MyButtons));
+        var imported = ElementLibrary.ImportButton(normalPic, focusPic);
+        try
+        {
+            var listed = ElementLibrary.Buttons().FirstOrDefault(b => b.Normal == imported.Normal);
+            Check("un bouton importé est copié avec sa sélection, et listé parmi les boutons de l'utilisateur",
+                  listed is { Removable: true, Source: ElementLibrary.MyButtons } && listed.Focus == imported.Focus && imported.Normal != normalPic && File.Exists(imported.Normal!) && File.Exists(imported.Focus!));
+        }
+        finally { ElementLibrary.RemoveButton(imported); }
+        Check("retirer un bouton importé supprime l'image et sa sélection", !File.Exists(imported.Normal!) && !File.Exists(imported.Focus!));
+        Check("un bouton de modèle n'est pas à la bibliothèque de le supprimer", Throws(() => ElementLibrary.RemoveButton(new ElementLibrary.ButtonItem("x", "DVDFab", normalPic))));
+        Check("un fichier qui n'est pas une image est refusé à l'import", Throws(() => ElementLibrary.ImportButton(Path.GetFullPath("check-elements.txt"))));
+    }
+
+    // what a design stores for a picture that travels in the exe works on any PC; a plain path is left alone
+    Check("une référence « lib: » revient au même fichier", ElementLibrary.Backgrounds().FirstOrDefault(x => x.Source == ElementLibrary.Shipped) is { } libPic && ElementLibrary.Resolve(ElementLibrary.Reference(libPic.Path)) == libPic.Path && ElementLibrary.Reference(libPic.Path).StartsWith("lib:"));
+    Check("une référence « carried: » se range sous le dossier des images des modèles, ou ne mène à rien quand l'exe n'en porte pas",
+          Tools.TemplatesDir() is { } carriedRoot ? ElementLibrary.Resolve("carried:x/y.png") == Path.Combine(carriedRoot, "x", "y.png") : ElementLibrary.Resolve("carried:x/y.png") == null);
+    Check("un chemin ordinaire reste tel quel", ElementLibrary.Resolve(@"C:\a\b.png") == @"C:\a\b.png" && ElementLibrary.Resolve(null) == null);
     Console.WriteLine(elFailed == 0 ? "all ok" : $"{elFailed} failed");
     return elFailed == 0 ? 0 : 1;
 }
