@@ -45,12 +45,16 @@ public static class Updater
         return null;
     }
 
-    /// <summary>Downloads the installer to a temporary folder and checks it against the hash GitHub gave; returns its path.</summary>
+    /// <summary>Downloads the installer to a temporary folder and checks it against the hash GitHub gave, refusing a release without one since the installer runs as administrator; returns its path.</summary>
     public static async Task<string> DownloadAsync(Release release, IProgress<double>? progress = null, CancellationToken ct = default)
     {
+        if (string.IsNullOrEmpty(release.Sha256)) throw new IOException("GitHub ne donne pas de hash sha256 pour cet installateur : il n'a pas été téléchargé");
         var dir = Path.Combine(Path.GetTempPath(), "BurnSmith-update");
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, $"BurnSmith-Setup-{release.Version}.exe");
+        foreach (var old in Directory.EnumerateFiles(dir, "BurnSmith-Setup-*.exe"))
+            try { File.Delete(old); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // still running or being scanned: the next update removes it
+        var path = Path.Combine(dir, $"BurnSmith-Setup-{release.Version}-{Environment.ProcessId}.exe"); // the process id: a locked older download of this version cannot stop this one
         using (var response = await Http.GetAsync(release.Url, HttpCompletionOption.ResponseHeadersRead, ct))
         {
             response.EnsureSuccessStatusCode();
@@ -66,14 +70,13 @@ public static class Updater
                 if (total > 0) progress?.Report((double)done / total);
             }
         }
-        if (release.Sha256 is { } expected)
+        bool same;
+        await using (var check = File.OpenRead(path))
+            same = Convert.ToHexString(await SHA256.HashDataAsync(check, ct)).Equals(release.Sha256, StringComparison.OrdinalIgnoreCase);
+        if (!same)
         {
-            await using var check = File.OpenRead(path);
-            if (!Convert.ToHexString(await SHA256.HashDataAsync(check, ct)).Equals(expected, StringComparison.OrdinalIgnoreCase))
-            {
-                File.Delete(path);
-                throw new IOException("the downloaded installer does not match the hash GitHub gave: it was not run");
-            }
+            File.Delete(path);
+            throw new IOException("the downloaded installer does not match the hash GitHub gave: it was not run");
         }
         return path;
     }
