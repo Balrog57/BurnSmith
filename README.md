@@ -68,7 +68,7 @@ Tout est dans [`docs/`](docs/README.md) :
 
 - **Installateur et mise à jour automatique** : écrits, mais pas encore essayés sur une vraie release GitHub.
 - **Essais de gravure sur disque réel et sur lecteurs de salon** (un DVD-RW d'abord, le Blu-ray en dernier) ; menus HDMV natifs, le menu BD-J actuel n'étant pas signé.
-- Éditeur : redimensionner à la souris, annuler / rétablir. Aussi : amélioration IA / HDR, menu contextuel, vidéo de début sur DVD.
+- Éditeur : redimensionner à la souris, annuler / rétablir. Aussi : amélioration IA / HDR, menu contextuel.
 
 ## Licence
 
