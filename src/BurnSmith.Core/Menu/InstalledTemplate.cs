@@ -491,7 +491,10 @@ public sealed class InstalledTemplate
     public List<MenuPage> Pages(MenuDesign d, MenuContent c)
     {
         var cells = MenuBuilder.Cells(d, c);
-        var perPage = template.Child("scenes")!.Child("tscenes")!.Child("scene")!.Child("videoes")!.Children("video").Count();
+        var scene = template.Child("scenes")!.Child("tscenes")!.Child("scene")!;
+        // the same page as a list of lines when the design asks for it and the template describes one (Yuhan's ListTypeText)
+        var listItems = d.SceneList ? scene.Child("list")?.Children("item").ToList() ?? [] : [];
+        var perPage = listItems.Count > 0 ? listItems.Count : scene.Child("videoes")!.Children("video").Count();
         var total = cells.Count > 1 ? (cells.Count + perPage - 1) / perPage : 0;
         // DVDFab's Streaming has no menu of its own: its first page of thumbnails, with the poster and the title, is the menu
         var pages = new List<MenuPage> { IsAllInOne && total > 0 ? Scenes(d, cells, 1, total, perPage, d.Title, c.PreviewPicture, c) : Root(d, c, cells.Count > 1) };
@@ -651,7 +654,18 @@ public sealed class InstalledTemplate
             Capsules(ops, buttons, d, capsules, MenuBuilder.W - 60 - capsules.Count * w - (capsules.Count - 1) * gap, 118, w, 56, gap, 28);
         }
         var slots = s.Child("videoes")!.Children("video").ToList();
-        for (var i = 0; i < slots.Count && (number - 1) * perPage + i < cells.Count; i++)
+        var lines = d.SceneList ? s.Child("list")?.Children("item").ToList() ?? [] : [];
+        if (lines.Count > 0)
+        {
+            // the list style: one line of text per chapter, at the rectangles the template gives, without a frame
+            for (var i = 0; i < lines.Count && (number - 1) * perPage + i < cells.Count; i++)
+            {
+                var cell = cells[(number - 1) * perPage + i];
+                ops.Add(Txt(lines[i], cell.Label, lines[i].Attr("align", "left")));
+                buttons.Add(new MenuButton(cell.Id, lines[i].Rect(), cell.Action));
+            }
+        }
+        for (var i = 0; i < slots.Count && lines.Count == 0 && (number - 1) * perPage + i < cells.Count; i++)
         {
             var cell = cells[(number - 1) * perPage + i];
             Under(ops, slots[i]);

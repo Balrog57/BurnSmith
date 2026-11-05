@@ -370,7 +370,7 @@ Donc : un modèle = `MenuTemplate\<Type>\<Aspect>\<Thème>\{Menu,Scene}` plus un
 | Fonction, prouvée par la décompilation | BurnSmith | Où c'est prouvé |
 |---|---|---|
 | Vignettes **animées** dans la page de scènes | non | `ECreatorTempType…DynamicThumbnail`, `videoCount` |
-| Page de scènes en **liste** (10 lignes + description) | non | `ListTypeText`/`ItemText0..9` (30 thèmes Yuhan), `PlaylistScene`, classe `o` du jar |
+| Page de scènes en **liste** (10 lignes + description) | **fait** (§15.2) | `ListTypeText`/`ItemText0..9` (30 thèmes Yuhan), `PlaylistScene`, classe `o` du jar |
 | **Page Bonus** décrite par le modèle | partielle (BurnSmith dessine la sienne) | `BonusText` sur les 30 thèmes |
 | **3 styles de surbrillance** (cadre, soulignement, changement de couleur) | un seul (cadre d'accent) | `EButtonSelectedHighlightType` |
 | Bouton **« choisir la langue »** de la page de réglages | partiel | `LangItemText`, `ASLangTitleText` |
@@ -385,3 +385,10 @@ Rien n'a été reproduit dans ce passage : cette note est le cahier des charges.
 `YuhanSkin` lit maintenant `Menu/BonusText` (présent dans les **30** thèmes, §13) et l'émet comme bouton-texte ; `InstalledTemplate.Root` l'utilise au lieu d'ajouter une pastille. Vérifié par rendu : sur `Birthday 01`, « Bonus » se place à **1494, 720**, sous « Settings » (1494, 630), dans la police et la couleur du thème — la position que le modèle donne, et non plus une capsule de BurnSmith.
 
 Reste de ce côté : le **mode liste** (`ListTypeText` + `ItemText0..9`) et la page de réglages décrite par `SetupAudioText` / `SetupSubtitleText` / `ASLangTitleText`, que `YuhanSkin` n'exploite pas encore.
+### 15.2 Reproduit : la page de scènes en liste (2026-11-05)
+
+`MenuDesign.SceneList` bascule la page de scènes du modèle en **liste de lignes** : `YuhanSkin` émet un nœud `list` avec les rectangles des `ItemText0..9` (police, taille, couleur, gras, alignement du thème), et `InstalledTemplate.Scenes` y place un bouton par chapitre ou par épisode, sans cadre ni vignette. La pagination suit : dix lignes par page, comme le modèle.
+
+**Épreuves** : rendu de `Birthday 01` avec `--list` et dix épisodes — les dix lignes tombent à x = 540, y de 270 à 810, dans la police du thème, avec le bouton Retour du thème en dessous ; `check-elements` 15/15 (nouvelle vérification : dix boutons en liste là où la grille n'en tient que quelques-uns, tous à la même abscisse) ; `check-templates` inchangé, le mode grille restant celui par défaut.
+
+Reste de ce côté : la page de réglages décrite par `SetupAudioText` / `SetupSubtitleText` / `ASLangTitleText`, et les **vignettes animées** de DVDFab (`DynamicThumbnail`).

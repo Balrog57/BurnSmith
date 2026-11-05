@@ -54,6 +54,11 @@ public sealed class MenuDesign
     public int Rows { get; set; } = 2;
     /// <summary>False = the scene buttons are text only, without a picture.</summary>
     public bool Thumbnails { get; set; } = true;
+    /// <summary>
+    /// Scene page as a <em>list</em> of lines instead of a grid of thumbnails (DVDFab's "PlaylistScene", Yuhan's <c>ListTypeText</c> with ten
+    /// <c>ItemText</c>). A template that describes such a list places the lines itself; the others fall back to the grid.
+    /// </summary>
+    public bool SceneList { get; set; }
     /// <summary>Square corners instead of rounded ones.</summary>
     public bool Square { get; set; }
     public string CardFill { get; set; } = "#111827";

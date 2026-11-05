@@ -29,6 +29,7 @@ if (a.Count >= 3 && a[0] == "preview")
         ["Français AC-3 mono", "English AC-3 mono", "Español AC-3 mono"], ["Français", "English"],
         int.TryParse(Opt("--bonus"), out var extras) && extras > 0 ? Enumerable.Range(0, extras).Select(i => new TitleEntry($"Bonus {i + 1}", Math.Max(episodes, 1) + 1 + i, pic)).ToList() : null);
     chosen.Title = "My Blu-ray";
+    if (a.Contains("--list")) chosen.SceneList = true; // la page de scènes en liste, quand le modèle la décrit
     if (Opt("--credits") is { } sampleCredits) chosen.Credits = sampleCredits.Replace('|', '\n');
     foreach (var spec in OptAll("--element")) chosen.Elements.Add(MenuElement.Parse(spec));
     var files = MenuRenderer.Sta(() => MenuBuilder.Build(chosen, sample).Select(page => (page.Id, Jpeg: MenuRenderer.Background(chosen, page))).ToList());
@@ -235,6 +236,21 @@ if (a.Count >= 1 && a[0] == "check-elements")
     Check("un modèle enregistré revient entier (éléments, bouton ajouté et sa cible)",
           elBack.Elements.Count == elButton.Elements.Count && elBack.Elements[^1] is { Kind: "button", Target: "scenes1", Text: "Scènes" }
           && elBack.Elements[0].X == elButton.Elements[0].X && elBack.Title == elButton.Title);
+
+    // la page de scènes en liste : les lignes se posent aux rectangles que le modèle donne (Yuhan ListTypeText)
+    var yuhan = TemplateCatalog.Scan().Usable.Select(f => f.Design).FirstOrDefault(x => x.Category.Contains("Yuhan"));
+    if (yuhan == null) Console.WriteLine("ok   (aucun thème Yuhan installé : vérification du mode liste sautée)");
+    else
+    {
+        var ten = new MenuContent(1, null, [], Enumerable.Range(1, 10).Select(i => new TitleEntry($"Episode {i}", i, null)).ToList(), ["Français AC-3"], []);
+        var grid = MenuBuilder.Build(yuhan.Clone(), ten).First(q => q.Id == "scenes1");
+        var listed = yuhan.Clone();
+        listed.SceneList = true;
+        var listPage = MenuBuilder.Build(listed, ten).First(q => q.Id == "scenes1");
+        Check("le mode liste tient dix lignes là où la grille n'en tient que quelques-unes, aux positions du thème",
+              listPage.Buttons.Count(b => b.Id.StartsWith("e")) == 10 && grid.Buttons.Count(b => b.Id.StartsWith("e")) < 10
+              && listPage.Buttons.Where(b => b.Id.StartsWith("e")).Select(b => b.Rect.X).Distinct().Count() == 1);
+    }
     Console.WriteLine(elFailed == 0 ? "all ok" : $"{elFailed} failed");
     return elFailed == 0 ? 0 : 1;
 }

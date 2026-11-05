@@ -104,6 +104,20 @@ static class YuhanSkin
             videos.Kids.Add(video);
         }
         scene.Kids.Add(videos);
+        // the same chapters as a list of lines: the theme gives ten ItemText rectangles for it (DVDFab's "PlaylistScene", Yuhan's list mode)
+        if (page?.Child("ListTypeText") is { } list)
+        {
+            var items = El("list");
+            for (var i = 0; list.Child($"ItemText{i}") is { } item; i++)
+            {
+                var size = I(item, "Size") > 0 ? I(item, "Size") : 30;
+                var width = item.Attr("Alignment", "Left") == "Center" ? 900 : 820;
+                items.Kids.Add(El("item", ("rect", Rect(I(item, "Left"), I(item, "Top"), width, size * 3 / 2)), ("font", item.Attr("Type", "Tahoma") ?? "Tahoma"),
+                    ("font_size", size.ToString()), ("color", item.Attr("Color", "#FFFFFF") ?? "#FFFFFF"), ("bold", item.Attr("Bold") == "true" ? "1" : "0"),
+                    ("align", item.Attr("Alignment", "Left").ToLowerInvariant())));
+            }
+            if (items.Kids.Count > 0) scene.Kids.Add(items);
+        }
         var tscenes = El("tscenes");
         tscenes.Kids.Add(scene);
         var scenes = El("scenes");
