@@ -40,6 +40,19 @@ public sealed class MenuDesign
     public string Top { get; set; } = "#0B1B3B";
     public string Bottom { get; set; } = "#2B5DA8";
     public string? BackgroundImage { get; set; }
+    /// <summary>
+    /// A picture for one kind of page instead of the design's own background (the template's artwork or <see cref="BackgroundImage"/>): the key is the page's kind,
+    /// see <see cref="PageKind"/> ("root", "scenes", "settings", "credits", "bonus"), the value a picture (<see cref="ElementLibrary.Reference"/> or a path).
+    /// A moving menu has its clip behind every page, so it leaves these out.
+    /// </summary>
+    public Dictionary<string, string> PageBackgrounds { get; set; } = [];
+
+    /// <summary>The kind of a page: its id without the number or the choice that follows ("scenes2" and "scenes1" are "scenes", "settings_1_2" is "settings").</summary>
+    public static string PageKind(string pageId) => new(pageId.TakeWhile(char.IsAsciiLetter).ToArray());
+
+    /// <summary>The picture of this page's own background, or null when it has none (or the file is gone).</summary>
+    public string? PageBackground(string pageId) =>
+        PageBackgrounds.TryGetValue(PageKind(pageId), out var picture) && ElementLibrary.Resolve(picture) is { } file && File.Exists(file) ? file : null;
     public string TextColor { get; set; } = "#FFFFFF";
     /// <summary>Colour of the focus frame around the selected button.</summary>
     public string Accent { get; set; } = "#FFC83D";
@@ -92,6 +105,7 @@ public sealed class MenuDesign
     {
         var copy = (MenuDesign)MemberwiseClone();
         copy.Elements = Elements.Select(e => e.Copy()).ToList();
+        copy.PageBackgrounds = new(PageBackgrounds);
         return copy;
     }
 

@@ -56,10 +56,16 @@
 
     <DockPanel Grid.Column="1" Margin="16,0">
       <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DockPanel.Dock="Top">
           <Button Content="◀" Width="40" Click="OnPrev"/>
           <TextBlock x:Name="PageText" Margin="16,0" VerticalAlignment="Center"/>
           <Button Content="▶" Width="40" Click="OnNext"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
+          <Button Content="Fond de cette page…" Click="OnPageBg" Padding="12,4"
+                  ToolTip="Une image de fond pour ce genre de page (menu, scènes, réglages, bonus, crédits) ; les autres gardent le fond du modèle"/>
+          <Button x:Name="PageBgClear" Content="Fond commun" Click="OnPageBgClear" Padding="12,4" Margin="8,0,0,0"
+                  ToolTip="Rend à ce genre de page le fond du modèle"/>
         </StackPanel>
       </DockPanel>
       <TextBlock x:Name="Status" DockPanel.Dock="Bottom" Foreground="{StaticResource AccentHoverBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>

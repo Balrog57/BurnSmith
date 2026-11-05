@@ -618,6 +618,29 @@ public partial class MenuEditorWindow : Window
         }
     }
 
+    /// <summary>A picture for the kind of page on show ("scenes" for every scenes page); a template's own background gives way to it.</summary>
+    void OnPageBg(object s, RoutedEventArgs e)
+    {
+        if (current == null) return;
+        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*", Title = $"Fond de la page « {PageName(current.Id)} »" };
+        if (dlg.ShowDialog(this) != true) return;
+        try
+        {
+            working.PageBackgrounds[MenuDesign.PageKind(current.Id)] = ElementLibrary.Reference(ElementLibrary.Import(dlg.FileName).Path);
+            Dirty();
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, ex.Message, "BurnSmith");
+        }
+    }
+
+    void OnPageBgClear(object s, RoutedEventArgs e)
+    {
+        if (current == null || !working.PageBackgrounds.Remove(MenuDesign.PageKind(current.Id))) return;
+        Dirty();
+    }
+
     void OnBgClear(object s, RoutedEventArgs e)
     {
         working.BackgroundImage = null;
