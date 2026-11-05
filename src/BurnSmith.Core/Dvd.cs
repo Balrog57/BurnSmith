@@ -33,6 +33,8 @@ public static class Dvd
     /// <summary>One encoded title: the MPEG file, the audio and subtitle tracks that really are in it, its chapter times.</summary>
     sealed record Movie(string Mpg, List<AudioTrack> Audio, List<SubtitleTrack> Subtitles, List<double> ChapterTimes, int DefaultSubtitle);
 
+    public static void Build(DvdJob job, Action<string>? log, CancellationToken cancel) => Tools.WithCancel(cancel, () => Build(job, log));
+
     public static void Build(DvdJob job, Action<string>? log = null)
     {
         log ??= _ => { };

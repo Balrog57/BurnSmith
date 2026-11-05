@@ -78,6 +78,8 @@ if (a.Count >= 3 && a[0] is "slideshow" or "song" or "join")
 }
 // burnsmith check-bd : short clips through the real builds, then what a player needs of them read with ffprobe (sound rate, bit depth, level, sync), the DVD refusals, the work folder, damaged PGS
 if (a.Count >= 1 && a[0] == "check-bd") return BdCheck.Run();
+// burnsmith check-reliability : Cancel on real Blu-ray and DVD encodes (how fast, no process left, no work folder, not a tool failure), half an image, a source gone, the error log, closing
+if (a.Count >= 1 && a[0] == "check-reliability") return ReliabilityCheck.Run();
 // burnsmith check-templates [--matrix] [--only NAME] [--picture frame.jpg] (--only: the templates whose name contains NAME, no composed designs) : builds every template as film and series and checks pages, buttons, remote moves, pictures;
 // --matrix = every disc shape (1..40 chapters, 2..60 episodes, 1..9 audio, 0..9 subtitles) and 200 designs the menu editor can compose
 if (a.Count >= 1 && a[0] == "check-templates") return TemplateCheck.Run(Opt("--picture") is { } cp ? Path.GetFullPath(cp) : null, a.Contains("--matrix"), Opt("--only"));

@@ -47,6 +47,26 @@ public static class AppFiles
         }
     }
 
+    /// <summary>Errors nobody caught: <c>burnsmith.log</c> under <see cref="Root"/>. The field first: <see cref="Root"/> waits for an unpack in progress, and a crash must not.</summary>
+    public static string ErrorLog() => Path.Combine(root ?? Root(), "burnsmith.log");
+
+    static readonly object LogGate = new();
+
+    /// <summary>Adds an error to the log (<paramref name="file"/>, else <see cref="ErrorLog"/>), which starts again past 1 MB and keeps one older file. Never throws.</summary>
+    public static void LogError(string where, Exception error, string? file = null)
+    {
+        try
+        {
+            lock (LogGate)
+            {
+                file ??= ErrorLog();
+                if (File.Exists(file) && new FileInfo(file).Length > 1 << 20) File.Move(file, file + ".old", true);
+                File.AppendAllText(file, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {where}{Environment.NewLine}{error}{Environment.NewLine}{Environment.NewLine}");
+            }
+        }
+        catch (Exception) { } // called while something already went wrong: losing a log line is the lesser harm
+    }
+
     /// <summary><c>Documents\BurnSmith\Templates</c> (the real Documents folder, wherever Windows or OneDrive put it); under <see cref="Root"/> if that cannot be written.</summary>
     public static string Library()
     {

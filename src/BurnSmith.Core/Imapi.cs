@@ -102,7 +102,7 @@ public static class Imapi
     /// <summary>
     /// Builds a UDF image of <paramref name="folder"/>'s contents: UDF 2.50 for Blu-ray, 1.02 for DVD-Video (IMAPI2FS, in Windows).
     /// </summary>
-    public static void BuildImage(string folder, string isoFile, string label, bool dvd, Action<string>? log = null, IProgress<double>? progress = null)
+    public static void BuildImage(string folder, string isoFile, string label, bool dvd, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default)
     {
         folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
         if (!Directory.Exists(Path.Combine(folder, dvd ? "VIDEO_TS" : "BDMV")))
@@ -135,6 +135,7 @@ public static class Imapi
                         long done = 0;
                         while (true)
                         {
+                            cancel.ThrowIfCancellationRequested();
                             stream.Read(buffer, buffer.Length, read);
                             var n = Marshal.ReadInt32(read);
                             if (n == 0) break;
@@ -199,6 +200,7 @@ public static class Imapi
             {
                 try
                 {
+                    if (cancel.IsCancellationRequested) format.CancelWrite(); // Microsoft's documentation allows this call only from this event
                     dynamic a = args;
                     long count = Convert.ToInt64(a.SectorCount), written = Convert.ToInt64(a.LastWrittenLba) - Convert.ToInt64(a.StartLba);
                     var action = Convert.ToInt32(a.CurrentAction); // 0 checking, 1 formatting, 2 initialising, 3 calibrating, 4 writing, 5 finalising, 6 done
@@ -208,7 +210,6 @@ public static class Imapi
                 catch (Exception e) when (e is COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { }
             };
             ComEventsHelper.Combine(format, DataEvents, 0x200, update);
-            using var registration = cancel.Register(() => { try { format.CancelWrite(); } catch (COMException) { } });
             source = SHCreateStreamOnFileEx(Path.GetFullPath(isoFile), 0x20, 0, false, IntPtr.Zero); // STGM_READ | STGM_SHARE_DENY_WRITE
             try { format.Write(source); }
             catch (COMException e) when (cancel.IsCancellationRequested) { throw new OperationCanceledException("Gravure annulée.", e, cancel); }

@@ -88,10 +88,52 @@ public static class Tools
         catch (UnauthorizedAccessException) { }
     }
 
-    /// <summary>Runs a tool and returns its stdout; throws with the output tail when the exit code is not 0.</summary>
+    /// <summary>The size of a source file, 0 when it is gone (a USB drive unplugged): what the window shows must survive that.</summary>
+    public static long SizeOf(string file) => new FileInfo(file) is { Exists: true } f ? f.Length : 0;
+
+    static readonly AsyncLocal<CancellationToken> ambient = new();
+    static readonly HashSet<Process> running = [];
+    static bool killedAll;
+
+    /// <summary>
+    /// Every <see cref="Run"/> made by <paramref name="work"/>, on whatever thread, ends with an <see cref="OperationCanceledException"/> when <paramref name="cancel"/> fires, its process tree killed.
+    /// Ambient, not a parameter: a build reaches the tools through some thirty calls, and one that forgot the token could not be stopped.
+    /// </summary>
+    public static void WithCancel(CancellationToken cancel, Action work)
+    {
+        var before = ambient.Value;
+        ambient.Value = cancel;
+        try { work(); }
+        finally { ambient.Value = before; }
+    }
+
+    static void Kill(Process p)
+    {
+        try { p.Kill(true); }
+        catch (Exception) { } // it just ended, or Windows refuses: this runs inside Cancel() and while exiting, where nothing can be done about it
+    }
+
+    /// <summary>For an app that is closing: ends every tool still running and refuses to start another, so none outlives the app.</summary>
+    public static void KillAll()
+    {
+        lock (running)
+        {
+            killedAll = true;
+            foreach (var p in running)
+            {
+                Kill(p);
+                try { p.WaitForExit(2000); } // its files can then be deleted
+                catch (Exception) { }
+            }
+        }
+    }
+
+    /// <summary>Runs a tool and returns its stdout; throws with the output tail when the exit code is not 0, <see cref="OperationCanceledException"/> when cancelled (see <see cref="WithCancel"/>).</summary>
     public static string Run(string exe, IEnumerable<string> args, Action<string>? onLine = null, string? workDir = null,
                              IReadOnlyDictionary<string, string>? env = null)
     {
+        var cancel = ambient.Value;
+        cancel.ThrowIfCancellationRequested();
         var psi = new ProcessStartInfo(exe)
         {
             RedirectStandardOutput = true,
@@ -116,10 +158,21 @@ public static class Tools
         }
         p.OutputDataReceived += (_, e) => Line(e.Data, true);
         p.ErrorDataReceived += (_, e) => Line(e.Data, false);
-        p.Start();
-        p.BeginOutputReadLine();
-        p.BeginErrorReadLine();
-        p.WaitForExit();
+        lock (running)
+        {
+            if (killedAll) throw new OperationCanceledException();
+            p.Start();
+            running.Add(p);
+        }
+        try
+        {
+            using var stop = cancel.Register(() => Kill(p));
+            p.BeginOutputReadLine();
+            p.BeginErrorReadLine();
+            p.WaitForExit();
+        }
+        finally { lock (running) running.Remove(p); }
+        cancel.ThrowIfCancellationRequested(); // before the exit code: a killed tool did not fail
         if (p.ExitCode != 0)
         {
             var tail = string.Join('\n', all.ToString().Split('\n').TakeLast(15));

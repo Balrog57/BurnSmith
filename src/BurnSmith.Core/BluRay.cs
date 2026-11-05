@@ -119,6 +119,8 @@ public static class BluRay
     /// <summary>What one muxed title gives the menu: its preview source and the names of the tracks that really went on the disc.</summary>
     sealed record Muxed(string Prepared, List<string> Audio, List<string> Subtitles, List<double> ChapterTimes, int DefaultSubtitle);
 
+    public static void Build(BluRayJob job, Action<string>? log, CancellationToken cancel) => Tools.WithCancel(cancel, () => Build(job, log));
+
     public static void Build(BluRayJob job, Action<string>? log = null)
     {
         log ??= _ => { };
@@ -271,7 +273,7 @@ public static class BluRay
     /// shortcut: proportional to the length, not to what that stretch really weighs; a cut that starts later is re-encoded at constant quality, so the size is approximate.
     /// </summary>
     static double FilesBytes(BluRayJob job, IReadOnlyList<SourceInfo> sources) =>
-        job.Titles.Select((t, i) => new FileInfo(t.Video).Length * (sources[i].FileDuration > 0 ? sources[i].Duration / sources[i].FileDuration : 1)).Sum();
+        job.Titles.Select((t, i) => Tools.SizeOf(t.Video) * (sources[i].FileDuration > 0 ? sources[i].Duration / sources[i].FileDuration : 1)).Sum();
 
     /// <summary>
     /// The video bit rate (kb/s) every title is re-encoded at, 0 = keep the source's own quality (copied when the disc accepts it, else constant quality).
