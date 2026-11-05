@@ -242,6 +242,13 @@ public static class BluRay
             File.WriteAllBytes(file, Bdmv.FirstPlayToObject(File.ReadAllBytes(file), number));
     }
 
+    /// <summary>
+    /// The one frame rate of a video on a Blu-ray, as ffmpeg and as tsMuxeR write it (tsMuxeR reads "24000/1001" as 24000 and sizes the playlist at 1/1000 of the clip). The two must
+    /// agree: a video made at 23.976 and declared as 24 ends 0.1 % before its sound. 50 fps becomes 25, as on a DVD; 24 is told from 23.976 by a narrow margin.
+    /// </summary>
+    internal static (string Ffmpeg, string TsMuxer) DiscRate(double fps) =>
+        Math.Abs(fps - 25) < 0.5 || Math.Abs(fps - 50) < 0.5 ? ("25", "25") : Math.Abs(fps - 24) < 0.01 ? ("24", "24") : ("24000/1001", "23.976");
+
     /// <summary>Picture size of the disc: 3840x2160 (4K), 1280x720 (a 720p profile) or 1920x1080.</summary>
     static (int W, int H) VideoSize(BluRayJob job) => job.Uhd ? (3840, 2160) : job.Encode?.Hd720 == true ? (1280, 720) : (1920, 1080);
 
@@ -323,7 +330,7 @@ public static class BluRay
                 log($"warning: subtitle '{s.Name}' is made for a {plane.Width}x{plane.Height} screen, the disc is {planeW}x{planeH}: its pictures may not sit where they were meant to");
         }
 
-        var fps = Math.Round(Math.Abs(src.Fps - 25) < 0.01 ? 25 : Math.Abs(src.Fps - 24) < 0.01 ? 24 : 23.976, 3).ToString(Inv);
+        var fps = DiscRate(src.Fps).TsMuxer;
         var chapterTimes = title.ChapterList(src.Duration, job.ChapterMinutes);
         var chapters = string.Join(';', chapterTimes.Select(t => TimeSpan.FromSeconds(t).ToString(@"hh\:mm\:ss\.fff", Inv)));
         var (w, h) = VideoSize(job);
@@ -400,18 +407,17 @@ public static class BluRay
         var ts = Path.Combine(work, "loop.ts");
         var args = new List<string> { "-y", "-v", "warning" };
         SourceInfo? src = null;
-        string fps;
+        var (fps, declared) = DiscRate(0);
         if (menu.Loop)
         {
             var (file, probe, start) = LoopSource(menu, job.Titles[0], seconds);
             src = probe;
-            fps = Math.Abs(src.Fps - 25) < 0.5 ? "25" : "24000/1001";
+            (fps, declared) = DiscRate(src.Fps);
             log($"menu: moving background, {seconds}s from {Path.GetFileName(file)} at {start}s{(music != null ? " + music" : "")}");
             args.AddRange(["-ss", start.ToString(Inv), "-t", seconds.ToString(Inv), "-i", file]);
         }
         else
         {
-            fps = "24000/1001";
             log($"menu: music from {Path.GetFileName(musicFile)}, {seconds}s over a black picture");
             args.AddRange(["-f", "lavfi", "-i", $"color=c=black:s={w}x{h}:r={fps}:d={seconds}"]);
         }
@@ -432,7 +438,7 @@ public static class BluRay
         var lines = new List<string>
         {
             $"MUXOPT --blu-ray --label={job.Label} --vbr --mplsOffset={LoopPlaylist} --m2tsOffset={LoopPlaylist}",
-            $"V_MPEG4/ISO/AVC, \"{ts}\", fps={(fps == "25" ? "25" : "23.976")}, track=256", // tsMuxeR reads "24000/1001" as 24000 and sizes the playlist at 1/1000 of the clip
+            $"V_MPEG4/ISO/AVC, \"{ts}\", fps={declared}, track=256",
         };
         if (hasAudio) lines.Add($"A_AC3, \"{ts}\", track=257");
         File.WriteAllLines(meta, lines);
@@ -495,7 +501,7 @@ public static class BluRay
         foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
         if (videoOk) args.AddRange(["-c:v", "copy"]);
         else args.AddRange(["-vf", $"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1",
-                            "-r", Math.Abs(s.Fps - 25) < 0.5 ? "25" : "24000/1001",
+                            "-r", DiscRate(s.Fps).Ffmpeg,
                             "-c:v", "libx264", "-preset", enc.Preset, "-pix_fmt", "yuv420p"]);
         if (!videoOk)
         {
