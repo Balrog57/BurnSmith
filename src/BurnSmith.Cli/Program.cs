@@ -725,6 +725,61 @@ if (a.Count >= 1 && a[0] == "check-edit")
         Check("a DVD's start video is the title after the film, which the first-play command jumps to (title 2 of 2), with a menu or without; the discs pass the structure check",
               noMenu == (2, "3002000000020000") && withMenu == (2, "3002000000020000")
               && DiscCheck.Folder(Path.Combine(introDir, "plain")).Count == 0 && DiscCheck.Folder(Path.Combine(introDir, "menu")).Count == 0);
+
+        // what was only ever looked at in VLC, on one disc: an NTSC start video before a PAL film with two audio tracks, a default subtitle and a menu; read back from the IFO and the VOB
+        var mixedDisc = Path.Combine(introDir, "mixed");
+        var (palFilm, ntscIntro, srt) = (Path.Combine(introDir, "pal.mkv"), Path.Combine(introDir, "ntsc.mkv"), Path.Combine(introDir, "pal.srt"));
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=2", "-f", "lavfi", "-i", "sine=f=440:d=2", "-f", "lavfi", "-i", "sine=f=880:d=2", "-map", "0:v", "-map", "1:a", "-map", "2:a", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "ac3", palFilm]);
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "smptebars=s=320x240:r=30000/1001:d=2", "-f", "lavfi", "-i", "sine=f=220:d=2", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "ac3", ntscIntro]);
+        File.WriteAllText(srt, "1\n00:00:00,500 --> 00:00:01,500\nBonjour\n");
+        Dvd.Build(new DvdJob([new DiscTitle(palFilm, Audio: [0, 1], Subtitles: [0], External: [new ExternalSubtitle(srt, "fre")], DefaultSubtitle: 0), new DiscTitle(ntscIntro, Intro: true)], mixedDisc, new MenuDesign()));
+        var vmg = File.ReadAllBytes(Path.Combine(mixedDisc, "VIDEO_TS", "VIDEO_TS.IFO"));
+        var vts = File.ReadAllBytes(Path.Combine(mixedDisc, "VIDEO_TS", "VTS_01_0.IFO"));
+        static int U16(byte[] d, int o) => System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(d.AsSpan(o));
+        static int U32(byte[] d, int o) => (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(d.AsSpan(o));
+        static int Chain(byte[] d, int table, int number) => table + U32(d, table + 8 * number + 4); // a table of program chains: 8 bytes of head, then 8 a chain
+        static string Hex(byte[] d, int o) => Convert.ToHexString(d.AsSpan(o, 8));
+        static string Commands(byte[] d, int pgc, int first, int count) => string.Join(' ', Enumerable.Range(first, count).Select(i => Hex(d, pgc + U16(d, pgc + 0xE4) + 8 + 8 * i)));
+        static string Pre(byte[] d, int pgc) => Commands(d, pgc, 0, U16(d, pgc + U16(d, pgc + 0xE4)));
+        static string Post(byte[] d, int pgc) => Commands(d, pgc, U16(d, pgc + U16(d, pgc + 0xE4)), U16(d, pgc + U16(d, pgc + 0xE4) + 2));
+        static int Sector(byte[] d, int pgc, int field) => U32(d, pgc + U16(d, pgc + 0xE8) + field); // of its first cell: 8 = first sector, 20 = last
+        var titleChains = U32(vts, 0xCC) * 2048;
+        var menuChains = U32(vts, 0xD0) * 2048 + U32(vts, U32(vts, 0xD0) * 2048 + 12); // the first language's
+        var (filmPgc, introPgc) = (Chain(vts, titleChains, 1), Chain(vts, titleChains, 2));
+        var pages = Enumerable.Range(1, U16(vts, menuChains)).Select(i => Chain(vts, menuChains, i)).Where(p => vts[p + 3] > 0).ToList(); // without dvdauthor's own entry chain, which has no cell
+        var menuVob = File.ReadAllBytes(Path.Combine(mixedDisc, "VIDEO_TS", "VTS_01_0.VOB"));
+        var rootPci = Sector(vts, pages[0], 8) * 2048 + 0x2D; // its first navigation pack holds the buttons
+        var rootButtons = Enumerable.Range(0, menuVob[rootPci + 0x71]).Select(i => Hex(menuVob, rootPci + 0x8E + 18 * i + 10)).ToList();
+
+        Check("Settings after a start video: first play sets audio 1 and the default subtitle (g2, g3), and only then jumps to the start video, title 2",
+              Pre(vmg, U32(vmg, 0x84)) == "7100000100000000 7100000200010000 7100000300010000 7100000404000000 7100000500000000 3002000000020000");
+        Check("Settings after a start video: its end shows the default subtitle (stream 0), then calls the menu just as the film's end does",
+              Post(vts, introPgc) == $"51000000C0000000 {Post(vts, filmPgc)}");
+        Check("Settings after a start video: the root's button computes g6 = 64 g2 + g3 and picks one of the 4 settings pages, the disc's first state (65) being page 3",
+              pages.Count == 5 && rootButtons.Contains("7101000F0002000D")
+              && Post(vts, pages[0]).Contains("00A1000E00020005 3001000000000000 6100000600020000 7500000600400000 6300000600030000 20A4000600400002 20A4000600410003 20A4000600800004 20A4000600810005 2004000000000002"));
+        Check("Settings after a start video: page 3 is the page of audio 1 and subtitle 1: choosing either stays on it, subtitle off goes to page 2",
+              Post(vts, pages[2]).Contains("7100000200010000 5104008000000003") && Post(vts, pages[2]).Contains("7100000300010000 51040000C0000003") && Post(vts, pages[2]).Contains("7100000300000000 51040000BE000002"));
+
+        var slice = Path.Combine(introDir, "intro-on-disc.vob");
+        using (var titlesVob = File.OpenRead(Path.Combine(mixedDisc, "VIDEO_TS", "VTS_01_1.VOB")))
+        {
+            var bytes = new byte[(Sector(vts, introPgc, 20) - Sector(vts, introPgc, 8) + 1) * 2048];
+            titlesVob.Position = Sector(vts, introPgc, 8) * 2048L;
+            titlesVob.ReadExactly(bytes);
+            File.WriteAllBytes(slice, bytes);
+        }
+        var probed = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-count_frames", "-show_entries", "stream=codec_type,width,height,r_frame_rate,nb_read_frames,sample_rate", "-of", "json", slice]);
+        var streams = System.Text.Json.JsonDocument.Parse(probed).RootElement.GetProperty("streams").EnumerateArray().ToList();
+        var picture = streams.First(s => s.GetProperty("codec_type").GetString() == "video");
+        var frames = int.Parse(picture.GetProperty("nb_read_frames").GetString()!);
+        Check("an NTSC start video on a PAL film: the source really is 29.97 fps", Math.Abs(BluRay.Probe(ntscIntro).Fps - 29.97) < 0.01);
+        Check("an NTSC start video on a PAL film: the disc's titles and menus are PAL (bits 4-5 of their video attributes)", (vts[0x200] >> 4 & 3) == 1 && (vts[0x100] >> 4 & 3) == 1);
+        Check("an NTSC start video on a PAL film: its chain and the film's say 2 s at 25 fps", vts[introPgc + 6] == 2 && vts[introPgc + 7] >> 6 == 1 && vts[filmPgc + 6] == 2 && vts[filmPgc + 7] >> 6 == 1);
+        Check($"an NTSC start video on a PAL film: its sectors on the disc are 720x576 at 25 fps, 2 s long ({frames} frames), with 48 kHz sound",
+              picture.GetProperty("width").GetInt32() == 720 && picture.GetProperty("height").GetInt32() == 576 && picture.GetProperty("r_frame_rate").GetString() == "25/1" && frames is >= 48 and <= 52
+              && streams.Any(s => s.GetProperty("codec_type").GetString() == "audio" && s.GetProperty("sample_rate").GetString() == "48000"));
+        Check("that disc passes the structure check", DiscCheck.Folder(mixedDisc).Count == 0);
     }
     catch (FileNotFoundException e) { Check($"a DVD's start video: {e.Message}", false); }
     catch (InvalidOperationException e) { Check($"a DVD's start video: {e.Message.Split('\n')[0]}", false); } // a tool that failed: this disc cannot be made, which is a finding, not a crash of the check
