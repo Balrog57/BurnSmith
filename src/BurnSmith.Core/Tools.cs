@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 
@@ -6,13 +7,19 @@ namespace BurnSmith.Core;
 /// <summary>Finds and runs the external authoring tools (ffmpeg, tsMuxeR, ...). No tool path is hardwired.</summary>
 public static class Tools
 {
-    static readonly Dictionary<string, string> cache = new(StringComparer.OrdinalIgnoreCase);
+    static readonly ConcurrentDictionary<string, string> cache = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Folders searched recursively, in order: BURNSMITH_TOOLS, then a "tools" folder next to the app or any parent.</summary>
+    /// <summary>As <see cref="SearchOption.AllDirectories"/> does, nothing skipped, except that a locked sub-folder does not end the search.</summary>
+    static readonly EnumerationOptions Everywhere = new() { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = 0 };
+
+    /// <summary>
+    /// Folders searched recursively, in order: BURNSMITH_TOOLS, then a "tools" folder next to the app and, in a development build only, in any parent:
+    /// an installed app must not run what a normal user can drop in C:\tools. Lazy, so a tool found early does not wait for the unpack behind <see cref="BundledDir"/>.
+    /// </summary>
     public static IEnumerable<string> SearchRoots()
     {
-        if (Environment.GetEnvironmentVariable("BURNSMITH_TOOLS") is { Length: > 0 } env) yield return env;
-        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
+        if (Environment.GetEnvironmentVariable("BURNSMITH_TOOLS") is { Length: > 0 } env && Directory.Exists(env)) yield return env;
+        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = BundledDir() == null ? d.Parent : null)
             if (Directory.Exists(Path.Combine(d.FullName, "tools"))) yield return Path.Combine(d.FullName, "tools");
     }
 
@@ -45,17 +52,17 @@ public static class Tools
         if (cache.TryGetValue(exe, out var hit)) return hit;
         foreach (var root in SearchRoots())
         {
-            var found = Directory.EnumerateFiles(root, exe, SearchOption.AllDirectories).FirstOrDefault();
+            var found = Directory.EnumerateFiles(root, exe, Everywhere).FirstOrDefault();
             if (found != null) return cache[exe] = found;
         }
-        if (BundledDir() is { } bundled && Directory.EnumerateFiles(bundled, exe, SearchOption.AllDirectories).FirstOrDefault() is { } inside)
+        if (BundledDir() is { } bundled && Directory.EnumerateFiles(bundled, exe, Everywhere).FirstOrDefault() is { } inside)
             return cache[exe] = inside;
         foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
         {
             var p = Path.Combine(dir, exe);
             if (File.Exists(p)) return cache[exe] = p;
         }
-        throw new FileNotFoundException($"{exe} not found: put it under the tools folder, set BURNSMITH_TOOLS or add it to PATH (the released exe carries ffmpeg and tsMuxeR itself)");
+        throw new FileNotFoundException($"{exe} introuvable : indiquez son dossier dans la variable d'environnement BURNSMITH_TOOLS, ajoutez-le au PATH ou placez-le dans un dossier tools à côté de BurnSmith (BurnSmith fournit ffmpeg, ffprobe et tsMuxeR, mais ni dvdauthor ni spumux).");
     }
 
     /// <summary>

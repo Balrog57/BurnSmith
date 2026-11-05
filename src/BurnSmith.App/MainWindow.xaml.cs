@@ -174,7 +174,7 @@ public partial class MainWindow : Window
         });
         if (missing.Count == 0) return;
         DvdItem.IsEnabled = false;
-        DvdItem.ToolTip = $"Indisponible : {string.Join(" et ", missing)} introuvable(s). Placez ces programmes dans un dossier tools à côté de BurnSmith.";
+        DvdItem.ToolTip = $"Indisponible : {string.Join(" et ", missing)} introuvable(s). BurnSmith ne les fournit pas : indiquez le dossier qui les contient dans la variable d'environnement BURNSMITH_TOOLS (ou ajoutez-le au PATH), puis relancez BurnSmith.";
         if (kind == "dvd") SetKind("bd"); // chosen in the moment before the answer came
     }
 
