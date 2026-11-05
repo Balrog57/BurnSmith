@@ -297,13 +297,14 @@ public partial class MainWindow : Window
         if (titles.Count > 0)
         {
             // shortcut: a 4K disc is sized by its source files (HEVC is kept), the audio dropped from them is not subtracted
-            est = kind == "dvd" ? Dvd.EstimateGB(titles.Select(t => (t.OnDisc, t.ToDisc())).ToList(), cap.Usable) : Estimate(cap, encode) ?? titles.Sum(t => new FileInfo(t.Path).Length * t.OnDisc.Duration / t.Info.Duration) / 1e9;
+            est = kind == "dvd" ? Dvd.EstimateGB(titles.Select(t => (t.OnDisc, t.ToDisc())).ToList(), cap.Usable) : Estimate(cap, encode) ?? titles.Sum(t => Tools.SizeOf(t.Path) * t.OnDisc.Duration / t.Info.Duration) / 1e9;
             if (est > cap.Usable) note = "\ntrop grand pour ce support";
+            if (titles.Any(t => !File.Exists(t.Path))) note = "\nune vidéo source est introuvable";
             if (kind == "uhd" && titles.Any(t => t.Info.VideoCodec != "hevc" || t.Info.Height != 2160)) note = "\nles sources doivent être en HEVC 2160p";
         }
         CapBar.Value = Math.Min(100, est / cap.Gb * 100);
         CapText.Text = $"{est:0.00} Go / {cap.Usable:0.#} Go utilisables{note}";
-        ProjectInfo.Text = titles.Count == 0 ? "" : $"{titles.Count} vidéo{(titles.Count > 1 ? "s" : "")}{(titles.Any(t => t.Bonus) ? $" (dont {titles.Count(t => t.Bonus)} bonus)" : "")}{(titles.Any(t => t.Intro) ? " (dont une vidéo de début)" : "")}  ·  {titles.Sum(t => new FileInfo(t.Path).Length) / 1e9:0.0} Go";
+        ProjectInfo.Text = titles.Count == 0 ? "" : $"{titles.Count} vidéo{(titles.Count > 1 ? "s" : "")}{(titles.Any(t => t.Bonus) ? $" (dont {titles.Count(t => t.Bonus)} bonus)" : "")}{(titles.Any(t => t.Intro) ? " (dont une vidéo de début)" : "")}  ·  {titles.Sum(t => Tools.SizeOf(t.Path)) / 1e9:0.0} Go";
     }
 
     /// <summary>Size in GB of the Blu-ray for an output and an encoding (the video at the fitted rate, plus audio and menu); null for a DVD, a 4K disc or no video.</summary>

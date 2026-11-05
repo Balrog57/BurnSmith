@@ -16,6 +16,12 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        snapshotRun = e.Args.Contains("--snapshot");
+        DispatcherUnhandledException += OnWindowError;
+        // only these two see what runs off the window's thread; the app is dying in the first, so what it started must die with it
+        AppDomain.CurrentDomain.UnhandledException += (_, x) => { BurnSmith.Core.AppFiles.LogError("Erreur fatale", x.ExceptionObject as Exception ?? new InvalidOperationException($"{x.ExceptionObject}")); BurnSmith.Core.Tools.KillAll(); };
+        TaskScheduler.UnobservedTaskException += (_, x) => BurnSmith.Core.AppFiles.LogError("Tâche en arrière-plan", x.Exception);
+        BurnSmith.Core.AppFiles.Root(); // now, before the unpack below takes its lock: the log needs this answer without waiting
         BurnSmith.Core.Tools.Payload = () => BurnSmith.Payload.Payload.Open(); // a lambda: the 170 MB assembly loads only when this runs
         BurnSmith.Core.Tools.TemplatePayload = () => BurnSmith.Payload.Payload.OpenTemplates();
         // first run of a build: unpack ffmpeg, tsMuxeR, the open menu library and the template pictures into BurnSmith-data while the window comes up
@@ -58,6 +64,26 @@ public partial class App : Application
         png.Frames.Add(BitmapFrame.Create(bmp));
         using (var f = File.Create(e.Args[snap + 1])) png.Save(f);
         Shutdown();
+    }
+
+    bool snapshotRun, showingError;
+
+    /// <summary>
+    /// An error nobody caught on the window's thread: written to the log and shown, and the app goes on, since a build running on another thread is not hurt.
+    /// Out of memory, or a snapshot run with nobody to answer, still ends the app with a failing exit code; with no window left (it failed while opening) the app closes instead of staying hidden.
+    /// </summary>
+    void OnWindowError(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        BurnSmith.Core.AppFiles.LogError("Erreur dans la fenêtre", e.Exception);
+        if (snapshotRun || e.Exception is OutOfMemoryException) return;
+        e.Handled = true;
+        if (showingError) return; // an error at every redraw must not stack a dialog per redraw; each is logged
+        showingError = true;
+        var windowLeft = Windows.OfType<Window>().Any(w => w.IsVisible);
+        MessageBox.Show($"Une erreur inattendue s'est produite :\n\n{e.Exception.Message}\n\nLe détail est enregistré dans :\n{BurnSmith.Core.AppFiles.ErrorLog()}\n\n" + (windowLeft ? "BurnSmith reste ouvert ; si quelque chose semble anormal, fermez-le et relancez-le." : "BurnSmith va se fermer."),
+            "BurnSmith", MessageBoxButton.OK, MessageBoxImage.Error);
+        showingError = false;
+        if (!windowLeft) Shutdown(1);
     }
 
     /// <summary>Once per start of an installed copy: offers the newest GitHub release. Offline or up to date, it says nothing.</summary>
