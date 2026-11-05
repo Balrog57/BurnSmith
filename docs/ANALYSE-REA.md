@@ -509,3 +509,33 @@ DVDFab garde le bouton de départ dans **GPR108** et le relit au retour au menu 
 **Preuves** : `bdj\build.ps1` reconstruit `assets\bdj\menu.jar` (10 907 octets, classes majeures **47** = Java 1.3) ; `javap` montre `bipush 108`, `RegisterAccess.getGPR/setGPR` et les trois appels à `remember` ; le disque Blu-ray construit embarque ce `Menu.class` (14 690 octets dans le jar du disque). En lecture dans le VLC portable (libbluray, JDK 8) : le journal donne `page root` → `play playlist 1` → `playback ended` → `page root` → **`resume on button 0`**.
 
 **Ce qui n'est pas prouvé** : la différence de bouton. Les touches de navigation envoyées par l'interface RC de VLC (`key-nav-right`, `key-nav-down`) n'ont pas déplacé le focus dans cet essai (le journal joue toujours le bouton 0), donc la reprise a été observée sur l'indice 0, celui qui était mémorisé. La mécanique (écriture, lecture, réapplication) est établie ; le cas « on revient sur un autre bouton » ne l'est pas.
+## 20. DVDFab : le modèle de l'éditeur de menu, et où il n'est pas (2026-11-05)
+
+### 20.1 Question close : ce n'est dans aucune DLL
+
+Recherche des littéraux de création de menu (`spumux`, `dvdauthor`, `AuthorData`, `template.bd.xml`, `bdtemplates`, `selection.png`, `menu_%`) dans **toutes** les DLL de 1 à 15 Mo du dossier `App\DVDFab13` : seule `xdisc.dll` (11,8 Mo) en contient un (`menu_%`), et le contexte montre que c'est le **lecteur** de disques — `pathplayer`, `VTS_%02d_?.VOB`, `button: vts_%d menu_%d pgc_%d cell_%d`, `pathplayer: button stack begin`. Aucune DLL ne porte `spumux` ni `dvdauthor` : la création de menu de DVDFab est **dans l'exécutable** (93 Mo), avec son interface QML `author/BDAuthor.qml` et le jar BD-J.
+
+### 20.2 Analyse complète de l'exécutable : tentée, abandonnée
+
+Ghidra en ligne de commande sur `DVDFab64.exe` (93 Mo) : **34 minutes de CPU, 1,6 Go de mémoire, aucune fin** — arrêté. C'est une limite de moyens, pas une conclusion sur le fichier : le programme n'est ni packé ni protégé à ce qu'on en voit (ses chaînes QML sont en clair, §12). Pour l'explorer il faudrait une machine plus large ou une analyse ciblée par adresse, hors de ce qui est faisable ici.
+
+### 20.3 Ce que l'exécutable dit de l'éditeur de menu (extraction ciblée)
+
+Balayage des 4 Mo autour de la zone QML (`0x2D80000`–`0x3180000`), jetons filtrés. Ce sont les **propriétés du modèle de l'éditeur**, donc la liste de ce que DVDFab sait régler :
+
+| Famille | Propriétés relevées |
+|---|---|
+| Pages du disque | `has_root_page`, `has_setup_page`, `has_separate_audio_subtitle_page`, `no_menu`, `none_setup`, `no_setup_btn`, `is_uhd_menu`, `menu_mode`, `scenes_all_in_one` |
+| Fond | `background_type`, `menu_background_type`, `menu_background_video_type`, `use_menu_background_video`, `still_image`, `image_video`, `frame_video`, `bg_playlist`, `bg_music`, `covering_color`, `background_cover` |
+| Surbrillance | `selection_color_index`, `selection_margin_left`, `selection_pos`, `selected_default_style_color`, `selected_custom_style_color`, `selected_default_transparency`, `selected_custom_transparency`, `frame_hover`, `frame_selected`, `box_hover`, `btn_style`, `btn_style_type_1`, `btn_style_type_ok`, `ui_style`, `skin_color_name` |
+| Pages de scènes | `video_per_scene`, `mul_scene_op`, `scenes_width`, `scenes_height`, `scenes_left`, `scenes_top`, `scenes_font_size`, `play_font_size`, `pic_num`, `pscenes`, `pscene_list_hover_bg_image`, `pscenes_picture_radius`, `tscenes` |
+| Textes et images libres | `extra_texts`, `extra_pics`, `texts`, `pics`, `specialvideo`, `title_widget`, `photo_list`, `title_list`, `audio_list`, `subtitle_list` |
+| Actions de l'éditeur | `updateTemplate()`, `slot_saveTemplate`, `slot_saveTemplateFinish`, `signal_templateCountChange`, `msgbox_delete_template`, `CustomizeSetDialog`, `open_menu_background_dlg`, `editImageBg`, `editVideoBg`, `editBG` |
+| États « actif » des boutons du menu | `rootmenu_play_avtive`, `rootmenu_scenes_avtive`, `rootmenu_setup_avtive`, `setup_home_avtive`, `setup_play_avtive` (fautes de frappe de l'éditeur, recopiées telles quelles) |
+| Sauvegarde d'un modèle | UUID de modèle, `slot_saveTemplate(QString)`, `slot_saveTemplateFinish(QString, QString, QString)`, `thumb4x3.bd.png`, `backgroud1.png` (faute là encore), message « Oops! This name already exists. » |
+
+Trois choses que cela établit et qui manquaient :
+
+1. **DVDFab distingue trois natures de fond** — image fixe, image animée, vidéo plein cadre (`still_image` / `image_video` / `frame_video`) — et un drapeau `use_menu_background_video`. BurnSmith n'a que « image » ou « boucle vidéo ».
+2. **La surbrillance est réglée par style et par transparence** (`selected_default_style_color` + `selected_default_transparency`, et une variante « custom »), ce qui complète les trois styles du §12.1 : le modèle porte aussi l'opacité.
+3. **Un modèle sauvegardé garde sa vignette 4:3** (`thumb4x3.bd.png`) et son fond (`backgroud1.png`) à côté de son XML — la structure exacte des dossiers `author/templates` et `author/bdtemplates` observée sur le disque.
