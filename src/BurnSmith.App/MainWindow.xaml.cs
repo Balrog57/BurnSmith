@@ -107,6 +107,7 @@ public partial class MainWindow : Window
             foreach (var tool in new[] { "dvdauthor.exe", "spumux.exe" })
                 try { Tools.Find(tool); }
                 catch (FileNotFoundException) { absent.Add(tool); }
+                catch (Exception) { } // a tools folder that cannot be read must not stop the window at launch: the build itself will say what is wrong
             return absent;
         });
         if (missing.Count == 0) return;
