@@ -392,3 +392,50 @@ Reste de ce côté : le **mode liste** (`ListTypeText` + `ItemText0..9`) et la p
 **Épreuves** : rendu de `Birthday 01` avec `--list` et dix épisodes — les dix lignes tombent à x = 540, y de 270 à 810, dans la police du thème, avec le bouton Retour du thème en dessous ; `check-elements` 15/15 (nouvelle vérification : dix boutons en liste là où la grille n'en tient que quelques-uns, tous à la même abscisse) ; `check-templates` inchangé, le mode grille restant celui par défaut.
 
 Reste de ce côté : la page de réglages décrite par `SetupAudioText` / `SetupSubtitleText` / `ASLangTitleText`, et les **vignettes animées** de DVDFab (`DynamicThumbnail`).
+## 16. Yuhan : l'exécutable décompilé (Ghidra en ligne de commande), et une reproduction bloquée (2026-11-05)
+
+Le pont REA refuse `BlurayDVDCreator.exe` (1,7 Mo, délai) : j'ai donc utilisé **Ghidra en ligne de commande**, comme le prévoit le guide. Script `analysis\ghidra\DumpMenuFuncs.java` (décompile toute fonction référençant une chaîne de menu), lancé par `analyzeHeadless` ; analyse réussie, **10 fonctions** rendues dans `analysis\yuhan-exe-menu.txt`.
+
+### 16.1 Ce que l'exécutable fait vraiment
+
+| Chaîne | Fonction | Ce qu'elle fait |
+|---|---|---|
+| `%1/config.dat` | `FUN_1400931f0` | lit le fichier, **saute les 2 premiers octets** (`setRawData(buf + 2, n)`), puis **parse le XML avec `QDomDocument`** et parcourt les enfants en comparant l'attribut **`Resolution`** |
+| `%1/PresetMenu/%2` | `FUN_140078660` | construit le dossier du thème, avec `%1x%2` pour la résolution (« 1920x1080 ») |
+| `%1/PresetMenu/%2/%3` | `FUN_140059730` | construit le chemin de la vignette : `thumb_169.jpg` / `thumb_43.jpg`, avec repli sur les images **`no_menu_small`**, `no_menu_small_169`, `no_menu_small_43` |
+| `no_menu_large` | `FUN_14006e380` | dessine l'aperçu « pas de menu » (fond `background-color:#808080;`, texte) |
+| `menu_add_text`, `menu_add_pic`, `prev_arrow`, `next_arrow`, `play`, `stop`, `browse` | `FUN_140056b20` | construit la **barre d'outils de l'éditeur de menu** |
+| `%1/menu_%2.m2ts`, `%1/bf_menu_%2.m2ts`, `%1/menu_0.vob`, `%1/menu_%2.vob` | `FUN_14001ca10`, `FUN_140017fe0`, `FUN_140040320`, `FUN_140042480` | écriture des clips de menu (Blu-ray et DVD) |
+
+**Deux constats qui comptent.**
+
+1. Le déchiffrement de `config.dat` **n'est pas** dans la fonction qui lit le fichier : elle reçoit un tampon déjà en clair et saute l'en-tête de 2 octets. La clé AES reste dans l'exécutable (octet `0x192420`, §13) et le déchiffrement se fait en amont. Cela confirme l'implémentation de `YuhanSkin` (même en-tête de longueur, même XML, même sélection par `Resolution`).
+2. **L'éditeur de menu de Yuhan se réduit à « ajouter du texte », « ajouter une image », page précédente / suivante, lecture et arrêt.** Aucun bouton libre, aucune mise en page par glisser-déposer. C'est bien moins que DVDStyler, et cela recadre l'ambition : ce que BurnSmith offre déjà (éléments libres + boutons à action) dépasse Yuhan.
+
+### 16.2 La page de réglages : une reproduction volontairement non faite
+
+Le `<Setup>` de chaque branche porte **17 enfants** :
+
+```xml
+<Setup>
+  <Background FileName="bg_menu.jpg" …/>
+  <SetupAudioText    Left="850" Top="400" Size="54"/>      <!-- libellé AUDIO -->
+  <SetupSubtitleText Left="850" Top="540" Size="54"/>      <!-- libellé SOUS-TITRES -->
+  <ASLangTitleText   Left="750" Top="150" Size="45"/>      <!-- titre de la page -->
+  <LangItemText>                                            <!-- 8 lignes, x = 750 -->
+    <ItemText0 Left="750" Top="270" Size="36"/>
+    <ItemText1 Left="750" Top="345" Size="36"/>  … ItemText7 Top="795"
+  </LangItemText>
+  <ButtonPre  Left="627" Top="900" Width="64" Height="64"/>
+  <Return     Left="927" Top="900" Width="64" Height="64"/>
+  <ButtonNext Left="1227" Top="900" Width="64" Height="64"/>
+</Setup>
+```
+
+C'est **une liste unique de huit langues** à x = 750, pas deux colonnes : les deux libellés (y = 400 et 540) tombent **sur** les lignes 2 et 4 de cette liste. Le modèle décrit donc une page où la liste et les libellés ne sont pas affichés ensemble (ou dont les libellés servent dans un autre mode), et il n'y a **aucune place** pour deux colonnes de six et six lignes.
+
+Une reproduction « deux colonnes sous les deux en-têtes » — ce que proposait la délégation — aurait donné des lignes traversant l'en-tête des sous-titres et une dernière ligne hors écran (y = 1168 pour 1080). **Je ne l'ai pas appliquée.** Reproduire cette page fidèlement demande un modèle que BurnSmith n'a pas : soit des sous-pages audio / sous-titres (Yuhan écrit d'ailleurs des clips séparés, `setup_audio_%2.m2ts` et `setup_subtitle_%2.m2ts`, §2), soit une pagination de la liste. C'est une tâche de conception, pas un correctif.
+
+### 16.3 État de la délégation
+
+Trois tentatives de faire écrire Claude Code dans ce dépôt ont échoué de la même façon : `Edit` et `Write` sont refusés par son bac à sable (« don't ask mode »), et `dotnet` aussi. Les deux dernières ont rendu des **patchs utilisables** (le second avec une analyse juste de la chaîne d'appel `HasSetupLists` → `MenuBuilder.Settings`), mais rien n'a pu être appliqué ni compilé par lui. Tant que ces droits ne sont pas ouverts, la reproduction reste faite par l'orchestrateur.
