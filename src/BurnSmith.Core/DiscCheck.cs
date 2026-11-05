@@ -107,7 +107,7 @@ public static class DiscCheck
     {
         var all = Directory.GetFiles(video);
         long Sectors(string pattern) => all.Where(f => Regex.IsMatch(Path.GetFileName(f), pattern, RegexOptions.IgnoreCase)).Sum(f => new FileInfo(f).Length) / 2048 - 1;
-        long LastSector(string ifo) { using var f = File.OpenRead(ifo); f.Position = 12; var b = new byte[4]; f.Read(b); return b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]; }
+        long LastSector(string ifo) { using var f = File.OpenRead(ifo); if (f.Length < 16) return -1; f.Position = 12; var b = new byte[4]; f.ReadExactly(b); return b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]; }
         if (Starts(Path.Combine(video, "VIDEO_TS.IFO"), "DVDVIDEO-VMG", "VIDEO_TS.IFO", problems))
         {
             Same(Path.Combine(video, "VIDEO_TS.IFO"), Path.Combine(video, "VIDEO_TS.BUP"), "VIDEO_TS.BUP", problems);

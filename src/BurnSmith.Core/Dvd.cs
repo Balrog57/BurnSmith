@@ -36,6 +36,11 @@ public static class Dvd
     public static void Build(DvdJob job, Action<string>? log = null)
     {
         log ??= _ => { };
+        if (job.Titles.Any(t => t.Intro)) // shortcut: a DVD has no start video yet (it would be a first-play PGC), so the video is left off rather than put in the menu
+        {
+            log("warning: the start video is left out: only a Blu-ray plays one before the menu");
+            job = job with { Titles = [.. job.Titles.Where(t => !t.Intro)] };
+        }
         if (job.Titles.Count == 0) throw new ArgumentException("no video to put on the disc");
         if (job.Titles.Count > 1 && job.Menu == null) throw new InvalidOperationException("several videos need a menu to choose from");
         job = job with { Titles = DiscTitle.MainFirst(job.Titles) }; // titles 1..mainCount are the feature, the bonus ones follow

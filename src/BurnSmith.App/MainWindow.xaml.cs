@@ -39,11 +39,13 @@ public partial class MainWindow : Window
         public int? ChapterMinutes { get; set; }
         /// <summary>An extra (trailer, making-of): after the feature on the disc, off "Lecture" / "Tout lire", on the menu's Bonus page.</summary>
         public bool Bonus { get; set; }
+        /// <summary>The video that plays when the disc starts, before the menu (one at most; not a title of the menu; Blu-ray only).</summary>
+        public bool Intro { get; set; }
         /// <summary>The audio track that plays and the subtitle that shows when the disc starts (source track numbers among those kept; null = the first audio, no subtitle).</summary>
         public int? DefaultAudio { get; set; }
         public int? DefaultSub { get; set; }
         /// <summary>The name as the table shows it.</summary>
-        public string Shown => Bonus ? $"Bonus · {Name}" : Name;
+        public string Shown => Intro ? $"Début · {Name}" : Bonus ? $"Bonus · {Name}" : Name;
 
         /// <summary>The source as the disc sees it: its duration is the part kept.</summary>
         public SourceInfo OnDisc => ToDisc().Cut(Info);
@@ -59,7 +61,14 @@ public partial class MainWindow : Window
         public string SubText => Summary(Subs.OrderBy(i => i == DefaultSub ? 0 : 1).Select(i => (Tracks.Subtitles.FirstOrDefault(t => t.Index == i)?.Name ?? "?") + (i == DefaultSub ? " (défaut)" : "")).ToList());
 
         static string Summary(List<string> names) => names.Count == 0 ? "Aucun" : names.Count == 1 ? names[0] : $"{names[0]} +{names.Count - 1}";
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes);
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro);
+
+        /// <summary>Another row for the same video with the same settings (a title cut in two).</summary>
+        public Entry Clone() => new(Path, Info)
+        {
+            Name = Name, Audio = [.. Audio], Subs = [.. Subs], Extra = [.. Extra], Start = Start, End = End, Volume = Volume, ChapterAt = ChapterAt,
+            ChapterMinutes = ChapterMinutes, Bonus = Bonus, Intro = Intro, DefaultAudio = DefaultAudio, DefaultSub = DefaultSub,
+        };
     }
 
     readonly ObservableCollection<Entry> titles = [];
@@ -115,7 +124,7 @@ public partial class MainWindow : Window
     public MenuEditorWindow CreateEditor(MenuDesign? start = null) => new(start ?? design, previewFrame, EditorContent());
 
     /// <summary>The video the menu's picture, the disc's name and the audio / subtitle pages come from: the first that is not a bonus.</summary>
-    Entry? MainEntry => titles.FirstOrDefault(t => !t.Bonus) ?? titles.FirstOrDefault();
+    Entry? MainEntry => titles.FirstOrDefault(t => !t.Bonus && !t.Intro) ?? titles.FirstOrDefault();
 
     /// <summary>What the editor previews: the real chapters / episodes / bonus / tracks of the disc, or a sample while no video is loaded.</summary>
     MenuContent EditorContent()
@@ -123,8 +132,8 @@ public partial class MainWindow : Window
         if (MainEntry is not { } first)
             return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, 12).ToList(), null, ["Français 5.1", "English 5.1"], ["Français", "English"]);
         var disc = first.ToDisc();
-        var main = titles.Where(t => !t.Bonus || t == first).ToList(); // as on the disc: the feature first, then the extras
-        var extras = titles.Where(t => t.Bonus && t != first).ToList();
+        var main = titles.Where(t => !t.Intro && (!t.Bonus || t == first)).ToList(); // as on the disc: the feature first, then the extras (the start video is on neither)
+        var extras = titles.Where(t => t.Bonus && !t.Intro && t != first).ToList();
         var series = main.Count > 1;
         var chapters = series ? 0 : disc.ChapterList(first.OnDisc.Duration, chapterMinutes).Count;
         return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, chapters).ToList(),
@@ -184,6 +193,7 @@ public partial class MainWindow : Window
             t.Subs = t.Subs.Where(i => t.Tracks.Subtitles.First(x => x.Index == i).Supported).ToList();
             t.Refresh();
         }
+        if (k == "dvd" && titles.Any(t => t.Intro)) Warn("La vidéo de début ne passe que sur Blu-ray : elle sera laissée de côté sur un DVD.");
         Update();
     }
 
@@ -216,7 +226,7 @@ public partial class MainWindow : Window
         }
         CapBar.Value = Math.Min(100, est / cap.Gb * 100);
         CapText.Text = $"{est:0.00} Go / {cap.Usable:0.#} Go utilisables{note}";
-        ProjectInfo.Text = titles.Count == 0 ? "" : $"{titles.Count} vidéo{(titles.Count > 1 ? "s" : "")}{(titles.Any(t => t.Bonus) ? $" (dont {titles.Count(t => t.Bonus)} bonus)" : "")}  ·  {titles.Sum(t => new FileInfo(t.Path).Length) / 1e9:0.0} Go";
+        ProjectInfo.Text = titles.Count == 0 ? "" : $"{titles.Count} vidéo{(titles.Count > 1 ? "s" : "")}{(titles.Any(t => t.Bonus) ? $" (dont {titles.Count(t => t.Bonus)} bonus)" : "")}{(titles.Any(t => t.Intro) ? " (dont une vidéo de début)" : "")}  ·  {titles.Sum(t => new FileInfo(t.Path).Length) / 1e9:0.0} Go";
     }
 
     /// <summary>Size in GB of the Blu-ray for an output and an encoding (the video at the fitted rate, plus audio and menu); null for a DVD, a 4K disc or no video.</summary>
@@ -232,7 +242,8 @@ public partial class MainWindow : Window
         var dlg = new OpenFileDialog
         {
             Multiselect = true,
-            Filter = "Vidéos|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv;*.webm;*.mpg;*.mpeg;*.vob|Tous les fichiers|*.*",
+            Filter = "Vidéos, photos et musique|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv;*.webm;*.mpg;*.mpeg;*.vob;*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tif;*.tiff;*.mp3;*.flac;*.wav;*.m4a;*.aac;*.ogg;*.opus;*.wma;*.ac3;*.mka"
+                     + "|Vidéos|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv;*.webm;*.mpg;*.mpeg;*.vob|Photos (diaporama)|*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tif;*.tiff|Musique|*.mp3;*.flac;*.wav;*.m4a;*.aac;*.ogg;*.opus;*.wma;*.ac3;*.mka|Tous les fichiers|*.*",
         };
         if (dlg.ShowDialog(this) == true) _ = AddFiles(dlg.FileNames);
     }
@@ -244,16 +255,81 @@ public partial class MainWindow : Window
 
     public Task LoadSource(string path) => AddFiles([path]);
 
+    // what MediaMaker built from photos and songs (a folder of ours, removed when the window closes) and the name each one shows
+    readonly string mediaDir = Path.Combine(Path.GetTempPath(), "BurnSmith-media-" + Environment.ProcessId);
+    readonly Dictionary<string, string> madeNames = new(StringComparer.OrdinalIgnoreCase);
+
+    static void NaturalOrder(List<string> list) =>
+        list.Sort((a, b) => string.Compare(Path.GetFileName(a), Path.GetFileName(b), CultureInfo.CurrentCulture, CompareOptions.NumericOrdering));
+
+    void Say(string line) => Dispatcher.BeginInvoke(() => { Append(line); StatusText.Text = line; });
+
+    /// <summary>The path of a video to make in our folder, with the name its row will show.</summary>
+    string NextMade(string name)
+    {
+        if (madeNames.Count == 0) Closed += (_, _) => Tools.TryDelete(mediaDir);
+        Directory.CreateDirectory(mediaDir);
+        var file = Path.Combine(mediaDir, $"m{madeNames.Count + 1:00}.mkv");
+        madeNames[file] = name;
+        return file;
+    }
+
+    /// <summary>
+    /// Photos dropped together become one slideshow (the songs dropped with them play under it); songs alone become one title each, with their cover.
+    /// Everything else is a video and stays as it is.
+    /// </summary>
+    async Task<List<string>> MakeVideos(List<string> files)
+    {
+        var photos = files.Where(MediaMaker.IsPhoto).ToList();
+        var songs = files.Where(MediaMaker.IsSong).ToList();
+        var videos = files.Where(f => !MediaMaker.IsPhoto(f) && !MediaMaker.IsSong(f)).ToList();
+        if (photos.Count == 0 && songs.Count == 0) return videos;
+        NaturalOrder(photos);
+        NaturalOrder(songs);
+        try
+        {
+            if (photos.Count > 0 && Prompt.Ask(this, photos.Count == 1 ? "Diaporama d'une photo : secondes" : $"Diaporama de {photos.Count} photos : secondes par photo", "5") is { } text
+                && double.TryParse(text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var each))
+            {
+                var file = NextMade("Diaporama" + (madeNames.Values.Count(n => n.StartsWith("Diaporama")) is var k and > 0 ? $" {k + 1}" : ""));
+                var music = songs.ToList();
+                songs.Clear(); // the songs of a slideshow are its music, not titles
+                StatusText.Text = "Préparation du diaporama…";
+                await Task.Run(() => MediaMaker.Slideshow(photos, each, music, file, Say));
+                videos.Add(file);
+            }
+            foreach (var song in songs)
+            {
+                var file = NextMade(Path.GetFileNameWithoutExtension(song));
+                StatusText.Text = "Préparation de " + Path.GetFileName(song) + "…";
+                var title = await Task.Run(() =>
+                {
+                    MediaMaker.Song(song, MediaMaker.CoverOf(song, mediaDir), file, Say);
+                    return MediaMaker.Describe(song).Title;
+                });
+                if (title != null) madeNames[file] = title;
+                videos.Add(file);
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or IOException)
+        {
+            Warn("Photos / musique : " + ex.Message.Split('\n')[0]);
+        }
+        return videos;
+    }
+
     /// <summary>Probes and adds videos; several at once are put in natural order (episode 2 before episode 10).</summary>
     async Task AddFiles(IEnumerable<string> files)
     {
         var list = files.Where(File.Exists).ToList();
-        list.Sort((a, b) => string.Compare(Path.GetFileName(a), Path.GetFileName(b), CultureInfo.CurrentCulture, CompareOptions.NumericOrdering));
+        NaturalOrder(list);
+        list = await MakeVideos(list);
         foreach (var path in list)
         {
             try
             {
                 var entry = new Entry(path, await Task.Run(() => BluRay.Probe(path))) { Extra = ExternalSubtitle.Near(path) };
+                if (madeNames.TryGetValue(path, out var shown)) entry.Name = shown;
                 // episodes usually share one layout: start from the first video's choice
                 if (titles.FirstOrDefault() is { } first && first.Info.Audio.Count == entry.Info.Audio.Count)
                 {
@@ -303,11 +379,11 @@ public partial class MainWindow : Window
         if (titles.Count == 0) { previewFrame = previewFor = null; Poster.Source = null; }
         else
         {
-            if (titles.All(t => t.Bonus)) // a disc needs a feature: the first video becomes it again
+            if (titles.All(t => t.Bonus || t.Intro)) // a disc needs a feature: the first video becomes it again
             {
-                titles[0].Bonus = false;
+                titles[0].Bonus = titles[0].Intro = false;
                 titles[0].Refresh();
-                Warn($"« {titles[0].Name} » redevient le film principal : un disque a besoin d'au moins une vidéo qui ne soit pas un bonus.");
+                Warn($"« {titles[0].Name} » redevient le film principal : un disque a besoin d'au moins une vidéo qui ne soit ni un bonus ni la vidéo de début.");
             }
             var name = MainEntry!.Name;
             if (!labelEdited) volume = Regex.Replace(name.ToUpperInvariant(), "[^A-Z0-9_]+", "_").Trim('_') is { Length: > 0 } l ? l[..Math.Min(32, l.Length)] : "MON_DISQUE";
@@ -384,14 +460,95 @@ public partial class MainWindow : Window
         var bonus = new MenuItem
         {
             Header = "Bonus (après le film, page Bonus du menu)", IsCheckable = true, IsChecked = entry!.Bonus,
-            IsEnabled = entry.Bonus || titles.Count(t => !t.Bonus) > 1,
+            IsEnabled = !entry.Intro && (entry.Bonus || titles.Count(t => !t.Bonus && !t.Intro) > 1),
         };
         bonus.Click += (_, _) => SetBonus(entry, bonus.IsChecked);
         menu.Items.Add(bonus);
+        var intro = new MenuItem
+        {
+            Header = "Vidéo de début (lue avant le menu, Blu-ray seulement)", IsCheckable = true, IsChecked = entry.Intro,
+            IsEnabled = kind != "dvd" && (entry.Intro || titles.Count(t => !t.Bonus && !t.Intro && t != entry) > 0),
+        };
+        intro.Click += (_, _) => SetIntro(entry, intro.IsChecked);
+        menu.Items.Add(intro);
+        menu.Items.Add(new Separator());
+        var split = new MenuItem { Header = "Couper en deux titres…" };
+        var join = new MenuItem { Header = "Fusionner avec la vidéo suivante", IsEnabled = titles.IndexOf(entry) < titles.Count - 1 };
+        split.IsEnabled = !entry.Intro;
+        split.Click += (_, _) => SplitEntry(entry);
+        join.Click += (_, _) => _ = JoinWithNext(entry);
+        menu.Items.Add(split);
+        menu.Items.Add(join);
         menu.IsOpen = true;
     }
 
+    /// <summary>Two titles from one video: the first runs up to the moment asked, the second starts there (same tracks and settings; the second is re-encoded on a Blu-ray, a copy cannot start on a given frame).</summary>
+    async void SplitEntry(Entry entry)
+    {
+        var (from, to) = (entry.Start, entry.End ?? entry.Info.Duration);
+        if (Prompt.Ask(this, "Couper en deux : à quel moment ? (h:mm:ss)", Timecode.Format(Math.Floor(from + (to - from) / 2))) is not { } text) return;
+        if (Timecode.Parse(text.Trim()) is not { } at || at <= from + 1 || at >= to - 1)
+        {
+            MessageBox.Show(this, $"Entrez un moment entre {Timecode.Format(from + 1)} et {Timecode.Format(to - 1)}.", "Couper en deux titres", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var second = entry.Clone();
+        second.Name = entry.Name + " (2/2)";
+        entry.Name += " (1/2)";
+        (entry.End, second.Start) = (at, at);
+        titles.Insert(titles.IndexOf(entry) + 1, second);
+        entry.Refresh();
+        AfterTitlesChanged();
+        await RefreshPreview();
+    }
+
+    /// <summary>The video and the next one end to end in one new file (stream copy): neither may be cut and both need the same streams. Subtitle files added by hand are not carried over.</summary>
+    async Task JoinWithNext(Entry entry)
+    {
+        var i = titles.IndexOf(entry);
+        if (i < 0 || i + 1 >= titles.Count) return;
+        var next = titles[i + 1];
+        var why = entry.ToDisc().Trimmed || next.ToDisc().Trimmed ? "Retirez d'abord la coupe des deux vidéos."
+            : entry.Bonus != next.Bonus || entry.Intro != next.Intro ? "Une vidéo du film, un bonus et la vidéo de début ne se fusionnent pas entre eux."
+            : !MediaMaker.SameLayout(entry.Info, next.Info) ? "Les deux vidéos n'ont pas les mêmes flux (codec, taille, cadence, pistes) : on ne peut pas les coller sans les réencoder."
+            : null;
+        if (why != null) { MessageBox.Show(this, why, "Fusionner", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+        StatusText.Text = "Fusion des deux vidéos…";
+        try
+        {
+            var file = NextMade(entry.Name);
+            await Task.Run(() => MediaMaker.Join([entry.Path, next.Path], file, Say));
+            var info = await Task.Run(() => BluRay.Probe(file));
+            var joined = new Entry(file, info)
+            {
+                Name = entry.Name, Audio = [.. entry.Audio.Where(a => a < info.Audio.Count)], Subs = [.. entry.Subs.Where(s => s < info.Subtitles.Count)],
+                Volume = entry.Volume, Bonus = entry.Bonus, Intro = entry.Intro, DefaultAudio = entry.DefaultAudio, DefaultSub = entry.DefaultSub,
+            };
+            if (entry.Extra.Count + next.Extra.Count > 0) Warn("Les fichiers de sous-titres ajoutés aux deux vidéos ne suivent pas la fusion.");
+            titles[i] = joined;
+            titles.Remove(next);
+            AfterTitlesChanged();
+            await RefreshPreview();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or IOException)
+        {
+            Warn("Fusion : " + ex.Message.Split('\n')[0]);
+        }
+    }
+
     /// <summary>Marks a video as an extra, or back as part of the feature: the menu gets (or loses) its Bonus button and page.</summary>
+    /// <summary>Makes a video the one that plays when the disc starts (the others lose it: there is one), or a title like the others again.</summary>
+    void SetIntro(Entry entry, bool intro)
+    {
+        foreach (var other in titles.Where(t => t.Intro && t != entry).ToList()) { other.Intro = false; other.Refresh(); }
+        entry.Intro = intro;
+        if (intro) entry.Bonus = false;
+        entry.Refresh();
+        Update();
+        RefreshThumb();
+        _ = RefreshPreview();
+    }
+
     void SetBonus(Entry entry, bool bonus)
     {
         entry.Bonus = bonus;

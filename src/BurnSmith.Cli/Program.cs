@@ -8,6 +8,7 @@ using BurnSmith.Core.Menu;
 //             its language comes from the name ("film.fr.srt") or "fra=film.srt" (for an .idx: only that language)
 // --default-audio N / --default-sub N: after a --video, the audio track that plays / the subtitle that shows when the disc starts (numbers as in --audio / --sub, so among the ones kept);
 //                  the default audio goes first on the disc, the default subtitle is selected by the disc (a menu's settings page shows it chosen)
+// --intro: after a --video, that video plays first when the disc starts, before the menu (before the film when there is no menu); not a title of the menu. Blu-ray only
 // --bonus: after a --video, that video is an extra (trailer, making-of): it goes after the main videos, off "Play" / "Play all", on the menu's Bonus page (needs another, main, video)
 var a = args.ToList();
 string? Opt(string name) => a.IndexOf(name) is var i and >= 0 && i + 1 < a.Count ? a[i + 1] : null;
@@ -55,6 +56,23 @@ if (a.Count >= 2 && a[0] == "check-disc")
     var found = Directory.Exists(a[1]) ? DiscCheck.Folder(a[1]) : DiscCheck.Image(a[1], a.Count > 2 ? a[2] : null);
     Console.WriteLine(found.Count == 0 ? "ok   disc structure" : string.Join(Environment.NewLine, found.Select(p => "FAIL " + p)));
     return found.Count == 0 ? 0 : 1;
+}
+// burnsmith slideshow <out.mkv> [--seconds 5] [--music song]... <photo>... : photos shown one after the other (with the songs under them) as a video, to give to --video
+// burnsmith song <out.mkv> <audio> [--cover picture] : a song as a video (its cover, or black, for as long as it plays)
+// burnsmith join <out.mkv> <video> <video>... : videos with the same streams end to end in one file (streams copied)
+if (a.Count >= 3 && a[0] is "slideshow" or "song" or "join")
+{
+    var made = Path.GetFullPath(a[1]);
+    var music = OptAll("--music").Select(Path.GetFullPath).ToList();
+    if (a[0] == "slideshow")
+    {
+        var pictures = a.Skip(2).Where((x, i) => !x.StartsWith("--") && !(i > 0 && a[i + 1] is "--seconds" or "--music")).ToList();
+        MediaMaker.Slideshow(pictures.Select(Path.GetFullPath).ToList(), double.TryParse(Opt("--seconds"), System.Globalization.CultureInfo.InvariantCulture, out var each) ? each : 5, music, made, Console.WriteLine);
+    }
+    else if (a[0] == "join") MediaMaker.Join(a.Skip(2).Select(Path.GetFullPath).ToList(), made, Console.WriteLine);
+    else MediaMaker.Song(Path.GetFullPath(a[2]), Opt("--cover") is { } c ? Path.GetFullPath(c) : MediaMaker.CoverOf(a[2], Path.GetDirectoryName(made)!), made, Console.WriteLine);
+    Console.WriteLine("ok   " + made);
+    return 0;
 }
 // burnsmith check-templates [--matrix] [--only NAME] [--picture frame.jpg] (--only: the templates whose name contains NAME, no composed designs) : builds every template as film and series and checks pages, buttons, remote moves, pictures;
 // --matrix = every disc shape (1..40 chapters, 2..60 episodes, 1..9 audio, 0..9 subtitles) and 200 designs the menu editor can compose
@@ -238,6 +256,52 @@ if (a.Count >= 1 && a[0] == "check-edit")
               && goodImage.Count == 0 && cutImage.Count == 1 && cutImage[0].Contains("tronquée") && oddImage.Any(p => p.Contains("secteurs")) && DiscCheck.Folder(Path.Combine(discDir, "nothing")).Count == 1);
     }
     finally { Directory.Delete(discDir, true); }
+    // the intro: a movie object added after the others (the film's keep their numbers), and First Playback pointing at it without moving a byte of the index
+    var films = BurnSmith.Core.Hdmv.HdmvNav.MovieObjects([[BurnSmith.Core.Hdmv.HdmvCommand.PlayPl(1)], [BurnSmith.Core.Hdmv.HdmvCommand.PlayPl(2)]]);
+    var withIntro = Bdmv.AppendObject(films, out var introObject, BurnSmith.Core.Hdmv.HdmvCommand.PlayPl(98), BurnSmith.Core.Hdmv.HdmvCommand.JumpTitle(0));
+    var plain = BurnSmith.Core.Hdmv.HdmvNav.Index([0, 1], 2, 3, 6, 1);
+    var started = Bdmv.FirstPlayToObject(plain, 7);
+    var tableAt = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(plain.AsSpan(8)) + 4;
+    Check("an intro adds a movie object (number 2 after the film's 0 and 1, which keep their commands) that plays playlist 98 then jumps to the top menu; the index then starts on that object and nothing else of it changes",
+          introObject == 2 && System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(withIntro.AsSpan(48)) == 3 && withIntro.Length == films.Length + 4 + 24
+          && Bdmv.PrependToFilm(withIntro, BurnSmith.Core.Hdmv.HdmvCommand.SetStreams(subtitle: 1)).Length == withIntro.Length + 12
+          && System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(started.AsSpan(tableAt + 6)) == 7 && started.Length == plain.Length
+          && Enumerable.Range(0, plain.Length).Where(k => plain[k] != started[k]).All(k => k >= tableAt && k < tableAt + 12));
+    var dts = new AudioTrack(0, "dts", 6, "", "");
+    Check("audio copied only while it stays in step with the picture: a DTS track is kept when the title starts at 0, becomes AC-3 with a later start or another volume, and stays on a 4K disc",
+          BluRay.BdAudio(dts, new DiscTitle("x"), false) == "dts" && BluRay.BdAudio(dts, new DiscTitle("x", Start: 90), false) == "ac3" && BluRay.BdAudio(dts, new DiscTitle("x", Volume: 120), false) == "ac3"
+          && BluRay.BdAudio(dts, new DiscTitle("x", Start: 90), true) == "dts" && BluRay.BdAudio(dts, new DiscTitle("x", End: 500), false) == "dts");
+    Check("photos and songs are told from videos by their extension", MediaMaker.IsPhoto("a.JPG") && MediaMaker.IsPhoto("b.png") && !MediaMaker.IsPhoto("c.mkv") && MediaMaker.IsSong("d.FLAC") && !MediaMaker.IsSong("e.mkv") && !MediaMaker.IsSong("f.jpg"));
+    // the slideshow and the song video, made for real when ffmpeg is there: one frame per 1/25 s for every photo (a png and a jpg of different sizes), the cover or black, the length of the song
+    var mediaDir = Path.Combine(Path.GetTempPath(), "bs_media_" + Guid.NewGuid().ToString("N")[..8]);
+    try
+    {
+        var ffmpeg = Tools.Find("ffmpeg.exe");
+        Directory.CreateDirectory(mediaDir);
+        string F(string name) => Path.Combine(mediaDir, name);
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=s=800x600:d=1", "-frames:v", "1", F("a.png")]);
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "smptebars=s=1280x720:d=1", "-frames:v", "1", F("b.jpg")]);
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "sine=f=440:d=3", "-metadata", "title=Premier", F("s.mp3")]);
+        int Frames(string file) => int.Parse(Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-count_frames", "-select_streams", "v", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", file]).Trim());
+        MediaMaker.Slideshow([F("a.png"), F("b.jpg")], 2, [F("s.mp3")], F("show.mkv"));
+        var show = BluRay.Probe(F("show.mkv"));
+        MediaMaker.Song(F("s.mp3"), F("b.jpg"), F("song.mkv"));
+        var song = BluRay.Probe(F("song.mkv"));
+        Check("slideshow: 2 photos of 2 s = 100 frames at 1920x1080 25 fps with AC-3 music; the working folder is gone; a song is 3 s with its title",
+              Frames(F("show.mkv")) == 100 && show is { Width: 1920, Height: 1080, AudioCodec: "ac3" } && Math.Abs(show.Duration - 4) < 0.2 && Math.Abs(show.Fps - 25) < 0.01
+              && !Directory.Exists(F("show.mkv.photos")) && Math.Abs(song.Duration - 3) < 0.2 && Frames(F("song.mkv")) == 75 && MediaMaker.Describe(F("s.mp3")).Title == "Premier");
+        // an mp3 then a flac under 5 s of photos: the sound must last as long as the picture (a concat list of two codecs silently stops after the first)
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "sine=f=660:d=2", F("t.flac")]);
+        MediaMaker.Slideshow([F("a.png"), F("b.jpg")], 2.5, [F("s.mp3"), F("t.flac")], F("mixed.mkv"));
+        var lastSound = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-select_streams", "a", "-show_entries", "packet=pts_time", "-of", "csv=p=0", F("mixed.mkv")]).Trim().Split('\n').Last().Trim();
+        Check("a slideshow's music of two formats (mp3 then flac) plays until the end of the 5 s of photos", double.Parse(lastSound, System.Globalization.CultureInfo.InvariantCulture) > 4.9);
+        MediaMaker.Join([F("show.mkv"), F("show.mkv")], F("twice.mkv"));
+        Check("two videos with the same streams join into one of the sum of both; a different size or track list does not match",
+              Frames(F("twice.mkv")) == 200 && Math.Abs(BluRay.Probe(F("twice.mkv")).Duration - 8) < 0.2 && MediaMaker.SameLayout(show, show)
+              && !MediaMaker.SameLayout(show, show with { Width = 1280, Height = 720 }) && !MediaMaker.SameLayout(show, show with { Audio = [] }) && !MediaMaker.SameLayout(show, show with { Fps = 24 }));
+    }
+    catch (FileNotFoundException) { Console.WriteLine("skip slideshow and song videos (no ffmpeg)"); }
+    finally { if (Directory.Exists(mediaDir)) Directory.Delete(mediaDir, true); }
     Check("custom times in whole seconds, unique", Show(new DiscTitle("x", ChapterAt: [10.2, 10.4, 5]).ChapterList(600, 5)) == "0,5,10");
     var dir = Path.Combine(Path.GetTempPath(), "bs_extsub_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(dir);
@@ -515,7 +579,7 @@ var titles = videos.Select((v, k) =>
     int? defaultAudio = int.TryParse(Own("--default-audio"), out var da) ? da : null, defaultSub = int.TryParse(Own("--default-sub"), out var ds) ? ds : null;
     if (defaultAudio is { } wanted && !(Numbers("--audio") ?? [0]).Contains(wanted)) throw new ArgumentException($"--default-audio {wanted} is not one of the audio tracks kept (--audio)");
     if (defaultSub is { } wantedSub && !(subs ?? []).Contains(wantedSub)) throw new ArgumentException($"--default-sub {wantedSub} is not one of the subtitles kept (--sub / --sub-file)");
-    return new DiscTitle(v, null, Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes);
+    return new DiscTitle(v, null, Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes, own.Contains("--intro"));
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
 // bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (fit = "Adapter au disque"),

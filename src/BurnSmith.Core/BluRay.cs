@@ -65,6 +65,9 @@ public static class BluRay
     /// <summary>Playlist / clip number of the moving menu's video.</summary>
     public const int LoopPlaylist = 99;
 
+    /// <summary>Playlist / clip number of the video that plays when the disc starts (<see cref="DiscTitle.Intro"/>).</summary>
+    public const int IntroPlaylist = 98;
+
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     public static SourceInfo Probe(string file)
@@ -109,6 +112,9 @@ public static class BluRay
     public static void Build(BluRayJob job, Action<string>? log = null)
     {
         log ??= _ => { };
+        var intro = job.Titles.FirstOrDefault(t => t.Intro);
+        if (job.Titles.Count(t => t.Intro) > 1) throw new ArgumentException("une seule vidéo de début est possible");
+        job = job with { Titles = [.. job.Titles.Where(t => !t.Intro)] }; // the intro is no title: it is muxed apart and starts the disc
         if (job.Titles.Count == 0) throw new ArgumentException("no video to put on the disc");
         if (job.Titles.Count > 1 && job.Menu == null) throw new InvalidOperationException("several videos need a menu to choose from");
         job = job with { Titles = DiscTitle.MainFirst(job.Titles) }; // playlists 1..mainCount are the feature, the bonus ones follow
@@ -128,6 +134,12 @@ public static class BluRay
             if (i > 0 && Directory.Exists(dest)) Directory.Delete(dest, true);
             muxed.Add(MuxTitle(job, job.Titles[i], sources[i], playlist, dest, work, kbps, log));
             if (i > 0) Merge(dest, job.OutDir);
+        }
+        if (intro != null)
+        {
+            var introDest = Path.Combine(work, "mux" + IntroPlaylist);
+            MuxTitle(job, intro, intro.Cut(Probe(intro.Video)), IntroPlaylist, introDest, work, kbps, log);
+            Merge(introDest, job.OutDir);
         }
 
         // disc title and thumbnails shown by players and Windows (BDMV/META/DL: bdmt_*.xml, thumbnail_WxH.jpg, the two sizes of commercial discs)
@@ -184,16 +196,35 @@ public static class BluRay
             else if (moving || job.Menu.ExistingMusic() != null) { MuxLoop(job, work, log); loop = LoopPlaylist; }
             MenuFiles.WriteBdj(job.Menu, MenuBuilder.Build(job.Menu, content), menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle); // the xlet chains only the main titles
             AddMenu(job, menuDir, log);
+            if (intro != null) StartWithIntro(job.OutDir);
         }
-        else if (muxed[0].DefaultSubtitle > 0)
+        else if (muxed[0].DefaultSubtitle > 0 || intro != null)
         {
-            // no menu: the film's own movie object selects the subtitle before it plays (the BACKUP copy is kept alike)
+            // no menu: the film's own movie object plays the intro, then selects the subtitle, before it plays the film (the BACKUP copy is kept alike)
+            List<byte[]> before = [];
+            if (intro != null) before.Add(Hdmv.HdmvCommand.PlayPl(IntroPlaylist));
+            if (muxed[0].DefaultSubtitle > 0) before.Add(Hdmv.HdmvCommand.SetStreams(subtitle: muxed[0].DefaultSubtitle));
             foreach (var movieObject in new[] { Path.Combine(job.OutDir, "BDMV", "MovieObject.bdmv"), Path.Combine(job.OutDir, "BDMV", "BACKUP", "MovieObject.bdmv") }.Where(File.Exists))
-                File.WriteAllBytes(movieObject, Bdmv.PrependToFilm(File.ReadAllBytes(movieObject), Hdmv.HdmvCommand.SetStreams(subtitle: muxed[0].DefaultSubtitle)));
-            log($"subtitle {muxed[0].DefaultSubtitle} shown from the start");
+                File.WriteAllBytes(movieObject, Bdmv.PrependToFilm(File.ReadAllBytes(movieObject), [.. before]));
+            if (intro != null) log($"intro: {intro.DisplayName} plays first");
+            if (muxed[0].DefaultSubtitle > 0) log($"subtitle {muxed[0].DefaultSubtitle} shown from the start");
         }
         Tools.TryDelete(work);
         log("done: " + job.OutDir);
+    }
+
+    /// <summary>
+    /// A menu disc that starts with the intro: First Playback becomes a new movie object that plays <see cref="IntroPlaylist"/> and then jumps to the top menu (the BD-J menu),
+    /// in MovieObject.bdmv and index.bdmv and their BACKUP copies.
+    /// </summary>
+    static void StartWithIntro(string outDir)
+    {
+        var bdmv = Path.Combine(outDir, "BDMV");
+        var number = -1;
+        foreach (var file in new[] { Path.Combine(bdmv, "MovieObject.bdmv"), Path.Combine(bdmv, "BACKUP", "MovieObject.bdmv") })
+            File.WriteAllBytes(file, Bdmv.AppendObject(File.ReadAllBytes(file), out number, Hdmv.HdmvCommand.PlayPl(IntroPlaylist), Hdmv.HdmvCommand.JumpTitle(0)));
+        foreach (var file in new[] { Path.Combine(bdmv, "index.bdmv"), Path.Combine(bdmv, "BACKUP", "index.bdmv") })
+            File.WriteAllBytes(file, Bdmv.FirstPlayToObject(File.ReadAllBytes(file), number));
     }
 
     /// <summary>Picture size of the disc: 3840x2160 (4K), 1280x720 (a 720p profile) or 1920x1080.</summary>
@@ -287,7 +318,7 @@ public static class BluRay
             $"{(job.Uhd ? "V_MPEGH/ISO/HEVC" : "V_MPEG4/ISO/AVC")}, \"{prepared}\", fps={fps}, track=256",
         };
         for (var j = 0; j < audio.Count; j++)
-            lines.Add($"{AudioTag(BdAudio(audio[j], title))}, \"{prepared}\", track={257 + j}, lang={Languages.Iso2(audio[j].Lang)}");
+            lines.Add($"{AudioTag(BdAudio(audio[j], title, job.Uhd))}, \"{prepared}\", track={257 + j}, lang={Languages.Iso2(audio[j].Lang)}");
         foreach (var (s, file) in subs)
             lines.Add(s.IsPicture
                 ? $"S_HDMV/PGS, \"{file}\", fps={fps}, lang={Languages.Iso2(s.Lang)}"
@@ -414,9 +445,13 @@ public static class BluRay
     };
 
     /// <summary>The codec a source audio ends up as on the disc: copied when a Blu-ray carries it and the volume stays, AC-3 otherwise.</summary>
-    static string BdAudio(AudioTrack a, DiscTitle t) => CopiesAudio(a, t) ? a.Codec : "ac3";
+    public static string BdAudio(AudioTrack a, DiscTitle t, bool uhd) => CopiesAudio(a, t, uhd) ? a.Codec : "ac3";
 
-    static bool CopiesAudio(AudioTrack a, DiscTitle t) => t.Volume == 100 && a.Codec is "ac3" or "dts" or "truehd";
+    /// <summary>
+    /// A copied audio track keeps everything from the keyframe before a cut's start (stream copy does not drop it), while the re-encoded video begins on the exact frame: sound
+    /// a second early. So a title that starts later has its sound re-encoded too (decoded, then cut exactly); a 4K disc copies both from the same keyframe and stays in step.
+    /// </summary>
+    static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && (t.Start == 0 || uhd) && a.Codec is "ac3" or "dts" or "truehd";
 
     /// <summary>
     /// Remuxes to prepared.ts (ffmpeg numbers the streams from PID 256: video = 256, kept audio = 257..), re-encoding only what a Blu-ray cannot carry,
@@ -454,7 +489,7 @@ public static class BluRay
         }
         for (var j = 0; j < audio.Count; j++)
         {
-            if (CopiesAudio(audio[j], title)) args.AddRange([$"-c:a:{j}", "copy"]);
+            if (CopiesAudio(audio[j], title, job.Uhd)) args.AddRange([$"-c:a:{j}", "copy"]);
             else
             {
                 args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", audio[j].Channels > 2 ? "640k" : "448k"]);

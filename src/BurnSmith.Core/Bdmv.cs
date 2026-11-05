@@ -18,6 +18,14 @@ public static class Bdmv
     /// </summary>
     public static byte[] PrependToFilm(byte[] movieObject, params byte[][] commands)
     {
+        var objects = ReadObjects(movieObject);
+        if (objects.Count == 0) throw new InvalidDataException("MovieObject.bdmv has no object");
+        objects[0] = [.. commands, .. objects[0]];
+        return Hdmv.HdmvNav.MovieObjects(objects);
+    }
+
+    static List<IReadOnlyList<byte[]>> ReadObjects(byte[] movieObject)
+    {
         const int first = 8 + 4 + 28 + 4 + 4 + 2; // "MOBJ0200", extension start, reserved, body length, reserved, number of objects
         if (movieObject.Length < first || !movieObject.AsSpan(0, 8).SequenceEqual("MOBJ0200"u8)) throw new InvalidDataException("not a MovieObject.bdmv");
         var count = BinaryPrimitives.ReadUInt16BigEndian(movieObject.AsSpan(first - 2));
@@ -28,9 +36,31 @@ public static class Bdmv
             objects.Add([.. Enumerable.Range(0, n).Select(c => movieObject.AsSpan(at + 4 + c * 12, 12).ToArray())]);
             at += 4 + n * 12;
         }
-        if (objects.Count == 0) throw new InvalidDataException("MovieObject.bdmv has no object");
-        objects[0] = [.. commands, .. objects[0]];
+        return objects;
+    }
+
+    /// <summary>A MovieObject.bdmv with one more object, <paramref name="commands"/>, after the others (its number is <paramref name="index"/>); the others are written back as they were.</summary>
+    public static byte[] AppendObject(byte[] movieObject, out int index, params byte[][] commands)
+    {
+        var objects = ReadObjects(movieObject);
+        index = objects.Count;
+        objects.Add(commands);
         return Hdmv.HdmvNav.MovieObjects(objects);
+    }
+
+    /// <summary>
+    /// An index.bdmv whose First Playback is the HDMV movie object <paramref name="movieObject"/> instead of whatever it was (the top menu and the titles are left as they are).
+    /// The entry keeps its 12 bytes, so nothing after it moves.
+    /// </summary>
+    public static byte[] FirstPlayToObject(byte[] index, int movieObject)
+    {
+        var at = (int)BinaryPrimitives.ReadUInt32BigEndian(index.AsSpan(8)) + 4; // after the length of the index table
+        var res = index.ToArray();
+        BinaryPrimitives.WriteUInt32BigEndian(res.AsSpan(at), 1u << 30);        // object_type = HDMV
+        BinaryPrimitives.WriteUInt16BigEndian(res.AsSpan(at + 4), 1 << 14);     // interactive, as the other HDMV entries of the library
+        BinaryPrimitives.WriteUInt16BigEndian(res.AsSpan(at + 6), (ushort)movieObject);
+        BinaryPrimitives.WriteUInt32BigEndian(res.AsSpan(at + 8), 0);
+        return res;
     }
 
     /// <summary>

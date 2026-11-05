@@ -162,7 +162,8 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// The cut (DVDFab / Yuhan "video edit"): <see cref="Start"/> and <see cref="End"/> are seconds of the source file (End null = to the end),
 /// <see cref="Volume"/> a percentage of the sound, <see cref="ChapterAt"/> the chapter times in seconds of the source (null = the disc's
 /// "one every N minutes", empty = no chapters). <see cref="ChapterMinutes"/>: with no <see cref="ChapterAt"/>, one every N minutes for this video
-/// (null = the disc's setting).
+/// (null = the disc's setting). <see cref="Intro"/>: a video that plays once when the disc starts, before the menu (before the film when there is no menu);
+/// it is no title of the menu or of "Play all" (Blu-ray only).
 /// <see cref="Bonus"/>: an extra (trailer, making-of) that is not part of the main feature: it comes after the main videos on the disc, is left out of
 /// "Play" / "Play all", and is listed on the menu's Bonus page.
 /// <see cref="DefaultAudio"/> / <see cref="DefaultSubtitle"/> (an <see cref="AudioTrack.Index"/> / <see cref="SubtitleTrack.Index"/> among those kept): what
@@ -172,7 +173,7 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<int>? Audio = null, IReadOnlyList<int>? Subtitles = null,
                                double Start = 0, double? End = null, int Volume = 100, IReadOnlyList<double>? ChapterAt = null,
                                IReadOnlyList<ExternalSubtitle>? External = null, bool Bonus = false, int? DefaultAudio = null, int? DefaultSubtitle = null,
-                               int? ChapterMinutes = null)
+                               int? ChapterMinutes = null, bool Intro = false)
 {
     public string DisplayName => Name ?? Path.GetFileNameWithoutExtension(Video);
 
