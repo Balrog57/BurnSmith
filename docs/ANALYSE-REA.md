@@ -654,3 +654,54 @@ Reste non lu : `generateXml` (l'écriture du script dvdauthor) et `Img2m2v` (l'e
 Aucun manque côté BurnSmith : sa gestion de menu (g2/g3 pour audio et sous-titres, g6 combiné) est plus fine que le simple g8 de Leawo. La seule différence notable est la **langue audio en deux lettres majuscules** chez Leawo, alors que BurnSmith écrit le code ISO 639-2 sur trois lettres — les deux sont acceptés par dvdauthor, mais le second est plus précis.
 
 Reste non lu : `Img2m2v` (l'encodeur image → MPEG-2 de Leawo), seule brique encore inconnue de son pipeline DVD.
+## 25. Leawo : `Img2m2v`, un encodeur interne, pas un outil externe (2026-11-05)
+
+`DVDMenuMgr::Img2m2v(QString const&)` (0x1800010aa) ne lance **aucun** programme : il instancie une **classe de thread** (168 octets), la remplit et attend sa fin en pompant la boucle Qt.
+
+Ce qu'il lui passe :
+
+| Champ du thread | Valeur |
+|---|---|
+| `+0x18` | `1` (mode de travail) |
+| `+0x48` | le chemin de l'image d'entrée |
+| `+0x50` | le **débit** : 3 000 000 ou 30 000 000 (PAL), 12 000 000 (NTSC) |
+| `+0x58` | la **cadence**, un `double` : 25.0 / 23.976 (PAL) ou 29.97 / 24.0 (NTSC) |
+| `+0x68` | le chemin de sortie (`this+0x118`) |
+| `+0x70` | `0x3c` (60) |
+
+Les deux constantes encodées dans le code se décodent exactement : `0x4039000000000000` = **25.0**, `0x4038000000000000` = **24.0**, `0x4037F9DB22D0E560` = **23.976**, `0x403DF851EB851EB8` = **29.97**. Le choix dépend de `this+0x4c` (norme : `3` = NTSC), `this+0x44` (Blu-ray) et `this+0x48`.
+
+Conséquence : la conversion image → MPEG-2 des menus est **faite par Leawo lui-même**, dans son propre code, alors que BurnSmith appelle ffmpeg. Les deux arrivent au même format (MPEG-2 pour le DVD), mais le message « Img2m2v is fail » ne vient pas d'un outil manquant — il vient du thread.
+
+Reste non lu : le corps du thread (la classe de 168 octets), c'est-à-dire l'encodeur lui-même. C'est la seule brique de Leawo encore inconnue ; elle n'apprendrait rien à BurnSmith, qui délègue à ffmpeg un travail que ffmpeg fait mieux.
+
+## 26. État de la reproduction : ce qui est fait, ce qui reste, et pourquoi
+
+Bilan de tout ce que la décompilation a établi et de ce que BurnSmith en a fait.
+
+### Fait, vérifié
+
+| Fonction | Preuve |
+|---|---|
+| Éléments libres (texte / image / cadre), devant ou derrière les boutons | `check-elements` 15/15, rendu de page |
+| Boutons posés à la main avec action choisie, voisinage recalculé | `check-elements` (bouton réel + voisinage), DVD construit |
+| Surbrillances DVD prises aux modèles (survol + état choisi) | `check-highlights`, `sel_scenes1.png`, DVD avec piste `dvd_subtitle` |
+| Trois styles de surbrillance (cadre / soulignement / texte) | `check-highlights` 13/13, images `style_*.png`, jar du disque |
+| Couleur de sélection distincte et transparence | `check-highlights`, `style_custom.png`, `style_faint.png` |
+| Page de scènes en liste (10 lignes du modèle) | `menu.txt` de deux disques (5 chapitres sur une page contre 3 + 2) |
+| Bouton Bonus placé par le thème Yuhan | rendu `Birthday 01` (1494, 720) |
+| Reprise au dernier bouton (GPR108) | journal libbluray : `page root` → `play` → `playback ended` → `page root` → `resume on button 0` |
+
+### Reste, et pourquoi ce n'est pas fait
+
+| Fonction | Raison |
+|---|---|
+| **Vignettes animées** (`DynamicThumbnail`, `image_video`) | demande de composer N flux vidéo dans les cases du menu (ffmpeg overlay multi-entrées) : gros chantier, et le BD-J ne sait pas jouer plusieurs vidéos à la fois — ce serait DVD seulement |
+| **Page de réglages Yuhan en sous-pages** | le `<Setup>` du thème est une liste unique de 8 langues avec deux libellés qui chevauchent les lignes 2 et 4 : il faut un modèle de sous-pages que BurnSmith n'a pas (§16.2) |
+| **Preuve différentielle de la reprise** | le banc d'essai (interface RC de VLC) n'envoie pas les flèches (§22.2) : `key-nav-activate` agit, `key-nav-right` non |
+| **`Img2m2v` de Leawo** | encodeur interne, sans intérêt pour BurnSmith qui délègue à ffmpeg (§25) |
+| **Menu HDMV natif** | dépend de la phase 0 (essai sur lecteur de salon), hors de portée ici |
+
+### Ce que la décompilation a coûté, en une phrase
+
+Trois suites, six formats de fichiers compris (AuthorData, template.bd.xml, template.xml DVDFab DVD et Leawo, config.dat Yuhan, dvdauthor.xml), deux jars BD-J (DVDFab et BurnSmith) et trois pipelines d'outils (dvdauthor/spumux chez Yuhan, Leawo et BurnSmith) — et **une seule différence de fond** entre les trois produits et BurnSmith : Leawo encode ses images lui-même, DVDFab écrit son menu en BD-J signé avec un format de projet propre, Yuhan décrit ses thèmes dans un XML chiffré.
