@@ -56,7 +56,11 @@ public sealed record BdProfile(string Name, double Gb, double UsableGb, bool Hd7
 /// </summary>
 public sealed record SourceInfo(string VideoCodec, int Width, int Height, double Fps, string AudioCodec, int AudioChannels, double Duration,
                                 IReadOnlyList<AudioTrack> Audio, IReadOnlyList<SubtitleTrack> Subtitles, string Hdr = "SDR", double FileDuration = 0,
-                                string Encoding = ""); // Encoding: the video's profile / level / reorder depth / reference frames, which a stream-copy join must not mix
+                                string Encoding = "", string PixFmt = "", string Profile = "", int Level = 0) // Encoding: the video's profile / level / reorder depth / reference frames, which a stream-copy join must not mix
+{
+    /// <summary>What a Blu-ray player takes from H.264 as it is: 8-bit 4:2:0 at level 4.1 at most (ffprobe says -99 for a level it cannot read).</summary>
+    public bool PlayerReadyH264 => VideoCodec == "h264" && PixFmt == "yuv420p" && Level is > 0 and <= 41 && !Profile.Contains("10");
+}
 
 public static class BluRay
 {
@@ -97,7 +101,10 @@ public static class BluRay
             double.Parse(r[0], Inv) / double.Parse(r[1], Inv),
             audio.FirstOrDefault()?.Codec ?? "", audio.FirstOrDefault()?.Channels ?? 0,
             double.Parse(duration.GetString()!, Inv), audio, subs, hdr,
-            Encoding: string.Join('/', new[] { "profile", "level", "has_b_frames", "refs" }.Select(n => v.TryGetProperty(n, out var p) ? p.ToString() : "")));
+            Encoding: string.Join('/', new[] { "profile", "level", "has_b_frames", "refs" }.Select(n => v.TryGetProperty(n, out var p) ? p.ToString() : "")),
+            PixFmt: v.TryGetProperty("pix_fmt", out var pf) ? pf.GetString() ?? "" : "",
+            Profile: v.TryGetProperty("profile", out var pr) ? pr.GetString() ?? "" : "",
+            Level: v.TryGetProperty("level", out var lv) && lv.TryGetInt32(out var level) ? level : 0);
     }
 
     /// <summary>Chapter start times (seconds): one every <paramref name="minutes"/>, never a chapter shorter than 1 minute.</summary>
@@ -473,7 +480,8 @@ public static class BluRay
         var enc = job.Encode ?? new EncodeOptions();
         // a cut that starts later must be re-encoded to begin on the exact frame (a copy starts on the keyframe before it); a 4K disc is never re-encoded, so it is copied
         var copyCut = title.Start == 0 || job.Uhd;
-        var videoOk = !enc.ForceReencode && kbps == 0 && copyCut && s.VideoCodec == (job.Uhd ? "hevc" : "h264") && s.Width == w && s.Height == h && fpsOk;
+        // a 4K source is 10-bit HEVC at its own levels: only the H.264 of a Blu-ray has a player's limits to check
+        var videoOk = !enc.ForceReencode && kbps == 0 && copyCut && (job.Uhd ? s.VideoCodec == "hevc" : s.PlayerReadyH264) && s.Width == w && s.Height == h && fpsOk;
         if (job.Uhd && !videoOk)
             // shortcut: UHD sources must already be 2160p HEVC; HDR-aware re-encoding is not implemented yet
             throw new NotSupportedException("UHD needs a 3840x2160 HEVC source at 23.976/24/25 fps");
