@@ -49,16 +49,49 @@ public static class Dvd
         if (introSource != null) items.Add((introSource, intro!)); // it takes room on the disc too
         var pal = Math.Abs(sources[0].Fps - 25) < 0.5 || Math.Abs(sources[0].Fps - 50) < 0.5; // the disc follows its first video
         var work = job.OutDir + "_work";
+        var videoBps = job.Encode is { DvdKbps: > 0 } manual ? Math.Clamp(manual.DvdKbps, 1500, 9000) * 1000 : VideoBitrate(items, job.CapacityGB); // by hand, else what fills the disc
+        // before the earlier disc is emptied and anything is encoded: a job that cannot finish is told at once
+        foreach (var tool in NeededTools(job)) Tools.Find(tool);
+        CheckRoom(job.OutDir, NeededBytes(job, items, videoBps));
         Tools.PrepareOutput(job.OutDir);
         Tools.FreshFolder(work);
-        try { Author(job, intro, introSource, sources, items, pal, mainCount, work, log); }
+        try { Author(job, intro, introSource, sources, videoBps, pal, mainCount, work, log); }
         finally { Tools.TryDelete(work); } // temporary videos of many GB: a failed build must not leave them behind
         log("done: " + job.OutDir);
     }
 
-    static void Author(DvdJob job, DiscTitle? intro, SourceInfo? introSource, List<SourceInfo> sources, List<(SourceInfo Src, DiscTitle Title)> items, bool pal, int mainCount, string work, Action<string> log)
+    /// <summary>The programs a job cannot do without: dvdauthor always, spumux for a menu (it adds the buttons of every page) or for subtitles (the intro carries none).</summary>
+    public static List<string> NeededTools(DvdJob job) =>
+        job.Menu != null || job.Titles.Any(t => !t.Intro && t.Subtitles is { Count: > 0 }) ? ["dvdauthor.exe", "spumux.exe"] : ["dvdauthor.exe"];
+
+    /// <summary>
+    /// The disc space a build takes at its fullest, in the work folder and the output (one drive, the first being named after the other): each MPEG stays there while dvdauthor
+    /// writes its VOB, and spumux makes one more copy of it. 5 % for the program stream around the video and the sound.
+    /// shortcut: the menu is a rough ceiling (its pages are not known yet, a looping page weighs about 0.5 MB/s in three copies), work it out from the pages if it refuses a build that would fit.
+    /// </summary>
+    public static long NeededBytes(DvdJob job, IReadOnlyList<(SourceInfo Src, DiscTitle Title)> items, int videoBps)
     {
-        var videoBps = job.Encode is { DvdKbps: > 0 } manual ? Math.Clamp(manual.DvdKbps, 1500, 9000) * 1000 : VideoBitrate(items, job.CapacityGB); // by hand, else what fills the disc
+        var movies = items.Sum(i => i.Src.Duration * (videoBps + i.Title.KeptAudio(i.Src).Take(8).Sum(AudioBps))) / 8;
+        var copies = job.Titles.Any(t => !t.Intro && t.Subtitles is { Count: > 0 }) ? 3 : 2;
+        var menu = job.Menu is not { } m ? 0 : 0.2e9 + (m.Loop || m.ExistingMusic() != null ? Math.Clamp(m.LoopSeconds, 5, 120) * 18e6 : 0);
+        return (long)(movies * copies * 1.05 + menu);
+    }
+
+    /// <summary>Refuses a build the output's drive has no room for; the earlier disc in that folder counts as free, it goes first.</summary>
+    static void CheckRoom(string outDir, long needed)
+    {
+        long free;
+        try
+        {
+            free = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(outDir))!).AvailableFreeSpace;
+            if (Directory.Exists(outDir)) free += new DirectoryInfo(outDir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException) { return; } // a network folder has no drive to ask: ffmpeg will say when it is full
+        if (free < needed) throw new IOException($"Pas assez de place pour ce DVD sur {Path.GetPathRoot(Path.GetFullPath(outDir))} : il faut environ {needed / 1e9:0.0} Go pendant la création, {free / 1e9:0.0} Go sont libres.");
+    }
+
+    static void Author(DvdJob job, DiscTitle? intro, SourceInfo? introSource, List<SourceInfo> sources, int videoBps, bool pal, int mainCount, string work, Action<string> log)
+    {
         log($"movie: {(pal ? "PAL" : "NTSC")} {videoBps / 1000} kb/s");
         var movies = new List<Movie>();
         for (var i = 0; i < job.Titles.Count; i++) movies.Add(EncodeTitle(job, i + 1, sources[i], job.Titles[i], pal, videoBps, work, log));
