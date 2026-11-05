@@ -84,7 +84,8 @@ public static class BluRay
         var v = Of("video").FirstOrDefault(s => !Flag(s, "attached_pic"));
         if (v.ValueKind == JsonValueKind.Undefined) throw new InvalidDataException("no video stream in " + file);
         var audio = Of("audio").Select((s, i) => new AudioTrack(i, s.GetProperty("codec_name").GetString()!,
-            s.TryGetProperty("channels", out var c) ? c.GetInt32() : 0, Tag(s, "language"), Tag(s, "title"))).ToList();
+            s.TryGetProperty("channels", out var c) ? c.GetInt32() : 0, Tag(s, "language"), Tag(s, "title"),
+            s.TryGetProperty("sample_rate", out var rate) && int.TryParse(rate.GetString(), out var hz) ? hz : 0)).ToList();
         var subs = Of("subtitle").Select((s, i) => new SubtitleTrack(i, s.GetProperty("codec_name").GetString() ?? "", Tag(s, "language"), Tag(s, "title"), Flag(s, "forced"))).ToList();
         if (!doc.RootElement.GetProperty("format").TryGetProperty("duration", out var duration)) // a picture has a video stream but no length
             throw new InvalidDataException("no duration: not a video file");
@@ -416,7 +417,7 @@ public static class BluRay
             "-vf", $"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1", "-r", fps,
             "-c:v", "libx264", "-preset", "fast", "-crf", "19", "-pix_fmt", "yuv420p",
             "-x264-params", "bluray-compat=1:level=41:vbv-maxrate=20000:vbv-bufsize=20000:keyint=24:slices=4:bframes=3:b-pyramid=strict:open-gop=0"]);
-        if (hasAudio) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2"]);
+        if (hasAudio) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2", "-ar", "48000"]); // the first title's own sound can be anything
         args.AddRange(["-sn", "-dn", ts]);
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
 
@@ -457,8 +458,9 @@ public static class BluRay
     /// <summary>
     /// A copied audio track keeps everything from the keyframe before a cut's start (stream copy does not drop it), while the re-encoded video begins on the exact frame: sound
     /// a second early. So a title that starts later has its sound re-encoded too (decoded, then cut exactly); a 4K disc copies both from the same keyframe and stays in step.
+    /// Only 48 kHz is copied: a disc does not take 44.1 kHz.
     /// </summary>
-    static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && (t.Start == 0 || uhd) && a.Codec is "ac3" or "dts" or "truehd";
+    static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && (t.Start == 0 || uhd) && a.SampleRate == 48000 && a.Codec is "ac3" or "dts" or "truehd";
 
     /// <summary>
     /// Remuxes to prepared.ts (ffmpeg numbers the streams from PID 256: video = 256, kept audio = 257..), re-encoding only what a Blu-ray cannot carry,
@@ -499,7 +501,7 @@ public static class BluRay
             if (CopiesAudio(audio[j], title, job.Uhd)) args.AddRange([$"-c:a:{j}", "copy"]);
             else
             {
-                args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", audio[j].Channels > 2 ? "640k" : "448k"]);
+                args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", audio[j].Channels > 2 ? "640k" : "448k", $"-ar:a:{j}", "48000"]);
                 if (audio[j].Channels > 6) args.AddRange([$"-ac:a:{j}", "6"]); // AC-3 tops out at 5.1
                 if (title.Volume != 100) args.AddRange([$"-filter:a:{j}", $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}"]);
             }

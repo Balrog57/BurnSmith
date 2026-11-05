@@ -2,8 +2,8 @@ using System.Globalization;
 
 namespace BurnSmith.Core;
 
-/// <summary><see cref="Index"/> counts audio streams of the source file only (ffmpeg's 0:a:N), not all streams.</summary>
-public sealed record AudioTrack(int Index, string Codec, int Channels, string Lang, string Title)
+/// <summary><see cref="Index"/> counts audio streams of the source file only (ffmpeg's 0:a:N), not all streams. <see cref="SampleRate"/>: 0 when the file does not say.</summary>
+public sealed record AudioTrack(int Index, string Codec, int Channels, string Lang, string Title, int SampleRate = 48000)
 {
     public string Name => $"{Languages.Display(Lang, Title)} {Languages.ChannelLayout(Channels)}".Trim();
 }
