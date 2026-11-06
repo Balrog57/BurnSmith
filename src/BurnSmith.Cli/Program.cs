@@ -15,6 +15,14 @@ var a = args.ToList();
 string? Opt(string name) => a.IndexOf(name) is var i and >= 0 && i + 1 < a.Count ? a[i + 1] : null;
 IEnumerable<string> OptAll(string name) { for (var i = 0; i + 1 < a.Count; i++) if (a[i] == name) yield return a[i + 1]; } // --element can repeat
 List<int>? Numbers(string name) => Opt(name)?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
+
+// --sub numbers the video's own tracks, then its --sub-file ones, which are kept whatever it says, once. A number with no track is told and left out: one video of a series may have fewer, so it stops nothing.
+static List<int> SubsToKeep(List<int>? asked, int own, int files, string video, Action<string> tell)
+{
+    var missing = (asked ?? []).Where(i => i < 0 || i >= own + files).Distinct().ToList();
+    if (missing.Count > 0) tell($"warning: --sub {string.Join(',', missing)}: {video} has no such subtitle ({own} of its own, {files} from --sub-file)");
+    return [.. (asked ?? []).Except(missing).Union(Enumerable.Range(own, files))];
+}
 var videos = a.Select((v, i) => (v, i)).Where(x => x.v == "--video" && x.i + 1 < a.Count).Select(x => Path.GetFullPath(a[x.i + 1])).ToList();
 
 // burnsmith preview <template name or folder> <out folder> [--picture frame.jpg] [--episodes N] [--bonus N]
@@ -604,6 +612,12 @@ if (a.Count >= 1 && a[0] == "check-edit")
     var relabelled = relabel.Cut(tracked);
     Check("a language set by hand goes on the video's own audio and subtitle tracks, the others keep theirs", relabelled.Audio[0].Lang == "fre" && relabelled.Audio[1].Lang == "eng" && relabelled.Subtitles[0].Lang == "eng" && relabelled.Subtitles[1].Lang == "fre");
     Check("a subtitle file keeps its own language (its track number is not a key of the video's tracks)", relabelled.Subtitles[2].File != null && relabelled.Subtitles[2].Lang == "ger");
+    var told = new List<string>();
+    Check("--sub with --sub-file: four numbers for four files on a film with none of its own give four tracks, not eight, in silence",
+          SubsToKeep([0, 1, 2, 3], 0, 4, "film", told.Add).SequenceEqual([0, 1, 2, 3]) && told.Count == 0);
+    Check("--sub and --sub-file: its own tracks as asked, then the files, every file kept", SubsToKeep([1], 2, 2, "film", told.Add).SequenceEqual([1, 2, 3]) && SubsToKeep(null, 1, 1, "film", told.Add).SequenceEqual([1]) && told.Count == 0);
+    Check("--sub with numbers no track has: told, with the numbers and the counts, and left out",
+          SubsToKeep([0, 1, 2, 3], 0, 0, "film", told.Add).Count == 0 && told.Count == 1 && told[0].Contains("--sub 0,1,2,3") && told[0].Contains("0 of its own") && SubsToKeep([0, 5], 1, 1, "film", told.Add).SequenceEqual([0, 1]) && told.Count == 2 && told[1].Contains("--sub 5:"));
     Check("the disc reads the new language: kept tracks and their names", relabel.KeptAudio(relabelled)[0].Name.StartsWith("Français") && relabel.KeptSubtitles(relabelled)[0].Name == "English" && new DiscTitle("x").KeptAudio(tracked)[0].Lang == "und");
     Check("no language set: the source is returned as it is", new DiscTitle("x", TrackLanguage: new Dictionary<string, string>()).Cut(tracked) == tracked);
     Check("one video's own interval replaces the disc's; a list wins over it", Show(new DiscTitle("x", ChapterMinutes: 2).ChapterList(600, 5)) == "0,120,240,360,480" && Show(new DiscTitle("x", ChapterAt: [30], ChapterMinutes: 2).ChapterList(600, 5)) == "0,30" && Show(new DiscTitle("x").ChapterList(600, 5)) == "0,300");
@@ -1101,7 +1115,7 @@ var titles = videos.Select((v, k) =>
     // --sub-file FILE | --sub-file fra=FILE (repeatable): a subtitle file kept as one more track, after the video's own and the --sub ones
     var files = own.Select((x, i) => (x, i)).Where(x => x.x == "--sub-file" && x.i + 1 < own.Count).SelectMany(x => ExternalSubtitle.ParseAll(own[x.i + 1])).ToList();
     var subs = Numbers("--sub");
-    if (files.Count > 0) subs = [.. subs ?? [], .. Enumerable.Range(BluRay.Probe(v).Subtitles.Count, files.Count)];
+    if (subs != null || files.Count > 0) subs = SubsToKeep(subs, BluRay.Probe(v).Subtitles.Count, files.Count, Path.GetFileName(v), Console.Error.WriteLine);
     int? defaultAudio = int.TryParse(Own("--default-audio"), out var da) ? da : null, defaultSub = int.TryParse(Own("--default-sub"), out var ds) ? ds : null;
     if (defaultAudio is { } wanted && !(Numbers("--audio") ?? [0]).Contains(wanted)) throw new ArgumentException($"--default-audio {wanted} is not one of the audio tracks kept (--audio)");
     if (defaultSub is { } wantedSub && !(subs ?? []).Contains(wantedSub)) throw new ArgumentException($"--default-sub {wantedSub} is not one of the subtitles kept (--sub / --sub-file)");
