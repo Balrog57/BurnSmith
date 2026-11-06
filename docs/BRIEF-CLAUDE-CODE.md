@@ -14,21 +14,25 @@ C:\Users\Marc\Documents\1G1R\_Programmation\BurnSmith
 
 Il construit des menus réels : sur DVD par `dvdauthor` + `spumux`, sur Blu-ray par un **xlet BD-J** écrit en Java 1.3 (source `bdj\src\org\burnsmith\menu\Menu.java`, compilé par `bdj\build.ps1` en `assets\bdj\menu.jar`), plus tsMuxeR pour le multiplexage.
 
-Une session précédente a décompilé DVDFab 13, Yuhan Blu-ray DVD Creator et Leawo Prof. Media pour en extraire les modèles de menu. Les résultats sont dans **`docs\ANALYSE-REA.md`** (26 sections, avec la méthode et les limites de chaque constat) et la feuille de route dans **`docs\FEUILLE-DE-ROUTE-BLURAY.md`**. **Lis `docs\ANALYSE-REA.md` §12 à §28 avant de coder** : c'est la source des spécifications ci-dessous.
+Une session précédente a décompilé DVDFab 13, Yuhan Blu-ray DVD Creator et Leawo Prof. Media pour en extraire les modèles de menu. Les résultats sont dans **`docs\ANALYSE-REA.md`** (avec la méthode et les limites de chaque constat) et la feuille de route dans **`docs\FEUILLE-DE-ROUTE-BLURAY.md`**. **Lis `docs\ANALYSE-REA.md` §12 à §28 avant de coder** : c'est la source des spécifications ci-dessous.
 
 ### Conventions
 
 - Code, commentaires, messages d'interface et noms de tests : **en français**.
 - Le style existant compte : commentaires qui expliquent *pourquoi* (pas *quoi*), pas de `TODO`, pas de méthode appelée mais non écrite.
-- Ne jamais copier un binaire commercial dans le dépôt. Les outils libres (`dvdauthor`, `spumux`, `tsMuxeR`, `ffmpeg`, JDK 8) sont dans `tools\` et ne sont pas redistribués.
+- Ne jamais copier un binaire commercial dans le dépôt. `dvdauthor`, `spumux`, tsMuxeR et le JDK 8 sont dans `tools\`, ffmpeg dans le `PATH`. ffmpeg et tsMuxeR sont redistribués dans l'exe publié, pas `dvdauthor` ni `spumux`.
 - `analysis\` est ignoré par git (copies de binaires, disques d'essai).
 
 ### Vérifications à lancer après **chaque** changement
 
 ```powershell
 dotnet build BurnSmith.slnx                                   # doit rester à 0 erreur, 0 avertissement
-dotnet run --project src\BurnSmith.Cli -v q -- check-elements  # 15 vérifications, "all ok"
-dotnet run --project src\BurnSmith.Cli -v q -- check-highlights # 13 vérifications, "all ok"
+dotnet run --project src\BurnSmith.Cli -v q -- check-update
+dotnet run --project src\BurnSmith.Cli -v q -- check-edit
+dotnet run --project src\BurnSmith.Cli -v q -- check-elements
+dotnet run --project src\BurnSmith.Cli -v q -- check-highlights
+dotnet run --project src\BurnSmith.Cli -v q -- check-bd
+dotnet run --project src\BurnSmith.Cli -v q -- check-reliability
 dotnet run --project src\BurnSmith.Cli -c Release -v q -- check-templates
 #   → doit afficher : 144 sans problème, 0 avec problèmes, 0 refusés
 ```
@@ -40,10 +44,9 @@ dotnet run --project src\BurnSmith.Cli -v q -- preview "Birthday 01" analysis\ou
 #   options : --list (page de scènes en liste), --bonus N, --episodes N, --element "…"
 ```
 
-Pour construire un disque d'essai (les outils doivent être dans le `PATH`) :
+Pour construire un disque d'essai (une compilation de développement trouve `tools\dvdauthor` toute seule) :
 
 ```powershell
-$env:PATH = "C:\Program Files\Yuhan Blu-ray DVD Creator\dvdauthor;$env:PATH"   # dvdauthor + spumux
 dotnet run --project src\BurnSmith.Cli -v q -- dvd --video analysis\test\film.mkv --out analysis\test\essai `
     --design "Cinema Dark" --chapter-at 0,3,6,9,12
 dotnet run --project src\BurnSmith.Cli -v q -- bd --video analysis\test\film.mkv --out analysis\test\essai-bd `
@@ -59,7 +62,12 @@ ffmpeg -y -f lavfi -i "testsrc2=size=720x576:rate=25" -f lavfi -i "sine=frequenc
 
 ---
 
-## Tâche 1 (prioritaire) — Page de réglages Yuhan en deux sous-pages
+## Tâche 1 — Page de réglages Yuhan en deux sous-pages (faite : `2847db0`, `13de658`, `df38f81`)
+
+> Le texte ci-dessous reste la demande d'origine. Trois choses ont changé en la faisant :
+> - **La catégorie va dans le titre** (`df38f81`) : plus de libellé à 850,400 ni 850,540, où il recouvrait une ligne.
+> - **Une page par choix, pas par paire** (`13de658`) : `settings_audio_A` et `settings_sub_S`, car une page par paire faisait dépasser 1 Go à un menu animé.
+> - **Pas de pagination** : six lignes au plus (`MaxAudio` = 6, `MaxSubtitles` = 5 plus « Désactivé »), les lignes 7 et 8 du thème ne servent pas.
 
 ### Le problème
 
@@ -101,20 +109,23 @@ C'est **une liste unique de huit langues**, pas deux colonnes : les deux libell�
 
 ### Critères d'acceptation
 
-- `preview "Birthday 01" analysis\out\x` produit **deux** pages de réglages (`settings_audio`, `settings_sub`) ; sur la page audio, le titre est à 750,150, le libellé « Audio » à 850,400, les lignes aux y 270…795 (pas 75 px), le Retour à 927,900.
+- `preview "Birthday 01" analysis\out\x` produit **deux** pages de réglages (`settings_audio`, `settings_sub`) ; sur la page audio, la catégorie est dans le titre à 750,150, les lignes aux y 270…645 (pas 75 px), le Retour à 927,900.
 - `check-templates` reste à **144 sans problème, 0 refusé**.
 - Un DVD construit (`dvd --design "Birthday 01" --chapter-at 0,3,6,9,12`) contient les deux pages et le bouton « Réglages » y mène ; un Blu-ray construit de même ne casse pas (le journal libbluray doit montrer `page settings_audio`).
 - Un modèle DVDFab (ex. `01movie`) garde **une seule** page `settings`, inchangée.
 
 ### Pièges déjà rencontrés (ne les refais pas)
 
+- Le mode à deux pages a son propre interrupteur, `HasSetupPages` (`setup/langitems`), dont découlent les disques, l'aperçu et l'éditeur.
 - `MenuBuilder.Settings` commence par `if (pack is { HasSetupLists: true }) return pack.Settings(...)`. `HasSetupLists` est vrai dès que `setup/audiolist`, `subtitlelist` **ou** `setupaudio`/`setupsubtitle` existent : c'est l'interrupteur unique lu par `Dvd.cs`, l'éditeur et `MenuLayout.MarkerOffset`. Le basculer ailleurs donnerait l'aperçu d'un côté et l'ancienne mise en page sur le disque.
 - Le marqueur de piste active se positionne avec `MenuBuilder.MarkerSize` et `MarkerOffset` ; la largeur de colonne 600 a été choisie pour que le marqueur tombe juste sans y toucher.
 - `MenuDesign.Clone()` doit copier les éléments libres (`Elements`) — ne casse pas ça en ajoutant un champ.
 
 ---
 
-## Tâche 2 — Prouver la reprise au dernier bouton (petite, mais bloquée par le banc d'essai)
+## Tâche 2 — Prouver la reprise au dernier bouton (faite : `f89af21`)
+
+> Faite. Les flèches n'étaient pas cassées : le bouton de départ n'a simplement pas de voisin à droite. La reprise sur un autre bouton est prouvée dans le journal. Le texte ci-dessous reste la demande d'origine.
 
 ### État
 
@@ -145,7 +156,7 @@ Le dépôt contient déjà de quoi le faire : `src\BurnSmith.Core\Hdmv\` (`IgStr
 
 ## Tâche 4 — Petites finitions (au choix, une par commit)
 
-- **`--animated-thumbs` sur Blu-ray** : refusé aujourd'hui (le xlet ne joue pas plusieurs vidéos). Si tu as une idée propre (par exemple une seule vidéo composée à l'avance, une par page de scènes), propose-la avant de coder.
+- **`--animated-thumbs` sur Blu-ray** : sans effet aujourd'hui, accepté puis ignoré (le xlet ne joue pas plusieurs vidéos). Si tu as une idée propre (par exemple une seule vidéo composée à l'avance, une par page de scènes), propose-la avant de coder.
 - **Page Bonus paramétrable** (nombre d'éléments par page, mode d'affichage) : les thèmes Yuhan portent `BonusText`, DVDFab a un mode « bonus » dans ses modèles.
 - **Sons de boutons** (`sound.bdmv`) : DVDFab en a, BurnSmith non.
 - **`check-menus`** : une commande qui inspecte un disque **construit** (dossier `BDMV`) et vérifie `menu.txt` (pages, voisins symétriques, toutes les pages atteignables, `mark.png` présent), la présence du jar et, pour un DVD, le nombre de boutons des IFO. Utile pour attraper les régressions de navigation.
@@ -164,11 +175,11 @@ Le dépôt contient déjà de quoi le faire : `src\BurnSmith.Core\Hdmv\` (`IgStr
 | Sujet | Section de `docs\ANALYSE-REA.md` |
 |---|---|
 | Modèle de menu DVDFab (QML, énumérations, `template.bd.xml`) | §12 |
-| Schéma complet `AuthorData.xml`, registres GPR/PSR, types de bouton | §11.4, §18 |
+| Schéma complet `AuthorData.xml`, registres GPR/PSR, types de bouton | §12.4, §18 |
 | Thèmes Yuhan déchiffrés (schéma des 30) | §13 |
 | Exécutable Yuhan (lecture de `config.dat`, éditeur) | §16 |
 | Pipeline DVD de Leawo (`Img2m2v` → `mplex` → `spumux`), script dvdauthor | §23, §24 |
-| Surbrillances DVD (survol + état choisi) | §6, §9, §15.1 |
+| Surbrillances DVD (survol + état choisi) | §6, §6 bis, §11.5 |
 | Trois styles de surbrillance, couleur et transparence | §17, §21 |
 | Page de scènes en liste | §15.2, §22.1 |
 | Vignettes animées | §27 |

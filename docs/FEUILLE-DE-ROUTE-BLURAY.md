@@ -14,7 +14,7 @@ Date : 2026-11-04. Suite de `COMPARAISON-DVDFAB-BLURAY.md` (qui compare les mote
 
 ## 1. Sources
 
-- **État de BurnSmith lu au commit `e16e752`** (HEAD à la fin de ce travail). Une autre session commite dans le même dépôt (quatre commits entre le début et la fin) : les cellules « ✘ / ~ » de la section 2 sont à revérifier avant de s'en servir.
+- **État de BurnSmith lu au commit `e16e752`** (HEAD à la fin de ce travail). Une autre session commite dans le même dépôt (quatre commits entre le début et la fin) : les cellules « ✘ / ~ » de la section 2 sont à revérifier avant de s'en servir. Mises à jour le 2026-11-06 (v0.5.4) pour celles qui ont changé : diaporama, musique, sous-titres externes, fusion, Bonus, scènes, vidéo de début, texte et image libres, styles.
 - Libellés des interfaces, lus dans les `.qm` de Qt : Yuhan ≈ 419 libellés / 24 écrans, Leawo ≈ 222 / 30 (+ `custom.ts` complet), DVDFab ≈ 451 / 80 [chaînes]. Un libellé ne prouve pas que la fonction marche ni qu'elle est complète.
 - Moteurs : décompilation REA et décodage de fichiers, voir `COMPARAISON-DVDFAB-BLURAY.md` [REA] [octets].
 - Disque de référence : `BR_LBAMVFVOST.iso` (« La boîte à musique (Fans Edition) », disque d'amateur, HDMV pur ; extraits : index, objets, playlists, `CLIPINF`, et les clips de menu `01001.m2ts` / `01002.m2ts` de 1,3 Mo ; `00001.m2ts` (18 Mo) aussi ; le film principal de 18 Go n'a pas été extrait).
@@ -30,9 +30,9 @@ Y = Yuhan, L = Leawo, D = DVDFab (créateur). ✔ fait · ~ en partie · ✘ pas
 |---|---|---|---|---|---|
 | Ajouter vidéos (fichiers, dossier), ordre, supprimer, haut/bas | ✔ | ✔ | ✔ | ✔ | — |
 | Enregistrer / ouvrir un projet | ✔ | ✔ | — | **✘** (aucune commande ouvrir / enregistrer ; la barre ne propose que « Ajouter une source » ; `grep -i project` sur `*.cs` et `*.xaml` ne trouve que des libellés) | JSON ; petit, gros gain d'ergonomie |
-| Photos, dossier de photos → diaporama (durée, **22 effets de transition**, musique, boucle) | ✔ | ✔ | — | ✘ | ffmpeg `xfade` et filtres : rendre le diaporama en vidéo (simple) plutôt qu'un diaporama HDMV natif |
-| Disque de musique (pochette plein/demi-écran) | ✔ | — | — | ✘ | ffmpeg : image + audio → vidéo |
-| Sous-titres externes (SRT, ASS, SUP) | ✔ | ✔ | ✔ (police, position, délai) | ~ (pistes du fichier seulement : PGS copié, texte → SRT) | tsMuxeR accepte SRT et PGS [testé] ; ASS à convertir |
+| Photos, dossier de photos → diaporama (durée, **22 effets de transition**, musique, boucle) | ✔ | ✔ | — | ~ (depuis : diaporama avec musique, sans transitions) | ffmpeg `xfade` et filtres : rendre le diaporama en vidéo (simple) plutôt qu'un diaporama HDMV natif |
+| Disque de musique (pochette plein/demi-écran) | ✔ | — | — | ✔ (depuis : un titre par morceau, avec pochette) | ffmpeg : image + audio → vidéo |
+| Sous-titres externes (SRT, ASS, SUP) | ✔ | ✔ | ✔ (police, position, délai) | ✔ (depuis : `.srt`, `.ass`, `.ssa`, `.vtt`, `.sup`, `.idx` + `.sub`) | tsMuxeR accepte SRT et PGS [testé] ; ASS à convertir |
 | Source ISO / dossier DVD / Blu-ray | — | ✔ (« Add DVD », « Add iso file ») | n.é. | ✘ | hors périmètre ici (copie) ; seulement sans protection |
 | Titres depuis les métadonnées du fichier | ✔ | — | — | à vérifier | ffprobe |
 
@@ -42,7 +42,7 @@ Y = Yuhan, L = Leawo, D = DVDFab (créateur). ✔ fait · ~ en partie · ✘ pas
 |---|---|---|---|---|---|
 | Début / fin, volume, chapitres (intervalle ou liste) | ✔ | ✔ | ✔ | ✔ (commits `492345d`, `e2a5a48`) | — |
 | Langues audio / sous-titres par titre | ✔ | ✔ | ✔ | ✔ (choix des pistes) | — |
-| Plusieurs extraits d'une vidéo, fusion, inversion de la coupe | — | — | ✔ (écran du Convertisseur) | ✘ | ffmpeg `concat` |
+| Plusieurs extraits d'une vidéo, fusion, inversion de la coupe | — | — | ✔ (écran du Convertisseur) | ~ (depuis : couper en deux, fusionner ; pas d'extraits multiples ni d'inversion) | ffmpeg `concat` |
 | Recadrage, luminosité / contraste / saturation, rotation, filigrane | — | — | ✔ (écran du Convertisseur) | ✘ | ffmpeg `crop`, `eq`, `transpose`, `overlay` ; secondaire pour un créateur |
 | Amélioration IA (HDR, résolution, fluidité, sous-titres IA) | ✔ (HDR) | — | ✔ | ✘ | **non étudié** ; hors périmètre |
 
@@ -70,14 +70,14 @@ Y = Yuhan, L = Leawo, D = DVDFab (créateur). ✔ fait · ~ en partie · ✘ pas
 | Mes modèles / enregistrer mon menu | ✔ | ✔ (Mon BD / DVD / UHD) | ✔ (« My Blu-ray ») | ✔ | — |
 | Télécharger d'autres modèles | — | ✔ | ✔ | ✘ | sources en ligne repérées (mémoire « Menu templates ») ; téléchargement = demande d'accord |
 | Pages : principal, scènes, réglages (audio / sous-titres) | ✔ | ~ (principal + scènes) | ✔ | ✔ (+ page Crédits, que les trois n'ont pas) | — |
-| Page **Bonus** (nombre d'éléments, mode d'affichage) | ✔ | — | — | ✘ | modèle de données à étendre |
+| Page **Bonus** (nombre d'éléments, mode d'affichage) | ✔ | — | — | ~ (depuis : la page existe, avec la grille des scènes ; ni nombre ni mode réglables) | modèle de données à étendre |
 | **Menu contextuel (pop-up)** | ✔ | — | — | ✘ | n'existe qu'en HDMV (`ui_model` pop-up) : phase 3 |
-| Scènes : par chapitre ou par fichier, icône ou texte, éléments par page, « exclure la 1re vidéo », « une vidéo par page » | ✔ | ~ (liste de chapitres) | ~ | ~ (chapitres / épisodes, grille) | mise en page |
+| Scènes : par chapitre ou par fichier, icône ou texte, éléments par page, « exclure la 1re vidéo », « une vidéo par page » | ✔ | ~ (liste de chapitres) | ~ | ~ (chapitres / épisodes, grille, et depuis une liste de texte ; pas par fichier) | mise en page |
 | Fond image ou vidéo, boucle, début / fin, durée max, volume, fondu | ✔ | ✔ | ~ (boucle ; reste non établi) | ✔ | — |
-| **Vidéo de début (first-play)**, « passer le menu au démarrage » | ✔ | — | n.é. | ✘ | BD-J : le xlet joue une playlist avant le menu ; DVD : PGC de départ |
-| Texte libre : police, taille, gras, italique, souligné, contour, alignement, **position 0-1000**, « appliquer à tous », « cacher sur le disque » | ✔ | ✔ (police, couleur) | ✔ (« Add Texts ») | ~ (polices, couleurs et tailles du modèle, pas de placement libre) | cœur de l'ergonomie : phase 2 |
-| Image libre (taille, position) ; boîtes, soulignement | ✔ | — | ~ (« Add Widgets », sens non établi) | ✘ | idem |
-| Style de surbrillance (cadre / soulignement), style des boutons de navigation, vignette de bouton | ✔ | ✔ | ✔ | ~ (5 styles) | — |
+| **Vidéo de début (first-play)**, « passer le menu au démarrage » | ✔ | — | n.é. | ✔ (depuis : vidéo de début, Blu-ray et DVD) | BD-J : le xlet joue une playlist avant le menu ; DVD : PGC de départ |
+| Texte libre : police, taille, gras, italique, souligné, contour, alignement, **position 0-1000**, « appliquer à tous », « cacher sur le disque » | ✔ | ✔ (police, couleur) | ✔ (« Add Texts ») | ✔ (depuis : éléments libres, en pixels du menu) | cœur de l'ergonomie : phase 2 |
+| Image libre (taille, position) ; boîtes, soulignement | ✔ | — | ~ (« Add Widgets », sens non établi) | ✔ (depuis : image et cadre libres) | idem |
+| Style de surbrillance (cadre / soulignement), style des boutons de navigation, vignette de bouton | ✔ | ✔ | ✔ | ~ (5 styles de boutons, 3 de surbrillance) | — |
 | Sons de boutons | — | — | ✔ (`AuthorData.xml`) | ✘ | `sound.bdmv` ; plus tard |
 
 **Volontairement exclu** : la détection et la suppression du filigrane Cinavia (Leawo : 3 écrans ; DVDFab : « remove the Cinavia watermark from this audio track »), AACS / BD+ / copie de disques protégés, tout contournement de protection [chaînes]. Hors périmètre de la création.
@@ -220,7 +220,7 @@ Source : `C:\Program Files\Yuhan Blu-ray DVD Creator\BlurayCreator.dll` (x64, 26
 - **mémoire du bouton** (R105 + `SET_BUTTON_PAGE`) et **IG à plusieurs pages** (R104) : à envisager pour limiter le nombre de clips IG et de listes de lecture ; mais le premier coûte un IG plus gros et un lecteur qui gère bien les pages multiples (non essayé) ;
 - le **menu contextuel** (pop-up) de Yuhan est un second clip IG avec `ui_model` = 1 ; **comment il est rattaché aux listes de lecture des films n'est pas lu** (écrivain `FUN_180006720` et compagnons non ouverts).
 
-**Reste non lu pour Yuhan** : `FUN_180006720` (écrivain de MPLS) et `FUN_180008c50` / `FUN_1800099e0` / `FUN_1800048e0` / `FUN_180005880` (listes de lecture), le quantificateur de palette (`FUN_18002c450`), le codeur d'image (`FUN_18002cec0`), l'écrivain d'ODS (`FUN_18002dfe0`), la classe concrète qui implémente l'interface virtuelle (menus à `+0x78`, titres à `+0x88`, liste de pages à `+0x80`) et, plus généralement, tout `BlurayDVDCreator.exe` : l'analyse Ghidra de cet exécutable (1,7 Mo) a abouti mais le pont REA a refusé la connexion, donc **aucun code de l'exécutable n'a été lu**. Un balayage de chaînes sur tous les modules ne trouve `CBDButton` / `CBDMenu` que dans `BlurayCreator.dll`.
+**Reste non lu pour Yuhan** : `FUN_180006720` (écrivain de MPLS) et `FUN_180008c50` / `FUN_1800099e0` / `FUN_1800048e0` / `FUN_180005880` (listes de lecture), le quantificateur de palette (`FUN_18002c450`), le codeur d'image (`FUN_18002cec0`), l'écrivain d'ODS (`FUN_18002dfe0`), la classe concrète qui implémente l'interface virtuelle (menus à `+0x78`, titres à `+0x88`, liste de pages à `+0x80`) et, à cette date, tout `BlurayDVDCreator.exe` (depuis, `ANALYSE-REA.md` §16 en lit dix fonctions) : l'analyse Ghidra de cet exécutable (1,7 Mo) a abouti mais le pont REA a refusé la connexion, donc **aucun code de l'exécutable n'a été lu**. Un balayage de chaînes sur tous les modules ne trouve `CBDButton` / `CBDMenu` que dans `BlurayCreator.dll`.
 
 ## 5. Briques libres, licences, décision
 
@@ -238,7 +238,7 @@ Source : `C:\Program Files\Yuhan Blu-ray DVD Creator\BlurayCreator.dll` (x64, 26
 | DVD Forge, DVDStyler (modèles) | GPL | modèles de menu | — | déjà repris |
 | BDedit, DVD-Logic, TMPGEnc, code de DVDFab / Yuhan / Leawo | fermé | — | — | **à ne pas utiliser** |
 
-Compatibilité : Apache-2.0, LGPL-3.0-ou-plus et BSD-3 se combinent avec la GPL-3.0-ou-plus de BurnSmith (avis à ajouter à `THIRD-PARTY-NOTICES.md` si du code est repris).
+Compatibilité : Apache-2.0, LGPL-3.0-ou-plus et BSD-3 se combinent avec la GPL-3.0-ou-plus de BurnSmith (avis à ajouter à `THIRD-PARTY-NOTICES.md` si du code est repris ; c'est fait depuis pour bdmvkit).
 
 **Architecture du menu HDMV, deux voies :**
 
@@ -251,9 +251,15 @@ Compatibilité : Apache-2.0, LGPL-3.0-ou-plus et BSD-3 se combinent avec la GPL-
 |---|---|---|
 | **0. Preuve sur lecteur** (aucun code ; **demande un lecteur de salon et un disque inscriptible de l'utilisateur**) | Graver et lire : (1) un disque BurnSmith avec menu BD-J, (2) un disque `--no-menu` (HDMV pur), (3) si possible l'ISO d'amateur de référence (ou noter qu'il a déjà été lu). Noter ce qui s'affiche, ce que fait la touche « menu ». Ajouter l'ISO d'essai de bdmvkit (4b) : c'est le test qui dit si un menu HDMV écrit par un outil libre passe sur votre lecteur. Compiler bdmvauthor demande d'installer MSYS2 + Qt 6 (à autoriser). | une page de résultats par lecteur |
 | **1. Ergonomie sans nouveau moteur** | Enregistrer / ouvrir un projet ; sous-titres externes (SRT, ASS → SRT, SUP) ; ISO d'essai 5 minutes ; action de fin ; vidéo de début ; disque de musique ; diaporama rendu en vidéo (22 transitions via `xfade`) ; « appliquer à tous » | chaque fonction a sa commande CLI et son essai sur un disque généré |
-| **2. Éditeur libre** | Éléments texte / image / cadre placés par l'utilisateur (coordonnées 0-1000), style par bouton, page Bonus, scènes par fichier, sons de boutons ; le modèle (`MenuDesign`) porte les éléments, le BD-J et le DVD les lisent | `check-templates --matrix` couvre aussi les éléments libres |
+| **2. Éditeur libre** | Éléments texte / image / cadre placés par l'utilisateur (en pixels du menu, 1920x1080), style par bouton, page Bonus, scènes par fichier, sons de boutons ; le modèle (`MenuDesign`) porte les éléments, le BD-J et le DVD les lisent | `check-templates --matrix` couvre aussi les éléments libres |
 | **3. Menu HDMV natif (option B)** | 3a quantificateur + RLE + ICS / PDS / ODS (port de `igs.py` / `pgs.py` de bdmvkit) ; 3b clip de menu (ffmpeg + correction du type de flux dans la PMT + CLPI / MPLS) ; 3c `MovieObject` / `index` avec titres HDMV ; 3d pop-up, menus audio et sous-titres (`SET_STREAM`) ; 3e réglage « compatibilité maximale (HDMV) » proposé par défaut tant que le BD-J n'est pas prouvé | sortie décodée identique en structure au disque de référence (section 4), lue dans libbluray **puis** sur lecteur réel |
 | **4. Plus tard** | Encodeurs matériels avec garde de conformité, UHD x265 + HDR, Dolby Vision, fusion de BD | — |
+
+**État au 2026-11-06 (v0.5.4)** :
+- **Phase 0** : pas faite (aucune gravure réelle, aucun lecteur de salon).
+- **Phase 1** : faits : sous-titres externes, vidéo de début, disque de musique, diaporama sans transitions. Restent : projet, ISO d'essai, action de fin, « appliquer à tous » hors pistes.
+- **Phase 2** : éléments libres et boutons posés à la main faits. Restent : style par bouton, page Bonus paramétrable, scènes par fichier, sons de boutons. `check-templates --matrix` ne couvre pas encore les éléments libres.
+- **Phase 3** : 3a à 3c existent comme bibliothèque (`src/BurnSmith.Core/Hdmv/`), non branchée et jamais essayée sur un lecteur. En attente de la phase 0.
 
 Ordre conseillé : 0 en parallèle de 1 ; 2 avant 3 (le modèle de données doit connaître les éléments libres avant d'être rendu en IG) ; 3 seulement si la phase 0 montre que le BD-J non signé échoue ou si l'on veut le pop-up.
 
@@ -268,7 +274,7 @@ Ordre conseillé : 0 en parallèle de 1 ; 2 avant 3 (le modèle de données doit
 - Le rendu visuel du menu n'a pas été vérifié : les captures du VLC portable (`snap*.png`) ne montrent que la vidéo de fond, pas la surcouche graphique ; ce sont les traces de libbluray (état des boutons, registres, commandes) qui prouvent le fonctionnement.
 - Estimations de taille des phases volontairement absentes : aucune mesure n'a été faite.
 - La phase 0 est la seule qui lève le risque principal, et elle exige un lecteur de salon et un disque inscriptible.
-- Les phases 1 à 3 touchent les fichiers que l'autre session modifie en ce moment (`MenuDesign`, `BluRay.cs`, `Dvd.cs`, `MenuFiles.cs`, l'application WPF). Rien n'a été implémenté ici ; décider où et quand les lancer évite les conflits.
+- Les phases 1 à 3 touchent les fichiers que l'autre session modifie en ce moment (`MenuDesign`, `BluRay.cs`, `Dvd.cs`, `MenuFiles.cs`, l'application WPF). Rien n'a été implémenté ici à cette date ; décider où et quand les lancer évite les conflits.
 
 ## 8. Phase 2, première brique : les éléments libres du menu (2026-11-05)
 
@@ -281,10 +287,10 @@ Fait dans BurnSmith (phase 2 de la feuille de route, point « placement libre »
 - Ligne de commande : `--element "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;align=center"`, clés `kind, page, rect, text, file, font, size, color, align, bold, italic, outline, outlinew, fill, opacity, radius, border, borderw, fit, behind`.
 - Épreuves faites : `BurnSmith.Cli check-elements` (11 vérifications, `all ok`) ; rendu d'un modèle DVDFab (`Birthday1`) avec un texte sur la racine et un texte sur les seules pages de scènes (vérifié à l'image) ; **DVD réellement construit** (`dvdauthor` + `spumux`) dont le VOB de menu montre le texte et le panneau, le panneau restant derrière le bouton Lecture ; `check-templates` toujours à 144 sans problème.
 
-Ce qui reste de la phase 2 : style par bouton, boutons interactifs supplémentaires (« ajouter un bouton » et non seulement des éléments décoratifs), page Bonus paramétrable (nombre d'éléments, mode d'affichage), scènes par fichier / par texte, sons de boutons. La note de décompilation de la même date est dans `ANALYSE-REA.md`.
+Ce qui reste de la phase 2 : style par bouton, page Bonus paramétrable (nombre d'éléments, mode d'affichage), scènes par fichier / par texte, sons de boutons. La note de décompilation de la même date est dans `ANALYSE-REA.md`.
 ## 9. Surbrillances DVD prises aux modèles (2026-11-05)
 
-Suite du §1 : la lecture de `FUN_180015840` a donné la structure, et le modèle DVDFab DVD donne les images. Ce qui a été fait :
+Suite du §1 et du §6 de `ANALYSE-REA.md` : la lecture de `FUN_180015840` a donné la structure, et le modèle DVDFab DVD donne les images. Ce qui a été fait :
 
 - `MenuButton` porte `DvdHighlightImage` / `DvdHighlightMask` ; `InstalledTemplate` les remplit depuis l'image de survol déjà connue (`Selected()` : `frame/0.dvd.normal.png` → `frame/0.dvd.sub.png`) et son jumeau `.mask.`, aux six endroits où un bouton reçoit un artwork. Un bouton-texte à marqueur en étoile n'a pas de `.sub.` : il garde le cadre plat.
 - `MenuRenderer.Raster` rend l'artwork à la taille exacte du bouton, masque appliqué, en pixels BGRA (WPF, prémultipliés) ; appelé dans le `MenuRenderer.Sta` de `Dvd.cs`, puisque la boucle de construction n'est pas sur un thread STA.
@@ -305,4 +311,4 @@ Suite de la phase 2 : après les éléments décoratifs (§8), les boutons qui f
 
 **Épreuves** : `check-elements` 13/13 (dont « un élément bouton devient un vrai bouton, avec son libellé et l'action choisie » et « deux boutons côte à côte se pointent l'un l'autre ») ; un DVD construit avec un bouton ajouté montre le bouton dans le menu (`Regarder le film` sous l'aperçu) et dvdauthor/spumux l'acceptent ; `check-templates` reste à 144.
 
-**Correction de la feuille de route (même date)** : la tâche T2 (« positions exactes des modèles Leawo ») n'était pas à faire. Le dump de `childhood01 (16-9)` montre que BurnSmith dessine déjà **aux positions du `template.xml` de Leawo** (cadre à 699,307 en 752x498, titre à 392,420, Lecture à 220,532). Le repli par mesure ne sert que si le XML de Leawo fait chevaucher ses propres miniatures (education01 16:9) ou s'il n'y a pas de XML — et le chevauchement titre/cadre d'education01 en 16:9-2 est celui du modèle, reproduit tel quel. Seuls 4 dossiers portent un `template.xml` (3 en 16-9, 1 en 16-9-2) ; les 29 autres n'ont que des images.
+**Correction de la feuille de route (même date)** : la tâche T2 (« positions exactes des modèles Leawo ») n'était pas à faire. Le dump de `childhood01 (16-9)` montre que BurnSmith dessine déjà **aux positions du `template.xml` de Leawo** (cadre à 699,307 en 752x498, titre à 392,420, Lecture à 220,532). Le repli par mesure ne sert que si le XML de Leawo fait chevaucher ses propres miniatures (education01 16:9) ou s'il n'y a pas de XML — et le chevauchement titre/cadre d'education01 en 16:9-2 est celui du modèle, reproduit tel quel. Seuls 6 dossiers portent un XML : 4 un `template.xml` (3 en 16-9, 1 en 16-9-2) et 2 un `template2.xml` (16-9-2) ; les 27 autres n'ont que des images.

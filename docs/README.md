@@ -19,6 +19,7 @@ Présentation courte : [README](../README.md).
 | [COMPARAISON-DVDFAB-BLURAY.md](COMPARAISON-DVDFAB-BLURAY.md) | Comparaison des moteurs DVDFab, Yuhan et Leawo avec BurnSmith (analyse statique) |
 | [ANALYSE-REA.md](ANALYSE-REA.md) | Constats de décompilation sur les trois suites, et ce que BurnSmith en fait |
 | [TACHES-CLAUDE-CODE.md](TACHES-CLAUDE-CODE.md) | File d'implémentation : ce qui est fait, ce qui reste |
+| [BRIEF-CLAUDE-CODE.md](BRIEF-CLAUDE-CODE.md) | Brief des menus DVD / Blu-ray : tâches faites et restantes, avec leurs preuves |
 
 À côté du code : [menus HDMV (module `Hdmv`)](../src/BurnSmith.Core/Hdmv/README.md).
 

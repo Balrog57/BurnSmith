@@ -10,7 +10,7 @@ Légende : **[octets]** lu dans les fichiers livrés (décodeur Python maison, `
 2. **Rectification d'une lecture précédente** : le « répartiteur » HDMV à registres GPR3/GPR4 de DVDFab n'est pas une invention de DVDFab, c'est le même objet 1 que tsMuxeR 2.7.0 écrit (9 commandes identiques, comparées commande par commande). Ce que DVDFab ajoute : la poignée de main **GPR100 = 0xFAB0 / 0xFAB1** et un objet de plus [octets, testé].
 3. Le BDJO de BurnSmith a la même disposition que celui de DVDFab, champ par champ ; seuls diffèrent l'identifiant d'organisation, le nom de la classe initiale et les longueurs / décalages qui en dépendent (170 contre 166 octets) [octets].
 4. Test de BurnSmith : compilation sans avertissement, 144 modèles sur 144 dessinés, disque d'essai valide, menu BD-J démarré par libbluray (VLC + JDK 8), disque `--no-menu` en HDMV pur [testé]. **Un seul défaut réel trouvé** : une miniature décorative interrompait toute la construction du disque quand la source n'a pas d'image clé après le point de recherche (cas limite : clips courts ou captures à GOP long). **Déjà corrigé entre-temps** par le commit `8f22da3` (20:02, « vignettes facultatives » : essai / avertissement autour de chaque extraction, DVD compris) ; je ne l'ai pas retesté après coup.
-5. Convergences : x265 UHD-BD niveau 5.1 avec image clé ≈ 20–24 (les trois produits), mêmes options tsMuxeR de compatibilité chez Yuhan et Leawo. DVDFab a un débit cible « ajusté au disque » ; BurnSmith l'a déjà dans sa copie de travail (`FitDisc`, `BdKbps`).
+5. Convergences : x265 UHD-BD niveau 5.1 avec image clé ≈ 20–24 (les trois produits), mêmes options tsMuxeR de compatibilité chez Yuhan et Leawo. DVDFab a un débit cible « ajusté au disque » ; BurnSmith l'a aussi (`FitDisc`, `BdKbps`, committés depuis `b95758a`).
 
 ## 1. Ce qui a été ouvert
 
@@ -28,7 +28,7 @@ Les sections PE de `xdisc.dll`, des modules Yuhan et de `panda.dll` sont normale
 
 | Fichier | Taille | Rôle | Preuve |
 |---|---|---|---|
-| `DVDFab64.exe` | 93 Mo | Interface Qt + Python 3.10 embarqué, logique du Créateur (modes, gabarits, `index_bdav.bdmv`). Protecteur ≈ 20 Mo : non ouvert | [chaînes] |
+| `DVDFab64.exe` | 93 Mo | Interface Qt + Python 3.10 embarqué, logique du Créateur (modes, gabarits, `index_bdav.bdmv`). Sections `.upp0` à `.upp2` ≈ 20 Mo, rôle inconnu (voir plus bas) : non ouvertes | [chaînes] |
 | `xdisc.dll` | 11,5 Mo | Bibliothèque disque x64 (PDB `xdisc2017_x64`). Écrit/lit BDMV, playlists, CLPI, `bdmt_*.xml`, certificats, jar. Sert aussi à la copie de disques (hors sujet, non étudié) | [REA] `ev_7bab33e1` |
 | `Options\FabAddonBluRay.exe` | 195 Ko | **Simple installeur** de module (sections empaquetées, 7 fonctions). Aucun code de création | [REA] `ev_7402a3c5`, `ev_4e25b982` |
 | `BDMV\` | 0,4 Mo | **Squelette de disque** : variantes d'index, objets film, jar BD-J signé, certificats, playlist de boucle | [octets] |
@@ -68,7 +68,7 @@ Décodage de `index*.bdmv` et `MovieObject*.bdmv` avec l'énumération de libblu
 
 DVDFab (`DataDriven.xml`, [octets]) — créateur : DVD 2 000–10 000 kb/s (cible 5 500) ; BD 2 000–35 000 (cible 15 000) ; UHD 2 000–60 000 (cible 30 000) ; option « Ajuster au disque » (`DVDCreator_Bitrate_FitToDisc`) [chaînes].
 
-| Réglage | DVDFab « Standalone Blu-ray » | BurnSmith (copie de travail, `BluRay.cs`) |
+| Réglage | DVDFab « Standalone Blu-ray » | BurnSmith (`BluRay.cs`) |
 |---|---|---|
 | Mode | débit moyen 15 000 kb/s, jusqu'à 3 passes | débit demandé (`BdKbps`, borné 2 000–35 000), ou ajusté au disque (`FitDisc`, ×0,94), sinon CRF 17 (10–28), 1 passe, `medium` |
 | Profil / niveau | High / 4.1 | `bluray-compat`, niveau 4.1 |
@@ -88,7 +88,7 @@ Modes : fichier→DVD / BD / UHD, **DVD→BD, DVD→UHD, BD→UHD**, BD personna
 - **Multiplexeur** : `BlurayMuxer.dll` embarque tsMuxeR 2.6.16 [chaînes]. Options de compatibilité (identiques chez Leawo) : `--no-pcr-on-video-pid --new-audio-pes --hdmv-descriptors --vbv-len=500 --start-time=524280` [chaînes].
 - **Navigation HDMV écrite par Yuhan** : `BlurayCreator.dll` contient un écrivain d'`index.bdmv` (`FUN_180006260`) et de `MovieObject.bdmv` (`FUN_180006c90`) qui produisent `INDX0200` / `MOBJ0200` (`0300` pour l'UHD), des titres HDMV, des commandes de 12 octets utilisant les registres 100–108, une chaîne de données d'application qui se termine par « …SOFTWARE CO.,LTD. », puis la copie dans `BACKUP` [REA, pseudo-code lu en entier le 2026-11-05 ; les 14 constructeurs de commandes sont décodés : `FEUILLE-DE-ROUTE-BLURAY.md`, section 4d]. Une fonction de 15 Ko (`FUN_18000b360`) réécrit playlists et infos de clip produites par tsMuxeR et appelle l'écrivain du clip de menu [REA, lecture partielle].
 - **Menu** : dessiné par Qt (classes `CBDMenu`, `CBDButton`) avec images de bouton normale / sélectionnée / activée ; fichiers `menu_0.m2ts`, `menu_%2.m2ts`, `bf_menu_%2.m2ts` ; options « type de surbrillance », « mode vidéo du menu », « menu contextuel (popup) » [chaînes, `BlurayDVDCreator.exe`]. Aucune chaîne « IGS » n'a été trouvée ; [déduit] les trois états d'image et `BD_BUTTON_HEADER` / `BD_COMMAND` (Leawo, ci-dessous) décrivent des boutons de flux graphique interactif, et **l'écriture de ce flux est localisée dans `BlurayCreator.dll`** (`FUN_18002e990`, `FUN_18002b580`) : même lignée de code que Leawo, avec en plus des pages multiples dans un ICS, trois états par bouton et des menus contextuels (`user_interface_model` = 1) dans des clips à part (n° 90001 et 90002) ; voir `FEUILLE-DE-ROUTE-BLURAY.md`, section 4d (constats de code, aucun disque Yuhan produit ni lu).
-- **Thèmes** : `PresetMenu\THEME01..30`, chacun en PNG à 4 résolutions (768×576, 1280×720, 1920×1080, 3840×2160), `thumb_169.jpg` / `thumb_43.jpg` et un `config.dat` opaque non lu [octets]. BurnSmith en dessine déjà les 30 thèmes (`YuhanSkin.cs`, non suivi par git) [testé].
+- **Thèmes** : `PresetMenu\THEME01..30`, chacun en PNG à 4 résolutions (768×576, 1280×720, 1920×1080, 3840×2160), `thumb_169.jpg` / `thumb_43.jpg` et un `config.dat` opaque non lu [octets]. BurnSmith en dessine déjà les 30 thèmes (`YuhanSkin.cs`) [testé].
 - **Encodage** [chaînes, `MediaHelper.dll`] : x264 `keyint=24:min-keyint=24:no-scenecut=1` (GOP fixe) ; x265 UHD-BD `uhd-bd=1:keyint=24:min-keyint=24:no-open-gop=1:no-scenecut=1:level=5.1:hrd=1:aud=1:no-info=1:sar='1:1':colorprim='bt2020':transfer='smpte2084':colormatrix='bt2020nc':master-display=…:max-cll=…:bframes=2`, et une variante `preset=medium:tune=grain:profile=main10:level-idc=51:high-tier=1:repeat-headers=1`. La chaîne `keyint=20:level=5.1` se retrouve aussi chez Leawo. `dovi_tool` et `hdr10plus_tool` livrés [noms de fichiers]. DVD par dvdauthor ; écrivain UDF propre [chaînes].
 - `res\bdmt_eng.xml` : gabarit de métadonnées avec `DiscName`, miniatures en commentaire [octets].
 
@@ -111,11 +111,11 @@ Les essais ont tourné sur la copie de travail de ≈ 19:50, commitée ensuite p
 | `dotnet build src/BurnSmith.Cli -c Release -o <temp>` | réussi, 0 avertissement, 0 erreur [testé] |
 | `BurnSmith.Cli check-templates` | **144 sans problème, 0 avec problèmes, 0 refusés** : DVDFab 27 (22 Blu-ray + 5 DVD), Leawo 33, Yuhan 30, DVDStyler 49, DVD Forge 5 [testé] |
 | `BurnSmith.Cli bd --video essai.mp4 …` (8 s, 1080p24, GOP 24, ffmpeg 8.1.1 du PATH, tsMuxeR 2.7.0 de `tools\`) | disque produit en 1,8 s : `index.bdmv`, `MovieObject.bdmv`, `PLAYLIST\00001.mpls`, `CLIPINF\00001.clpi`, `STREAM\00001.m2ts`, `JAR\00000.jar`, `BDJO\00000.bdjo`, `META\DL\` (`bdmt_eng.xml`, 2 miniatures), copies `BACKUP\` [testé] |
-| Décodage du disque | `INDX0200` : premier lancement = menu principal = titre 1 = BD-J `00000` ; `MOBJ0200` de tsMuxeR (voir 2.3) [testé] |
+| Décodage du disque | `INDX0200` : premier lancement = menu principal = titre 1 = BD-J `00000` (depuis, avec une vidéo de début, le premier lancement est un objet HDMV) ; `MOBJ0200` de tsMuxeR (voir 2.3) [testé] |
 | Contenu du jar | `Menu` + 4 classes internes, `bg_root.jpg`, `hl_root_play.png`, `mark.png`, `menu.txt`, MANIFEST seul : **pas de `SIG-BD00.*`, pas de fichier de permissions, pas de dossier `CERTIFICATE`** [testé] |
 | `BurnSmith.Cli bd … --no-menu` (même source) | disque **HDMV pur** : `index.bdmv` d'origine de tsMuxeR (premier lancement = objet 2, menu principal = objet 1, titre 1 = objet 0, qui joue la playlist 1), pas de `JAR` / `BDJO`, `META\DL` présent [testé]. Décodé seulement, **non lu dans un lecteur** |
 | `tools\vlctest.ps1` (VLC 3.0.24 portable + JDK 8, libbluray), disque avec menu | `BD-J check: OK`, xlet démarré (`burnsmith: page root`) ; lignes d'erreur non fatales : `CERTIFICATE\id.bdmv` introuvable (et sa copie), `sync(): not visible`. Aucune capture n'était demandée (seulement `sleep:3`), donc le rendu du menu n'a pas été vérifié à l'image [testé] |
-| Source de 8 s avec **une seule image clé** | la construction s'arrête à `BluRay.cs:135` (miniature `thumbnail_416x240.jpg`) : ffmpeg répond « Non full-range YUV is non-standard … Error while opening encoder ». Cause isolée par comparaison : la même commande réussit sur le MP4, avec `-ss` placé **après** `-i` sur le flux TS, et avec une image clé toutes les 24 images ; `-strict unofficial` et `yuvj420p` n'y changent rien. [déduit] la recherche en entrée (`-ss` avant `-i`) dans le TS de travail tombe après la dernière image clé : aucune image n'atteint l'encodeur mjpeg, dont le message n'est que le symptôme. `Tools.Run` lève une exception, donc une miniature décorative fait échouer tout le disque [testé] |
+| Source de 8 s avec **une seule image clé** | à l'époque, la construction s'arrêtait à `BluRay.cs:135` (depuis, ce pas est protégé par un try/catch) (miniature `thumbnail_416x240.jpg`) : ffmpeg répond « Non full-range YUV is non-standard … Error while opening encoder ». Cause isolée par comparaison : la même commande réussit sur le MP4, avec `-ss` placé **après** `-i` sur le flux TS, et avec une image clé toutes les 24 images ; `-strict unofficial` et `yuvj420p` n'y changent rien. [déduit] la recherche en entrée (`-ss` avant `-i`) dans le TS de travail tombe après la dernière image clé : aucune image n'atteint l'encodeur mjpeg, dont le message n'est que le symptôme. `Tools.Run` lève une exception, donc une miniature décorative fait échouer tout le disque [testé] |
 
 Non testé : lecteur de salon ou console (le point décisif pour la signature), gravure, DVD, disque UHD, plusieurs titres, sous-titres, le menu rendu à l'écran, le disque `--no-menu` dans un lecteur.
 
@@ -130,7 +130,7 @@ Non testé : lecteur de salon ou console (le point décisif pour la signature), 
 | Boucle de fond | playlist de 280 éléments + xlet | non établi | non établi | playlist 99 relancée par le xlet |
 | Sons de boutons, cadre vidéo, défilement | oui | non établi | non établi | non |
 | Titre du disque / miniatures (`META/DL`) | oui [déduit] | gabarit `bdmt_eng.xml` | non établi | oui, par langue, 2 miniatures |
-| Débit cible Blu-ray, ajusté au disque | oui [chaînes] | non établi | non établi | **oui dans la copie de travail** (`FitDisc`, `BdKbps`) |
+| Débit cible Blu-ray, ajusté au disque | oui [chaînes] | non établi | non établi | **oui** (`FitDisc`, `BdKbps`) |
 | Encodeur matériel (NVENC / QSV / AMF) | non établi | non établi | oui, avec garde de conformité et repli | non |
 | UHD | passthrough ou x265 | x265 UHD-BD | x265 UHD-BD, HDR10 | passthrough seulement |
 | Modes DVD→BD, fusion, BDAV1, IA / HDR | oui | non établi | non établi | non |
@@ -153,7 +153,7 @@ Non testé : lecteur de salon ou console (le point décisif pour la signature), 
 
 ## 8. Limites
 
-- `DVDFab64.exe` (code non ouvert), `Plcore.dll`, `FabMenu*.exe` non ouverts (`fabvm.dll` et `codecs.dll` l'ont été le 2026-11-05, voir plus bas) ; Leawo : `BDFix.dll`, `DVDMaker.dll` et `panda.dll` décompilés en partie ; Yuhan : seul `BlurayCreator.dll` (index, `MovieObject`, clip IG, commandes ; pas les écrivains de listes de lecture) ; `BlurayDVDCreator.exe` de Yuhan **non lu** (le pont REA a refusé la connexion pendant l'ouverture). Le reste vient de balayages de chaînes, qui prouvent la présence d'un texte, pas l'usage.
+- `DVDFab64.exe` (code non ouvert), `Plcore.dll`, `FabMenu*.exe` non ouverts (`fabvm.dll` et `codecs.dll` l'ont été le 2026-11-05, voir plus bas) ; Leawo : `BDFix.dll`, `DVDMaker.dll` et `panda.dll` décompilés en partie ; Yuhan : seul `BlurayCreator.dll` (index, `MovieObject`, clip IG, commandes ; pas les écrivains de listes de lecture) ; `BlurayDVDCreator.exe` de Yuhan non lu à cette date (le pont REA a refusé la connexion pendant l'ouverture ; depuis, `ANALYSE-REA.md` §16 en lit dix fonctions). Le reste vient de balayages de chaînes, qui prouvent la présence d'un texte, pas l'usage.
 - Rien n'a été **exécuté** côté produits : l'enchaînement exact (quels fichiers selon le mode, valeurs de gabarit) est déduit.
 - Yuhan et Leawo écrivent eux-mêmes le flux IG de leur menu HDMV dans un clip dédié, hors multiplexage (Leawo : `BDFix.dll`, décompilé le 2026-11-04 ; Yuhan : `BlurayCreator.dll`, le 2026-11-05) ; voir `FEUILLE-DE-ROUTE-BLURAY.md`, sections 4c et 4d (constats de code, aucun disque produit ni lu sur lecteur). Les commandes de boutons de Yuhan viennent d'un module non lu.
 - Leawo existe en **deux exemplaires différents** sur la machine (installé v1.2.0.0 et portable d'un site tiers, build de 2016) ; l'exemplaire de `panda.dll` analysé plus haut n'est pas consigné. Détail : `FEUILLE-DE-ROUTE-BLURAY.md`, section 4c.

@@ -1,6 +1,6 @@
 # Third-party software and code
 
-BurnSmith is free software under the GNU General Public License v3 or later (see `../LICENSE`).
+BurnSmith is free software under the GNU General Public License v3 or later (the `LICENSE` file of the repository, installed next to this file by the installer; the text is also at https://www.gnu.org/licenses/gpl-3.0.html).
 
 ## Programs carried by the released `BurnSmith.exe`
 
@@ -12,6 +12,8 @@ They are separate executables, unpacked on first run into the `BurnSmith-data\to
 | tsMuxeR 2.7.0 | Apache License 2.0 | https://github.com/justdan96/tsMuxer |
 
 The corresponding source code of the GPL programs is available from the addresses above.
+
+The exe is a self-contained .NET program, so it also includes the **.NET runtime** and **Windows Desktop runtime (WPF)**: MIT License, Copyright (c) .NET Foundation and Contributors, https://github.com/dotnet/runtime and https://github.com/dotnet/wpf. The installer `BurnSmith-Setup-<version>.exe` is built with **Inno Setup**: Inno Setup License, Copyright (C) 1997-2026 Jordan Russell, portions Copyright (C) 2000-2026 Martijn Laan, https://jrsoftware.org/isinfo.php.
 
 Disc images and burning use the Windows components IMAPI2 / IMAPI2FS (part of Windows, not shipped).
 
@@ -46,12 +48,12 @@ part of the released `BurnSmith.exe`.
 
 ## Menu templates and pictures carried by the released `BurnSmith.exe`
 
-Stored as data resources, unpacked on first use into `BurnSmith-data\open` next to the exe; they are read, not linked, by BurnSmith.
+Stored as data resources, unpacked on first use into `Documents\BurnSmith\Templates\open`; they are read, not linked, by BurnSmith.
 
 | Material | Licence | Source |
 |---|---|---|
 | **DVDStyler** menu templates (`.dvdt`), their preview pictures and the background pictures, unchanged (`assets/library/dvdstyler`, with upstream `COPYING`, `AUTHORS` and `SOURCE.txt`) | GNU General Public License as published with DVDStyler (`COPYING` is the version 2 text; DVDStyler's README says "GNU General Public License (GPL)") | https://github.com/ntxalex/DVDStyler (mirror of https://www.dvdstyler.org), author Alex Thuering |
-| **DVD Forge** template parameters (grid, colours, font, margins of Cinema Dark, Multi-Page TV Grid, Classic Criterion, Retro CRT, Minimalist), re-typed in `DvdForgeTemplates.cs`; no code, no picture | GNU GPL v3 | https://github.com/Nicolasalucin/dvd-forge (`crates/dvdforge-menu/src/templates.rs`) |
+| **DVD Forge** template parameters (grid, colours, font, margins of Cinema Dark, Multi-Page TV Series Grid, Classic Criterion, Retro CRT, Minimalist), re-typed in `DvdForgeTemplates.cs`; no code, no picture | GNU GPL v3 | https://github.com/Nicolasalucin/dvd-forge (`crates/dvdforge-menu/src/templates.rs`) |
 
 The upstream project does not itemise who made each DVDStyler picture; they travel under the project's licence as published. These files are separate data
 aggregated in the same executable, not linked into BurnSmith's code, so BurnSmith's own code stays GPL v3 or later. If you redistribute the exe, keep this file and the
@@ -62,11 +64,11 @@ published by the Free Software Foundation, so v3 is available. This is our readi
 ## Menu templates of other software (pictures and layout files only)
 
 The released `BurnSmith.exe` carries the **pictures and layout files** (PNG / JPEG / XML) of the menu templates of **DVDFab**, **Leawo Prof. Media** and **Yuhan Blu-ray DVD Creator**, copied
-from the PC that built the exe (`publish.ps1` runs `BurnSmith.Cli pack-templates`) and unpacked to `BurnSmith-data\templates` next to it. They are **not part of
+from the PC that built the exe (`publish.ps1` runs `BurnSmith.Cli pack-templates`) and unpacked to `Documents\BurnSmith\Templates\carried`. They are **not part of
 BurnSmith's GPL-licensed code**, **they are not in this repository** and they belong to their owners; the exe includes them because the project owner decided
-to reproduce the template artwork. **No program, code, interface or font of either product is included.** A template installed on the user's PC is read from
-there and wins over the carried copy of the same name. If an owner objects to the artwork travelling in the exe, it can be left out by publishing from a PC
-without those programs (the exe then simply offers the free templates), and the released file replaced.
+to reproduce the template artwork. **No program, code, interface or font of any of these products is included.** A template installed on the user's PC is read from
+there and wins over the carried copy of the same name. If an owner objects to the artwork travelling in the exe, it can be left out by changing `publish.ps1`,
+which otherwise refuses to build without them, and replacing the released file; the exe then simply offers the free templates.
 Yuhan keeps the layout of each theme in an encrypted `config.dat` (the key is in its own program file): BurnSmith reads it with the key of the user's installation at run time, and the exe
 carries the layout as plain `config.xml` next to the 1920x1080 pictures (no other resolution, no program, no code).
 BurnSmith is independent of, and not affiliated with, DVDFab, Leawo or Yuhan.
