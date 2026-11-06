@@ -25,7 +25,7 @@ public partial class App : Application
         BurnSmith.Core.AppFiles.Root(); // now, before the unpack below takes its lock: the log needs this answer without waiting
         BurnSmith.Core.Tools.Payload = () => BurnSmith.Payload.Payload.Open(); // a lambda: the 170 MB assembly loads only when this runs
         BurnSmith.Core.Tools.TemplatePayload = () => BurnSmith.Payload.Payload.OpenTemplates();
-        // first run of a build: unpack ffmpeg, tsMuxeR, the open menu library and the template pictures into BurnSmith-data while the window comes up
+        // first run of a build: unpack ffmpeg, tsMuxeR, the open menu library and the template pictures (see AppFiles) while the window comes up
         _ = Task.Run(() => { BurnSmith.Core.Tools.BundledDir(); BurnSmith.Core.Tools.TemplatesDir(); BurnSmith.Core.Menu.OpenLibrary.Dir(); });
         var snap = Array.IndexOf(e.Args, "--snapshot");
         var snapshot = snap >= 0 && snap + 1 < e.Args.Length;
@@ -34,7 +34,7 @@ public partial class App : Application
         static void OffScreen(Window w) { w.WindowStartupLocation = WindowStartupLocation.Manual; w.Left = -20000; w.ShowInTaskbar = false; }
         if (snapshot) OffScreen(main); // never flashes on the desktop
         main.Show();
-        if (!snapshot && BurnSmith.Core.Updater.IsInstalled()) _ = CheckForUpdate(main); // while the videos load; never in a portable or development copy
+        if (!snapshot && BurnSmith.Core.Updater.IsInstalled()) _ = CheckForUpdate(main); // while the videos load; never in a development build
         if (Array.IndexOf(e.Args, "--try-install") is var tryAt and >= 0 && tryAt + 1 < e.Args.Length) _ = InstallUpdate(main, () => Task.FromResult(e.Args[tryAt + 1]));
         foreach (var video in videos) await main.LoadSource(video);
         if (!snapshot) return;

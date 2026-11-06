@@ -18,7 +18,7 @@ Avant de graver, BurnSmith **contrôle le disque qu'il vient de construire** (fi
 
 ### Rapide, sans prérequis pour le Blu-ray
 
-- **Un seul `BurnSmith.exe`**, installé ou portable : ffmpeg, tsMuxeR et les modèles sont dedans. Le Blu-ray ne demande rien d'autre ; le DVD demande deux outils en plus (voir *Démarrer*). Pas de logiciel de gravure à ajouter : l'ISO et la gravure passent par Windows (IMAPI2).
+- **Un seul installateur** : ffmpeg, tsMuxeR et les modèles sont dedans. Le Blu-ray ne demande rien d'autre ; le DVD demande deux outils en plus (voir *Démarrer*). Pas de logiciel de gravure à ajouter : l'ISO et la gravure passent par Windows (IMAPI2).
 - **On ne réencode pas ce qu'on peut garder.** Une vidéo Blu-ray déjà conforme est recopiée telle quelle ; avec *Adapter au disque*, elle reste intacte tant qu'elle tient sur le disque et n'est refaite qu'au débit qui le remplit si elle est trop grosse. Le 4K n'est jamais réencodé.
 
 ### 144 modèles de menu
@@ -48,11 +48,9 @@ DVD (PAL / NTSC), Blu-ray (1080p, 720p) et Blu-ray 4K · plusieurs vidéos et s�
 
 ## Démarrer
 
-**Avec l'installateur (recommandé)** : télécharger `BurnSmith-Setup-<version>.exe` dans [Releases](https://github.com/Balrog57/BurnSmith/releases) et le lancer. BurnSmith s'installe dans *Program Files* (Windows demande les droits administrateur), avec un raccourci dans le menu Démarrer et un désinstalleur. **Il se met à jour tout seul** : à chaque démarrage, une copie installée regarde si une release plus récente existe et propose de l'installer ; hors ligne ou déjà à jour, elle ne dit rien. Installation, mise à jour et désinstallation ont été essayées sur de vraies releases, jusqu'à la 0.5.4, sur un seul PC.
+Télécharger `BurnSmith-Setup-<version>.exe` dans [Releases](https://github.com/Balrog57/BurnSmith/releases) et le lancer. BurnSmith s'installe dans *Program Files* (Windows demande les droits administrateur), avec un raccourci dans le menu Démarrer et un désinstalleur. **Il se met à jour tout seul** : à chaque démarrage, une copie installée regarde si une release plus récente existe et propose de l'installer ; hors ligne ou déjà à jour, elle ne dit rien. Installation, mise à jour et désinstallation ont été essayées sur de vraies releases, jusqu'à la 0.5.4, sur un seul PC.
 
-**Sans installer** : le `BurnSmith.exe` seul fonctionne aussi (copie portable, sans mise à jour automatique). Au premier lancement, et de nouveau quand ces outils changent, il décompresse ffmpeg et tsMuxeR dans un dossier à côté de lui (quelques secondes).
-
-Dans les deux cas, la **bibliothèque de modèles** est dans `Documents\BurnSmith\Templates` : un dossier visible, à sauvegarder ou à enrichir. Vos modèles et vos images n'y sont jamais effacés, même à la désinstallation ([détails](docs/MODELES.md#où-sont-les-modèles-sur-le-disque)).
+La **bibliothèque de modèles** est dans `Documents\BurnSmith\Templates` : un dossier visible, à sauvegarder ou à enrichir. Vos modèles et vos images n'y sont jamais effacés, même à la désinstallation ([détails](docs/MODELES.md#où-sont-les-modèles-sur-le-disque)).
 
 Le mode **DVD** demande en plus `dvdauthor.exe` et `spumux.exe`, à indiquer par la variable d'environnement `BURNSMITH_TOOLS` ou le `PATH` ([détails](docs/COMPILER-ET-LIGNE-DE-COMMANDE.md)). Pour compiler vous-même : même document.
 

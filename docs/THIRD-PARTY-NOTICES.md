@@ -1,10 +1,10 @@
 # Third-party software and code
 
-BurnSmith is free software under the GNU General Public License v3 or later (the `LICENSE` file of the repository, installed next to this file by the installer; the text is also at https://www.gnu.org/licenses/gpl-3.0.html).
+BurnSmith is free software under the GNU General Public License v3 or later (the `LICENSE` file, in the installation folder and at the root of the repository).
 
 ## Programs carried by the released `BurnSmith.exe`
 
-They are separate executables, unpacked on first run into the `BurnSmith-data\tools` folder next to the exe (or `%LOCALAPPDATA%\BurnSmith\files\tools` when that folder cannot be written) and run through their command line.
+They are separate executables, unpacked on first run into `%LOCALAPPDATA%\BurnSmith\files\tools` and run through their command line.
 
 | Program | Licence | Source |
 |---|---|---|
@@ -13,7 +13,7 @@ They are separate executables, unpacked on first run into the `BurnSmith-data\to
 
 The corresponding source code of the GPL programs is available from the addresses above.
 
-The exe is a self-contained .NET program, so it also includes the **.NET runtime** and **Windows Desktop runtime (WPF)**: MIT License, Copyright (c) .NET Foundation and Contributors, https://github.com/dotnet/runtime and https://github.com/dotnet/wpf. The installer `BurnSmith-Setup-<version>.exe` is built with **Inno Setup**: Inno Setup License, Copyright (C) 1997-2026 Jordan Russell, portions Copyright (C) 2000-2026 Martijn Laan, https://jrsoftware.org/isinfo.php.
+The exe is a self-contained .NET program, so it also includes the **.NET runtime** and **Windows Desktop runtime (WPF)**: MIT License, Copyright (c) .NET Foundation and Contributors, https://github.com/dotnet/runtime and https://github.com/dotnet/wpf. The licence and notices files of those runtime packages are in the installation folder: `dotnet-runtime-LICENSE.txt`, `dotnet-runtime-THIRD-PARTY-NOTICES.txt` and `windowsdesktop-runtime-LICENSE.txt`. The installer `BurnSmith-Setup-<version>.exe` is built with **Inno Setup**: Inno Setup License, Copyright (C) 1997-2026 Jordan Russell, portions Copyright (C) 2000-2026 Martijn Laan, https://jrsoftware.org/isinfo.php.
 
 Disc images and burning use the Windows components IMAPI2 / IMAPI2FS (part of Windows, not shipped).
 

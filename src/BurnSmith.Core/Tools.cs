@@ -41,7 +41,7 @@ public static class Tools
         return AppFiles.Unpack(name, AppFiles.Stamp(stream), dir => System.IO.Compression.ZipFile.ExtractToDirectory(stream, dir), inLibrary);
     }
 
-    /// <summary>ffmpeg, ffprobe and tsMuxeR carried by the exe, unpacked to <c>BurnSmith-data\tools</c>; null when this exe carries none.</summary>
+    /// <summary>ffmpeg, ffprobe and tsMuxeR carried by the exe, unpacked to a <c>tools</c> folder under <see cref="AppFiles.Root"/>; null when this exe carries none.</summary>
     public static string? BundledDir() { lock (bundledLock) return bundledDir ??= UnpackZip("tools", Payload); }
 
     /// <summary>The DVDFab / Leawo / Yuhan template folders carried by the exe, unpacked to <c>Documents\BurnSmith\Templates\carried</c>; null when this exe carries none.</summary>

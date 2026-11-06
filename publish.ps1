@@ -1,11 +1,11 @@
-# Builds BurnSmith.exe (self-contained, one file, portable) into .\dist, with ffmpeg, ffprobe and tsMuxeR inside, then, when Inno Setup 6 is
-# installed, the installer .\dist\BurnSmith-Setup-<version>.exe (Program Files; this is the file the in-app update downloads from a GitHub release).
+# Builds the installer .\dist\BurnSmith-Setup-<version>.exe, the only file of a GitHub release and the one the in-app update downloads (Program Files; Inno Setup 6 is required).
+# It wraps .\dist\BurnSmith.exe, an intermediate step: self-contained, one file, with ffmpeg, ffprobe and tsMuxeR inside.
 # The tools are not in this repository: they are taken from this PC (a folder with ffmpeg.exe + ffprobe.exe, and tsMuxeR.exe) and zipped
 # into obj\payload\tools.zip, which the BurnSmith.Payload assembly embeds. Licences: see THIRD-PARTY-NOTICES.md (shipped in the zip).
 # ffmpeg and ffprobe must be the build that notice promises (the hashes below): another one, or none of the templates below, stops the script.
 # Likewise the pictures and layout files of the DVDFab / Leawo / Yuhan menu templates found on this PC (no fonts, no programs) go into
-# obj\payload\templates.zip. The first time a build runs, the exe unpacks the tools into BurnSmith-data next to itself (or %LOCALAPPDATA%\BurnSmith\files
-# when installed) and the template pictures into Documents\BurnSmith\Templates.
+# obj\payload\templates.zip. The first time it runs, the installed exe unpacks the tools into %LOCALAPPDATA%\BurnSmith\files
+# and the template pictures into Documents\BurnSmith\Templates.
 param(
     [string]$FfmpegDir = (Split-Path (Get-Command ffmpeg -ErrorAction Stop).Source),
     [string]$TsMuxer = "$PSScriptRoot\tools\tsmuxer\bin\tsMuxeR.exe"
@@ -50,9 +50,23 @@ dotnet publish "$root\src\BurnSmith.App" -c Release -r win-x64 --self-contained 
 if ($LASTEXITCODE -ne 0) { throw "publish failed" }
 Get-Item "$root\dist\BurnSmith.exe" | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) } }
 
+# the licences of the .NET runtime inside the exe, from the very packs this publish used (its restore records them, and honours NUGET_PACKAGES); not in git, the installer installs them
+$assets = Get-Content "$root\src\BurnSmith.App\obj\project.assets.json" -Raw | ConvertFrom-Json
+$packs = $assets.project.frameworks.PSObject.Properties.Value.downloadDependencies
+foreach ($l in @(
+        @('Microsoft.NETCore.App.Runtime.win-x64', 'LICENSE.TXT', 'dotnet-runtime-LICENSE.txt'),
+        @('Microsoft.NETCore.App.Runtime.win-x64', 'THIRD-PARTY-NOTICES.TXT', 'dotnet-runtime-THIRD-PARTY-NOTICES.txt'),
+        @('Microsoft.WindowsDesktop.App.Runtime.win-x64', 'LICENSE', 'windowsdesktop-runtime-LICENSE.txt'))) {
+    $pack = $packs | Where-Object { $_.name -eq $l[0] }
+    if (-not $pack) { throw "the restore does not name the pack $($l[0])" }
+    $file = Join-Path $assets.project.restore.packagesPath "$($l[0].ToLowerInvariant())\$($pack.version.Trim('[', ']', ' ').Split(',')[0])\$($l[1])"
+    if (-not (Test-Path -LiteralPath $file)) { throw "missing: $file" }
+    Copy-Item -LiteralPath $file "$root\dist\$($l[2])" -Force
+}
+
 # the installer: its version is the exe's (<Version> in BurnSmith.App.csproj), and the GitHub release tag must be v<that version>
 $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $iscc) { Write-Warning "Inno Setup 6 not found (winget install JRSoftware.InnoSetup): only the portable exe was built"; return }
+if (-not $iscc) { throw "Inno Setup 6 not found (winget install JRSoftware.InnoSetup): a release is its installer" }
 $version = ((Get-Item "$root\dist\BurnSmith.exe").VersionInfo.ProductVersion -split '\+')[0]
 & $iscc "/DAppVersion=$version" "$root\installer\BurnSmith.iss"
 if ($LASTEXITCODE -ne 0) { throw "installer failed" }

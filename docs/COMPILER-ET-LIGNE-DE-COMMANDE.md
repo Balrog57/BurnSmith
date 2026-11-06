@@ -2,36 +2,32 @@
 
 ## Utiliser
 
-### Installer (la façon recommandée)
+### Installer
 
 Télécharger `BurnSmith-Setup-<version>.exe` dans [Releases](https://github.com/Balrog57/BurnSmith/releases) et le lancer. Il installe BurnSmith dans `Program Files` (Windows demande les droits administrateur), crée un raccourci dans le menu Démarrer (et sur le bureau, si on le coche) et un désinstalleur. Réinstaller par-dessus une version plus ancienne la remplace.
 
-**Mise à jour automatique.** Une copie installée (l'exe est sous `Program Files`) interroge à chaque démarrage la dernière release GitHub de `Balrog57/BurnSmith`. Si elle est plus récente, un message propose de la télécharger et de l'installer : elle attend la fin du travail en cours, le fichier est contrôlé (SHA-256 donné par GitHub ; sans ce hash, la mise à jour est refusée), Windows demande les droits administrateur, l'application se ferme puis redémarre. Si la demande est refusée ou reste sans réponse, l'application reste ouverte et le dit. Hors ligne, ou déjà à jour : aucun message. Une copie portable ou de développement ne se met jamais à jour toute seule. Vérification sans l'application : `BurnSmith.Cli check-update [--live]`.
-
-### Copie portable
-
-`BurnSmith.exe` seul fonctionne aussi, sans installation (il est dans [Releases](https://github.com/Balrog57/BurnSmith/releases), et dans `dist\` après la compilation). Rien n'est installé ni mis à jour automatiquement.
+**Mise à jour automatique.** Une copie installée (l'exe est sous `Program Files`) interroge à chaque démarrage la dernière release GitHub de `Balrog57/BurnSmith`. Si elle est plus récente, un message propose de la télécharger et de l'installer : elle attend la fin du travail en cours, le fichier est contrôlé (SHA-256 donné par GitHub ; sans ce hash, la mise à jour est refusée), Windows demande les droits administrateur, l'application se ferme puis redémarre. Si la demande est refusée ou reste sans réponse, l'application reste ouverte et le dit. Hors ligne, ou déjà à jour : aucun message. Une compilation de développement ne se met jamais à jour toute seule. Vérification sans l'application : `BurnSmith.Cli check-update [--live]`.
 
 ### Où sont les fichiers
 
-- **Les programmes** (ffmpeg, ffprobe, tsMuxeR) sont décompressés au premier lancement, et de nouveau quand ils changent : dans `BurnSmith-data`, à côté de l'exe, pour une copie portable ; dans `%LOCALAPPDATA%\BurnSmith\files` pour une copie installée (`Program Files` n'est pas inscriptible). On peut supprimer ce dossier, il sera refait. Un dossier `tools\` à côté de l'exe ou la variable `BURNSMITH_TOOLS` remplacent les outils si besoin.
+- **Les programmes** (ffmpeg, ffprobe, tsMuxeR) sont décompressés au premier lancement, et de nouveau quand ils changent : dans `%LOCALAPPDATA%\BurnSmith\files` (`Program Files` n'est pas inscriptible). On peut supprimer ce dossier, il sera refait. Un dossier `tools\` à côté de l'exe ou la variable `BURNSMITH_TOOLS` remplacent les outils si besoin.
 - **La bibliothèque de modèles** est dans **`Documents\BurnSmith\Templates`**, un dossier visible qu'on peut sauvegarder et enrichir : voir [MODELES.md](MODELES.md#où-sont-les-modèles-sur-le-disque). Elle n'est pas effacée à la désinstallation.
 - **La désinstallation laisse aussi** `%LOCALAPPDATA%\BurnSmith\files` (les programmes, plus de 400 Mo, et le journal d'erreurs `burnsmith.log`) et `%LOCALAPPDATA%\BurnSmith\thumbs`. On peut les supprimer à la main.
 
-Le mode **DVD** reste hors de l'exe : il demande `dvdauthor.exe` et `spumux.exe` (builds Windows dont la ligne de commande est `spumux script entrée sortie` et `dvdauthor -o dest -x script.xml -h 0 -q`). Sans droits d'administrateur, pour une copie installée : `setx BURNSMITH_TOOLS "C:\dossier\de\dvdauthor"` (ou ce dossier ajouté au `PATH`), puis relancez BurnSmith. Une copie portable accepte aussi un dossier `tools\` à côté de l'exe. Seule une compilation de développement cherche un dossier `tools\` dans les dossiers parents. Les licences des programmes embarqués sont dans [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Le mode **DVD** reste hors de l'exe : il demande `dvdauthor.exe` et `spumux.exe` (builds Windows dont la ligne de commande est `spumux script entrée sortie` et `dvdauthor -o dest -x script.xml -h 0 -q`). Sans droits d'administrateur : `setx BURNSMITH_TOOLS "C:\dossier\de\dvdauthor"` (ou ce dossier ajouté au `PATH`), puis relancez BurnSmith. Seule une compilation de développement cherche un dossier `tools\` dans les dossiers parents. Les licences des programmes embarqués sont dans [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Compiler
 
-Prérequis : SDK .NET 10, un dossier contenant `ffmpeg.exe` et `ffprobe.exe` (dans le `PATH` ou `-FfmpegDir`), exactement le build 8.1.1 « full » de gyan.dev que promet [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) (`publish.ps1` s'arrête sinon ; pour en changer, modifiez ses hashes et cette notice ensemble), et `tools\tsmuxer\bin\tsMuxeR.exe` (ou `-TsMuxer`). Ces binaires ne sont pas dans le dépôt : `publish.ps1` les zippe depuis votre PC. Pour l'installateur : [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`).
+Prérequis : SDK .NET 10, un dossier contenant `ffmpeg.exe` et `ffprobe.exe` (dans le `PATH` ou `-FfmpegDir`), exactement le build 8.1.1 « full » de gyan.dev que promet [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) (`publish.ps1` s'arrête sinon ; pour en changer, modifiez ses hashes et cette notice ensemble), et `tools\tsmuxer\bin\tsMuxeR.exe` (ou `-TsMuxer`). Ces binaires ne sont pas dans le dépôt : `publish.ps1` les zippe depuis votre PC. [Inno Setup 6](https://jrsoftware.org/isinfo.php) est obligatoire (`winget install JRSoftware.InnoSetup`). Les licences de .NET viennent des paquets NuGet que la publication vient d'utiliser.
 
 ```powershell
-.\publish.ps1      # produit dist\BurnSmith.exe (portable, autonome, un seul fichier, plus de 350 Mo)
-                   # puis, si Inno Setup 6 est installé, dist\BurnSmith-Setup-<version>.exe
+.\publish.ps1      # produit dist\BurnSmith-Setup-<version>.exe, seul fichier de la release
+                   # (dist\BurnSmith.exe, autonome, plus de 350 Mo, en est une étape : l'installateur l'emballe)
 ```
 
-Sans Inno Setup, `publish.ps1` prévient et s'arrête après l'exe portable. L'installateur (`installer\BurnSmith.iss`) installe l'exe dans `Program Files`, avec raccourcis et désinstalleur ; sa version est celle de l'exe (`<Version>` dans `src\BurnSmith.App\BurnSmith.App.csproj`).
+Sans Inno Setup, ou sans un fichier de licence de .NET, `publish.ps1` échoue. L'installateur (`installer\BurnSmith.iss`) installe l'exe, `LICENSE`, les notices et les licences de .NET dans `Program Files`, avec raccourcis et désinstalleur ; sa version est celle de l'exe (`<Version>` dans `src\BurnSmith.App\BurnSmith.App.csproj`).
 
-**Publier une version** : la mise à jour automatique lit la dernière release GitHub. Le **tag** de la release doit être `vX.Y.Z` (la version de l'exe) et le nom de l'**asset** de l'installateur doit commencer par `BurnSmith-Setup` et finir par `.exe` (`publish.ps1` le nomme `BurnSmith-Setup-X.Y.Z.exe`). L'exe portable se joint à côté. La release doit porter le SHA-256 que GitHub calcule pour ses assets.
+**Publier une version** : la mise à jour automatique lit la dernière release GitHub. Le **tag** de la release doit être `vX.Y.Z` (la version de l'exe) et le nom de l'**asset** de l'installateur doit commencer par `BurnSmith-Setup` et finir par `.exe` (`publish.ps1` le nomme `BurnSmith-Setup-X.Y.Z.exe`). C'est le seul fichier à joindre. La release doit porter le SHA-256 que GitHub calcule pour ses assets.
 
 `publish.ps1` zippe aussi les **images et fichiers de mise en page des modèles DVDFab, Leawo et Yuhan trouvés sur ce PC** (`BurnSmith.Cli pack-templates` : ni polices ni programmes) et les embarque dans l'exe. Ils ne sont pas dans le dépôt ; sans ces logiciels sur la machine de publication, `publish.ps1` s'arrête au lieu de produire un exe sans eux.
 
