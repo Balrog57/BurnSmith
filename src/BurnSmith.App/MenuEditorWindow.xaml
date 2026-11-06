@@ -131,7 +131,7 @@
         </StackPanel>
       </DockPanel>
       <TextBlock x:Name="Status" DockPanel.Dock="Bottom" Foreground="{StaticResource AccentHoverBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-      <TextBlock x:Name="Hint" DockPanel.Dock="Bottom" TextWrapping="Wrap" Opacity="0.65" Margin="0,8,0,0"
+      <TextBlock DockPanel.Dock="Bottom" TextWrapping="Wrap" Opacity="0.65" Margin="0,8,0,0"
                  Text="Glissez un fond ou un bouton de la bibliothèque sur la page. Cliquez un élément pour le déplacer ou le redimensionner (coins) ; Suppr le retire, les flèches le déplacent (Maj : pas fin). Sans élément choisi, flèches et Entrée parcourent le menu comme sur le disque."/>
       <ListBox x:Name="PageStrip" DockPanel.Dock="Bottom" Margin="0,10,0,0" MaxHeight="170" SelectionChanged="OnStripPick"
                ScrollViewer.HorizontalScrollBarVisibility="Disabled">

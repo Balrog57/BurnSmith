@@ -353,16 +353,16 @@ public partial class MenuEditorWindow : Window
         {
             case "page":
                 GoTo(a.Page ?? "root");
-                Hint.Text = "";
+                Status.Text = "";
                 break;
             case "play":
-                Hint.Text = $"▶ Sur le disque : lecture du titre {a.Playlist}.";
+                Status.Text = $"▶ Sur le disque : lecture du titre {a.Playlist}.";
                 break;
             case "chapter":
-                Hint.Text = $"▶ Sur le disque : lecture du titre {a.Playlist} à partir du repère {a.Mark}.";
+                Status.Text = $"▶ Sur le disque : lecture du titre {a.Playlist} à partir du repère {a.Mark}.";
                 break;
             case "playall":
-                Hint.Text = $"▶ Sur le disque : lecture de {a.Mark} titre(s) à la suite.";
+                Status.Text = $"▶ Sur le disque : lecture de {a.Mark} titre(s) à la suite.";
                 break;
             case "audio" or "sub":
                 if (shot is not { } s) return;
