@@ -794,9 +794,8 @@ public sealed class InstalledTemplate
         var names = isSub ? new[] { d.OffLabel }.Concat(c.SubtitleNames).ToList() : c.AudioNames.ToList();
         var ops = new List<Op>();
         Background(ops, n);
-        if (n.Child("setuptitle") is { } title) ops.Add(Txt(title, d.SettingsLabel));
-        // shortcut: le libellé garde la place donnée par le thème, où il recouvre une ligne dès la 3e en audio (y 400 contre 420), la 4e en sous-titres ; à déplacer sur une page de choix si Marc en veut une
-        if (n.Child(isSub ? "sublabel" : "audiolabel") is { } label) ops.Add(Txt(label, isSub ? d.SubtitlesLabel : d.AudioLabel));
+        // le titre nomme la catégorie : le libellé du thème (SetupAudioText, SetupSubtitleText) recouvrirait les lignes dès la 3e en audio, la 4e en sous-titres
+        if (n.Child("setuptitle") is { } title) ops.Add(Txt(title, isSub ? d.SubtitlesLabel : d.AudioLabel));
 
         var buttons = new List<MenuButton>();
         var first = isSub ? 0 : 1;

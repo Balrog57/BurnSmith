@@ -128,12 +128,10 @@ static class YuhanSkin
         var setupBg = El("bg");
         setupBg.Kids.Add(Leaf("image", Picture(branch.Child("Setup")?.Child("Background"))));
         setup.Kids.Add(setupBg);
-        // une seule liste de huit lignes, sur laquelle tombent les deux libellés : le thème décrit une page par catégorie, comme les clips setup_audio / setup_subtitle de Yuhan
+        // une seule liste de huit lignes : le thème décrit une page par catégorie, comme les clips setup_audio / setup_subtitle de Yuhan
         if (branch.Child("Setup") is { } lang && lang.Child("LangItemText")?.Child("ItemText0") != null)
         {
             setup.Kids.Add(Text("setuptitle", lang.Child("ASLangTitleText"), Room(lang.Child("ASLangTitleText")), "left"));
-            setup.Kids.Add(Text("audiolabel", lang.Child("SetupAudioText"), Room(lang.Child("SetupAudioText")), "left"));
-            setup.Kids.Add(Text("sublabel", lang.Child("SetupSubtitleText"), Room(lang.Child("SetupSubtitleText")), "left"));
             var rows = El("langitems");
             for (var i = 0; lang.Child("LangItemText")!.Child($"ItemText{i}") is { } item; i++) rows.Kids.Add(Text("item", item, 600, "left"));
             setup.Kids.Add(rows);

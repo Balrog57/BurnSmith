@@ -43,6 +43,13 @@ static class SettingsCheck
             if (TemplateCatalog.Find("Birthday 01") is { } birthday) TwoPages(check, "Birthday 01", birthday);
             else Console.WriteLine("skip Birthday 01 absent de ce PC : la mise en page du vrai thème n'est pas vérifiée ici");
 
+            var worst = Content(6, 5);
+            var themes = TemplateCatalog.Scan().Usable.Select(f => f.Design).Where(t => MenuBuilder.SettingsIds(t, worst).Contains("settings_audio")).ToList();
+            var covered = themes.Select(t => (Theme: t, Pages: MenuBuilder.Build(t, worst).Where(p => p.Id is "settings_audio" or "settings_sub").ToList())).ToList();
+            if (themes.Count == 0) Console.WriteLine("skip aucun thème à deux pages sur ce PC : seul le thème d'essai est vérifié");
+            else check($"réglages, les {themes.Count} thèmes à deux pages de ce PC, au pire cas : chaque page a la catégorie pour titre, et aucun texte ne recouvre une ligne",
+                       covered.All(t => t.Pages.Count == 2 && t.Pages.All(p => Overlaps(p).Count == 0 && p.Ops.OfType<Text>().First().Value == (p.Id == "settings_sub" ? t.Theme.SubtitlesLabel : t.Theme.AudioLabel))));
+
             OnePage(check, "thème sans liste de langues", Theme(dir, "THEME02", false));
             OnePage(check, "modèle DVD Forge (dans git)", TemplateCatalog.Scan().Usable.Select(f => f.Design).First(d => d.Category == DvdForgeTemplates.Category));
             if (TemplateCatalog.Find("01movie") is { } dvdfab) OnePage(check, "01movie", dvdfab);
@@ -56,6 +63,13 @@ static class SettingsCheck
                   && MenuBuilder.TracksLeftOut(MenuBuilder.Build(plain, text), text) == null);
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    /// <summary>Les textes d'une page, hors lignes de la liste, dont le rectangle touche celui d'une ligne.</summary>
+    static List<string> Overlaps(MenuPage p)
+    {
+        var rows = p.Buttons.Where(b => b.Id.Length == 2 && b.Id[0] is 'a' or 's' && char.IsDigit(b.Id[1])).Select(b => b.Rect).ToList();
+        return [.. p.Ops.OfType<Text>().Where(t => !rows.Contains(t.Rect) && rows.Any(r => t.Rect.X < r.X + r.W && r.X < t.Rect.X + t.Rect.W && t.Rect.Y < r.Y + r.H && r.Y < t.Rect.Y + t.Rect.H)).Select(t => t.Value)];
     }
 
     static void TwoPages(Action<string, bool> check, string name, MenuDesign d)
@@ -72,14 +86,18 @@ static class SettingsCheck
         static string Rows(MenuPage p, string prefix) => string.Join(' ', p.Buttons.Where(b => b.Id[0] == prefix[0] && char.IsDigit(b.Id[1])).Select(b => $"{b.Id}@{b.Rect.X},{b.Rect.Y}"));
         Box? Rect(MenuPage p, string id) => p.Buttons.FirstOrDefault(b => b.Id == id)?.Rect;
         var six = MenuBuilder.Settings(d, Content(6, 5), null, null, "settings_audio");
-        Check("page audio : titre à 750,150, libellé à 850,400, six lignes à x 750, y 270 à 645 au pas de 75 (le plafond de pistes s'arrête à 6, les lignes 7 et 8 du thème ne servent pas)",
-              At(audio, d.SettingsLabel, 750, 150) && At(audio, d.AudioLabel, 850, 400)
+        var offPlusFive = MenuBuilder.Settings(d, Content(6, 5), null, null, "settings_sub");
+        Check("page audio : la catégorie dans le titre, à 750,150, six lignes à x 750, y 270 à 645 au pas de 75 (le plafond de pistes s'arrête à 6, les lignes 7 et 8 du thème ne servent pas)",
+              At(audio, d.AudioLabel, 750, 150) && !audio.Ops.OfType<Text>().Any(t => t.Value == d.SettingsLabel)
               && Rows(six, "a") == "a1@750,270 a2@750,345 a3@750,420 a4@750,495 a5@750,570 a6@750,645");
+        Check("rien aux places des libellés du thème (850,400 et 850,540), sur aucune des deux pages",
+              !new[] { six, offPlusFive }.Any(p => p.Ops.OfType<Text>().Any(t => t.Rect.X == 850 && t.Rect.Y is 400 or 540)));
+        Check("au pire cas (6 audio ; Désactivé + 5 sous-titres) aucun texte ne recouvre une ligne", Overlaps(six).Count == 0 && Overlaps(offPlusFive).Count == 0);
         Check("page audio : Retour à 927,900, « Sous-titres » à 1227,900 et rien à 627,900",
               Rect(audio, "back") == new Box(927, 900, 64, 64) && audio.Buttons.First(b => b.Id == "back").Action.Page == "root"
               && Rect(audio, "next") == new Box(1227, 900, 64, 64) && audio.Buttons.First(b => b.Id == "next").Action.Page == "settings_sub" && Rect(audio, "prev") == null);
-        Check("page sous-titres : titre à 750,150, libellé à 850,540, « Désactivé » puis les sous-titres sur les mêmes lignes",
-              At(sub, d.SettingsLabel, 750, 150) && At(sub, d.SubtitlesLabel, 850, 540) && Rows(sub, "s") == "s0@750,270 s1@750,345 s2@750,420" && At(sub, d.OffLabel, 750, 270));
+        Check("page sous-titres : la catégorie dans le titre, à 750,150, « Désactivé » puis les sous-titres sur les mêmes lignes",
+              At(sub, d.SubtitlesLabel, 750, 150) && !sub.Ops.OfType<Text>().Any(t => t.Value == d.SettingsLabel) && Rows(sub, "s") == "s0@750,270 s1@750,345 s2@750,420" && At(sub, d.OffLabel, 750, 270));
         Check("page sous-titres : Retour à 927,900, « Audio » à 627,900 et rien à 1227,900",
               Rect(sub, "back") == new Box(927, 900, 64, 64) && Rect(sub, "prev") == new Box(627, 900, 64, 64) && sub.Buttons.First(b => b.Id == "prev").Action.Page == "settings_audio" && Rect(sub, "next") == null);
 
