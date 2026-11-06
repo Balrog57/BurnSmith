@@ -81,7 +81,15 @@ public static class Updater
         return path;
     }
 
-    /// <summary>Starts the installer (Windows asks for administrator rights); the caller then exits so the installer can replace the exe.</summary>
-    public static void Install(string setup) =>
-        Process.Start(new ProcessStartInfo(setup, "/SILENT /SUPPRESSMSGBOXES /NORESTART /relaunch=1") { UseShellExecute = true });
+    /// <summary>
+    /// Runs the installer and waits for it, so that a refused or missed Windows prompt can be told. No "runas" here: the setup elevates itself, and must start as the user for its
+    /// <c>runasoriginaluser</c> relaunch to come back unelevated. A good install closes this process through Restart Manager (CloseApplications in the script) before this returns.
+    /// </summary>
+    /// <exception cref="IOException">The installer ended with an error code: nothing was installed.</exception>
+    public static async Task Install(string setup)
+    {
+        using var p = Process.Start(new ProcessStartInfo(setup, "/SILENT /SUPPRESSMSGBOXES /NORESTART /relaunch=1") { UseShellExecute = true }) ?? throw new IOException("l'installateur n'a pas démarré");
+        await p.WaitForExitAsync();
+        if (p.ExitCode != 0) throw new IOException($"l'installateur s'est arrêté sans rien installer (code {p.ExitCode}), par exemple parce que la demande d'administrateur de Windows a été refusée ou est restée sans réponse");
+    }
 }

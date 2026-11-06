@@ -12,6 +12,7 @@ public partial class App : Application
     /// burnsmith.exe [video]                      opens the window, optionally with a video already loaded
     /// burnsmith.exe [video] --snapshot out.png [design=template name] [editor[=template name]] [scroll[=pixels]] [lib=N] [tab=N] [button] | [advanced] | [edit] [focus]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; lib / tab = the library / properties tab on show; button = the first library button dropped on the page; or the advanced settings; or the video edit)
     ///                                            off screen to a PNG and exits; lets the UI be checked without touching the desktop
+    /// burnsmith.exe --try-install file.exe       runs that file as the update's installer: how a stand-in proves the window's side of an update
     /// </summary>
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -34,6 +35,7 @@ public partial class App : Application
         if (snapshot) OffScreen(main); // never flashes on the desktop
         main.Show();
         if (!snapshot && BurnSmith.Core.Updater.IsInstalled()) _ = CheckForUpdate(main); // while the videos load; never in a portable or development copy
+        if (Array.IndexOf(e.Args, "--try-install") is var tryAt and >= 0 && tryAt + 1 < e.Args.Length) _ = InstallUpdate(main, () => Task.FromResult(e.Args[tryAt + 1]));
         foreach (var video in videos) await main.LoadSource(video);
         if (!snapshot) return;
         await main.DefaultDesignLoaded;
@@ -97,23 +99,32 @@ public partial class App : Application
         if (release == null || MessageBox.Show(owner,
                 $"BurnSmith {release.Version.ToString(3)} est disponible (vous avez la {current.ToString(3)}).\n\nLa télécharger et l'installer maintenant ? BurnSmith se ferme pendant l'installation puis redémarre.",
                 "Mise à jour", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes) return;
+        await InstallUpdate(owner, () => BurnSmith.Core.Updater.DownloadAsync(release, new Progress<double>(p => owner.Title = $"Téléchargement de la mise à jour… {p:P0}")));
+    }
+
+    /// <summary>Gets the installer, waits for the work in progress, runs it. The installer closes the app when it can install; if it cannot, the app says so and stays.</summary>
+    static async Task InstallUpdate(MainWindow owner, Func<Task<string>> getSetup)
+    {
         var title = owner.Title;
         try
         {
-            var setup = await BurnSmith.Core.Updater.DownloadAsync(release, new Progress<double>(p => owner.Title = $"Téléchargement de la mise à jour… {p:P0}"));
+            var setup = await getSetup();
             while (owner.Working) // the install closes the app: it waits for the disc; closed meanwhile, the next start offers it again
             {
                 owner.Title = "Mise à jour téléchargée : elle s'installera à la fin du travail en cours";
                 await Task.Delay(1000);
             }
             if (!owner.IsVisible) return;
-            BurnSmith.Core.Updater.Install(setup); // Windows asks for administrator rights here
+            owner.IsEnabled = false; // Restart Manager closes the app whatever OnClosing says: no disc may start while the installer runs
+            owner.Title = "Mise à jour : répondez à la demande d'administrateur de Windows…";
+            await BurnSmith.Core.Updater.Install(setup);
             Current.Shutdown();
         }
         catch (Exception e)
         {
+            owner.IsEnabled = true;
             owner.Title = title;
-            MessageBox.Show(owner, $"La mise à jour n'a pas pu être installée : {e.Message}", "Mise à jour", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(owner, $"La mise à jour n'a pas pu être installée : {e.Message}.\n\nBurnSmith reste ouvert. Elle sera proposée de nouveau au prochain démarrage ; vous pouvez aussi la télécharger sur https://github.com/Balrog57/BurnSmith/releases/latest", "Mise à jour", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 }

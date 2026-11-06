@@ -467,6 +467,14 @@ if (a.Count >= 1 && a[0] == "check-update")
         server.Stop();
         Environment.SetEnvironmentVariable("TMP", realTmp);
 
+        // the installer's end decides: an error code comes back as a refusal, and the wait lasts until it is over
+        async Task<Exception?> Install(string script) { var cmd = Path.Combine(work, "fake-setup.cmd"); File.WriteAllText(cmd, script); try { await Updater.Install(cmd); return null; } catch (Exception e) { return e; } }
+        var refusal = await Install("@exit /b 1");
+        Up("an installer ending on an error code (a refused prompt) is told, with its code", refusal is IOException && refusal.Message.Contains("code 1"));
+        var seen = Path.Combine(work, "fake-setup.txt");
+        Up("an installer ending well: no error, waited for to its end, given the silent arguments and the relaunch",
+           await Install($"@ping -n 2 127.0.0.1 >nul\r\n@echo %* > \"{seen}\"\r\n@exit /b 0") == null && File.Exists(seen) && File.ReadAllText(seen) is var given && given.Contains("/SILENT") && given.Contains("/relaunch=1"));
+
         var noTemplates = Path.Combine(work, "none.zip");
         Up("packing no template is an error", Throws(() => TemplateCatalog.Pack(noTemplates, roots: [work])));
         File.Delete(noTemplates);
