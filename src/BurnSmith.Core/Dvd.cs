@@ -143,7 +143,7 @@ public static class Dvd
         if (audio.Count == 0) args.Add("-an");
         for (var j = 0; j < audio.Count; j++)
         {
-            args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", $"{AudioBps(audio[j]) / 1000}k"]);
+            args.AddRange([$"-b:a:{j}", $"{AudioBps(audio[j]) / 1000}k"]); // -target already asks for AC-3: naming it again only earns a warning from ffmpeg
             if (audio[j].Channels > 6) args.AddRange([$"-ac:a:{j}", "6"]); // AC-3 tops out at 5.1
             if (title.Volume != 100) args.AddRange([$"-filter:a:{j}", $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}"]);
         }
@@ -332,7 +332,7 @@ public static class Dvd
                 fc.Append($"[{last}]format=yuv420p[out]");
                 args.AddRange(["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]);
                 args.AddRange(["-filter_complex", fc.ToString(), "-map", "[out]", "-map", $"{k}:a:0", "-t", dur.ToString(Inv),
-                    "-ac", "2", "-c:a", "ac3", "-b:a", "192k", "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9", "-b:v", "4000k", plain]);
+                    "-ac", "2", "-b:a", "192k", "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9", "-b:v", "4000k", plain]);
                 Tools.Run(ffmpeg, args, log);
                 log($"menu: {clips.Count} vignettes animées sur {p.Id}");
             }
@@ -358,7 +358,7 @@ public static class Dvd
                 args.AddRange(["-i", bg, "-filter_complex",
                     $"[0:v]scale=trunc(iw*sar/2)*2:ih,setsar=1,scale=1024:576:force_original_aspect_ratio=decrease,pad=1024:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h},setsar={sar},fps={(pal ? "25" : "30000/1001")}[v];" +
                     $"[{overlayInput}:v]scale={w}:{h},format=rgba[o];[v][o]overlay=format=auto,format=yuv420p[out]",
-                    "-map", "[out]", "-map", audioMap, "-t", loopSeconds.ToString(Inv), "-ac", "2", "-c:a", "ac3", "-b:a", "192k",
+                    "-map", "[out]", "-map", audioMap, "-t", loopSeconds.ToString(Inv), "-ac", "2", "-b:a", "192k",
                     "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9", "-b:v", "4000k", plain]);
                 Tools.Run(ffmpeg, args, log);
             }

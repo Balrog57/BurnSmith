@@ -173,7 +173,9 @@ static class SettingsCheck
             var (film, srt, disc) = (Path.Combine(dir, "film.mkv"), Path.Combine(dir, "film.srt"), Path.Combine(dir, "disc"));
             Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=2", "-f", "lavfi", "-i", "sine=f=440:d=2", "-f", "lavfi", "-i", "sine=f=880:d=2", "-map", "0:v", "-map", "1:a", "-map", "2:a", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "ac3", film]);
             File.WriteAllText(srt, "1\n00:00:00,500 --> 00:00:01,500\nBonjour\n");
-            Dvd.Build(new DvdJob([new DiscTitle(film, Audio: [0, 1], Subtitles: [0], External: [new ExternalSubtitle(srt, "fre")])], disc, Theme(dir, "THEME03", true)));
+            var log = new List<string>();
+            Dvd.Build(new DvdJob([new DiscTitle(film, Audio: [0, 1], Subtitles: [0], External: [new ExternalSubtitle(srt, "fre")])], disc, Theme(dir, "THEME03", true)), log.Add);
+            check("vrai DVD : ffmpeg ne se plaint d'aucun codec donné deux fois", log.Count > 0 && !log.Any(l => l.Contains("Multiple -codec")));
 
             var vts = File.ReadAllBytes(Path.Combine(disc, "VIDEO_TS", "VTS_01_0.IFO"));
             var vob = File.ReadAllBytes(Path.Combine(disc, "VIDEO_TS", "VTS_01_0.VOB"));
