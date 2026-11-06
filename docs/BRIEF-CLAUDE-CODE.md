@@ -20,7 +20,7 @@ Une session précédente a décompilé DVDFab 13, Yuhan Blu-ray DVD Creator et L
 
 - Code, commentaires, messages d'interface et noms de tests : **en français**.
 - Le style existant compte : commentaires qui expliquent *pourquoi* (pas *quoi*), pas de `TODO`, pas de méthode appelée mais non écrite.
-- Ne jamais copier un binaire commercial dans le dépôt. `dvdauthor`, `spumux`, tsMuxeR et le JDK 8 sont dans `tools\`, ffmpeg dans le `PATH`. ffmpeg et tsMuxeR sont redistribués dans l'exe publié, pas `dvdauthor` ni `spumux`.
+- Ne jamais copier un binaire commercial dans le dépôt. `dvdauthor`, `spumux`, tsMuxeR et le JDK 8 sont dans `tools\`, ffmpeg dans le `PATH`. tsMuxeR est redistribué dans l'exe publié, pas `dvdauthor` ni `spumux` ; l'installateur télécharge ffmpeg s'il manque.
 - `analysis\` est ignoré par git (copies de binaires, disques d'essai).
 
 ### Vérifications à lancer après **chaque** changement

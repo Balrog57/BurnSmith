@@ -7,7 +7,7 @@ namespace BurnSmith.Core;
 /// <summary>
 /// Where the exe puts what it carries and what the user keeps.
 /// <list type="bullet">
-/// <item>Programs (ffmpeg and tsMuxeR): <c>%LOCALAPPDATA%\BurnSmith\files</c> for the installed copy, whose Program Files folder cannot be written;
+/// <item>Programs (tsMuxeR): <c>%LOCALAPPDATA%\BurnSmith\files</c> for the installed copy, whose Program Files folder cannot be written;
 /// a <c>BurnSmith-data</c> folder next to the exe where that can be written, which development builds and the checks rely on.</item>
 /// <item>The template library (the open-source templates, the DVDFab / Leawo / Yuhan pictures the exe carries, and the user's own templates and
 /// images): <c>Documents\BurnSmith\Templates</c>, a folder the user can see and back up.</item>

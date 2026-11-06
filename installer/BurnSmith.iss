@@ -51,9 +51,11 @@ Name: "{autoprograms}\BurnSmith"; Filename: "{app}\BurnSmith.exe"
 Name: "{autodesktop}\BurnSmith"; Filename: "{app}\BurnSmith.exe"; Tasks: desktopicon
 
 [Run]
-; after a manual install: a tick box; after an update started by the app (/relaunch=1): start it again without asking, as the user, not as administrator
+; after a manual install: a tick box; after an update started by the app (/relaunch=1): start it again without asking, as the user, not as administrator. postinstall on both: an entry without it runs before ffmpeg.iss has finished
 Filename: "{app}\BurnSmith.exe"; Description: "{cm:LaunchProgram,BurnSmith}"; Flags: nowait postinstall skipifsilent
-Filename: "{app}\BurnSmith.exe"; Flags: nowait runasoriginaluser skipifnotsilent; Check: Relaunch
+Filename: "{app}\BurnSmith.exe"; Flags: nowait postinstall runasoriginaluser skipifnotsilent; Check: Relaunch
+
+#include "ffmpeg.iss"
 
 [Code]
 function Relaunch: Boolean;

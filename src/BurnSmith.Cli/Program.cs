@@ -487,17 +487,14 @@ if (a.Count >= 1 && a[0] == "check-update")
         Up("packing no template is an error", Throws(() => TemplateCatalog.Pack(noTemplates, roots: [work])));
         File.Delete(noTemplates);
 
-        // publish.ps1: a wrong ffmpeg must stop it first of all. No tsMuxeR is given: if the pin went away the script stops there, nothing is built
+        // publish.ps1: no tsMuxeR must stop it first of all, before anything is built
         var script = "publish.ps1";
         for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
             if (File.Exists(Path.Combine(d.FullName, script))) { script = Path.Combine(d.FullName, script); break; }
-        var fake = Path.Combine(work, "fake-ffmpeg");
-        Directory.CreateDirectory(fake);
-        foreach (var tool in new[] { "ffmpeg.exe", "ffprobe.exe" }) File.WriteAllText(Path.Combine(fake, tool), "");
         var refused = "";
-        try { Tools.Run("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-FfmpegDir", fake, "-TsMuxer", Path.Combine(fake, "none.exe")], env: new Dictionary<string, string> { ["PSModulePath"] = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\Modules") }); } // not the modules of a PowerShell 7 this was started from
+        try { Tools.Run("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-TsMuxer", Path.Combine(work, "none.exe")], env: new Dictionary<string, string> { ["PSModulePath"] = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\Modules") }); } // not the modules of a PowerShell 7 this was started from
         catch (InvalidOperationException e) { refused = e.Message.Replace("\r", "").Replace("\n", ""); }
-        Up("publish.ps1 refuses an ffmpeg that is not the pinned one", refused.Contains("pinned"));
+        Up("publish.ps1 refuses a missing tsMuxeR", refused.Contains("none.exe"));
 
         // where tools are looked for. Development first: Payload null, as here, and every checkout has a tools folder (vlctest.ps1 is committed)
         Environment.SetEnvironmentVariable("BURNSMITH_TOOLS", null);
@@ -727,7 +724,7 @@ if (a.Count >= 1 && a[0] == "check-edit")
         // an mp3 then a flac under 5 s of photos: the sound must last as long as the picture (a concat list of two codecs silently stops after the first)
         Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "sine=f=660:d=2", F("t.flac")]);
         MediaMaker.Slideshow([F("a.png"), F("b.jpg")], 2.5, [F("s.mp3"), F("t.flac")], F("mixed.mkv"));
-        var lastSound = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-select_streams", "a", "-show_entries", "packet=pts_time", "-of", "csv=p=0", F("mixed.mkv")]).Trim().Split('\n').Last().Trim();
+        var lastSound = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-select_streams", "a", "-show_entries", "packet=pts_time", "-of", "csv=p=0", F("mixed.mkv")]).Trim().Split('\n').Last().Trim().TrimEnd(','); // ffmpeg 9 ends the last packet's line with a comma
         Check("a slideshow's music of two formats (mp3 then flac) plays until the end of the 5 s of photos", double.Parse(lastSound, System.Globalization.CultureInfo.InvariantCulture) > 4.9);
         MediaMaker.Join([F("show.mkv"), F("show.mkv")], F("twice.mkv"));
         Check("two videos with the same streams join into one of the sum of both; a different size or track list does not match",

@@ -23,9 +23,9 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, x) => { BurnSmith.Core.AppFiles.LogError("Erreur fatale", x.ExceptionObject as Exception ?? new InvalidOperationException($"{x.ExceptionObject}")); BurnSmith.Core.Tools.KillAll(); };
         TaskScheduler.UnobservedTaskException += (_, x) => BurnSmith.Core.AppFiles.LogError("Tâche en arrière-plan", x.Exception);
         BurnSmith.Core.AppFiles.Root(); // now, before the unpack below takes its lock: the log needs this answer without waiting
-        BurnSmith.Core.Tools.Payload = () => BurnSmith.Payload.Payload.Open(); // a lambda: the 170 MB assembly loads only when this runs
+        BurnSmith.Core.Tools.Payload = () => BurnSmith.Payload.Payload.Open(); // a lambda: the large assembly loads only when this runs
         BurnSmith.Core.Tools.TemplatePayload = () => BurnSmith.Payload.Payload.OpenTemplates();
-        // first run of a build: unpack ffmpeg, tsMuxeR, the open menu library and the template pictures (see AppFiles) while the window comes up
+        // first run of a build: unpack tsMuxeR, the open menu library and the template pictures (see AppFiles) while the window comes up
         _ = Task.Run(() => { BurnSmith.Core.Tools.BundledDir(); BurnSmith.Core.Tools.TemplatesDir(); BurnSmith.Core.Menu.OpenLibrary.Dir(); });
         var snap = Array.IndexOf(e.Args, "--snapshot");
         var snapshot = snap >= 0 && snap + 1 < e.Args.Length;

@@ -18,7 +18,7 @@ Avant de graver, BurnSmith **contrôle le disque qu'il vient de construire** (fi
 
 ### Rapide, sans prérequis pour le Blu-ray
 
-- **Un seul installateur** : ffmpeg, tsMuxeR et les modèles sont dedans. Le Blu-ray ne demande rien d'autre ; le DVD demande deux outils en plus (voir *Démarrer*). Pas de logiciel de gravure à ajouter : l'ISO et la gravure passent par Windows (IMAPI2).
+- **Un seul installateur** : tsMuxeR et les modèles sont dedans, et il trouve ffmpeg sur le PC ou le télécharge. Le Blu-ray ne demande rien d'autre ; le DVD demande deux outils en plus (voir *Démarrer*). Pas de logiciel de gravure à ajouter : l'ISO et la gravure passent par Windows (IMAPI2).
 - **On ne réencode pas ce qu'on peut garder.** Une vidéo Blu-ray déjà conforme est recopiée telle quelle ; avec *Adapter au disque*, elle reste intacte tant qu'elle tient sur le disque et n'est refaite qu'au débit qui le remplit si elle est trop grosse. Le 4K n'est jamais réencodé.
 
 ### 144 modèles de menu
@@ -48,7 +48,7 @@ DVD (PAL / NTSC), Blu-ray (1080p, 720p) et Blu-ray 4K · plusieurs vidéos et s�
 
 ## Démarrer
 
-Télécharger `BurnSmith-Setup-<version>.exe` dans [Releases](https://github.com/Balrog57/BurnSmith/releases) et le lancer. BurnSmith s'installe dans *Program Files* (Windows demande les droits administrateur), avec un raccourci dans le menu Démarrer et un désinstalleur. **Il se met à jour tout seul** : à chaque démarrage, une copie installée regarde si une release plus récente existe et propose de l'installer ; hors ligne ou déjà à jour, elle ne dit rien. Installation, mise à jour et désinstallation ont été essayées sur de vraies releases, jusqu'à la 0.5.4, sur un seul PC.
+Télécharger `BurnSmith-Setup-<version>.exe` dans [Releases](https://github.com/Balrog57/BurnSmith/releases) et le lancer. BurnSmith s'installe dans *Program Files* (Windows demande les droits administrateur), avec un raccourci dans le menu Démarrer et un désinstalleur. **Il faut Internet à l'installation si ffmpeg n'est pas déjà sur le PC** : l'installateur télécharge alors la dernière version publiée par gyan.dev (environ 115 Mo) ; sans connexion, BurnSmith s'installe quand même et dira ce qui manque quand on ajoute une vidéo. **Il se met à jour tout seul** : à chaque démarrage, une copie installée regarde si une release plus récente existe et propose de l'installer ; hors ligne ou déjà à jour, elle ne dit rien. Installation, mise à jour et désinstallation ont été essayées sur de vraies releases, jusqu'à la 0.5.4, sur un seul PC ; ces essais datent d'avant le téléchargement de ffmpeg, qui n'a pas encore tourné dans une vraie installation.
 
 La **bibliothèque de modèles** est dans `Documents\BurnSmith\Templates` : un dossier visible, à sauvegarder ou à enrichir. Vos modèles et vos images n'y sont jamais effacés, même à la désinstallation ([détails](docs/MODELES.md#où-sont-les-modèles-sur-le-disque)).
 

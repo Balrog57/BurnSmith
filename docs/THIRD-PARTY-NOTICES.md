@@ -8,14 +8,17 @@ They are separate executables, unpacked on first run into `%LOCALAPPDATA%\BurnSm
 
 | Program | Licence | Source |
 |---|---|---|
-| FFmpeg (`ffmpeg.exe`, `ffprobe.exe`), 8.1.1 "full" build by gyan.dev, built `--enable-gpl --enable-version3` (includes x264, x265 and other GPL libraries) | GNU GPL v3 or later (the libraries it links carry their own licences) | https://ffmpeg.org/ - the build and its configuration: https://www.gyan.dev/ffmpeg/builds/ |
 | tsMuxeR 2.7.0 | Apache License 2.0 | https://github.com/justdan96/tsMuxer |
-
-The corresponding source code of the GPL programs is available from the addresses above.
 
 The exe is a self-contained .NET program, so it also includes the **.NET runtime** and **Windows Desktop runtime (WPF)**: MIT License, Copyright (c) .NET Foundation and Contributors, https://github.com/dotnet/runtime and https://github.com/dotnet/wpf. The licence and notices files of those runtime packages are in the installation folder: `dotnet-runtime-LICENSE.txt`, `dotnet-runtime-THIRD-PARTY-NOTICES.txt` and `windowsdesktop-runtime-LICENSE.txt`. The installer `BurnSmith-Setup-<version>.exe` is built with **Inno Setup**: Inno Setup License, Copyright (C) 1997-2026 Jordan Russell, portions Copyright (C) 2000-2026 Martijn Laan, https://jrsoftware.org/isinfo.php.
 
 Disc images and burning use the Windows components IMAPI2 / IMAPI2FS (part of Windows, not shipped).
+
+## FFmpeg: not carried, downloaded by the installer when absent
+
+BurnSmith no longer carries FFmpeg. If the installer finds no usable `ffmpeg.exe` and `ffprobe.exe` on the machine or user PATH, it downloads the latest "essentials" release build from its publisher's site, https://www.gyan.dev/ffmpeg/builds/, and puts `ffmpeg.exe`, `ffprobe.exe` and that build's `LICENSE` in `tools\ffmpeg` in the installation folder. They are separate programs, run through their command line.
+
+That build is made with `--enable-gpl --enable-version3` and includes x264, x265 and other GPL libraries: GNU GPL v3 or later (the libraries it links carry their own licences). Source code: https://ffmpeg.org/download.html, and the build's configuration at the address above.
 
 ## Code adapted from other projects
 
