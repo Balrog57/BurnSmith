@@ -791,6 +791,9 @@ if (a.Count >= 1 && a[0] == "check-edit")
         Check("Settings after a start video: page 3 is the page of audio 1 and subtitle 1: choosing either stays on it, subtitle off goes to page 2",
               Post(vts, pages[2]).Contains("7100000200010000 5104008000000003") && Post(vts, pages[2]).Contains("7100000300010000 51040000C0000003") && Post(vts, pages[2]).Contains("7100000300000000 51040000BE000002"));
 
+        Check("Settings, one page for each pair: choosing subtitle 1 (the 4th button: audio 1, 2, off, 1) leaves its rank for the page it stays on, whose pre takes it back, else the first button",
+              Post(vts, pages[2]).Contains("7100000410000000 7100000500010000 7100000300010000 51040000C0000003") && Pre(vts, pages[2]) == "00B1000500010005 4600000000040000 7100000500000000 0001000000000006 5600000004000000 0000000000000000");
+
         var slice = Path.Combine(introDir, "intro-on-disc.vob");
         using (var titlesVob = File.OpenRead(Path.Combine(mixedDisc, "VIDEO_TS", "VTS_01_1.VOB")))
         {

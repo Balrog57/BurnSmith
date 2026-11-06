@@ -188,6 +188,11 @@ static class SettingsCheck
                 var commands = pgc + U16(pgc + 0xE4);
                 return string.Join(' ', Enumerable.Range(U16(commands), U16(commands + 2)).Select(i => Convert.ToHexString(vts.AsSpan(commands + 8 + 8 * i, 8))));
             }
+            string Pre(int pgc)
+            {
+                var commands = pgc + U16(pgc + 0xE4);
+                return string.Join(' ', Enumerable.Range(0, U16(commands)).Select(i => Convert.ToHexString(vts.AsSpan(commands + 8 + 8 * i, 8))));
+            }
             List<string> Buttons(int pgc)
             {
                 var pci = U32(pgc + U16(pgc + 0xE8) + 8) * 2048 + 0x2D; // le premier paquet de navigation de la page porte ses boutons
@@ -206,6 +211,9 @@ static class SettingsCheck
                   new[] { 2, 3 }.All(n => Post(pages[n - 1]).Contains(toSub)) && new[] { 4, 5 }.All(n => Post(pages[n - 1]).Contains(toAudio)) && Enumerable.Range(2, 4).All(n => Buttons(pages[n - 1]).Contains(Jump(1))));
             check("réglages, vrai DVD : choisir l'audio 2 écrit g2 et le flux 1, et mène à sa page ; choisir un sous-titre écrit g3 et le flux, et mène à sa page",
                   Post(pages[1]).Contains("7100000200020000 5104008100000003") && Post(pages[4]).Contains("7100000300000000 51040000BE000004") && Post(pages[3]).Contains("7100000300010000 51040000C0000005"));
+            check("réglages, vrai DVD : un choix laisse le rang de sa ligne (g4 = 2048 pour la ligne 2, g5 = 1) à la page où il saute, dont le pre le reprend, sinon le premier bouton ; la racine garde le premier",
+                  Post(pages[1]).Contains("7100000408000000 7100000500010000 7100000200020000 5104008100000003") && Post(pages[3]).Contains("7100000408000000 7100000500010000 7100000300010000 51040000C0000005")
+                  && Enumerable.Range(1, 4).All(n => Pre(pages[n]) == "00B1000500010005 4600000000040000 7100000500000000 0001000000000006 5600000004000000 0000000000000000") && Pre(pages[0]) == "5600000004000000");
             check("réglages, vrai DVD : un choix garde l'autre registre : la page audio n'écrit jamais g3, celle des sous-titres jamais g2",
                   new[] { 2, 3 }.All(n => !Post(pages[n - 1]).Contains("71000003")) && new[] { 4, 5 }.All(n => !Post(pages[n - 1]).Contains("71000002")));
             check("réglages, vrai DVD : la page audio porte ses 2 lignes, Retour et « Sous-titres » ; celle des sous-titres ses 2 lignes, « Audio » et Retour", Buttons(pages[1]).Count == 4 && Buttons(pages[3]).Count == 4);

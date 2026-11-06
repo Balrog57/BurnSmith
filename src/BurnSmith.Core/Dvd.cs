@@ -463,6 +463,9 @@ public static class Dvd
             return mine.Count == 0 ? "" : string.Concat(mine.Select(id => $"if ({register} == {id[(target.Length + 1)..]}) jump menu {MenuNumber(id)}; ")) + $"jump menu {MenuNumber(mine[0])};";
         }
 
+        // a choice jumps to another page, where a fresh entry would select the first button: it leaves its row's number for that page's pre (a button's number on a DVD is 1024 times its rank)
+        string KeepRow(string target, MenuButton b) => $"g4 = {1024 * (menus.First(m => m.Page.Id == target).Page.Buttons.FindIndex(x => x.Id == b.Id) + 1)}; g5 = 1; ";
+
         string Command(MenuPage page, MenuButton b)
         {
             var a = b.Action;
@@ -473,9 +476,11 @@ public static class Dvd
                 case "chapter": return $"jump title {a.Playlist} chapter {a.Mark + 1};";
                 case "playall": return $"g1 = 1; jump title {a.Playlist};";
                 case "audio": // stream numbers are 0-based on a DVD
-                    return $"g2 = {a.Mark}; audio = {a.Mark - 1}; jump menu {MenuNumber(here.Success ? SettingsId(a.Mark, int.Parse(here.Groups[2].Value)) : $"settings_audio_{a.Mark}")};";
+                    var audioPage = here.Success ? SettingsId(a.Mark, int.Parse(here.Groups[2].Value)) : $"settings_audio_{a.Mark}";
+                    return $"{KeepRow(audioPage, b)}g2 = {a.Mark}; audio = {a.Mark - 1}; jump menu {MenuNumber(audioPage)};";
                 case "sub": // 62 = none; with the display bit (64) the stream number follows
-                    return $"g3 = {a.Mark}; subtitle = {(a.Mark == 0 ? 62 : 64 + a.Mark - 1)}; jump menu {MenuNumber(here.Success ? SettingsId(int.Parse(here.Groups[1].Value), a.Mark) : $"settings_sub_{a.Mark}")};";
+                    var subPage = here.Success ? SettingsId(int.Parse(here.Groups[1].Value), a.Mark) : $"settings_sub_{a.Mark}";
+                    return $"{KeepRow(subPage, b)}g3 = {a.Mark}; subtitle = {(a.Mark == 0 ? 62 : 64 + a.Mark - 1)}; jump menu {MenuNumber(subPage)};";
                 default:
                     return a.Page switch
                     {
@@ -497,8 +502,8 @@ public static class Dvd
         {
             var pgc = new XElement("pgc");
             if (page.Id == "root") pgc.Add(new XAttribute("entry", "root"));
-            // a moving menu plays its clip and enters itself again; g4 / g5 carry the highlighted button over that restart (a fresh entry starts on the first button)
-            if (loop) pgc.Add(new XElement("pre", "if (g5 == 1) { button = g4; g5 = 0; }"));
+            // a moving menu plays its clip and enters itself again; g4 / g5 carry the highlighted button over that restart, and over a choice on a settings page; any other entry starts on the first button, which dvdauthor only writes itself for a chain without a pre
+            if (loop || page.Id.StartsWith("settings_", StringComparison.Ordinal)) pgc.Add(new XElement("pre", "if (g5 == 1) { button = g4; g5 = 0; } else button = 1024;"));
             pgc.Add(loop ? new XElement("vob", new XAttribute("file", mpg)) : new XElement("vob", new XAttribute("file", mpg), new XAttribute("pause", "inf")));
             foreach (var b in page.Buttons) pgc.Add(new XElement("button", new XAttribute("name", b.Id), Command(page, b)));
             if (loop) pgc.Add(new XElement("post", $"g4 = s8; g5 = 1; jump menu {MenuNumber(page.Id)};"));
