@@ -1,3 +1,7 @@
+using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
+
 namespace BurnSmith.Core;
 
 /// <summary>
@@ -8,19 +12,36 @@ namespace BurnSmith.Core;
 /// <item>The template library (the open-source templates, the DVDFab / Leawo / Yuhan pictures the exe carries, and the user's own templates and
 /// images): <c>Documents\BurnSmith\Templates</c>, a folder the user can see and back up.</item>
 /// </list>
-/// One sub-folder per payload, redone when the exe changes.
+/// One sub-folder per payload, redone when what the exe carries differs: two builds carrying the same files share it.
 /// </summary>
 public static class AppFiles
 {
     static readonly object Gate = new();
     static string? root, library;
 
-    /// <summary>Identifies this build of the exe, so an unpacked folder from another build is replaced.</summary>
-    static string Build()
+    /// <summary>Identifies what a payload holds, so an unpacked folder of other contents is replaced; leaves the stream at its start for the unpack.</summary>
+    public static string Stamp(Stream payload)
     {
-        if (Environment.ProcessPath is not { } p || !File.Exists(p)) return "dev";
-        var f = new FileInfo(p);
-        return $"{f.Length:x}-{f.LastWriteTimeUtc.Ticks:x}";
+        var hash = Convert.ToHexString(SHA256.HashData(payload));
+        payload.Position = 0;
+        return hash;
+    }
+
+    /// <summary>Removes what an interrupted swap left beside <paramref name="dir"/> (<c>name.pid.old</c>, <c>name.pid.tmp</c>), unless that process still runs: another instance may be swapping. Nothing else has that name.</summary>
+    static void RemoveLeftovers(string dir)
+    {
+        var name = Path.GetFileName(dir);
+        if (Path.GetDirectoryName(dir) is not { } parent || !Directory.Exists(parent)) return;
+        foreach (var found in Directory.EnumerateDirectories(parent, name + ".*"))
+            if (Regex.Match(Path.GetFileName(found), $@"^{Regex.Escape(name)}\.(\d{{1,9}})\.(old|tmp)$") is { Success: true } m && !Running(int.Parse(m.Groups[1].Value)))
+                Tools.TryDelete(found);
+
+        static bool Running(int pid)
+        {
+            if (pid == Environment.ProcessId) return false; // this process swaps under the lock: it can only be a dead one's folder
+            try { using var _ = Process.GetProcessById(pid); return true; }
+            catch (ArgumentException) { return false; }
+        }
     }
 
     /// <summary><paramref name="dir"/> when files can be written there (created if needed), else null.</summary>
@@ -98,35 +119,35 @@ public static class AppFiles
 
     /// <summary>
     /// Makes <c>name</c> (under <see cref="Library"/> when <paramref name="inLibrary"/>, else under <see cref="Root"/>) hold what
-    /// <paramref name="extract"/> writes, unless it already does for this build, and returns it.
+    /// <paramref name="extract"/> writes, unless it already does (<paramref name="stamp"/>, see <see cref="Stamp"/>), and returns it.
     /// The folder is built beside and renamed into place, so an interrupted run never leaves a half-filled folder that looks ready.
     /// </summary>
-    public static string Unpack(string name, Action<string> extract, bool inLibrary = false)
+    public static string Unpack(string name, string stamp, Action<string> extract, bool inLibrary = false)
     {
         lock (Gate)
         {
             var dir = Path.Combine(inLibrary ? Library() : Root(), name);
             var ready = Path.Combine(dir, ".ready");
-            var build = Build();
-            if (File.Exists(ready) && File.ReadAllText(ready) == build) return dir;
+            RemoveLeftovers(dir);
+            if (File.Exists(ready) && File.ReadAllText(ready) == stamp) return dir;
 
             var tmp = $"{dir}.{Environment.ProcessId}.tmp";
             Tools.TryDelete(tmp);
             Directory.CreateDirectory(tmp);
             extract(tmp);
-            File.WriteAllText(Path.Combine(tmp, ".ready"), build);
+            File.WriteAllText(Path.Combine(tmp, ".ready"), stamp);
             try
             {
                 if (Directory.Exists(dir))
                 {
-                    // an earlier build's folder goes aside in one step (it fails as a whole, leaving the folder intact, when another build holds a file in it), then is deleted
+                    // the other contents go aside in one step (it fails as a whole, leaving the folder intact, when another build holds a file in it), then is deleted
                     var old = $"{dir}.{Environment.ProcessId}.old";
                     Directory.Move(dir, old);
                     Tools.TryDelete(old);
                 }
                 Directory.Move(tmp, dir);
             }
-            catch (IOException) when (File.Exists(ready) && File.ReadAllText(ready) == build) { Tools.TryDelete(tmp); } // another instance unpacked it first
+            catch (IOException) when (File.Exists(ready) && File.ReadAllText(ready) == stamp) { Tools.TryDelete(tmp); } // another instance unpacked it first
             catch (Exception e) when (e is IOException or UnauthorizedAccessException && Directory.Exists(dir))
             {
                 // another build (still running) holds a file of the folder: keep what is there rather than fail the start; the next start of this build tries again

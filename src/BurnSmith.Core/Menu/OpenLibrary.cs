@@ -2,7 +2,7 @@ namespace BurnSmith.Core.Menu;
 
 /// <summary>
 /// Open-source menu files that travel inside the exe (DVDStyler's templates and backgrounds, GPL, with their notices).
-/// They are unpacked once per build to Documents\BurnSmith\Templates\open (see <see cref="AppFiles"/>) so that image readers and the template reader get plain files.
+/// They are unpacked, when they differ from what is there, to Documents\BurnSmith\Templates\open (see <see cref="AppFiles"/>) so that image readers and the template reader get plain files.
 /// </summary>
 public static class OpenLibrary
 {
@@ -18,7 +18,15 @@ public static class OpenLibrary
             var asm = typeof(OpenLibrary).Assembly;
             var names = asm.GetManifestResourceNames().Where(n => n.StartsWith("library/", StringComparison.Ordinal)).ToList();
             if (names.Count == 0) return null;
-            return dir = AppFiles.Unpack("open", target =>
+            using var all = new MemoryStream();
+            foreach (var name in names)
+            {
+                all.Write(System.Text.Encoding.UTF8.GetBytes(name));
+                using var from = asm.GetManifestResourceStream(name)!;
+                from.CopyTo(all);
+            }
+            all.Position = 0;
+            return dir = AppFiles.Unpack("open", AppFiles.Stamp(all), target =>
             {
                 foreach (var name in names)
                 {

@@ -32,13 +32,13 @@ public static class Tools
     static string? bundledDir, templatesDir;
     static readonly object bundledLock = new();
 
-    /// <summary>The zip's contents unpacked under <see cref="AppFiles"/> (a few seconds on the first run of a build); null when this exe carries none.</summary>
+    /// <summary>The zip's contents unpacked under <see cref="AppFiles"/> (a few seconds when it carries something new); null when this exe carries none.</summary>
     static string? UnpackZip(string name, Func<Stream?>? open, bool inLibrary = false)
     {
         if (open == null) return null;
         using var stream = open();
         if (stream == null) return null;
-        return AppFiles.Unpack(name, dir => System.IO.Compression.ZipFile.ExtractToDirectory(stream, dir), inLibrary);
+        return AppFiles.Unpack(name, AppFiles.Stamp(stream), dir => System.IO.Compression.ZipFile.ExtractToDirectory(stream, dir), inLibrary);
     }
 
     /// <summary>ffmpeg, ffprobe and tsMuxeR carried by the exe, unpacked to <c>BurnSmith-data\tools</c>; null when this exe carries none.</summary>

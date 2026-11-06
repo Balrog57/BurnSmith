@@ -516,6 +516,27 @@ if (a.Count >= 1 && a[0] == "check-update")
         var carried = new MemoryStream();
         using (var zip = new System.IO.Compression.ZipArchive(carried, System.IO.Compression.ZipArchiveMode.Create, true))
             foreach (var name in new[] { "in-env.exe", "in-both.exe", "only-bundled.exe" }) zip.CreateEntry(name);
+        // the unpack: the same content is left alone whatever exe asks, other content replaces it, a swap's leftovers go and nothing else does
+        var unpackings = 0;
+        void Fill(string d) { unpackings++; File.WriteAllText(Path.Combine(d, "file"), $"{unpackings}"); }
+        var unpacked = Path.Combine(AppFiles.Root(), "check-unpack");
+        using (var dead = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe"), "/c exit") { CreateNoWindow = true })!)
+        {
+            dead.WaitForExit();
+            string[] gone = [$"{unpacked}.{dead.Id}.old", $"{unpacked}.{dead.Id}.tmp"];
+            string[] kept = [$"{unpacked}.4.tmp", $"{unpacked}.mine", $"{unpacked}.{dead.Id}.old.2", $"{unpacked}2.{dead.Id}.old"]; // 4 is Windows' System process: running, so maybe swapping
+            foreach (var folder in gone.Concat(kept)) { Directory.CreateDirectory(folder); File.WriteAllText(Path.Combine(folder, "x"), ""); }
+            AppFiles.Unpack("check-unpack", "A", Fill);
+            Up("an unpack leaves the same stamp alone and redoes another one",
+               unpackings == 1 && AppFiles.Unpack("check-unpack", "A", Fill) == unpacked && unpackings == 1 && AppFiles.Unpack("check-unpack", "B", Fill) == unpacked && unpackings == 2 && File.ReadAllText(Path.Combine(unpacked, "file")) == "2");
+            Up("what a dead process's swap left is removed; a running process's, and folders of other names, stay", !gone.Any(Directory.Exists) && kept.All(Directory.Exists));
+            foreach (var folder in kept) Directory.Delete(folder, true);
+            Directory.Delete(unpacked, true);
+        }
+        byte[] twoBytes = [1, 2];
+        var stamped = new MemoryStream(twoBytes);
+        Up("a stamp comes from the content, and the stream can then be read from its start", AppFiles.Stamp(stamped) == AppFiles.Stamp(new MemoryStream(twoBytes)) && stamped.Position == 0 && AppFiles.Stamp(stamped) != AppFiles.Stamp(new MemoryStream(new byte[] { 1, 3 })));
+
         Tools.Payload = () => new MemoryStream(carried.ToArray()); // from here on this process is a release, with these tools "carried"
         Up("a release looks in BURNSMITH_TOOLS and no parent", Tools.SearchRoots().Where(r => r != beside).SequenceEqual([tools]));
         Tools.Run(icacls, [locked, "/deny", "*S-1-1-0:(RD)"]);
