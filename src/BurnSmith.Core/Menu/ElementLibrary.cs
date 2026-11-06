@@ -1,7 +1,10 @@
 namespace BurnSmith.Core.Menu;
 
 /// <summary>One picture of the library: where it comes from, and the file to draw.</summary>
-public sealed record Element(string Name, string Source, string Path, bool Removable = false);
+public sealed record Element(string Name, string Source, string Path, bool Removable = false)
+{
+    public override string ToString() => Name; // what a screen reader says for a list item
+}
 
 /// <summary>
 /// The pictures a menu can be composed from. Three sources, each kept where it is:

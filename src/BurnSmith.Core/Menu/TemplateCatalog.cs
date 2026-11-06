@@ -7,7 +7,10 @@ namespace BurnSmith.Core.Menu;
 /// </summary>
 public static class TemplateCatalog
 {
-    public sealed record Found(MenuDesign Design, string? Thumbnail);
+    public sealed record Found(MenuDesign Design, string? Thumbnail)
+    {
+        public override string ToString() => Design.Name; // what a screen reader says for a list item
+    }
     public sealed record Skipped(string Name, string Why, string Dir);
 
     static string AppData => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);

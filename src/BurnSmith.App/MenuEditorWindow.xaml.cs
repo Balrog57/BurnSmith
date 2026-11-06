@@ -30,7 +30,10 @@ public partial class MenuEditorWindow : Window
     }
 
     sealed record PageImages(BitmapImage Background, Dictionary<string, BitmapImage> Focus);
-    public sealed record Slide(string Id, string Name, BitmapImage Thumb);
+    public sealed record Slide(string Id, string Name, BitmapImage Thumb)
+    {
+        public override string ToString() => Name; // what a screen reader says for a list item
+    }
 
     Shot? shot;
     MenuPage? current;
@@ -138,6 +141,7 @@ public partial class MenuEditorWindow : Window
             set { sample = value; PropertyChanged?.Invoke(this, new(nameof(Sample))); }
         }
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+        public override string ToString() => Name; // what a screen reader says for a list item
     }
 
     void LoadButtons((List<TemplateCatalog.Found>, List<TemplateCatalog.Skipped>)? scan = null)
