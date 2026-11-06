@@ -99,7 +99,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         FrenchLabels();
-        MenuName.Text = design.Name;
+        MenuName.Text = "Chargement…";
         TitleList.ItemsSource = titles;
         SetKind("bd");
         RefreshDrives();
@@ -118,7 +118,11 @@ public partial class MainWindow : Window
             var found = await Task.Run(() => MenuRenderer.Sta(() => TemplateCatalog.Default().Clone()));
             if (ReferenceEquals(design, blank)) UseDesign(found);
         }
-        catch (Exception e) { AppFiles.LogError("Modèle de menu par défaut", e); }
+        catch (Exception e)
+        {
+            AppFiles.LogError("Modèle de menu par défaut", e);
+            if (ReferenceEquals(design, blank)) MenuName.Text = design.Name;
+        }
     }
 
     /// <summary>True when the default template is still loading: what the user would edit or build would not be it. Says so.</summary>
