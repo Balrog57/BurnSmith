@@ -4,6 +4,7 @@ namespace BurnSmith.Core.Menu;
 public sealed class MenuDesign
 {
     public string Name { get; set; } = "Midnight";
+    public override string ToString() => Name; // what a screen reader says for a list item
     /// <summary>Group in the template gallery (the vendor / disc type the template came from).</summary>
     public string Category { get; set; } = "";
     /// <summary>
