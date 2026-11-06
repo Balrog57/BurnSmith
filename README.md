@@ -16,7 +16,7 @@ Une seule fenêtre, pensée comme celle de DVDFab Créateur, en thème sombre : 
 
 Avant de graver, BurnSmith **contrôle le disque qu'il vient de construire** (fichiers, en-têtes, tailles, structure de l'image ISO) et refuse de graver s'il trouve une anomalie.
 
-### Rapide, sans prérequis pour le Blu-ray
+### Rapide, rien à installer en plus pour le Blu-ray
 
 - **Un seul installateur** : tsMuxeR et les modèles sont dedans, et il trouve ffmpeg sur le PC ou le télécharge. Le Blu-ray ne demande rien d'autre ; le DVD demande deux outils en plus (voir *Démarrer*). Pas de logiciel de gravure à ajouter : l'ISO et la gravure passent par Windows (IMAPI2).
 - **On ne réencode pas ce qu'on peut garder.** Une vidéo Blu-ray déjà conforme est recopiée telle quelle ; avec *Adapter au disque*, elle reste intacte tant qu'elle tient sur le disque et n'est refaite qu'au débit qui le remplit si elle est trop grosse. Le 4K n'est jamais réencodé.
@@ -64,7 +64,7 @@ Tout est dans [`docs/`](docs/README.md) :
 | [Modèles de menu](docs/MODELES.md) | d'où viennent les modèles, la bibliothèque, l'état de chacun |
 | [Installer, compiler, ligne de commande](docs/COMPILER-ET-LIGNE-DE-COMMANDE.md) | installateur et mise à jour automatique, compilation, commandes `bd` / `dvd` / `iso` / `burn` (à compiler), vérifications |
 | [Feuille de route Blu-ray](docs/FEUILLE-DE-ROUTE-BLURAY.md) | où va le projet, dans quel ordre |
-| [Notices tierces](docs/THIRD-PARTY-NOTICES.md) | licences des programmes et modèles embarqués |
+| [Notices tierces](docs/THIRD-PARTY-NOTICES.md) | licences des programmes embarqués, de ffmpeg et des modèles |
 
 ## Reste à faire
 

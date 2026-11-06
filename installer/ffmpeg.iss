@@ -227,7 +227,7 @@ begin
 end;
 
 // An update leaves {app}\tools alone, so a good copy is kept without a download. A broken one goes first: Tools.Find would take it before anything on the PATH.
-// shortcut: HKCU is the elevated account's; when elevation changed account, the user's own PATH is not seen and the worst outcome is a needless download.
+// shortcut: HKCU is the elevated account's and only that one user's. When elevation changed account, or for any other account on the PC, a copy on that user PATH stops the download although this user cannot reach it: BurnSmith then says "introuvable". Upgrade by trusting only the machine PATH, at the cost of a download for everyone whose ffmpeg is on their user PATH.
 // Never fails the install: nothing here may raise past this procedure. Run at every install, so a failed download is tried again at the next update.
 procedure SetUpFfmpeg;
 var
