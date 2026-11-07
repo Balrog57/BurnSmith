@@ -139,18 +139,22 @@ public static class Dvd
         // -ss / -t before -i cut the input itself: the video, the sound and the subtitle files written below all start and stop together
         var args = new List<string> { "-y", "-v", "warning" };
         if (title.Start > 0) args.AddRange(["-ss", title.Start.ToString(Inv)]);
-        if (title.End != null) args.AddRange(["-t", src.Duration.ToString("0.###", Inv)]);
+        var span = src.Duration + title.GapLength; // the part read: from the first clip's start to the last one's end
+        if (title.End != null) args.AddRange(["-t", span.ToString("0.###", Inv)]);
         args.AddRange(["-i", title.Video, "-map", "0:v:0"]);
         foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
         var fit = $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={(wide ? 1024 : 768)}:576:force_original_aspect_ratio=decrease,pad={(wide ? 1024 : 768)}:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h},setsar={sar},{rate}";
-        args.AddRange(["-vf", title.Effects is { IsEmpty: false } fx ? fx.Vf(src.Width, src.Height, title.Start, fit) : fit,
+        var vf = title.Effects is { IsEmpty: false } fx ? fx.Vf(src.Width, src.Height, title.Start, fit) : fit;
+        if (title.GapFilter(false) is { Length: > 0 } dropV) vf += "," + dropV;
+        var af = string.Join(",", new[] { title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "" }.Where(f => f.Length > 0));
+        args.AddRange(["-vf", vf,
             "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", wide ? "16:9" : "4:3", "-b:v", $"{videoBps / 1000}k"]);
         if (audio.Count == 0) args.Add("-an");
         for (var j = 0; j < audio.Count; j++)
         {
             args.AddRange([$"-b:a:{j}", $"{AudioBps(audio[j]) / 1000}k"]); // -target already asks for AC-3: naming it again only earns a warning from ffmpeg
             if (audio[j].Channels > 6) args.AddRange([$"-ac:a:{j}", "6"]); // AC-3 tops out at 5.1
-            if (title.Volume != 100) args.AddRange([$"-filter:a:{j}", $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}"]);
+            if (af.Length > 0) args.AddRange([$"-filter:a:{j}", af]);
         }
         if (ntscFilm) args.AddRange(["-flags", "+ildct+ilme"]);
         args.AddRange(["-sn", "-dn", movie]);
@@ -160,19 +164,14 @@ public static class Dvd
         foreach (var s in title.KeptSubtitles(src))
         {
             if (!s.Supported) { log($"subtitle '{s.Name}' skipped: {s.Codec} is an image format that needs OCR"); continue; }
-            var file = Path.Combine(work, $"sub{number}_{subs.Count + 1}.{(s.IsPicture ? "sup" : "srt")}");
-            if (s.File == null && !s.IsVobSub) // the video's own track; a VobSub or a subtitle file is converted apart, below
-            {
-                args.AddRange(["-map", $"0:s:{s.Index}", "-c:s", s.IsPgs ? "copy" : "srt"]);
-                if (title.End != null) args.AddRange(["-t", src.Duration.ToString("0.###", Inv)]); // the input's -t lets later subtitle cues through
-                args.AddRange(["-f", s.IsPgs ? "sup" : "srt", file]);
-            }
-            subs.Add((s, file));
+            subs.Add((s, Path.Combine(work, $"sub{number}_{subs.Count + 1}.{(s.IsPicture ? "sup" : "srt")}")));
         }
         log($"encode {number}: {title.DisplayName} (audio {audio.Count}, subtitles {subs.Count})");
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
-        foreach (var (s, file) in subs.Where(x => x.Track.File == null && x.Track.IsVobSub)) BluRay.WriteEmbeddedVobSub(title, s, src.Duration, file, (720, 480), log);
-        foreach (var (s, file) in subs.Where(x => x.Track.File != null)) BluRay.WriteExternalSubtitle(title, s, src.Duration, file, (720, 480), log); // a VobSub becomes PGS on a 720x480 plane, which PgsStream maps onto the frame whatever its height
+        BluRay.WriteOwnSubtitles(title, subs.Where(x => x.Track.File == null && !x.Track.IsVobSub).ToList(), span, log); // a VobSub or a subtitle file is converted apart, below
+        foreach (var (s, file) in subs.Where(x => x.Track.File == null && x.Track.IsVobSub)) BluRay.WriteEmbeddedVobSub(title, s, span, file, (720, 480), log);
+        foreach (var (s, file) in subs.Where(x => x.Track.File != null)) BluRay.WriteExternalSubtitle(title, s, span, file, (720, 480), log); // a VobSub becomes PGS on a 720x480 plane, which PgsStream maps onto the frame whatever its height
+        foreach (var (_, file) in subs) title.CloseGaps(file, span);
         // spumux refuses a file with no cue, and then the whole movie would lose its subtitles: a track with nothing to show in the part kept is left out
         subs.RemoveAll(x =>
         {

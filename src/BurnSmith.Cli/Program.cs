@@ -622,6 +622,11 @@ if (a.Count >= 1 && a[0] == "check-edit")
     Check("empty cut is refused", Throws(() => new DiscTitle("x", Start: 700).Cut(src)) && Throws(() => new DiscTitle("x", Start: 100, End: 100.5).Cut(src)));
     Check("disc setting: one every 5 min from 0", Show(whole.ChapterList(600, 5)) == "0,300");
     Check("no chapters: only 0", Show(new DiscTitle("x", ChapterAt: []).ChapterList(600, 5)) == "0");
+    var twoClips = new DiscTitle("x", Start: 100, End: 400, ChapterAt: [150, 250, 320], Clips: [new(100, 200), new(300, 400)]);
+    Check("two clips 100-200 and 300-400 keep 200 s; a chapter in the gap is dropped, one after it moves back 100 s; a gap filter is made",
+          twoClips.Length(src) == 200 && twoClips.Cut(src).Duration == 200 && Show(twoClips.ChapterList(200, 5)) == "0,50,120"
+          && twoClips.OnDisc(150) == null && twoClips.OnDisc(250) == 150 && twoClips.GapFilter(true) == "aselect='not(gte(t,100)*lt(t,200))',asetpts=N/SR/TB"
+          && Throws(() => new DiscTitle("x", Start: 100, End: 400, Clips: [new(100, 300), new(250, 400)]).Cut(src)));
     Check("custom times are shifted by the start, 0 added, outside dropped", Show(new DiscTitle("x", Start: 100, End: 400, ChapterAt: [50, 100, 160, 250.4, 399.5, 500]).ChapterList(300, 5)) == "0,60,150");
     var tracked = new SourceInfo("h264", 1920, 1080, 24, "ac3", 6, 600, [new(0, "dts", 6, "und", ""), new(1, "ac3", 2, "eng", "")], [new(0, "subrip", "und", "", false), new(1, "hdmv_pgs_subtitle", "fre", "", false)]);
     var relabel = new DiscTitle("x", Audio: [0, 1], Subtitles: [0, 1], External: [new ExternalSubtitle("s.srt", "ger")], TrackLanguage: new Dictionary<string, string> { ["a0"] = "fre", ["s0"] = "eng", ["s2"] = "spa" });
@@ -768,6 +773,20 @@ if (a.Count >= 1 && a[0] == "check-edit")
         Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", "1", "-t", "2", "-i", F("show.mkv"), "-vf", fx.Vf(1920, 1080, 1, "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1"),
             "-r", "25", "-c:v", "libx264", "-preset", "ultrafast", "-an", F("fx.mkv")]);
         Check("video effects on a cut video: 2 s give 50 frames of 1920x1080", Frames(F("fx.mkv")) == 50 && BluRay.Probe(F("fx.mkv")) is { Width: 1920, Height: 1080 });
+        // two clips of 1 s (0-1 and 3-4 of the 4 s slideshow) as Blu-ray.Prepare cuts them: 50 frames, 2 s of sound, a subtitle in the gap dropped and one after it moved back
+        var clipped = new DiscTitle(F("show.mkv"), Start: 0, End: 4, Clips: [new(0, 1), new(3, 4)]);
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-t", "4", "-i", F("show.mkv"), "-vf", "null," + clipped.GapFilter(false), "-af", clipped.GapFilter(true), "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "ac3", F("clips.mkv")]);
+        File.WriteAllText(F("clips.srt"), "1\n00:00:00,200 --> 00:00:00,800\nA\n\n2\n00:00:01,500 --> 00:00:02,000\nB\n\n3\n00:00:03,500 --> 00:00:03,900\nC\n");
+        clipped.CloseGaps(F("clips.srt"), 4);
+        var clipSound = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-select_streams", "a", "-show_entries", "format=duration", "-of", "csv=p=0", F("clips.mkv")]).Trim();
+        Check($"two clips of a video join into 2 s: 50 frames, the sound as long ({clipSound} s), the subtitles closed up",
+              Frames(F("clips.mkv")) == 50 && Math.Abs(double.Parse(clipSound, System.Globalization.CultureInfo.InvariantCulture) - 2) < 0.15
+              && File.ReadAllText(F("clips.srt")).Replace("\r", "") == "1\n00:00:00,200 --> 00:00:00,800\nA\n\n2\n00:00:01,500 --> 00:00:01,900\nC\n\n");
+        // a video's own subtitle read whole and cut at 3 s: the cue at 3.5 s lands at 0.5 s (the input -ss this replaces put a real episode's cues 0.74 s late; this small file does not show it)
+        File.WriteAllText(F("own.srt"), "1\n00:00:03,500 --> 00:00:04,000\nX\n");
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=s=320x240:d=5:r=25", "-i", F("own.srt"), "-c:v", "libx264", "-g", "50", "-c:s", "srt", F("own.mkv")]);
+        BluRay.WriteOwnSubtitles(new DiscTitle(F("own.mkv"), Start: 3), [(new SubtitleTrack(0, "subrip", "fre", "", false), F("own_cut.srt"))], 2, _ => { });
+        Check("a video's own subtitle is cut at the exact start", File.ReadAllText(F("own_cut.srt")).Contains("00:00:00,500 --> 00:00:01,000"));
         // a camcorder's 702x574 at 16:15 is 748 wide as seen: fitted into 1920x1080 it is 1408 wide (1080 * 748 / 574), not 1320 (the stored shape, squeezed)
         Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "color=white:s=702x574:d=1,setsar=16/15", "-frames:v", "1", "-vf", BluRay.Fit(1920, 1080) + ",crop=1920:1:0:540,format=gray", "-f", "rawvideo", F("row.raw")]);
         var seen = File.ReadAllBytes(F("row.raw")).Count(b => b > 128); // the white columns of the middle line
@@ -1161,7 +1180,7 @@ if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, ne
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || Opt("--out") is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--bonus] [--credits 'A|B'] [bd: --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--bonus] [--credits 'A|B'] [bd: --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
     return 2;
 }
 
@@ -1206,7 +1225,10 @@ var titles = videos.Select((v, k) =>
     var own = videoAt.Count == 1 ? a : a.Skip(videoAt[k]).Take(k + 1 < videoAt.Count ? videoAt[k + 1] - videoAt[k] : a.Count).ToList();
     string? Own(string name) => own.IndexOf(name) is var i and >= 0 && i + 1 < own.Count ? own[i + 1] : null;
     double? Time(string text) => text.Length == 0 ? null : Timecode.Parse(text) ?? throw new ArgumentException($"not a time: '{text}'");
-    var trim = Own("--trim")?.Split('-', 2) ?? ["", ""];
+    // --trim A-B,C-D: several parts kept (output clips), the gaps between them left out
+    var clips = Own("--trim")?.Split(',').Select(r => r.Split('-', 2)).ToList() ?? [["", ""]];
+    var trim = clips[0].Length > 1 ? [clips[0][0], clips[^1][1]] : clips[0];
+    List<Clip>? clipList = clips.Count > 1 ? [.. clips.Select(c => new Clip(Time(c[0]) ?? throw new ArgumentException("--trim: each clip needs its start"), (c.Length > 1 ? Time(c[1]) : null) ?? throw new ArgumentException("--trim: each clip needs its end")))] : null;
     var volume = int.TryParse(Own("--volume"), out var vol) ? Math.Clamp(vol, 10, 300) : 100;
     IReadOnlyList<double>? chapterAt = own.Contains("--no-chapters") ? [] : Own("--chapter-at")?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => Time(t.Trim()) ?? 0).ToList();
     int? chapterMinutes = int.TryParse(Own("--chapter-every"), out var every) ? Math.Clamp(every, 1, 600) : null;
@@ -1227,7 +1249,8 @@ var titles = videos.Select((v, k) =>
         (trackLanguage ??= [])[kv[0].Trim()] = code;
     }
     return new DiscTitle(v, null, Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes, own.Contains("--intro"), trackLanguage,
-                          Own("--effects") is { } fx ? System.Text.Json.JsonSerializer.Deserialize<VideoEffects>(File.ReadAllText(fx)) : null); // --effects FILE.json: the video editor's settings (VideoEffects, by property name)
+                          Own("--effects") is { } fx ? System.Text.Json.JsonSerializer.Deserialize<VideoEffects>(File.ReadAllText(fx)) : null, // --effects FILE.json: the video editor's settings (VideoEffects, by property name)
+                          clipList);
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
 // bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (fit = "Adapter au disque"; up to 60000 with --uhd, where --reencode = "Conversion"),

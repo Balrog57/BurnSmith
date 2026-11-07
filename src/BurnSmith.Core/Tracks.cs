@@ -170,17 +170,22 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// plays and shows when the disc starts. Null: the first audio, no subtitles. The default audio goes first, so it is audio 1 everywhere (the menu's
 /// pages, a DVD's first stream, the first of a Blu-ray's list); the default subtitle is selected by the disc itself (<see cref="DefaultSubtitleNumber"/>).
 /// <see cref="Effects"/>: rotation, crop, colour, watermark and burnt subtitle drawn into the picture (null = none).
+/// <see cref="Clips"/>: the parts kept when there are several (DVDFab's "output clips"), in order and in seconds of the source; <see cref="Start"/> and
+/// <see cref="End"/> are then the first one's start and the last one's end, and what lies between two clips (<see cref="Gaps"/>) is left out of the disc.
 /// <see cref="TrackLanguage"/>: languages set by hand on the video's own tracks (key <see cref="LanguageKey"/>, value an ISO 639-2 code), for a track the file leaves "und" or mislabels.
 /// </summary>
+/// <summary>One part of a video kept on the disc, from <see cref="From"/> to <see cref="To"/> seconds of the source.</summary>
+public sealed record Clip(double From, double To);
+
 public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<int>? Audio = null, IReadOnlyList<int>? Subtitles = null,
                                double Start = 0, double? End = null, int Volume = 100, IReadOnlyList<double>? ChapterAt = null,
                                IReadOnlyList<ExternalSubtitle>? External = null, bool Bonus = false, int? DefaultAudio = null, int? DefaultSubtitle = null,
                                int? ChapterMinutes = null, bool Intro = false, IReadOnlyDictionary<string, string>? TrackLanguage = null,
-                               VideoEffects? Effects = null)
+                               VideoEffects? Effects = null, IReadOnlyList<Clip>? Clips = null)
 {
     public string DisplayName => Name ?? Path.GetFileNameWithoutExtension(Video);
 
-    public bool Trimmed => Start > 0 || End != null;
+    public bool Trimmed => Start > 0 || End != null || Gaps.Count > 0;
 
     /// <summary>
     /// The disc order: the main feature's videos first, then the bonus ones (each group keeps its order). A title is its playlist number,
@@ -193,7 +198,74 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
     }
 
     /// <summary>Seconds of the source that stay on the disc.</summary>
-    public double Length(SourceInfo s) => Math.Max(0, Math.Min(End ?? s.Duration, s.Duration) - Math.Min(Start, s.Duration));
+    public double Length(SourceInfo s) => Math.Max(0, Math.Min(End ?? s.Duration, s.Duration) - Math.Min(Start, s.Duration)) - GapLength;
+
+    /// <summary>The parts left out between two <see cref="Clips"/>, in seconds from <see cref="Start"/> (none with a single part).</summary>
+    public IReadOnlyList<(double From, double To)> Gaps =>
+        Clips is not { Count: > 1 } ? [] : [.. Clips.Zip(Clips.Skip(1)).Where(p => p.Second.From > p.First.To).Select(p => (p.First.To - Start, p.Second.From - Start))];
+
+    public double GapLength => Gaps.Sum(g => g.To - g.From);
+
+    /// <summary>
+    /// A time of the source counted from <see cref="Start"/> as a time on the disc: the gaps before it are taken off; null inside a gap.
+    /// </summary>
+    public double? OnDisc(double t)
+    {
+        var shift = 0.0;
+        foreach (var (from, to) in Gaps)
+        {
+            if (t < from) break;
+            if (t < to) return null;
+            shift += to - from;
+        }
+        return t - shift;
+    }
+
+    /// <summary>
+    /// The ffmpeg filter that drops the gaps and closes them up (video, or audio with <paramref name="audio"/>), to put after the rest of the chain; "" without gaps.
+    /// The times are those of the input cut by -ss, so they count from <see cref="Start"/>.
+    /// </summary>
+    public string GapFilter(bool audio)
+    {
+        if (Gaps.Count == 0) return "";
+        static string N(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+        var drop = string.Join("+", Gaps.Select(g => $"gte(t,{N(g.From)})*lt(t,{N(g.To)})"));
+        return audio ? $"aselect='not({drop})',asetpts=N/SR/TB" : $"select='not({drop})',setpts=N/FRAME_RATE/TB";
+    }
+
+    /// <summary>
+    /// A subtitle file (.sup pictures, else SRT) written for the whole span from <see cref="Start"/>, <paramref name="span"/> seconds long, with the gaps taken
+    /// out like the picture. shortcut: a picture still shown when a gap begins stays until the next one (its clear set falls in the gap); write a clear set if it shows.
+    /// </summary>
+    public void CloseGaps(string file, double span)
+    {
+        if (Gaps.Count == 0 || !File.Exists(file)) return;
+        var parts = new List<(double From, double To)>();
+        var at = 0.0;
+        foreach (var (from, to) in Gaps) { parts.Add((at, from)); at = to; }
+        parts.Add((at, span));
+        var offset = 0.0;
+        if (file.EndsWith(".sup", StringComparison.OrdinalIgnoreCase))
+        {
+            var sup = File.ReadAllBytes(file);
+            var output = new MemoryStream();
+            foreach (var (from, to) in parts)
+            {
+                output.Write(PgsSubtitles.Cut(PgsSubtitles.Cut(sup, from, to - from), -offset, 1e6)); // a negative start moves the part later
+                offset += to - from;
+            }
+            File.WriteAllBytes(file, output.ToArray());
+            return;
+        }
+        var srt = File.ReadAllText(file);
+        var joined = new System.Text.StringBuilder();
+        foreach (var (from, to) in parts)
+        {
+            joined.Append(ExternalSubtitle.Cut(ExternalSubtitle.Cut(srt, from, to - from), -offset, 1e6)).AppendLine();
+            offset += to - from;
+        }
+        File.WriteAllText(file, ExternalSubtitle.Cut(joined.ToString(), 0, 1e6)); // numbered again from 1
+    }
 
     /// <summary>
     /// The source as the disc sees it: its length is the part kept, so every size, bit rate, thumbnail and chapter worked out from a
@@ -205,6 +277,8 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
         if (!Trimmed) return s;
         var length = Length(s);
         if (length < 1) throw new ArgumentException($"{DisplayName}: la coupe ne laisse rien sur le disque (début {Start:0.#} s, fin {End:0.#} s, durée du fichier {s.Duration:0.#} s)");
+        if (Clips is { Count: > 1 } && Clips.Zip(Clips.Skip(1)).Any(p => p.Second.From < p.First.To || p.First.To <= p.First.From))
+            throw new ArgumentException($"{DisplayName}: les clips doivent se suivre sans se chevaucher");
         return s with { Duration = length, FileDuration = s.Duration };
     }
 
@@ -227,7 +301,7 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
     /// <summary>Chapter starts on the disc (seconds from the start of the part kept): always begins with 0, whole seconds, so no two share a second.</summary>
     public List<double> ChapterList(double length, int minutes) =>
         ChapterAt == null ? BluRay.Chapters(length, ChapterMinutes ?? minutes)
-        : ChapterAt.Select(t => Math.Round(t - Start)).Where(t => t > 0 && t < length - 1).Prepend(0).Distinct().Order().ToList();
+        : ChapterAt.Select(t => OnDisc(t - Start)).OfType<double>().Select(t => Math.Round(t)).Where(t => t > 0 && t < length - 1).Prepend(0).Distinct().Order().ToList();
 
     /// <summary>The audio tracks in disc order: the default one first, the others in the order kept.</summary>
     public IReadOnlyList<AudioTrack> KeptAudio(SourceInfo s)

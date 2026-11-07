@@ -1,8 +1,26 @@
 <Window x:Class="BurnSmith.App.VideoEditWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Éditer" Width="1060" Height="760" ResizeMode="CanResize" MinWidth="900" MinHeight="640"
+        Title="Éditer" Width="1080" Height="800" ResizeMode="CanResize" MinWidth="960" MinHeight="700"
         Background="{StaticResource BgBrush}" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <Window.Resources>
+    <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+    <Style x:Key="IconBtn" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="FontFamily" Value="{StaticResource Icons}"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Width" Value="30"/>
+      <Setter Property="Height" Value="30"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+    <Style x:Key="Time" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+      <Setter Property="Width" Value="96"/>
+      <Setter Property="TextAlignment" Value="Center"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="ToolTip" Value="h:mm:ss (Entrée pour valider)"/>
+    </Style>
+  </Window.Resources>
   <!-- the video edit: the video before and after on the left, one tab per kind of change on the right -->
   <Grid Margin="20,12,20,16">
     <Grid.RowDefinitions>
@@ -26,23 +44,41 @@
     <!-- the preview: a frame of the source, the same frame as it will be on the disc, and where in the video -->
     <Border Grid.Row="1" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="12" VerticalAlignment="Top">
       <StackPanel>
-        <Border Background="Black" Height="232"><Image x:Name="SourceImage" Stretch="Uniform"/></Border>
+        <!-- the source turned as the output will be, with the crop frame to drag on the Rogner tab; it also shows the video while it plays -->
+        <Grid x:Name="SourceBox" Background="Black" Height="232" SizeChanged="OnSourceBoxSize">
+          <Image x:Name="SourceImage" Stretch="Uniform">
+            <Image.LayoutTransform>
+              <TransformGroup><RotateTransform x:Name="SourceTurn"/><ScaleTransform x:Name="SourceFlip"/></TransformGroup>
+            </Image.LayoutTransform>
+          </Image>
+          <Canvas x:Name="CropCanvas" Background="Transparent" ClipToBounds="True"
+                  MouseLeftButtonDown="OnCropDown" MouseMove="OnCropMove" MouseLeftButtonUp="OnCropUp">
+            <Path x:Name="CropShade" Fill="#99000000" IsHitTestVisible="False"/>
+            <Rectangle x:Name="CropRect" Stroke="White" StrokeThickness="1.5" IsHitTestVisible="False"/>
+          </Canvas>
+        </Grid>
         <Grid Margin="0,6,0,6">
           <TextBlock Text="Aperçu de la sortie" Style="{StaticResource Label}"/>
           <TextBlock x:Name="TimeText" HorizontalAlignment="Right" Opacity="0.8"/>
         </Grid>
         <Border Background="Black" Height="232"><Image x:Name="OutputImage" Stretch="Uniform"/></Border>
-        <Grid Margin="0,10,0,0">
-          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-          <Button Content="&#xE892;" FontFamily="Segoe MDL2 Assets" ToolTip="10 secondes plus tôt" Click="OnBack" Padding="8,4"/>
-          <Button Grid.Column="1" Content="&#xE893;" FontFamily="Segoe MDL2 Assets" ToolTip="10 secondes plus tard" Click="OnForward" Padding="8,4" Margin="6,0,10,0"/>
-          <Slider x:Name="SeekSlider" Grid.Column="2" VerticalAlignment="Center" ValueChanged="OnSeek" SmallChange="1" LargeChange="60"/>
-        </Grid>
+        <!-- where in the video: the clips kept and the chapters under the slider, then the player's buttons -->
+        <Slider x:Name="SeekSlider" Margin="0,8,0,0" ValueChanged="OnSeek" SmallChange="1" LargeChange="60"/>
+        <Canvas x:Name="Marks" Height="8" ClipToBounds="True" Margin="5,2,5,0" SizeChanged="OnMarksSize" ToolTip="En couleur : les clips gardés ; les traits blancs : les chapitres"/>
+        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+          <Button Style="{StaticResource IconBtn}" Content="&#xE892;" ToolTip="10 secondes plus tôt" Click="OnStep" Tag="-10"/>
+          <Button x:Name="PlayButton" Style="{StaticResource IconBtn}" Content="&#xE768;" ToolTip="Lecture / pause (sans le son)" Click="OnPlay"/>
+          <Button Style="{StaticResource IconBtn}" Content="&#xE893;" ToolTip="10 secondes plus tard" Click="OnStep" Tag="10"/>
+          <Button Style="{StaticResource IconBtn}" Content="&#xE738;" Margin="14,0,0,0" ToolTip="Une seconde plus tôt" Click="OnStep" Tag="-1"/>
+          <TextBox x:Name="PosBox" Style="{StaticResource Time}" PreviewKeyDown="OnPosKey" LostFocus="OnPosEdited"/>
+          <Button Style="{StaticResource IconBtn}" Content="&#xE710;" ToolTip="Une seconde plus tard" Click="OnStep" Tag="1"/>
+          <TextBlock x:Name="TotalText" VerticalAlignment="Center" Margin="6,0,0,0" Opacity="0.8"/>
+        </StackPanel>
         <TextBlock x:Name="PreviewError" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{StaticResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed"/>
       </StackPanel>
     </Border>
 
-    <TabControl x:Name="Tabs" Grid.Row="1" Grid.Column="2">
+    <TabControl x:Name="Tabs" Grid.Row="1" Grid.Column="2" SelectionChanged="OnTab">
       <!-- Rogner: turn, mirror, crop -->
       <TabItem Header="Rogner" Tag="crop">
         <DockPanel Margin="4,10,4,0">
@@ -69,6 +105,7 @@
               <TextBlock Text="Format du recadrage" Style="{StaticResource Section}" Margin="0,16,0,8"/>
               <ComboBox x:Name="RatioBox" SelectionChanged="OnRatio">
                 <ComboBoxItem Content="Libre" Tag=""/>
+                <ComboBoxItem Content="Conserver l'original" Tag="orig"/>
                 <ComboBoxItem Content="16:9" Tag="1.7778"/>
                 <ComboBoxItem Content="4:3" Tag="1.3333"/>
                 <ComboBoxItem Content="1:1" Tag="1"/>
@@ -88,7 +125,7 @@
                 <TextBlock Text="Droite" Grid.Row="2" Grid.Column="3" VerticalAlignment="Center" Margin="0,0,10,0"/>
                 <TextBox x:Name="RightBox" Grid.Row="2" Grid.Column="4" TextChanged="OnMargin"/>
               </Grid>
-              <TextBlock Text="La partie gardée est remise au format du disque, avec des bandes noires si besoin." Style="{StaticResource Label}" Margin="0,10,0,0" TextWrapping="Wrap"/>
+              <TextBlock Text="Tirez le cadre sur l'image de gauche, ses coins ou ses bords. La partie gardée est remise au format du disque, avec des bandes noires si besoin." Style="{StaticResource Label}" Margin="0,10,0,0" TextWrapping="Wrap"/>
             </StackPanel>
           </ScrollViewer>
         </DockPanel>
@@ -242,19 +279,14 @@
       <TabItem Header="Chapitres" Tag="chapters">
         <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="4,10,4,0">
           <StackPanel Margin="0,0,10,0">
-            <TextBlock Text="Découpe" Style="{StaticResource Section}" Margin="0,0,0,0"/>
-            <Grid Margin="0,8,0,0">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="110"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="20"/>
-                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="110"/><ColumnDefinition Width="Auto"/>
-              </Grid.ColumnDefinitions>
-              <CheckBox x:Name="StartCheck" Content="Début" VerticalAlignment="Center" Margin="0,0,10,0" Checked="OnCut" Unchecked="OnCut"/>
-              <TextBox x:Name="StartBox" Grid.Column="1" TextChanged="OnCut" ToolTip="h:mm:ss (ou en secondes)"/>
-              <Button Grid.Column="2" Content="&#xE896;" FontFamily="Segoe MDL2 Assets" ToolTip="Prendre la position de l'aperçu" Click="OnStartHere" Margin="4,0,0,0" Padding="6,4"/>
-              <CheckBox x:Name="EndCheck" Grid.Column="4" Content="Fin" VerticalAlignment="Center" Margin="0,0,10,0" Checked="OnCut" Unchecked="OnCut"/>
-              <TextBox x:Name="EndBox" Grid.Column="5" TextChanged="OnCut" ToolTip="h:mm:ss (ou en secondes)"/>
-              <Button Grid.Column="6" Content="&#xE896;" FontFamily="Segoe MDL2 Assets" ToolTip="Prendre la position de l'aperçu" Click="OnEndHere" Margin="4,0,0,0" Padding="6,4"/>
-            </Grid>
+            <TextBlock Text="Clips de sortie" Style="{StaticResource Section}" Margin="0,0,0,0"/>
+            <TextBlock Text="Les parties de la vidéo gardées sur le disque, dans l'ordre : ce qui se trouve entre deux clips est enlevé." Style="{StaticResource Label}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+            <StackPanel x:Name="ClipPanel" Margin="0,8,0,0"/>
+            <StackPanel Orientation="Horizontal">
+              <Button Content="Couper ici" Click="OnSplitClip" ToolTip="Partage le clip en deux à la position de l'aperçu ; supprimez ensuite la partie à enlever"/>
+              <Button Content="+ Ajouter un clip" Click="OnAddClip" Margin="8,0,0,0" ToolTip="Un clip d'une minute à la position de l'aperçu"/>
+              <Button Content="Toute la vidéo" Click="OnClipsDefault" Margin="8,0,0,0" ToolTip="Un seul clip, du début à la fin du fichier"/>
+            </StackPanel>
             <TextBlock x:Name="KeptText" Margin="0,8,0,0" TextWrapping="Wrap"/>
 
             <TextBlock Text="Chapitres" Style="{StaticResource Section}"/>
@@ -263,6 +295,7 @@
               <RadioButton x:Name="ChapEvery" GroupName="chapters" Content="Un chapitre toutes les" VerticalAlignment="Center" Checked="OnChapterMode"/>
               <TextBox x:Name="EveryBox" Width="50" Margin="8,0,8,0" TextAlignment="Center"/>
               <TextBlock Text="minutes" Style="{StaticResource Label}" VerticalAlignment="Center"/>
+              <Button Content="Insertion automatique" Margin="12,0,0,0" Click="OnAutoInsert" ToolTip="Remplit la liste personnalisée avec un chapitre toutes les N minutes, à retoucher ensuite"/>
             </StackPanel>
             <RadioButton x:Name="ChapNone" GroupName="chapters" Content="Sortie sans chapitres" Margin="0,10,0,0" Checked="OnChapterMode"/>
             <RadioButton x:Name="ChapCustom" GroupName="chapters" Content="Liste personnalisée (temps dans la vidéo d'origine)" Margin="0,10,0,0" Checked="OnChapterMode"/>
