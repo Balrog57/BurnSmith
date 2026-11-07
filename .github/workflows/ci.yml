@@ -49,10 +49,9 @@ jobs:
             & $tar -xf tools\tsmuxer.zip -C tools\tsmuxer\bin tsMuxeR.exe
             Remove-Item tools\tsmuxer.zip
           }
-          $publish = Get-Content publish.ps1 -Raw
-          foreach ($tool in 'ffmpeg.exe', 'ffprobe.exe') {
-            $pin = [regex]::Match($publish, "'$tool'\s*=\s*'([0-9A-F]{64})'").Groups[1].Value
-            if ((Get-FileHash tools\ffmpeg\$tool -Algorithm SHA256).Hash -ne $pin) { throw "$tool is not the build pinned in publish.ps1" }
+          $pins = @{ 'ffmpeg.exe' = '09948D4CDD0650DA6FF5A87577469F2A218DC2615AE379F8F734D24C49DE0F73'; 'ffprobe.exe' = 'A6618E99BB58869DED3C6F37B53AA1A8D701C3591DBB7B5B317D47369C112BE2' }
+          foreach ($tool in $pins.Keys) {
+            if ((Get-FileHash tools\ffmpeg\$tool -Algorithm SHA256).Hash -ne $pins[$tool]) { throw "$tool is not the pinned build" }
           }
           if ((Get-FileHash tools\tsmuxer\bin\tsMuxeR.exe -Algorithm SHA256).Hash -ne '12434DB81E879927D78FAD932BF37B5BE5DCA911B4BF741B1D8E0D98609CC2AB') { throw 'tsMuxeR.exe is not the pinned build' }
 

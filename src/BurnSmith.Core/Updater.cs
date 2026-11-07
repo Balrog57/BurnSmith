@@ -25,7 +25,7 @@ public static class Updater
 
     public static bool IsNewer(string tag, Version current) => FromTag(tag) is { } v && v > Normalize(current);
 
-    /// <summary>Only an installed copy updates itself: a portable exe or a development build must not install anything in Program Files.</summary>
+    /// <summary>Only an installed copy updates itself: a development build, or an exe run from anywhere else, must not install anything in Program Files.</summary>
     public static bool IsInstalled() =>
         Environment.ProcessPath is { } p && Path.GetDirectoryName(p) is { } dir
         && dir.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), StringComparison.OrdinalIgnoreCase);

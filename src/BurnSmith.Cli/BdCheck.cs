@@ -270,6 +270,13 @@ static class BdCheck
             Dvd.Build(new DvdJob([new DiscTitle(clip, Subtitles: [0], External: [new ExternalSubtitle(F("damaged.sup"), "fre")])], F("subdvd")), l => { lock (lines) lines.Add(l); });
             Check("a DVD with that .sup builds, and keeps its subtitles", DiscCheck.Folder(F("subdvd")).Count == 0 && lines.Any(l => l.Contains("spumux")) && !lines.Any(l => l.Contains("subtitles dropped")), string.Join(" ; ", DiscCheck.Folder(F("subdvd"))));
         });
+        DvdPart("a film on a DVD", () =>
+        {
+            var clip = Clip("filmdvd.mkv", "testsrc=s=320x240:r=24000/1001:d=2", 48000, ["-pix_fmt", "yuv420p"], Ac3At48);
+            Dvd.Build(new DvdJob([new DiscTitle(clip)], F("filmdvd")));
+            var shown = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=field_order,r_frame_rate", "-of", "csv=p=0", Path.Combine(F("filmdvd"), "VIDEO_TS", "VTS_01_1.VOB")]).Trim();
+            Check("a 24 fps film becomes 3:2 pulldown at 29.97, top field first", shown.StartsWith("tt,30000/1001"), shown);
+        });
     }
 
     /// <summary>Finding 11: a failed build leaves no work folder, and a folder from an earlier crash is not reused.</summary>

@@ -131,7 +131,7 @@ public static class Dvd
         var movie = Path.Combine(work, $"movie{number}.mpg");
         // movie: square pixels -> 16:9 box with bars -> DVD frame size and aspect
         var ntscFilm = !pal && src.Fps < 25;
-        var rate = pal ? "fps=25" : ntscFilm ? "fps=24000/1001,telecine=pattern=23" : "fps=30000/1001"; // film: real 3:2 pulldown
+        var rate = pal ? "fps=25" : ntscFilm ? "fps=24000/1001,telecine=pattern=23,setfield=tff" : "fps=30000/1001"; // film: real 3:2 pulldown, top field first (ffmpeg 9 removed -top; without this the file says bottom first)
         // -ss / -t before -i cut the input itself: the video, the sound and the subtitle files written below all start and stop together
         var args = new List<string> { "-y", "-v", "warning" };
         if (title.Start > 0) args.AddRange(["-ss", title.Start.ToString(Inv)]);
@@ -147,7 +147,7 @@ public static class Dvd
             if (audio[j].Channels > 6) args.AddRange([$"-ac:a:{j}", "6"]); // AC-3 tops out at 5.1
             if (title.Volume != 100) args.AddRange([$"-filter:a:{j}", $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}"]);
         }
-        if (ntscFilm) args.AddRange(["-flags", "+ildct+ilme", "-top", "1"]);
+        if (ntscFilm) args.AddRange(["-flags", "+ildct+ilme"]);
         args.AddRange(["-sn", "-dn", movie]);
 
         // text subtitles are drawn by DvdSubtitles, PGS pictures redrawn (spumux has no text renderer); other bitmap formats would need OCR

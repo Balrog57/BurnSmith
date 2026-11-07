@@ -49,12 +49,12 @@ public static class MediaMaker
             var args = new List<string> { "-y", "-v", "warning", "-framerate", $"1000/{Math.Round(secondsEach * 1000)}", "-i", Path.Combine(work, "%04d.jpg") };
             if (music.Count > 0)
             {
-                // each song is first made a FLAC of one format (a concat list cannot mix an mp3 and a flac), then listed again and again until they cover the photos (a concat input cannot be looped)
+                // each song is first made a WAV of one format (a concat list cannot mix an mp3 and a flac, and ffmpeg 9 stops at the second of a list of FLACs, with exit 0), then listed again and again until they cover the photos (a concat input cannot be looped)
                 var lengths = music.Select(m => Describe(m).Seconds).ToList();
                 if (lengths.Sum() < 1) throw new InvalidDataException("no sound in the music files");
-                var same = music.Select((m, k) => Path.Combine(work, $"music{k + 1:000}.flac")).ToList();
+                var same = music.Select((m, k) => Path.Combine(work, $"music{k + 1:000}.wav")).ToList();
                 for (var k = 0; k < music.Count; k++)
-                    Tools.Run(Ffmpeg, ["-y", "-v", "error", "-i", music[k], "-vn", "-map", "0:a:0", "-ar", "48000", "-ac", "2", "-sample_fmt", "s16", "-c:a", "flac", same[k]]);
+                    Tools.Run(Ffmpeg, ["-y", "-v", "error", "-i", music[k], "-vn", "-map", "0:a:0", "-ar", "48000", "-ac", "2", "-sample_fmt", "s16", "-c:a", "pcm_s16le", same[k]]);
                 var lines = new List<string>();
                 for (double sum = 0; sum < total;) for (var k = 0; k < music.Count && sum < total; k++) { lines.Add(Quoted(same[k])); sum += lengths[k]; }
                 File.WriteAllText(songs, string.Join('\n', lines) + "\n", new UTF8Encoding(false));

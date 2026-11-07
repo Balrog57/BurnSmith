@@ -1,4 +1,4 @@
-; Inno Setup 6 script: installs dist\BurnSmith.exe (made by publish.ps1) in Program Files. Built by publish.ps1 when Inno Setup is installed:
+; Inno Setup 6 script: installs dist\BurnSmith.exe (made by publish.ps1) in Program Files. Built by publish.ps1:
 ;   ISCC.exe /DAppVersion=0.5.0 installer\BurnSmith.iss      ->  dist\BurnSmith-Setup-0.5.0.exe
 ; The in-app update (Updater.cs) downloads that file from the newest GitHub release and runs it with /SILENT /relaunch=1.
 ; Nothing the user made is removed on uninstall: the template library lives in Documents\BurnSmith\Templates.
@@ -42,15 +42,22 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "..\dist\BurnSmith.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docs\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+; copied into dist by publish.ps1 from the runtime packs of the build
+Source: "..\dist\dotnet-runtime-LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\dotnet-runtime-THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\windowsdesktop-runtime-LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\BurnSmith"; Filename: "{app}\BurnSmith.exe"
 Name: "{autodesktop}\BurnSmith"; Filename: "{app}\BurnSmith.exe"; Tasks: desktopicon
 
 [Run]
-; after a manual install: a tick box; after an update started by the app (/relaunch=1): start it again without asking, as the user, not as administrator
+; after a manual install: a tick box; after an update started by the app (/relaunch=1): start it again without asking, as the user, not as administrator. postinstall on both: an entry without it runs before ffmpeg.iss has finished
 Filename: "{app}\BurnSmith.exe"; Description: "{cm:LaunchProgram,BurnSmith}"; Flags: nowait postinstall skipifsilent
-Filename: "{app}\BurnSmith.exe"; Flags: nowait runasoriginaluser skipifnotsilent; Check: Relaunch
+Filename: "{app}\BurnSmith.exe"; Flags: nowait postinstall runasoriginaluser skipifnotsilent; Check: Relaunch
+
+#include "ffmpeg.iss"
+#include "running.iss"
 
 [Code]
 function Relaunch: Boolean;

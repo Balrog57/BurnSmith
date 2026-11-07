@@ -23,7 +23,7 @@ public static class Tools
             if (Directory.Exists(Path.Combine(d.FullName, "tools"))) yield return Path.Combine(d.FullName, "tools");
     }
 
-    /// <summary>Opens the zip of tools the exe carries (ffmpeg, ffprobe, tsMuxeR); set by the app, null in a development build.</summary>
+    /// <summary>Opens the zip of tools the exe carries (tsMuxeR); set by the app, null in a development build.</summary>
     public static Func<Stream?>? Payload { get; set; }
 
     /// <summary>Opens the zip of DVDFab / Leawo template pictures the exe carries (made by publish.ps1 from this PC's installs); null when none.</summary>
@@ -41,7 +41,7 @@ public static class Tools
         return AppFiles.Unpack(name, AppFiles.Stamp(stream), dir => System.IO.Compression.ZipFile.ExtractToDirectory(stream, dir), inLibrary);
     }
 
-    /// <summary>ffmpeg, ffprobe and tsMuxeR carried by the exe, unpacked to <c>BurnSmith-data\tools</c>; null when this exe carries none.</summary>
+    /// <summary>tsMuxeR carried by the exe, unpacked to a <c>tools</c> folder under <see cref="AppFiles.Root"/>; null when this exe carries none.</summary>
     public static string? BundledDir() { lock (bundledLock) return bundledDir ??= UnpackZip("tools", Payload); }
 
     /// <summary>The DVDFab / Leawo / Yuhan template folders carried by the exe, unpacked to <c>Documents\BurnSmith\Templates\carried</c>; null when this exe carries none.</summary>
@@ -62,7 +62,8 @@ public static class Tools
             var p = Path.Combine(dir, exe);
             if (File.Exists(p)) return cache[exe] = p;
         }
-        throw new FileNotFoundException($"{exe} introuvable : indiquez son dossier dans la variable d'environnement BURNSMITH_TOOLS, ajoutez-le au PATH ou placez-le dans un dossier tools à côté de BurnSmith (BurnSmith fournit ffmpeg, ffprobe et tsMuxeR, mais ni dvdauthor ni spumux).");
+        var installer = exe is "ffmpeg.exe" or "ffprobe.exe" ? "relancez l'installateur de BurnSmith, avec Internet : il les télécharge. Sinon, " : ""; // first: the journal does not wrap, the end of a long line is off screen
+        throw new FileNotFoundException($"{exe} introuvable : {installer}indiquez son dossier dans la variable d'environnement BURNSMITH_TOOLS, ajoutez-le au PATH ou placez-le dans un dossier tools à côté de BurnSmith (l'installateur de BurnSmith ne fournit ni dvdauthor ni spumux).");
     }
 
     /// <summary>
