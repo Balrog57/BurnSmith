@@ -347,4 +347,21 @@
       </Setter.Value>
     </Setter>
   </Style>
+
+  <!-- tab headers wrap in a WrapPanel: WPF's TabPanel moves the selected row to the bottom when headers take two rows -->
+  <Style TargetType="TabControl" BasedOn="{StaticResource {x:Type TabControl}}">
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TabControl">
+          <DockPanel>
+            <WrapPanel DockPanel.Dock="Top" IsItemsHost="True" Margin="0,0,0,4"/>
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+              <ContentPresenter ContentSource="SelectedContent"/>
+            </Border>
+          </DockPanel>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
 </ResourceDictionary>
