@@ -245,6 +245,7 @@
           <StackPanel Margin="0,8,8,0">
             <TextBlock Text="Titre" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
             <TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"/>
+            <StackPanel x:Name="ZonePanel"/>
             <TextBlock Text="Bouton lecture" Style="{StaticResource Caption}"/>
             <TextBox Text="{Binding PlayLabel, UpdateSourceTrigger=PropertyChanged}"/>
             <TextBlock Text="Bouton scènes" Style="{StaticResource Caption}"/>

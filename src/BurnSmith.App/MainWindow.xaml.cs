@@ -106,6 +106,7 @@ public partial class MainWindow : Window
         Activated += (_, _) => RefreshDrives(); // a burner plugged in meanwhile shows up when the user comes back
         AfterTitlesChanged();
         Loaded += async (_, _) => await OfferDvdIfPossible();
+        Closed += (_, _) => Tools.TryDelete(frameDir);
         defaultDesign = LoadDefaultDesign();
     }
 
@@ -225,7 +226,7 @@ public partial class MainWindow : Window
         finally { refreshingDrives = false; }
     }
 
-    public MenuEditorWindow CreateEditor(MenuDesign? start = null) => new(start ?? design, previewFrame, EditorContent());
+    public MenuEditorWindow CreateEditor(MenuDesign? start = null) => openEditor = new(start ?? design, previewFrame, EditorContent());
 
     /// <summary>The video the menu's picture, the disc's name and the audio / subtitle pages come from: the first that is not a bonus.</summary>
     Entry? MainEntry => titles.FirstOrDefault(t => !t.Bonus && !t.Intro) ?? titles.FirstOrDefault();
@@ -236,14 +237,47 @@ public partial class MainWindow : Window
         if (MainEntry is not { } first)
             return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, 12).ToList(), null, ["Français 5.1", "English 5.1"], ["Français", "English"]);
         var disc = first.ToDisc();
-        var main = titles.Where(t => !t.Intro && (!t.Bonus || t == first)).ToList(); // as on the disc: the feature first, then the extras (the start video is on neither)
-        var extras = titles.Where(t => t.Bonus && !t.Intro && t != first).ToList();
+        var (main, extras) = DiscOrder(first);
         var series = main.Count > 1;
-        var chapters = series ? 0 : disc.ChapterList(first.OnDisc.Duration, chapterMinutes).Count;
-        return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, chapters).ToList(),
-            series ? main.Select((t, i) => new TitleEntry(t.Name, i + 1, null)).ToList() : null,
+        // the same moments as the disc's pictures: BluRay.Build and Dvd.Build take them there
+        string? TenPercent(Entry t) => Frame(t, t.Start + t.OnDisc.Duration * 0.1);
+        return new MenuContent(1, previewFrame, series ? [] : disc.ChapterList(first.OnDisc.Duration, chapterMinutes).Select(at => Frame(first, first.Start + at + 3)).ToList(),
+            series ? main.Select((t, i) => new TitleEntry(t.Name, i + 1, TenPercent(t))).ToList() : null,
             disc.KeptAudio(first.Tracks).Select(a => a.Name).ToList(), disc.KeptSubtitles(first.Tracks).Where(s => s.Supported).Select(s => s.Name).ToList(),
-            extras.Count > 0 ? extras.Select((t, i) => new TitleEntry(t.Name, main.Count + i + 1, null)).ToList() : null);
+            extras.Count > 0 ? extras.Select((t, i) => new TitleEntry(t.Name, main.Count + i + 1, TenPercent(t))).ToList() : null);
+    }
+
+    /// <summary>As on the disc: the feature first, then the extras (the start video is on neither). Numbered from 1 in this order, they are the playlists of <see cref="EditorContent"/>.</summary>
+    (List<Entry> Main, List<Entry> Extras) DiscOrder(Entry first) =>
+        (titles.Where(t => !t.Intro && (!t.Bonus || t == first)).ToList(), titles.Where(t => t.Bonus && !t.Intro && t != first).ToList());
+
+    // the pictures of the menu preview: one file per video and moment, null while it is being made (or when ffmpeg could not read a frame: the empty frame stays)
+    readonly string frameDir = Path.Combine(Path.GetTempPath(), "BurnSmith-frames-" + Environment.ProcessId);
+    readonly Dictionary<(string Path, double At), string?> frames = [];
+    readonly HashSet<(string Path, double At)> wantedFrames = [];
+    MenuEditorWindow? openEditor;
+
+    string? Frame(Entry t, double at)
+    {
+        var key = (t.Path, Math.Round(at));
+        if (frames.TryGetValue(key, out var file)) return file;
+        wantedFrames.Add(key);
+        return null;
+    }
+
+    /// <summary>Makes the pictures the preview is missing, then redraws it (the editor too, if it is open).</summary>
+    async Task RefreshFrames()
+    {
+        _ = EditorContent(); // asks for what the disc's current state needs
+        if (wantedFrames.Count == 0) return;
+        var wanted = wantedFrames.Select((k, i) => (Key: k, File: Path.Combine(frameDir, $"f{frames.Count + i}.jpg"))).ToList();
+        wantedFrames.Clear();
+        foreach (var (key, _) in wanted) frames[key] = null;
+        var made = new string?[wanted.Count];
+        await Task.Run(() => Parallel.For(0, wanted.Count, new ParallelOptions { MaxDegreeOfParallelism = 4 }, i => made[i] = ExtractFrame(wanted[i].Key.Path, wanted[i].Key.At, wanted[i].File, 480, 270)));
+        for (var i = 0; i < wanted.Count; i++) frames[wanted[i].Key] = made[i];
+        RefreshThumb();
+        openEditor?.UseContent(EditorContent());
     }
 
     void Append(string line)
@@ -516,6 +550,7 @@ public partial class MainWindow : Window
     /// <summary>The menu's first page, small, from the real menu builder (so it shows the chosen template).</summary>
     async void RefreshThumb()
     {
+        _ = RefreshFrames();
         var mine = ++thumbVersion;
         var d = design.Clone();
         var content = EditorContent();
@@ -536,14 +571,15 @@ public partial class MainWindow : Window
     }
 
     /// <summary>One frame of the movie at <paramref name="seconds"/>, used as the picture on the menu preview.</summary>
-    static string? ExtractPreview(string path, double seconds)
+    static string? ExtractPreview(string path, double seconds) => ExtractFrame(path, seconds, Path.Combine(Path.GetTempPath(), "BurnSmith", "preview.jpg"), 800, 450);
+
+    static string? ExtractFrame(string path, double seconds, string file, int w, int h)
     {
-        var file = Path.Combine(Path.GetTempPath(), "BurnSmith", "preview.jpg");
-        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         try
         {
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
             Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", seconds.ToString("0.###", CultureInfo.InvariantCulture),
-                "-i", path, "-frames:v", "1", "-q:v", "2", "-vf", "scale=800:450:force_original_aspect_ratio=increase,crop=800:450", file]);
+                "-i", path, "-frames:v", "1", "-q:v", "2", "-vf", $"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}", file]);
             return File.Exists(file) ? file : null;
         }
         catch (Exception) { return null; } // the preview just shows an empty frame
@@ -721,6 +757,10 @@ public partial class MainWindow : Window
             ? entry.Tracks.Audio.Select(a => (a.Index, $"{a.Name}  ({a.Codec})", true))
             : entry.Tracks.Subtitles.Select(t => (t.Index, t.Supported ? $"{t.Name}  ({(t.File != null ? Path.GetFileName(t.File) : t.Codec)})" : $"{t.Name}  ({t.Codec}, non pris en charge)", t.Supported));
         var menu = new ContextMenu { PlacementTarget = button, Placement = PlacementMode.Bottom };
+        var keepAll = new MenuItem { Header = titles.Count > 1 ? "Tout garder sur toutes les vidéos" : "Tout garder" };
+        keepAll.Click += (_, _) => KeepAll(audio);
+        menu.Items.Add(keepAll);
+        menu.Items.Add(new Separator());
         foreach (var (index, text, enabled) in tracks)
         {
             var item = new MenuItem { Header = text, IsCheckable = true, IsChecked = kept.Contains(index), IsEnabled = enabled, StaysOpenOnClick = true };
@@ -845,6 +885,21 @@ public partial class MainWindow : Window
         Update();
     }
 
+    /// <summary>Every track each video has, whatever its layout (episodes do not all have the same tracks).</summary>
+    void KeepAll(bool audio)
+    {
+        foreach (var t in titles)
+        {
+            if (audio) t.Audio = t.Tracks.Audio.Select(a => a.Index).ToList();
+            else t.Subs = t.Tracks.Subtitles.Where(s => s.Supported).Select(s => s.Index).ToList();
+            t.Refresh();
+        }
+        if (titles.Any(t => (audio ? t.Audio.Count : t.Subs.Count) > (audio ? MenuBuilder.MaxAudio : MenuBuilder.MaxSubtitles))) WarnNoRow();
+        Update();
+    }
+
+    void WarnNoRow() => Warn($"La page Réglages du menu propose au plus {MenuBuilder.MaxAudio} pistes audio et {MenuBuilder.MaxSubtitles} sous-titres : les autres restent sur le disque, sans ligne dans le menu.");
+
     void ToggleTrack(Entry entry, bool audio, int index, MenuItem item)
     {
         var kept = audio ? entry.Audio : entry.Subs;
@@ -856,13 +911,7 @@ public partial class MainWindow : Window
         }
         else if (!kept.Contains(index))
         {
-            var max = audio ? MenuBuilder.MaxAudio : MenuBuilder.MaxSubtitles;
-            if (kept.Count >= max)
-            {
-                item.IsChecked = false;
-                Warn($"Au plus {MenuBuilder.MaxAudio} pistes audio et {MenuBuilder.MaxSubtitles} sous-titres (limite de la page Réglages du menu).");
-                return;
-            }
+            if (kept.Count >= (audio ? MenuBuilder.MaxAudio : MenuBuilder.MaxSubtitles)) WarnNoRow();
             kept.Add(index);
             kept.Sort(); // disc order = source order; the first one is the default
         }
@@ -891,12 +940,24 @@ public partial class MainWindow : Window
     void OnEditMenu(object s, RoutedEventArgs e)
     {
         if (StillLoadingDesign()) return;
-        var editor = new MenuEditorWindow(design, previewFrame, EditorContent()) { Owner = this };
-        if (editor.ShowDialog() != true) return;
+        var editor = CreateEditor();
+        editor.Owner = this;
+        var ok = editor.ShowDialog() == true;
+        openEditor = null;
+        if (!ok) return;
         design = editor.Result;
         MenuName.Text = design.Name;
-        ProjectTitle.Text = titles.Count == 0 ? "Aucune source" : design.Title;
-        RefreshThumb();
+        if (MainEntry is { } first && editor.RenamedTitles.Count > 0) // the names written on the menu's page are the videos' names
+        {
+            var (main, extras) = DiscOrder(first);
+            var order = main.Concat(extras).ToList();
+            foreach (var (playlist, name) in editor.RenamedTitles)
+            {
+                order[playlist - 1].Name = name;
+                order[playlist - 1].Refresh();
+            }
+        }
+        AfterTitlesChanged(); // the title, the volume name and the picture follow
     }
 
     void OnAdvanced(object s, RoutedEventArgs e)

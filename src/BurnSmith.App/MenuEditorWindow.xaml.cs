@@ -11,12 +11,12 @@ namespace BurnSmith.App;
 
 /// <summary>
 /// Edits a <see cref="MenuDesign"/> with a live preview. The preview is drawn by the same <see cref="MenuRenderer"/> the disc
-/// builders use, so it shows the real page (chapter pictures are grey boxes: only the preview frame is extracted).
+/// builders use, so it shows the real page, with the pictures of the disc's own videos as they arrive (see <see cref="UseContent"/>).
 /// </summary>
 public partial class MenuEditorWindow : Window
 {
     readonly MenuDesign working;
-    readonly MenuContent content;
+    MenuContent content;
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     int version;
     string? error;
@@ -278,6 +278,7 @@ public partial class MenuEditorWindow : Window
     {
         current = page;
         currentImages = images;
+        FillZonePanel();
         if (page.Buttons.All(b => b.Id != focusId)) focusId = page.Buttons.FirstOrDefault()?.Id;
         var index = shot?.Pages.FindIndex(p => p.Id == page.Id) ?? 0;
         PageText.Text = $"{PageName(page.Id)} · page {index + 1} / {shot?.Pages.Count ?? 1}";
@@ -293,6 +294,7 @@ public partial class MenuEditorWindow : Window
     /// <summary>The page as the disc shows it: its picture, the focus frame of the selected button, and a hit area per button for the mouse.</summary>
     void DrawStage()
     {
+        if (editing != null) return; // a redraw would take the text box away from under the typing: the end of the edit redraws
         StageCanvas.Children.Clear();
         if (current == null || currentImages == null) return;
         StageCanvas.Children.Add(new System.Windows.Controls.Image { Source = currentImages.Background, Width = MenuBuilder.W, Height = MenuBuilder.H });
@@ -314,7 +316,184 @@ public partial class MenuEditorWindow : Window
             hit.MouseLeftButtonUp += (_, _) => { Select(id); Activate(b); };
             StageCanvas.Children.Add(hit);
         }
+        foreach (var z in current.Zones) DrawZone(z);
         DrawElements();
+    }
+
+    // ---------------------------------------------------------------- the zones the template offers (see MenuZone)
+
+    readonly Dictionary<int, string> renamed = [];
+    List<string> panelZones = [];
+    TextBox? editing;
+
+    /// <summary>The videos the user renamed on the menu's pages: playlist number (in the disc's order, see MainWindow.DiscOrder) and name.</summary>
+    public IReadOnlyDictionary<int, string> RenamedTitles => renamed;
+
+    /// <summary>The disc's facts changed behind the open editor (its pictures have arrived): the names written here stay.</summary>
+    public void UseContent(MenuContent c)
+    {
+        content = Named(c);
+        Dirty();
+    }
+
+    MenuContent Named(MenuContent c)
+    {
+        List<TitleEntry>? Rename(IReadOnlyList<TitleEntry>? list) => list?.Select(t => renamed.TryGetValue(t.Playlist, out var name) ? t with { Name = name } : t).ToList();
+        return c with { Titles = Rename(c.Titles), Bonus = Rename(c.Bonus) };
+    }
+
+    string ZoneValue(string key)
+    {
+        if (key == "title") return working.Title;
+        if (key.StartsWith("slot:")) return working.TextZones.GetValueOrDefault(key[5..], "");
+        if (!key.StartsWith("name:")) return "";
+        var playlist = int.Parse(key[5..]);
+        return (content.Titles ?? []).Concat(content.Bonus ?? []).FirstOrDefault(t => t.Playlist == playlist)?.Name ?? "";
+    }
+
+    void SetZone(string key, string value)
+    {
+        if (key == "title") working.Title = value;
+        else if (key.StartsWith("slot:"))
+        {
+            if (value.Trim().Length > 0) working.TextZones[key[5..]] = value;
+            else working.TextZones.Remove(key[5..]);
+        }
+        else if (key.StartsWith("name:") && value.Trim().Length > 0) // a video keeps a name
+        {
+            renamed[int.Parse(key[5..])] = value.Trim();
+            content = Named(content);
+        }
+    }
+
+    static string ZoneName(string key) =>
+        key == "slot:info" ? "Ligne d'information"
+        : key.StartsWith("slot:overview") ? "Texte " + key[13..]
+        : key.StartsWith("name:") ? "Nom de la vidéo " + key[5..]
+        : key;
+
+    /// <summary>The same zones as text boxes in the Menu tab, for the keyboard. Rebuilt only when the page offers others: a redraw must not take a box away from under the typing.</summary>
+    void FillZonePanel(bool force = false)
+    {
+        var keys = current?.Zones.Select(z => z.Key).Where(k => k is not "title" and not "poster").ToList() ?? [];
+        if (!force && keys.SequenceEqual(panelZones)) return;
+        panelZones = keys;
+        ZonePanel.Children.Clear();
+        foreach (var key in keys)
+        {
+            ZonePanel.Children.Add(new TextBlock { Text = ZoneName(key), Style = (Style)FindResource("Caption") });
+            var box = new TextBox { Text = ZoneValue(key), TextWrapping = TextWrapping.Wrap };
+            System.Windows.Automation.AutomationProperties.SetName(box, ZoneName(key));
+            box.TextChanged += (_, _) => SetZone(key, box.Text); // the panel's own handler asks for the new preview
+            ZonePanel.Children.Add(box);
+        }
+    }
+
+    void DrawZone(MenuZone z)
+    {
+        var accent = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(working.Accent));
+        var empty = z.Key.StartsWith("slot:") && z.Key != "slot:info" && ZoneValue(z.Key).Length == 0;
+        if (empty) // on the editor's screen only: an empty zone draws nothing on the disc
+        {
+            var hint = new TextBlock { Text = "Zone de texte du modèle : cliquez pour écrire", FontSize = 26, Opacity = 0.55, Foreground = System.Windows.Media.Brushes.White, IsHitTestVisible = false };
+            System.Windows.Controls.Canvas.SetLeft(hint, z.Rect.X + 8);
+            System.Windows.Controls.Canvas.SetTop(hint, z.Rect.Y + 8);
+            StageCanvas.Children.Add(hint);
+        }
+        var shape = new System.Windows.Shapes.Rectangle
+        {
+            Width = z.Rect.W, Height = z.Rect.H, Fill = System.Windows.Media.Brushes.Transparent, StrokeThickness = 3, StrokeDashArray = [6, 4],
+            Stroke = empty ? accent : null, Cursor = z.Key == "poster" ? System.Windows.Input.Cursors.Hand : System.Windows.Input.Cursors.IBeam,
+            ToolTip = z.Key == "poster" ? "Changer l'image" : "Cliquez pour écrire",
+        };
+        System.Windows.Controls.Canvas.SetLeft(shape, z.Rect.X);
+        System.Windows.Controls.Canvas.SetTop(shape, z.Rect.Y);
+        shape.MouseEnter += (_, _) =>
+        {
+            shape.Stroke = accent;
+            // a name drawn on its button: the button under it stays the one selected, as without the zone
+            var (x, y) = (z.Rect.X + z.Rect.W / 2, z.Rect.Y + z.Rect.H / 2);
+            Select(current?.Buttons.FirstOrDefault(b => x >= b.Rect.X && x < b.Rect.X + b.Rect.W && y >= b.Rect.Y && y < b.Rect.Y + b.Rect.H)?.Id);
+        };
+        shape.MouseLeave += (_, _) => shape.Stroke = empty ? accent : null;
+        shape.MouseLeftButtonDown += (_, me) =>
+        {
+            me.Handled = true;
+            if (sel != null) SelectElem(null);
+            if (z.Key == "poster") PosterMenu(); else BeginZoneEdit(z);
+        };
+        StageCanvas.Children.Add(shape);
+    }
+
+    /// <summary>For the off-screen snapshot (<c>zones</c>): writes in the page's zones as a click then Enter does, and types in one that Escape gives back.</summary>
+    public void TryZones()
+    {
+        void Write(string key, string text, bool keep)
+        {
+            if (current?.Zones.FirstOrDefault(z => z.Key == key) is not { } zone) return;
+            BeginZoneEdit(zone);
+            editing!.Text = text;
+            EndZoneEdit(keep);
+        }
+        Write("slot:info", "2018 | Action, Drame", true);
+        Write("slot:overview1", "Ne doit pas rester", false);
+        Write("slot:overview2", "Distribution : William Zabka, Ralph Macchio", true);
+        Write("slot:overview4", "Trente ans après le tournoi de 1984, Johnny Lawrence rouvre le dojo Cobra Kai, ce qui ravive sa rivalité avec Daniel LaRusso. Une histoire de rédemption et de vieilles rancunes, assez longue pour passer à la ligne dans sa zone.", true);
+        Write("name:2", "S01E02 - Frappe en premier", true);
+    }
+
+    void BeginZoneEdit(MenuZone z)
+    {
+        EndZoneEdit(true); // a click on another zone: what was typed in the first one stays
+        var box = new TextBox
+        {
+            Text = ZoneValue(z.Key), Width = Math.Max(z.Rect.W, 300), MinHeight = z.Rect.H, FontSize = Math.Clamp(z.Rect.H * 0.6, 24, 34),
+            TextWrapping = z.Rect.H >= 100 ? TextWrapping.Wrap : TextWrapping.NoWrap, Tag = z.Key,
+        };
+        System.Windows.Automation.AutomationProperties.SetName(box, ZoneName(z.Key));
+        System.Windows.Controls.Canvas.SetLeft(box, Math.Min(z.Rect.X, MenuBuilder.W - box.Width));
+        System.Windows.Controls.Canvas.SetTop(box, z.Rect.Y);
+        box.LostKeyboardFocus += (_, _) => EndZoneEdit(true);
+        box.Loaded += (_, _) => { box.Focus(); box.SelectAll(); };
+        editing = box;
+        StageCanvas.Children.Add(box);
+    }
+
+    void EndZoneEdit(bool keep)
+    {
+        if (editing is not { } box) return;
+        editing = null; // first: taking the box off the page takes its focus, which comes back here
+        if (box.IsKeyboardFocusWithin) Stage.Focus(); // given away now: left to Windows, it would come back after the next box took it, and close that box
+        StageCanvas.Children.Remove(box);
+        if (keep) SetZone((string)box.Tag, box.Text);
+        FillZonePanel(true);
+        DrawStage();
+        Rebind();
+    }
+
+    void PosterMenu()
+    {
+        var menu = new ContextMenu();
+        var pick = new MenuItem { Header = "Choisir une image…" };
+        pick.Click += (_, _) =>
+        {
+            var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*", Title = "Image du menu" };
+            if (dlg.ShowDialog(this) != true) return;
+            try
+            {
+                working.Poster = ElementLibrary.Reference(ElementLibrary.Import(dlg.FileName).Path);
+                Dirty();
+            }
+            catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+            {
+                MessageBox.Show(this, ex.Message, "BurnSmith");
+            }
+        };
+        var film = new MenuItem { Header = "Reprendre l'image du film", IsEnabled = working.Poster != null };
+        film.Click += (_, _) => { working.Poster = null; Dirty(); };
+        menu.Items.Add(pick);
+        menu.Items.Add(film);
+        menu.IsOpen = true;
     }
 
     void Select(string? id)
@@ -798,6 +977,15 @@ public partial class MenuEditorWindow : Window
     /// <summary>Keys on the page: with an element selected, Delete removes it, Escape lets it go and the arrows nudge it (10 px, Shift 1 px); otherwise the arrows and Enter walk the buttons like a remote.</summary>
     void OnStageKey(object s, System.Windows.Input.KeyEventArgs e)
     {
+        if (editing != null) // the box takes every key but these two
+        {
+            if (e.Key is System.Windows.Input.Key.Enter or System.Windows.Input.Key.Escape)
+            {
+                EndZoneEdit(e.Key == System.Windows.Input.Key.Enter);
+                e.Handled = true;
+            }
+            return;
+        }
         if (sel is { } el)
         {
             var step = (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Shift) != 0 ? 1 : 10;

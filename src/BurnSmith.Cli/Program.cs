@@ -252,6 +252,25 @@ if (a.Count >= 1 && a[0] == "check-elements")
           && new MenuElement { Page = "scenes" }.AppliesTo("scenes2") && !new MenuElement { Page = "scenes" }.AppliesTo("bonus1") && !new MenuElement { Page = "roots" }.AppliesTo("root"));
     Check("an unknown kind is refused, so a misspelt element is not silently something else", Throws(() => MenuElement.Parse("kind=vidéo;text=x")));
 
+    // the zones the editor offers: what each template draws, nothing more; only what the user wrote reaches the page
+    var zoneSeries = new MenuContent(1, null, [], [new TitleEntry("Un", 1, null), new TitleEntry("Deux", 2, null)]);
+    var zonePlain = MenuBuilder.Build(new MenuDesign(), zoneSeries);
+    Check("BurnSmith's own layout: the title on the menu, the videos' names on their page, no text zone",
+          zonePlain[0].Zones.Any(z => z.Key == "title") && zonePlain.First(p => p.Id == "scenes1").Zones.Select(z => z.Key).SequenceEqual(["name:1", "name:2"]) && !zonePlain.SelectMany(p => p.Zones).Any(z => z.Key.StartsWith("slot:")));
+    if (TemplateCatalog.Find("Streaming") is { } streaming && TemplateCatalog.Find("Birthday1") is { } noZones)
+    {
+        var zd = streaming.Clone();
+        var blank = MenuBuilder.Build(zd, zoneSeries)[0];
+        Check("Streaming declares its information line and four text zones", blank.Zones.Count(z => z.Key.StartsWith("slot:")) == 5 && blank.Zones.Any(z => z.Key == "poster"));
+        Check("an empty text zone draws nothing; the information line says what the disc holds", blank.Ops.OfType<Text>().Count(t => t.Rect.X == 536 && t.Rect.Y >= 298) == 0 && blank.Ops.OfType<Text>().Any(t => t.Value.StartsWith("2 ")));
+        zd.TextZones["overview1"] = "2018 | Action";
+        zd.TextZones["overview4"] = "Trente ans après";
+        var filled = MenuBuilder.Build(zd, zoneSeries)[0].Ops.OfType<Text>().ToList();
+        Check("what the user writes is drawn in the template's zone, on several lines where it allows them",
+              filled.Any(t => t.Value == "2018 | Action" && !t.Wrap && t.Rect.Y == 298) && filled.Any(t => t.Value == "Trente ans après" && t.Wrap && t.Rect.Y == 488));
+        Check("a template that declares no text zone offers none", !MenuBuilder.Build(noZones.Clone(), zoneSeries).SelectMany(p => p.Zones).Any(z => z.Key.StartsWith("slot:")));
+    }
+
     var elDesign = TemplateCatalog.Default().Clone();
     var elContent = new MenuContent(1, null, ["a", "b", "c"], null, ["Français", "English"], ["Français"]);
     var elBefore = MenuBuilder.Build(elDesign, elContent);

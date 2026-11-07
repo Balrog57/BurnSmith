@@ -184,6 +184,7 @@ public sealed class InstalledTemplate
         root.Kids.Add(page.Child("bg") ?? El("bg"));
         if (page.Child("specialvideo")?.Child("video") is { } poster) root.Kids.Add(poster);
         root.Kids.AddRange([Heading(), Button("play", 330), Button("scenes", 430)]);
+        if (page.Child("texts") is { } texts) root.Kids.Add(texts);
         t.Kids.Add(root);
         page.Kids.AddRange([Heading(), El("home", ("rect", "1740,120,110,70"), ("glyph", "⌂"))]);
         return t;
@@ -424,6 +425,29 @@ public sealed class InstalledTemplate
 
     // ---- shared page parts --------------------------------------------------
 
+    /// <summary>
+    /// The text zones this page of the template declares (DVDFab fills them from an online search; here the user writes in them, and an empty one draws nothing).
+    /// <paramref name="autoInfo"/> stands in for an empty information line. A template that declares none has none.
+    /// </summary>
+    void TemplateTexts(List<Op> ops, List<MenuZone> zones, XNode page, MenuDesign d, string? autoInfo = null)
+    {
+        var overview = 0;
+        foreach (var t in page.Child("texts")?.Children("text") ?? [])
+        {
+            var kind = t.Attr("as");
+            if (kind == "volume_name" && page.Child("label") == null)
+            {
+                ops.Add(Txt(t, d.Title));
+                zones.Add(new("title", t.Rect()));
+            }
+            if (kind != "volume_category" && kind != "title_overview") continue;
+            var key = kind == "volume_category" ? "info" : $"overview{++overview}";
+            zones.Add(new("slot:" + key, t.Rect()));
+            var value = d.TextZones.GetValueOrDefault(key) is { Length: > 0 } written ? written : key == "info" ? autoInfo : null;
+            if (value != null) ops.Add(Txt(t, value) with { Wrap = t.Attr("wrap") == "1" });
+        }
+    }
+
     /// <param name="film">
     /// A picture of the disc's own film, for the templates whose background is a frame of some film (DVDFab Streaming ships one as a sample and plays
     /// the real film there): it replaces the template's picture, the template's veil stays over it.
@@ -581,8 +605,19 @@ public sealed class InstalledTemplate
         var ops = new List<Op>();
         Background(ops, n, IsAllInOne ? c.PreviewPicture : null);
         Pictures(ops, n);
-        if (n.Child("video") is { } video && d.ShowPreview) { Under(ops, video); ops.Add(Frame(video, c.PreviewPicture)); }
-        if (n.Child("label") is { } label) ops.Add(Txt(label, d.Title, label.Attr("align", "left")));
+        var zones = new List<MenuZone>();
+        if (n.Child("video") is { } video && d.ShowPreview)
+        {
+            Under(ops, video);
+            ops.Add(Frame(video, d.PosterOr(c.PreviewPicture)));
+            zones.Add(new("poster", video.Rect()));
+        }
+        if (n.Child("label") is { } label)
+        {
+            ops.Add(Txt(label, d.Title, label.Attr("align", "left")));
+            zones.Add(new("title", label.Rect()));
+        }
+        TemplateTexts(ops, zones, n, d);
 
         var buttons = new List<MenuButton>();
         void Add(string id, XNode? node, string? image, MenuAction action, string label)
@@ -632,7 +667,7 @@ public sealed class InstalledTemplate
             var x0 = Math.Clamp(middle - row / 2, 20, MenuBuilder.W - row - 20);
             Capsules(ops, buttons, d, pills, x0, Math.Min(low + 8, MenuBuilder.H - 70), pillW, 58, pillGap, 36);
         }
-        return new MenuPage("root", ops, Link(buttons));
+        return new MenuPage("root", ops, Link(buttons)) { Zones = zones };
     }
 
     /// <param name="root">Not null when this page is the menu itself (DVDFab Streaming): it gets the disc's own lines and the Play / Settings / Credits capsules.</param>
@@ -642,24 +677,21 @@ public sealed class InstalledTemplate
         var ops = new List<Op>();
         Background(ops, s, IsAllInOne ? preview : null);
         Pictures(ops, s);
-        if (s.Child("specialvideo")?.Child("video") is { } poster && d.ShowPreview) ops.Add(Frame(poster, preview)); // DVDFab Streaming: the poster stays beside the thumbnails
+        var zones = new List<MenuZone>();
+        if (s.Child("specialvideo")?.Child("video") is { } poster && d.ShowPreview) // DVDFab Streaming: the poster stays beside the thumbnails
+        {
+            ops.Add(Frame(poster, d.PosterOr(preview)));
+            zones.Add(new("poster", poster.Rect()));
+        }
         var buttons = new List<MenuButton>();
         if (s.Child("label") is { } heading)
         {
             var text = Txt(heading, title);
             ops.Add(root == null ? text : text with { Rect = text.Rect with { W = 700 } }); // the capsules take the right of the title line
+            if (root != null) zones.Add(new("title", heading.Rect() with { W = 700 }));
         }
         if (root != null)
         {
-            // what the template shows under its title (genre, year...) comes from an online search in DVDFab; here it is what the disc holds
-            if (s.Child("texts")?.Children("text").FirstOrDefault(x => x.Attr("as") == "volume_category") is { } category)
-            {
-                var info = new List<string> { $"{cells.Count} {(root.Series ? d.EpisodesLabel : d.ScenesLabel)}" };
-                if (root.HasBonus) info.Add($"{root.Bonus!.Count} {d.BonusLabel}");
-                if (root.AudioNames.Count > 1) info.Add($"{root.AudioNames.Count} {d.AudioLabel}");
-                if (root.SubtitleNames.Count > 0) info.Add($"{root.SubtitleNames.Count} {d.SubtitlesLabel}");
-                ops.Add(Txt(category, string.Join("  |  ", info)));
-            }
             var capsules = new List<(string Id, string Label, MenuAction Action)>
             {
                 ("play", root.Series ? d.PlayAllLabel : d.PlayLabel, root.Series ? new MenuAction("playall", Playlist: root.Titles![0].Playlist, Mark: root.Titles.Count) : new MenuAction("play", Playlist: root.Playlist))
@@ -670,6 +702,16 @@ public sealed class InstalledTemplate
             const int w = 190, gap = 12;
             Capsules(ops, buttons, d, capsules, MenuBuilder.W - 60 - capsules.Count * w - (capsules.Count - 1) * gap, 118, w, 56, gap, 28);
         }
+        string? autoInfo = null;
+        if (root != null) // until the user writes the information line, it says what the disc holds
+        {
+            var info = new List<string> { $"{cells.Count} {(root.Series ? d.EpisodesLabel : d.ScenesLabel)}" };
+            if (root.HasBonus) info.Add($"{root.Bonus!.Count} {d.BonusLabel}");
+            if (root.AudioNames.Count > 1) info.Add($"{root.AudioNames.Count} {d.AudioLabel}");
+            if (root.SubtitleNames.Count > 0) info.Add($"{root.SubtitleNames.Count} {d.SubtitlesLabel}");
+            autoInfo = string.Join("  |  ", info);
+        }
+        TemplateTexts(ops, zones, s, d, autoInfo);
         var slots = s.Child("videoes")!.Children("video").ToList();
         var lines = d.SceneList ? s.Child("list")?.Children("item").ToList() ?? [] : [];
         if (lines.Count > 0)
@@ -679,6 +721,7 @@ public sealed class InstalledTemplate
             {
                 var cell = cells[(number - 1) * perPage + i];
                 ops.Add(Txt(lines[i], cell.Label, lines[i].Attr("align", "left")));
+                if (cell.Action.Kind == "play") zones.Add(new($"name:{cell.Action.Playlist}", lines[i].Rect()));
                 buttons.Add(new MenuButton(cell.Id, lines[i].Rect(), cell.Action));
             }
         }
@@ -688,7 +731,11 @@ public sealed class InstalledTemplate
             Under(ops, slots[i]);
             var framed = Frame(slots[i], cell.Picture);
             ops.Add(framed);
-            if (slots[i].Child("name") is { } name) ops.Add(Txt(name, cell.Label, "center"));
+            if (slots[i].Child("name") is { } name)
+            {
+                ops.Add(Txt(name, cell.Label, "center"));
+                if (cell.Action.Kind == "play") zones.Add(new($"name:{cell.Action.Playlist}", name.Rect()));
+            }
             buttons.Add(Dvd(new MenuButton(cell.Id, slots[i].Rect(), cell.Action) { FocusImage = Selected(framed.Frame) })); // none for Leawo: the accent frame
         }
         void Glyph(string id, Box r, string glyph, MenuAction action)
@@ -714,7 +761,7 @@ public sealed class InstalledTemplate
         if (root == null && !Has("home")) Glyph("home", new Box(MenuBuilder.W / 2 - 55, MenuBuilder.H - 110, 110, 70), "⌂", new MenuAction("page", "root"));
         if (number > 1 && !Has("prev")) Glyph("prev", new Box(MenuBuilder.W / 2 - 195, MenuBuilder.H - 110, 110, 70), "<", new MenuAction("page", PageId(prefix, number - 1)));
         if (number < total && !Has("next")) Glyph("next", new Box(MenuBuilder.W / 2 + 85, MenuBuilder.H - 110, 110, 70), ">", new MenuAction("page", PageId(prefix, number + 1)));
-        return new MenuPage(PageId(prefix, number), ops, Link(buttons));
+        return new MenuPage(PageId(prefix, number), ops, Link(buttons)) { Zones = zones };
     }
 
     /// <summary>Row width of the audio list: the BD-J menu draws its "active" dot a fixed distance from each row's left edge.</summary>

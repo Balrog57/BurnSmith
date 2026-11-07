@@ -36,6 +36,13 @@ public sealed class MenuDesign
     /// picture like the rest of the layout, so a DVD and a Blu-ray menu show them without any player-side code.
     /// </summary>
     public List<MenuElement> Elements { get; set; } = [];
+    /// <summary>What the user wrote in the text zones the template declares ("info", "overview1"...; see <see cref="MenuZone"/>). A template without such zones ignores them.</summary>
+    public Dictionary<string, string> TextZones { get; set; } = [];
+    /// <summary>A picture of the user's for the template's picture slot (the poster), instead of a frame of the film; null = the frame.</summary>
+    public string? Poster { get; set; }
+
+    /// <summary>The picture for the template's picture slot: the user's when its file is there, else <paramref name="film"/>.</summary>
+    public string? PosterOr(string? film) => ElementLibrary.Resolve(Poster) is { } file && File.Exists(file) ? file : film;
     public string Font { get; set; } = "Segoe UI";
     /// <summary>Background gradient (#RRGGBB). Ignored when <see cref="BackgroundImage"/> is set.</summary>
     public string Top { get; set; } = "#0B1B3B";
@@ -133,6 +140,7 @@ public sealed class MenuDesign
         var copy = (MenuDesign)MemberwiseClone();
         copy.Elements = Elements.Select(e => e.Copy()).ToList();
         copy.PageBackgrounds = new(PageBackgrounds);
+        copy.TextZones = new(TextZones);
         return copy;
     }
 

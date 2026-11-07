@@ -238,9 +238,9 @@ public static class MenuRenderer
         var face = new Typeface(family, t.Italic ? FontStyles.Italic : FontStyles.Normal, t.Bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal);
         var text = new FormattedText(t.FontDir == null ? t.Value : Drawable(face, t.Value), System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                                      face, t.Size, new SolidColorBrush(Col(t.Color)), 1.0)
-        { MaxTextWidth = t.Rect.W, MaxLineCount = 1, Trimming = TextTrimming.CharacterEllipsis };
+        { MaxTextWidth = t.Rect.W, MaxLineCount = t.Wrap ? Math.Max(1, (int)(t.Rect.H / (t.Size * 1.25))) : 1, Trimming = TextTrimming.CharacterEllipsis };
         var x = t.Align == "left" ? t.Rect.X : t.Rect.X + (t.Rect.W - text.Width) / (t.Align == "right" ? 1 : 2);
-        var at = new Point(x, t.Rect.Y + (t.Rect.H - text.Height) / 2);
+        var at = new Point(x, t.Wrap ? t.Rect.Y : t.Rect.Y + (t.Rect.H - text.Height) / 2); // several lines start at the top of their zone
         if (t.Stroke != null && t.StrokeWidth > 0) // outline first, so the fill stays crisp on top
             dc.DrawGeometry(null, new Pen(new SolidColorBrush(Col(t.Stroke)), t.StrokeWidth * 2) { LineJoin = PenLineJoin.Round }, text.BuildGeometry(at));
         dc.DrawText(text, at);

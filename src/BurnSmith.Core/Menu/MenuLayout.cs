@@ -19,7 +19,7 @@ public sealed record Image(string Path, Box Rect, bool Backdrop = false, bool Co
 
 /// <summary>Template text: own font (optionally a .ttf next to the template), colour, outline.</summary>
 public sealed record Text(string Value, Box Rect, double Size, string Font, string? FontDir, string Color, bool Bold, bool Italic, string Align = "left",
-                          string? Stroke = null, double StrokeWidth = 0) : Op;
+                          string? Stroke = null, double StrokeWidth = 0, bool Wrap = false) : Op;
 
 /// <summary>A picture (null = dark placeholder) cut by the template's mask, with its frame drawn on top.</summary>
 public sealed record Framed(Box Rect, string? Picture, string? Frame, string? Mask) : Op;
@@ -55,7 +55,17 @@ public sealed record MenuButton(string Id, Box Rect, MenuAction Action)
     public string? DvdSelectImage { get; init; }
 }
 
-public sealed record MenuPage(string Id, List<Op> Ops, List<MenuButton> Buttons);
+public sealed record MenuPage(string Id, List<Op> Ops, List<MenuButton> Buttons)
+{
+    /// <summary>What the editor lets the user change by clicking on this page. Nothing here goes on the disc.</summary>
+    public List<MenuZone> Zones { get; init; } = [];
+}
+
+/// <summary>
+/// A place of the page the user can edit: "title", "poster", "name:N" (the video of playlist N), or "slot:KEY" (a text zone the template declares, see <see cref="MenuDesign.TextZones"/>).
+/// Each template offers only what it draws.
+/// </summary>
+public sealed record MenuZone(string Key, Box Rect);
 
 /// <summary>One video of a multi-video disc (an episode).</summary>
 public sealed record TitleEntry(string Name, int Playlist, string? Picture);
@@ -259,7 +269,12 @@ public static class MenuBuilder
     static MenuPage Root(MenuDesign d, MenuContent c, bool withGrid)
     {
         var ops = new List<Op> { new Label(d.Title, new Box(0, 70, W, 140), 100, true) };
-        if (d.ShowPreview && c.PreviewPicture != null) ops.Add(new Picture(c.PreviewPicture, new Box(560, 250, 800, 450), 24, 4));
+        var zones = new List<MenuZone> { new("title", new Box(0, 70, W, 140)) };
+        if (d.ShowPreview && d.PosterOr(c.PreviewPicture) is { } preview)
+        {
+            ops.Add(new Picture(preview, new Box(560, 250, 800, 450), 24, 4));
+            zones.Add(new("poster", new Box(560, 250, 800, 450)));
+        }
 
         var entries = new List<(string Id, string Text, MenuAction Action)>
         {
@@ -288,7 +303,7 @@ public static class MenuBuilder
                 Right = n > 1 ? entries[(k + 1) % n].Id : null,
             });
         }
-        return new MenuPage("root", ops, buttons);
+        return new MenuPage("root", ops, buttons) { Zones = zones };
     }
 
     /// <summary>
@@ -354,16 +369,19 @@ public static class MenuBuilder
         nav.Add(("home", new Box((W - 300) / 2, navY, 300, navH), new MenuAction("page", "root"), d.HomeLabel));
         if (number < total) nav.Add(("next", new Box(W - x0 - navW, navY, navW, navH), new MenuAction("page", $"{prefix}{number + 1}"), ">"));
 
+        var zones = new List<MenuZone>();
         var rows = (count + cols - 1) / cols;
         for (var i = 0; i < count; i++)
         {
             var r = slots[i];
             var cell = cells[first + i];
+            void Named(Box at) { if (cell.Action.Kind == "play") zones.Add(new($"name:{cell.Action.Playlist}", at)); }
             if (original)
             {
                 if (cell.Picture is { } pic) ops.Add(new Picture(pic, r, 12, 0));
                 else ops.Add(new Fill(r, "#000000", 0.4, 12));
                 ops.Add(new Label(cell.Label, new Box(r.X, r.Y + r.H + 6, r.W, 44), 34, false));
+                Named(new Box(r.X, r.Y + r.H + 6, r.W, 44));
             }
             else if (d.Thumbnails)
             {
@@ -374,8 +392,13 @@ public static class MenuBuilder
                 if (cell.Picture is { } pic) ops.Add(new Picture(pic, pictureBox, d.Square ? 0 : 10, 0));
                 else ops.Add(new Fill(pictureBox, "#000000", 0.4, d.Square ? 0 : 10));
                 ops.Add(new Label(cell.Label, new Box(r.X, r.Y + r.H - labelH - pad / 2, r.W, labelH), Math.Clamp(labelH * 3 / 5, 22, 36), false));
+                Named(new Box(r.X, r.Y + r.H - labelH - pad / 2, r.W, labelH));
             }
-            else ops.AddRange(Button(d, r, cell.Label, Math.Clamp(r.H / 3, 26, 54)));
+            else
+            {
+                ops.AddRange(Button(d, r, cell.Label, Math.Clamp(r.H / 3, 26, 54)));
+                Named(r);
+            }
             var row = i / cols;
             string? Id(int n) => n >= 0 && n < count ? cells[first + n].Id : null;
             buttons.Add(new MenuButton(cell.Id, r, cell.Action)
@@ -397,7 +420,7 @@ public static class MenuBuilder
                 Up = cells[first + count - 1].Id, // back to the last thumbnail
             });
         }
-        return new MenuPage($"{prefix}{number}", ops, buttons);
+        return new MenuPage($"{prefix}{number}", ops, buttons) { Zones = zones };
     }
 
     /// <summary>
