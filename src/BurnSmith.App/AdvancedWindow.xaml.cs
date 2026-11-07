@@ -6,7 +6,7 @@ namespace BurnSmith.App;
 
 /// <summary>
 /// The advanced settings: the disc (<see cref="Output"/>, shared with the main window's list), the picture quality, how the menu plays the titles,
-/// chapter spacing and the x264 settings. What only a Blu-ray has is hidden for a DVD, and the picture quality for a 4K disc (its HEVC is kept as it is).
+/// chapter spacing and the encoder settings. What only a Blu-ray has is hidden for a DVD; a 4K disc has its own processing mode (Passthrough copies the HEVC, Conversion makes it again).
 /// </summary>
 public partial class AdvancedWindow : Window
 {
@@ -17,8 +17,15 @@ public partial class AdvancedWindow : Window
     public Output Output { get; private set; }
 
     static readonly (string Name, int Crf, string Preset)[] Speeds = [("Rapide (fichier plus gros)", 20, "veryfast"), ("Standard", 17, "medium"), ("Lente (meilleure qualité)", 14, "slow")];
-    // index 0 = fit the disc, 1 = the source's own quality, 2..4 = a fixed rate, 5 = typed in
-    static readonly (string Name, int Kbps)[] Rates = [("Adapter au disque (recommandé)", 0), ("Source (copie si possible)", 0), ("15 Mb/s", 15000), ("20 Mb/s", 20000), ("30 Mb/s", 30000), ("Personnaliser…", -1)];
+    // index 0 = fit the disc, the last = typed in; Blu-ray: 1 = the source's own quality. A DVD is always made again in MPEG-2: it has no "source" choice
+    static readonly (string Name, int Kbps)[] BdRates = [("Adapter au disque", 0), ("Identique à la source", 0), ("15 Mbps", 15000), ("20 Mbps", 20000), ("30 Mbps", 30000), ("Personnaliser", -1)];
+    static readonly (string Name, int Kbps)[] UhdRates = [("Adapter au disque", 0), ("Identique à la source", 0), ("30 Mbps", 30000), ("50 Mbps", 50000), ("60 Mbps", 60000), ("Personnaliser", -1)];
+    static readonly (string Name, int Kbps)[] DvdRates = [("Adapter au disque", 0), ("5 Mbps", 5000), ("7 Mbps", 7000), ("9 Mbps", 9000), ("Personnaliser", -1)];
+    readonly (string Name, int Kbps)[] rates = BdRates;
+    readonly bool dvd, uhd;
+    int Custom => rates.Length - 1;
+    (int Min, int Max) Range => dvd ? (2000, 9000) : uhd ? (2000, 60000) : (2000, 35000);
+    bool Passthrough => uhd && TreatBox.SelectedIndex == 0;
 
     readonly Func<Output, EncodeOptions, double?>? estimate;
     bool ready;
@@ -40,16 +47,23 @@ public partial class AdvancedWindow : Window
         ChapterBox.ItemsSource = new[] { 1, 2, 3, 5, 10, 15 };
         ChapterBox.SelectedItem = chapterMinutes;
 
-        var dvd = kind == "dvd";
-        QualityPanel.Visibility = kind == "bd" ? Visibility.Visible : Visibility.Collapsed;
+        dvd = kind == "dvd";
+        uhd = kind == "uhd";
+        if (dvd) rates = DvdRates; else if (uhd) rates = UhdRates;
+        TreatLabel.Visibility = TreatBox.Visibility = TreatNote.Visibility = uhd ? Visibility.Visible : Visibility.Collapsed;
+        ModeLabel.Visibility = ModeBox.Visibility = uhd ? Visibility.Collapsed : Visibility.Visible; // the 4K disc says it in "Mode de traitement"
+        TreatBox.ItemsSource = new[] { "Passthrough", "Conversion" };
+        TreatBox.SelectedIndex = encode.ForceReencode || encode.BdKbps > 0 ? 1 : 0;
         DvdPanel.Visibility = dvd ? Visibility.Visible : Visibility.Collapsed;
-        PlaybackPanel.Visibility = dvd ? Visibility.Collapsed : Visibility.Visible;
         EncodePanel.Visibility = dvd ? Visibility.Collapsed : Visibility.Visible;
-        DvdBitrateBox.Text = encode.DvdKbps > 0 ? encode.DvdKbps.ToString() : "0";
+        RateBox.ToolTip = $"Débit vidéo, de {Range.Min} à {Range.Max} kb/s";
+        (encode.DvdPal switch { true => TvPal, false => TvNtsc, null => TvAuto }).IsChecked = true;
+        (encode.DvdWide ? Wide : Narrow).IsChecked = true;
 
-        QualityBox.ItemsSource = Rates.Select(r => r.Name).ToList();
-        QualityBox.SelectedIndex = encode.BdKbps > 0 ? (Array.FindIndex(Rates, r => r.Kbps == encode.BdKbps) is var rate and >= 0 ? rate : 5) : encode.FitDisc ? 0 : 1;
-        RateBox.Text = encode.BdKbps > 0 ? encode.BdKbps.ToString() : "15000";
+        var kbps = dvd ? encode.DvdKbps : encode.BdKbps;
+        QualityBox.ItemsSource = rates.Select(r => r.Name).ToList();
+        QualityBox.SelectedIndex = kbps > 0 ? (Array.FindIndex(rates, r => r.Kbps == kbps) is var rate and >= 0 ? rate : Custom) : dvd || encode.FitDisc ? 0 : 1;
+        RateBox.Text = kbps > 0 ? kbps.ToString() : dvd ? "6000" : "15000";
         ModeBox.ItemsSource = new[] { "Automatique (copie si la vidéo convient)", "Toujours convertir" };
         ModeBox.SelectedIndex = encode.ForceReencode ? 1 : 0;
         SpeedBox.ItemsSource = Speeds.Select(q => q.Name).ToList();
@@ -62,21 +76,25 @@ public partial class AdvancedWindow : Window
         OnQuality(null!, null!);
     }
 
-    int ChosenRate => QualityBox.SelectedIndex is var i && i >= 2 && Rates[i].Kbps > 0 ? Rates[i].Kbps
-        : QualityBox.SelectedIndex == 5 && int.TryParse(RateBox.Text, out var typed) ? Math.Clamp(typed, 2000, 35000) : 0;
+    int ChosenRate => QualityBox.SelectedIndex is var i && i > 0 && rates[i].Kbps > 0 ? rates[i].Kbps
+        : QualityBox.SelectedIndex == Custom && int.TryParse(RateBox.Text, out var typed) ? Math.Clamp(typed, Range.Min, Range.Max) : 0;
 
     EncodeOptions Current()
     {
         var speed = Speeds[Math.Max(0, SpeedBox.SelectedIndex)];
         var output = OutputBox.SelectedItem as Output ?? Output;
-        return new EncodeOptions(ModeBox.SelectedIndex == 1, speed.Crf, speed.Preset, int.TryParse(DvdBitrateBox.Text, out var kbps) && kbps > 0 ? Math.Clamp(kbps, 1500, 9000) : 0,
-            ChosenRate, QualityBox.SelectedIndex == 0, output.Hd720);
+        // each kind keeps the other's rate as it was
+        // a 4K passthrough never re-encodes: no rate, no fitting
+        return new EncodeOptions(uhd ? !Passthrough : ModeBox.SelectedIndex == 1, speed.Crf, speed.Preset, dvd ? ChosenRate : Encode.DvdKbps,
+            dvd ? Encode.BdKbps : Passthrough ? 0 : ChosenRate, dvd ? Encode.FitDisc : !Passthrough && QualityBox.SelectedIndex == 0, output.Hd720,
+            TvPal.IsChecked == true ? true : TvNtsc.IsChecked == true ? false : null, Narrow.IsChecked != true);
     }
 
     void OnQuality(object s, RoutedEventArgs e)
     {
         if (!ready) return;
-        RateBox.IsEnabled = QualityBox.SelectedIndex == 5;
+        QualityBox.IsEnabled = !Passthrough;
+        RateBox.IsEnabled = !Passthrough && QualityBox.SelectedIndex == Custom;
         OnRefresh(s, e);
     }
 
@@ -84,8 +102,10 @@ public partial class AdvancedWindow : Window
     {
         if (!ready || OutputBox.SelectedItem is not Output output) return;
         var gb = estimate?.Invoke(output, Current());
-        SizeText.Text = gb == null ? "Ajoutez une vidéo pour voir la taille du disque."
-            : $"≈ {gb:0.0} Go sur {output.Usable:0.#} Go utilisables{(gb > output.Usable ? "  (trop grand pour ce support)" : "")}";
+        SizeText.Text = gb == null ? "—" : $"{gb:0.00} Go";
+        SizeText.ToolTip = gb == null ? "Ajoutez une vidéo pour voir la taille du disque."
+            : $"≈ {gb:0.0} Go sur {output.Usable:0.#} Go utilisables{(gb > output.Usable ? " : trop grand pour ce support" : "")}";
+        if (gb > output.Usable) SizeText.Foreground = System.Windows.Media.Brushes.IndianRed; else SizeText.ClearValue(ForegroundProperty);
     }
 
     /// <summary>"Rembobiner" belongs to its own radio button only.</summary>

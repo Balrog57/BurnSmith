@@ -286,8 +286,8 @@ public static class BluRay
     internal static int TargetKbps(BluRayJob job, IReadOnlyList<SourceInfo> sources, Action<string> log)
     {
         var enc = job.Encode ?? new EncodeOptions();
-        if (job.Uhd) return 0; // 4K discs take the HEVC source as it is
-        if (enc.BdKbps > 0) return Math.Clamp(enc.BdKbps, 2000, 35000);
+        var top = job.Uhd ? 60000 : 35000; // x265 on a 4K disc, x264 at level 4.1 on a Blu-ray
+        if (enc.BdKbps > 0) return Math.Clamp(enc.BdKbps, 2000, top);
         if (!enc.FitDisc || job.CapacityGB <= 0) return 0;
         var seconds = sources.Sum(s => s.Duration);
         var room = job.CapacityGB * 1e9 - AudioAndMenuBytes(job, sources);
@@ -297,7 +297,7 @@ public static class BluRay
             log($"fit disc: the source ({asIs / 1e9:0.0} GB) fits as it is");
             return 0;
         }
-        var kbps = (int)Math.Clamp(room * 8 / seconds / 1000 * 0.94, 2000, 35000);
+        var kbps = (int)Math.Clamp(room * 8 / seconds / 1000 * 0.94, 2000, top);
         log($"fit disc: {asIs / 1e9:0.0} GB do not fit {job.CapacityGB:0.#} GB, re-encoded at {kbps} kb/s");
         if (room * 8 / seconds / 1000 * 0.94 < 2000) log("warning: even at the lowest bit rate this does not fit the disc");
         return kbps;
@@ -488,15 +488,12 @@ public static class BluRay
         var fpsOk = Math.Abs(s.Fps - 23.976) < 0.01 || Math.Abs(s.Fps - 24) < 0.01 || Math.Abs(s.Fps - 25) < 0.01;
         var (w, h) = VideoSize(job);
         var enc = job.Encode ?? new EncodeOptions();
-        // a cut that starts later must be re-encoded to begin on the exact frame (a copy starts on the keyframe before it); a 4K disc is never re-encoded, so it is copied
-        var copyCut = title.Start == 0 || job.Uhd;
+        // a cut that starts later must be re-encoded to begin on the exact frame (a copy starts on the keyframe before it); a 4K passthrough copies it anyway
+        var copyCut = title.Start == 0 || (job.Uhd && !enc.ForceReencode && kbps == 0);
         // a 4K source is 10-bit HEVC at its own levels: only the H.264 of a Blu-ray has a player's limits to check
         var videoOk = !enc.ForceReencode && kbps == 0 && copyCut && (job.Uhd ? s.VideoCodec == "hevc" : s.PlayerReadyH264) && s.Width == w && s.Height == h && fpsOk
                       && title.Effects is null or { IsEmpty: true }; // effects are drawn into the picture, so it is made again
-        if (job.Uhd && !videoOk)
-            // shortcut: UHD sources must already be 2160p HEVC; HDR-aware re-encoding is not implemented yet
-            throw new NotSupportedException("UHD needs a 3840x2160 HEVC source at 23.976/24/25 fps");
-        if (job.Uhd && title.Start > 0) log($"{title.DisplayName}: 4K is not re-encoded, so the cut starts on the keyframe before {Timecode.Format(title.Start)}");
+        if (job.Uhd && videoOk && title.Start > 0) log($"{title.DisplayName}: 4K is not re-encoded, so the cut starts on the keyframe before {Timecode.Format(title.Start)}");
 
         // -ss / -t before -i cut the input itself: the video, the sound and the subtitle files written below all start and stop together
         var args = new List<string> { "-y", "-v", "warning" };
@@ -507,8 +504,17 @@ public static class BluRay
         if (videoOk) args.AddRange(["-c:v", "copy"]);
         else args.AddRange(["-vf", title.Effects is { IsEmpty: false } fx ? fx.Vf(s.Width, s.Height, title.Start, Fit(w, h)) : Fit(w, h),
                             "-r", DiscRate(s.Fps).Ffmpeg,
-                            "-c:v", "libx264", "-preset", enc.Preset, "-pix_fmt", "yuv420p"]);
-        if (!videoOk)
+                            "-c:v", job.Uhd ? "libx265" : "libx264", "-preset", enc.Preset, "-pix_fmt", job.Uhd ? "yuv420p10le" : "yuv420p"]);
+        if (!videoOk && job.Uhd)
+        {
+            // 10-bit HEVC at level 5.1, 100 Mb/s at most. The colours are named here: ffmpeg does not pass them on through the scaler; the HDR10 mastering
+            // and light levels come from the source's frames. shortcut: Dolby Vision keeps only its HDR10 base layer (a profile 5 source has no such base and comes out wrong)
+            var colors = s.Hdr switch { "HDR10" or "Dolby Vision" => "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:hdr10=1", "HLG" => "colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc", _ => "colorprim=bt709:transfer=bt709:colormatrix=bt709" };
+            var maxrate = kbps > 0 ? Math.Clamp(kbps + kbps / 2, 40000, 100000) : 100000;
+            args.AddRange(kbps > 0 ? ["-b:v", kbps.ToString(Inv) + "k"] : ["-crf", Math.Clamp(enc.Crf, 10, 28).ToString(Inv)]);
+            args.AddRange(["-x265-params", $"log-level=error:{colors}:uhd-bd=1:repeat-headers=1:aud=1:keyint=24:vbv-maxrate={maxrate}:vbv-bufsize={maxrate}"]);
+        }
+        else if (!videoOk)
         {
             // a rate asked for or fitted to the disc: average bit rate with a ceiling; else constant quality. 40 Mb/s is the level 4.1 limit
             var maxrate = kbps > 0 ? Math.Clamp(kbps + kbps / 4, 30000, 40000) : 30000;

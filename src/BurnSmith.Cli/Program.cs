@@ -1230,7 +1230,7 @@ var titles = videos.Select((v, k) =>
                           Own("--effects") is { } fx ? System.Text.Json.JsonSerializer.Deserialize<VideoEffects>(File.ReadAllText(fx)) : null); // --effects FILE.json: the video editor's settings (VideoEffects, by property name)
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
-// bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (fit = "Adapter au disque"),
+// bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (fit = "Adapter au disque"; up to 60000 with --uhd, where --reencode = "Conversion"),
 //     --capacity GB (usable size, instead of the profile's), --play-mode 0|1|2 (menu then all titles | first title then all | back to the menu) [--no-rewind] (DVD too)
 // dvd: --pal | --ntsc (default: as the first video), --4x3 (4:3 titles, the menu stays 16:9)
 var profile = BdProfile.Find(Opt("--profile") ?? "BD25");

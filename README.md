@@ -21,7 +21,7 @@ Avant de graver, BurnSmith **contrôle le disque qu'il vient de construire** (fi
 ### Rapide, rien à installer en plus pour le Blu-ray
 
 - **Un seul installateur** : tsMuxeR et les modèles sont dedans, et il trouve ffmpeg sur le PC ou le télécharge. Le Blu-ray ne demande rien d'autre ; le DVD demande deux outils en plus (voir *Démarrer*). Pas de logiciel de gravure à ajouter : l'ISO et la gravure passent par Windows (IMAPI2).
-- **On ne réencode pas ce qu'on peut garder.** Une vidéo Blu-ray déjà conforme est recopiée telle quelle ; avec *Adapter au disque*, elle reste intacte tant qu'elle tient sur le disque et n'est refaite qu'au débit qui le remplit si elle est trop grosse. Le 4K n'est jamais réencodé.
+- **On ne réencode pas ce qu'on peut garder.** Une vidéo Blu-ray déjà conforme est recopiée telle quelle ; avec *Adapter au disque*, elle reste intacte tant qu'elle tient sur le disque et n'est refaite qu'au débit qui le remplit si elle est trop grosse. En 4K, *Passthrough* garde la vidéo HEVC telle quelle ; *Conversion* la refait en HEVC 10 bits.
 
 ### 144 modèles de menu
 

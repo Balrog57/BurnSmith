@@ -8,7 +8,7 @@ public sealed record Output(string Name, double Gb, double Usable, bool Hd720 = 
     public override string ToString() => $"{Name} ({Gb:0.#} Go)";
 
     public static readonly Output[] Dvds = [new("DVD-5", 4.7, 4.2), new("DVD-9", 8.5, 7.6)];
-    public static readonly Output[] Uhds = [new("BD-66", 66, 61), new("BD-100", 100, 93)];
+    public static readonly Output[] Uhds = [new("BD100 2160p", 100, 93), new("BD66 2160p", 66, 61), new("BD50 2160p", 50, 46.5), new("BD25 2160p", 25, 23.3)];
     public static readonly Output[] Bds = BdProfile.All.Select(p => new Output(p.Name, p.Gb, p.UsableGb, p.Hd720)).ToArray();
 
     /// <summary>BD25 1080p/i, what a new project starts with.</summary>

@@ -361,7 +361,7 @@ public partial class MainWindow : Window
             est = Estimate(cap, encode) ?? titles.Sum(t => Tools.SizeOf(t.Path) * t.OnDisc.Duration / t.Info.Duration) / 1e9;
             if (est > cap.Usable) note = "\ntrop grand pour ce support";
             if (titles.Any(t => !File.Exists(t.Path))) note = "\nune vidéo source est introuvable";
-            if (kind == "uhd" && titles.Any(t => t.Info.VideoCodec != "hevc" || t.Info.Height != 2160)) note = "\nles sources doivent être en HEVC 2160p";
+            if (kind == "uhd" && !encode.ForceReencode && titles.Any(t => t.Info.VideoCodec != "hevc" || t.Info.Height != 2160)) note = "\nPassthrough : sources HEVC 2160p seulement";
         }
         CapBar.Value = Math.Min(100, est / cap.Gb * 100);
         CapText.Text = $"{est:0.00} Go / {cap.Usable:0.#} Go utilisables{note}";
