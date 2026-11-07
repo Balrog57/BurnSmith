@@ -1096,6 +1096,7 @@ if (a.Count >= 1 && a[0] == "check-library")
         .Select(b => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(b.Normal!))))
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
     var libraryProblems = 0;
+    var packButtonPictures = new HashSet<string>(StringComparer.OrdinalIgnoreCase); // the pictures the packs offer: the library must give each back
     foreach (var pack in TemplatePack.Scan())
     {
         foreach (var asset in pack.Assets.Where(x => x.Role == "background"))
@@ -1116,13 +1117,17 @@ if (a.Count >= 1 && a[0] == "check-library")
                 if (!File.Exists(focusFile) || MenuRenderer.Size(focusFile) == null) continue;
             }
             var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(file)));
-            if (buttonHashes.Contains(hash)) continue;
+            if (!packButtonPictures.Add(hash) || buttonHashes.Contains(hash)) continue; // shared with another pack, or already given back
             Console.WriteLine($"FAIL bouton absent de la bibliothèque : {pack.Category} | {pack.Name} -> {asset.Path}");
             libraryProblems++;
         }
     }
     Console.WriteLine($"{libraryBackgrounds.Count} fonds, {libraryButtons.Count} boutons, {libraryProblems} problème(s)");
-    return libraryProblems == 0 && libraryBackgrounds.Count > 0 && libraryButtons.Count > ElementLibrary.ButtonStyles.Length ? 0 : 1;
+    // a machine whose templates carry pictures only (the open library) has no button picture to give back: the styles alone are then the whole
+    // button list, and asking for one more would fail that machine for having fewer templates, not for losing a picture
+    var pictureButtonsNeeded = packButtonPictures.Count > 0;
+    var pictureButtonsOffered = libraryButtons.Count > ElementLibrary.ButtonStyles.Length;
+    return libraryProblems == 0 && libraryBackgrounds.Count > 0 && pictureButtonsNeeded == pictureButtonsOffered ? 0 : 1;
 }
 
 // burnsmith templates : every template found, and the ones that cannot be drawn with the reason
