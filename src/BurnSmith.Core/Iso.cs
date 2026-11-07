@@ -46,9 +46,10 @@ public static class Iso
         if (!File.Exists(iso)) throw new FileNotFoundException("image not found", iso);
         if (drive.Length < 2 || !char.IsAsciiLetter(drive[0]) || drive[1] != ':') throw new ArgumentException("drive must look like F:", nameof(drive));
         log?.Invoke($"burn: ImgBurn {Path.GetFileName(iso)} -> {drive[..2]} ({new FileInfo(iso).Length / 1e9:0.00} GB)");
-        // shortcut: untested on real media; its window stays up so the user can answer its dialogs (insert a disc...), and no progress reaches the app
-        Tools.WithCancel(cancel, () => Tools.Run(exe, ["/MODE", "WRITE", "/SRC", iso, "/DEST", drive[..2].ToUpperInvariant(), "/SPEED", "MAX", "/VERIFY", "YES",
-            "/NOIMAGEDETAILS", "/NOSAVELOG", "/START", "/CLOSE"]));
+        // DVDFab's switches (DVDFab64.exe): no question asked, it waits for a disc, closes on success and stays open on an error so the user can read it.
+        // shortcut: untested on real media, and no progress reaches the app (ImgBurn's window shows it)
+        Tools.WithCancel(cancel, () => Tools.Run(exe, ["/MODE", "ISOWRITE", "/WAITFORMEDIA", "/START", "/CLOSESUCCESS", "/IGNORELOCKVOLUME", "/NOIMAGEDETAILS",
+            "/VERIFY", "YES", "/DEST", drive[..1].ToUpperInvariant(), "/SPEED", "MAX", "/SRC", iso]));
         log?.Invoke("done: disc written");
     }
 }
