@@ -107,9 +107,9 @@ if (a.Count >= 1 && a[0] == "check-highlights")
 
     var hlContent = new MenuContent(1, null, Enumerable.Repeat<string?>(null, 4).ToList(), null, ["Français AC-3 mono", "English AC-3 mono"], ["Français"]);
 
-    // (a) an installed DVDFab DVD model names its highlighted artwork for each button that has one
-    var hlModel = TemplateCatalog.Scan().Usable.Select(f => f.Design).FirstOrDefault(d => d.TemplateDir != null && d.Category.Contains("DVDFab DVD"));
-    if (hlModel == null) Console.WriteLine("ok   (aucun modèle DVDFab DVD installé : la vérification du modèle est sautée)");
+    // (a) an installed DVD template names its highlighted artwork for each button that has one
+    var hlModel = TemplateCatalog.Scan().Usable.Select(f => f.Design).FirstOrDefault(d => d.TemplateDir != null && d.Kind == TemplateKind.Dvd);
+    if (hlModel == null) Console.WriteLine("ok   (aucun modèle DVD installé : la vérification du modèle est sautée)");
     else
     {
         var hlPages = MenuBuilder.Build(hlModel, hlContent);
@@ -179,11 +179,11 @@ if (a.Count >= 1 && a[0] == "check-highlights")
           hlCanvas.Pixels[3 * 16 + 4] == 1 && hlCanvas.Pixels[3 * 16 + 7] == 1 && hlCanvas.Pixels[3 * 16 + 8] == 0 && hlCanvas.Pixels[0] == 0);
 
     // (c) a design without a model has no artwork at all: Dvd.cs keeps its four-colour frame there
-    var hlPlain = TemplateCatalog.Find("Cinema Dark") ?? new MenuDesign();
+    var hlPlain = TemplateCatalog.Find("Nuit d'encre") ?? new MenuDesign();
     Check("un modèle sans artwork garde le cadre à quatre couleurs (aucune image de surbrillance nommée)",
           hlPlain.TemplateDir == null && MenuBuilder.Build(hlPlain, hlContent).All(p => p.Buttons.All(b => b.DvdHighlightImage == null)));
 
-    // les trois styles de surbrillance de DVDFab (EButtonSelectedHighlightType) : cadre, soulignement, texte en couleur
+    // the three highlight styles: a box, an underline, or the label in colour
     var hlPageRoot = MenuBuilder.Build(hlPlain, hlContent).First(q => q.Id == "root");
     var hlBtn = hlPageRoot.Buttons.First(b => b.Id == "play");
     var hlName = hlPageRoot.Ops.OfType<Label>().First(l => l.Rect == hlBtn.Rect).Value;
@@ -198,7 +198,7 @@ if (a.Count >= 1 && a[0] == "check-highlights")
     Check("le style « texte en couleur » ne dessine pas de cadre : son image est plus légère que celle du cadre",
           hlShots["textcolor"].Length < hlShots["box"].Length);
 
-    // couleur de sélection distincte et transparence (DVDFab : selected_custom_style_color, selected_default_transparency)
+    // a selection colour of its own, and the fill transparency
     var hlInk = hlPlain.Clone();
     hlInk.SelectionColor = "#00FF00";
     hlInk.HighlightStyle = "underline";
@@ -320,14 +320,14 @@ if (a.Count >= 1 && a[0] == "check-elements")
           elBack.Elements.Count == elButton.Elements.Count && elBack.Elements[^1] is { Kind: "button", Target: "scenes1", Text: "Scènes" }
           && elBack.Elements[0].X == elButton.Elements[0].X && elBack.Title == elButton.Title);
 
-    // la page de scènes en liste : les lignes se posent aux rectangles que le modèle donne (Yuhan ListTypeText)
-    var yuhan = TemplateCatalog.Scan().Usable.Select(f => f.Design).FirstOrDefault(x => x.Category.Contains("Yuhan"));
-    if (yuhan == null) Console.WriteLine("ok   (aucun thème Yuhan installé : vérification du mode liste sautée)");
+    // la page de scènes en liste : les lignes se posent aux rectangles que le modèle donne
+    var theme = TemplateCatalog.Scan().Usable.Select(f => f.Design).FirstOrDefault(x => x.Kind == TemplateKind.Theme);
+    if (theme == null) Console.WriteLine("ok   (aucun thème installé : vérification du mode liste sautée)");
     else
     {
         var ten = new MenuContent(1, null, [], Enumerable.Range(1, 10).Select(i => new TitleEntry($"Episode {i}", i, null)).ToList(), ["Français AC-3"], []);
-        var grid = MenuBuilder.Build(yuhan.Clone(), ten).First(q => q.Id == "scenes1");
-        var listed = yuhan.Clone();
+        var grid = MenuBuilder.Build(theme.Clone(), ten).First(q => q.Id == "scenes1");
+        var listed = theme.Clone();
         listed.SceneList = true;
         var listPage = MenuBuilder.Build(listed, ten).First(q => q.Id == "scenes1");
         Check("le mode liste tient dix lignes là où la grille n'en tient que quelques-unes, aux positions du thème",
@@ -362,7 +362,7 @@ if (a.Count >= 1 && a[0] == "check-elements")
     Check("a saved model keeps its page backgrounds", System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(System.Text.Json.JsonSerializer.Serialize(pbDesign))!.PageBackgrounds["scenes"] == pbPng);
 
     // a button drawn from a library picture, selected with its own picture (any two library pictures stand in for a button and its "sub" twin)
-    var elShown = ElementLibrary.Backgrounds().Where(x => x.Source == ElementLibrary.Shipped).Take(2).ToList();
+    var elShown = ElementLibrary.Backgrounds().Where(x => x.Source == ElementLibrary.Open).Take(2).ToList();
     Check("la bibliothèque livre des images pour les essais qui suivent", elShown.Count == 2);
     if (elShown.Count == 2)
     {
@@ -407,12 +407,12 @@ if (a.Count >= 1 && a[0] == "check-elements")
         }
         finally { ElementLibrary.RemoveButton(imported); }
         Check("retirer un bouton importé supprime l'image et sa sélection", !File.Exists(imported.Normal!) && !File.Exists(imported.Focus!));
-        Check("un bouton de modèle n'est pas à la bibliothèque de le supprimer", Throws(() => ElementLibrary.RemoveButton(new ElementLibrary.ButtonItem("x", "DVDFab", normalPic))));
+        Check("un bouton de modèle n'est pas à la bibliothèque de le supprimer", Throws(() => ElementLibrary.RemoveButton(new ElementLibrary.ButtonItem("x", "Thème", normalPic))));
         Check("un fichier qui n'est pas une image est refusé à l'import", Throws(() => ElementLibrary.ImportButton(Path.GetFullPath("check-elements.txt"))));
     }
 
     // what a design stores for a picture that travels in the exe works on any PC; a plain path is left alone
-    Check("une référence « lib: » revient au même fichier", ElementLibrary.Backgrounds().FirstOrDefault(x => x.Source == ElementLibrary.Shipped) is { } libPic && ElementLibrary.Resolve(ElementLibrary.Reference(libPic.Path)) == libPic.Path && ElementLibrary.Reference(libPic.Path).StartsWith("lib:"));
+    Check("une référence « lib: » revient au même fichier", ElementLibrary.Backgrounds().FirstOrDefault(x => x.Source == ElementLibrary.Open) is { } libPic && ElementLibrary.Resolve(ElementLibrary.Reference(libPic.Path)) == libPic.Path && ElementLibrary.Reference(libPic.Path).StartsWith("lib:"));
     Check("une référence « carried: » se range sous le dossier des images des modèles, ou ne mène à rien quand l'exe n'en porte pas",
           Tools.TemplatesDir() is { } carriedRoot ? ElementLibrary.Resolve("carried:x/y.png") == Path.Combine(carriedRoot, "x", "y.png") : ElementLibrary.Resolve("carried:x/y.png") == null);
     Check("un chemin ordinaire reste tel quel", ElementLibrary.Resolve(@"C:\a\b.png") == @"C:\a\b.png" && ElementLibrary.Resolve(null) == null);
@@ -707,14 +707,14 @@ if (a.Count >= 1 && a[0] == "check-edit")
     }
     finally { Directory.Delete(discDir, true); }
     // the intro: a movie object added after the others (the film's keep their numbers), and First Playback pointing at it without moving a byte of the index
-    var films = BurnSmith.Core.Hdmv.HdmvNav.MovieObjects([[BurnSmith.Core.Hdmv.HdmvCommand.PlayPl(1)], [BurnSmith.Core.Hdmv.HdmvCommand.PlayPl(2)]]);
-    var withIntro = Bdmv.AppendObject(films, out var introObject, BurnSmith.Core.Hdmv.HdmvCommand.PlayPl(98), BurnSmith.Core.Hdmv.HdmvCommand.JumpTitle(0));
-    var plain = BurnSmith.Core.Hdmv.HdmvNav.Index([0, 1], 2, 3, 6, 1);
+    var films = BurnSmith.Core.Disc.MovieObjectFile.Write([[BurnSmith.Core.Disc.Nav.PlayPlaylist(1)], [BurnSmith.Core.Disc.Nav.PlayPlaylist(2)]]);
+    var withIntro = Bdmv.AppendObject(films, out var introObject, BurnSmith.Core.Disc.Nav.PlayPlaylist(98), BurnSmith.Core.Disc.Nav.JumpTitle(0));
+    var plain = BurnSmith.Core.Disc.MovieObjectFile.Index([0, 1], 2, 3, 6, 1);
     var started = Bdmv.FirstPlayToObject(plain, 7);
     var tableAt = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(plain.AsSpan(8)) + 4;
     Check("an intro adds a movie object (number 2 after the film's 0 and 1, which keep their commands) that plays playlist 98 then jumps to the top menu; the index then starts on that object and nothing else of it changes",
           introObject == 2 && System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(withIntro.AsSpan(48)) == 3 && withIntro.Length == films.Length + 4 + 24
-          && Bdmv.PrependToFilm(withIntro, BurnSmith.Core.Hdmv.HdmvCommand.SetStreams(subtitle: 1)).Length == withIntro.Length + 12
+          && Bdmv.PrependToFilm(withIntro, BurnSmith.Core.Disc.Nav.SelectStreams(subtitle: 1)).Length == withIntro.Length + 12
           && System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(started.AsSpan(tableAt + 6)) == 7 && started.Length == plain.Length
           && Enumerable.Range(0, plain.Length).Where(k => plain[k] != started[k]).All(k => k >= tableAt && k < tableAt + 12));
     var dts = new AudioTrack(0, "dts", 6, "", "");
@@ -887,11 +887,11 @@ if (a.Count >= 1 && a[0] == "check-edit")
     Check("cut cues: before dropped, straddling cue shortened and moved, later ones dropped, renumbered",
           ExternalSubtitle.Cut(cues, 6, 8) == "1\n00:00:00,000 --> 00:00:02,500\nstraddles\nthe start\n\n2\n00:00:06,000 --> 00:00:08,000\nkept\n\n" && ExternalSubtitle.Cut(cues, 9, 2) == "" && ExternalSubtitle.Cut(cues, 0, 100).Contains("4\n00:00:17,000 --> 00:00:19,000\nafter"));
     // a PGS stream built by hand: 8x4 picture (1 = white, 2 = black, 0 = nothing), shown at 1 s and 5 s, cleared at 3 s and 8 s
-    static byte[] Segment(byte kind, double seconds, params byte[] body) => BurnSmith.Core.Hdmv.Pgs.Segment(kind, (uint)(seconds * 90000), (uint)(seconds * 90000), body);
+    static byte[] Segment(byte kind, double seconds, params byte[] body) => BurnSmith.Core.Disc.PgsStream.Segment(kind, (uint)(seconds * 90000), (uint)(seconds * 90000), body);
     static byte[] Be(int value, int bytes) => [.. Enumerable.Range(0, bytes).Select(i => (byte)(value >> 8 * (bytes - 1 - i)))];
     byte[] SupSet(double at, bool shown, int x = 100, int y = 900, bool split = false)
     {
-        var picture = BurnSmith.Core.Hdmv.Pgs.Rle([1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 0, 1, 1, 0, 0, 2, 2, 0, 1, 2, 1, 2, 1, 2, 1, 2], 8, 4);
+        var picture = BurnSmith.Core.Disc.PgsStream.Pack([1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 0, 1, 1, 0, 0, 2, 2, 0, 1, 2, 1, 2, 1, 2, 1, 2], 8, 4);
         byte[] placed = shown ? [.. Be(0, 2), 0, 0, .. Be(x, 2), .. Be(y, 2)] : [];
         byte[] composition = [.. Be(1920, 2), .. Be(1080, 2), 0x10, .. Be(1, 2), (byte)(shown ? 0x80 : 0), 0, 0, (byte)(shown ? 1 : 0), .. placed];
         var set = new List<byte[]> { Segment(0x16, at, composition), Segment(0x17, at, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0) };
@@ -1046,9 +1046,9 @@ if (a.Count >= 1 && a[0] == "check-edit")
     Check("default subtitle: its 1-based number among the tracks on the disc, 0 when none, not chosen or not carried",
           new DiscTitle("x", DefaultSubtitle: 2).DefaultSubtitleNumber(carried) == 2 && new DiscTitle("x", DefaultSubtitle: 0).DefaultSubtitleNumber(carried) == 1 && new DiscTitle("x").DefaultSubtitleNumber(carried) == 0 && new DiscTitle("x", DefaultSubtitle: 1).DefaultSubtitleNumber(carried) == 0);
     byte[] cmdA = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], cmdB = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], cmdC = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3];
-    var movieObjects = Bdmv.PrependToFilm(BurnSmith.Core.Hdmv.HdmvNav.MovieObjects([[cmdA, cmdB], [cmdC]]), cmdC);
+    var movieObjects = Bdmv.PrependToFilm(BurnSmith.Core.Disc.MovieObjectFile.Write([[cmdA, cmdB], [cmdC]]), cmdC);
     Check("a command put first in the film's movie object: object 0 gains it before its own, the others stay, the file stays valid",
-          movieObjects.Length == BurnSmith.Core.Hdmv.HdmvNav.MovieObjects([[cmdC, cmdA, cmdB], [cmdC]]).Length && movieObjects.SequenceEqual(BurnSmith.Core.Hdmv.HdmvNav.MovieObjects([[cmdC, cmdA, cmdB], [cmdC]]))
+          movieObjects.Length == BurnSmith.Core.Disc.MovieObjectFile.Write([[cmdC, cmdA, cmdB], [cmdC]]).Length && movieObjects.SequenceEqual(BurnSmith.Core.Disc.MovieObjectFile.Write([[cmdC, cmdA, cmdB], [cmdC]]))
           && new Func<bool>(() => { try { Bdmv.PrependToFilm([1, 2, 3], cmdA); return false; } catch (InvalidDataException) { return true; } })());
     var order = DiscTitle.MainFirst([new("b1.mkv", Bonus: true), new("m1.mkv"), new("b2.mkv", Bonus: true), new("m2.mkv")]);
     Check("disc order: the feature first, then the bonus, each group in its own order", string.Join(',', order.Select(t => t.Video)) == "m1.mkv,m2.mkv,b1.mkv,b2.mkv");
@@ -1060,11 +1060,69 @@ if (a.Count >= 1 && a[0] == "check-edit")
     static bool Throws(Action act) { try { act(); return false; } catch (ArgumentException) { return true; } }
 }
 
-// burnsmith pack-templates <out.zip> : zips the DVDFab / Leawo template pictures and layouts found on this PC (publish.ps1 embeds the zip in the exe)
+// burnsmith pack-templates <out.zip> : zips the template pictures and layouts found on this PC (publish.ps1 embeds the zip in the exe)
 if (a.Count >= 2 && a[0] == "pack-templates")
 {
     Console.WriteLine($"{TemplateCatalog.Pack(Path.GetFullPath(a[1]), Console.WriteLine)} templates packed");
     return 0;
+}
+
+// burnsmith convert-templates [--out DIR] [--force] : converts every template found on this PC to the single pack format
+// (template.json + PNG backgrounds / buttons / images, in Documents\BurnSmith\Templates\converted), then checks every pack
+if (a.Count >= 1 && a[0] == "convert-templates")
+{
+    var packRootOut = Opt("--out") is { } packOut ? Path.GetFullPath(packOut) : null;
+    var result = TemplatePack.ConvertAll(Console.WriteLine, packRootOut, a.Contains("--force"));
+    Console.WriteLine($"{result.Converted} converted, {result.Skipped} kept, {result.Failed} failed");
+    foreach (var message in result.Messages) Console.Error.WriteLine(message);
+    return result.Failed == 0 ? 0 : 1;
+}
+// burnsmith check-conversion : every pack is readable, its pictures are there, and each has at least one background and one button
+if (a.Count >= 1 && a[0] == "check-conversion")
+{
+    var (packs, ok, packProblems) = TemplatePack.Verify();
+    foreach (var problem in packProblems) Console.WriteLine($"FAIL {problem}");
+    Console.WriteLine($"{ok}/{packs} packs without a problem");
+    return packProblems.Count == 0 && packs > 0 ? 0 : 1;
+}
+
+// burnsmith check-library : every background and button picture of every converted pack is offered by the library
+if (a.Count >= 1 && a[0] == "check-library")
+{
+    var (libraryTemplates, _) = TemplateCatalog.Scan();
+    var libraryBackgrounds = ElementLibrary.Backgrounds((libraryTemplates, []));
+    var libraryButtons = ElementLibrary.Buttons((libraryTemplates, []));
+    var buttonHashes = libraryButtons.Where(b => b.Normal != null)
+        .Select(b => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(b.Normal!))))
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var libraryProblems = 0;
+    foreach (var pack in TemplatePack.Scan())
+    {
+        foreach (var asset in pack.Assets.Where(x => x.Role == "background"))
+        {
+            var file = Path.Combine(pack.Dir, asset.Path.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(file)) continue; // already reported by check-conversion
+            if (libraryBackgrounds.Any(b => b.Path.Equals(file, StringComparison.OrdinalIgnoreCase))) continue;
+            Console.WriteLine($"FAIL fond absent de la bibliothèque : {pack.Category} | {pack.Name} -> {asset.Path}");
+            libraryProblems++;
+        }
+        foreach (var asset in pack.Assets.Where(x => x.Role == "button"))
+        {
+            var file = Path.Combine(pack.Dir, asset.Path.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(file) || MenuRenderer.Size(file) == null) continue; // absent or damaged: the library leaves it out too
+            if (asset.Focus is { } focusRelative)
+            {
+                var focusFile = Path.Combine(pack.Dir, focusRelative.Replace('/', Path.DirectorySeparatorChar));
+                if (!File.Exists(focusFile) || MenuRenderer.Size(focusFile) == null) continue;
+            }
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(file)));
+            if (buttonHashes.Contains(hash)) continue;
+            Console.WriteLine($"FAIL bouton absent de la bibliothèque : {pack.Category} | {pack.Name} -> {asset.Path}");
+            libraryProblems++;
+        }
+    }
+    Console.WriteLine($"{libraryBackgrounds.Count} fonds, {libraryButtons.Count} boutons, {libraryProblems} problème(s)");
+    return libraryProblems == 0 && libraryBackgrounds.Count > 0 && libraryButtons.Count > ElementLibrary.ButtonStyles.Length ? 0 : 1;
 }
 
 // burnsmith templates : every template found, and the ones that cannot be drawn with the reason
@@ -1105,7 +1163,7 @@ var design = a.Contains("--no-menu") ? null
     : (TemplateCatalog.Find(Opt("--design")) ?? (Opt("--design") is { } unknown ? throw new InvalidOperationException($"unknown template: {unknown}") : TemplateCatalog.Default())).Clone();
 if (design != null && Opt("--title") is { } title) design.Title = title;
 if (design != null && Opt("--highlight") is { } hlStyle) design.HighlightStyle = hlStyle; // box | underline | textcolor
-if (design != null && a.Contains("--list")) design.SceneList = true; // page de scènes en liste (modèles Yuhan qui la décrivent)
+if (design != null && a.Contains("--list")) design.SceneList = true; // page de scènes en liste (modèles qui la décrivent)
 if (design != null && a.Contains("--animated-thumbs")) design.AnimatedThumbs = true; // vignettes animées (DVD : un extrait par case)
 if (design != null && Opt("--credits") is { } credits) design.Credits = credits.Replace('|', '\n'); // --credits "Directed by A|Music by B"
 // --page-bg KIND=PICTURE (repeatable; KIND = root | scenes | settings | credits | bonus): that kind of page gets its own background picture

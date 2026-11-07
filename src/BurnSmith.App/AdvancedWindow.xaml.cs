@@ -5,7 +5,7 @@ using BurnSmith.Core;
 namespace BurnSmith.App;
 
 /// <summary>
-/// DVDFab's "Paramètres avancés": the disc (<see cref="Output"/>, shared with the main window's list), the picture quality, how the menu plays the titles,
+/// The advanced settings: the disc (<see cref="Output"/>, shared with the main window's list), the picture quality, how the menu plays the titles,
 /// chapter spacing and the x264 settings. What only a Blu-ray has is hidden for a DVD, and the picture quality for a 4K disc (its HEVC is kept as it is).
 /// </summary>
 public partial class AdvancedWindow : Window

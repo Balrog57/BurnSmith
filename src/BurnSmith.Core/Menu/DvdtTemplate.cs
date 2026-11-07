@@ -4,12 +4,12 @@ using System.Text.RegularExpressions;
 namespace BurnSmith.Core.Menu;
 
 /// <summary>
-/// DVDStyler menu templates (<c>.dvdt</c>, GPL; shipped in the exe with their notices) translated into the template tree
+/// Menu templates stored as <c>.dvdt</c> files, translated into the template tree
 /// <see cref="InstalledTemplate"/> draws: the background picture, the title and button text with the template's font, colour and position,
-/// and the thumbnail positions of its scene page. DVDStyler draws its buttons as SVG snippets; BurnSmith draws plain text buttons and
+/// and the thumbnail positions of its scene page. The format draws its buttons as SVG snippets; BurnSmith draws plain text buttons and
 /// thumbnails at the same places, so the result is close to the template, not identical.
 /// </summary>
-static partial class DvdStylerTemplate
+static partial class DvdtTemplate
 {
     [GeneratedRegex(@"-?\d+(\.\d+)?")]
     private static partial Regex Number();
@@ -44,11 +44,12 @@ static partial class DvdStylerTemplate
     static XNode El(string name, params (string Key, string Value)[] attrs) => new(name, attrs.ToDictionary(a => a.Key, a => a.Value));
     static XNode Leaf(string name, string text) { var n = El(name); n.Content.Append(text); return n; }
 
-    /// <summary>The template tree, or null when the file is not a DVDStyler template; <paramref name="problem"/> says why one cannot be drawn.</summary>
+    /// <summary>The template tree, or null when the file is not a menu template; <paramref name="problem"/> says why one cannot be drawn.</summary>
     public static XNode? Convert(XNode doc, string stem, out string? problem)
     {
         problem = null;
-        if (doc.Child("dvdstyler") is not { } root) return null;
+        // the file's own root carries the menus, whatever it is called
+        if (doc.Kids.FirstOrDefault(r => Walk(r).Any(w => w.Node.Name == "menu")) is not { } root) return null;
         var menus = Walk(root).Where(w => w.Node.Name == "menu").Select(w => w.Node).ToList();
         if (menus.Count < 1) { problem = "pas de menu dans le modèle"; return null; }
         var main = menus[0];
@@ -155,7 +156,7 @@ static partial class DvdStylerTemplate
         }
         if (rootNode.Child("play") == null || rootNode.Child("scenes") == null) { problem = "boutons du menu principal illisibles"; return null; }
 
-        // the focus colour DVDStyler gives the buttons when selected
+        // the focus colour the template gives the buttons when selected
         var accent = Walk(main).Select(x => x.Node).Where(x => x.Name == "parameter").Select(x => x.Attr("selected")).FirstOrDefault(c => c.StartsWith('#') && c.Length == 7);
         common.Kids.Add(Leaf("accent", accent ?? "#FFC83D"));
         common.Kids.Add(Leaf("ui_color", uiColor));

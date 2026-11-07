@@ -32,11 +32,16 @@
       <ColumnDefinition Width="330"/>
     </Grid.ColumnDefinitions>
 
-    <!-- the library, as in DVDStyler: templates, then backgrounds and buttons apart -->
+    <!-- the library: templates, then backgrounds and buttons apart -->
     <TabControl x:Name="Library">
       <TabItem Header="Modèles">
         <DockPanel>
-          <Button DockPanel.Dock="Bottom" Content="Ajouter un dossier…" Margin="0,8,0,0" HorizontalAlignment="Stretch" Click="OnAddFolder"/>
+          <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <Button Content="Ajouter un dossier…" HorizontalAlignment="Stretch" Click="OnAddFolder"/>
+            <Button x:Name="ConvertBtn" Content="Convertir tous les modèles…" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnConvertAll"
+                    ToolTip="Réunit chaque modèle installé dans un dossier modifiable — template.json + images PNG — sous Documents\BurnSmith\Templates\converted. Un dossier déjà converti est gardé : vos modifications ne sont pas écrasées."/>
+            <TextBlock x:Name="ConvertNote" Margin="0,4,0,0" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+          </StackPanel>
           <ListBox x:Name="BuiltInList" SelectionChanged="OnPick" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
             <ListBox.ItemTemplate>
               <DataTemplate>
@@ -161,7 +166,7 @@
       <TabItem Header="Élément">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="0,8,8,0">
-            <TextBlock Text="Posés à la main sur une page, comme dans DVDStyler. Un bouton se règle ici : image, libellé, page ou film visé." Opacity="0.65" FontSize="11" TextWrapping="Wrap"/>
+            <TextBlock Text="Posés à la main sur une page. Un bouton se règle ici : image, libellé, page ou film visé." Opacity="0.65" FontSize="11" TextWrapping="Wrap"/>
             <WrapPanel Margin="0,8,0,4">
               <Button Content="+ Texte" Click="OnAddText" Margin="0,0,6,6"/>
               <Button Content="+ Image" Click="OnAddImage" Margin="0,0,6,6"/>

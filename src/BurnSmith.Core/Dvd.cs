@@ -308,7 +308,7 @@ public static class Dvd
             File.WriteAllBytes(bg, backgrounds[i]);
             var plain = Path.Combine(work, $"menu_{p.Id}_plain.mpg");
             var sar = pal ? "64/45" : "32/27";
-            // animated thumbnails: each chapter button shows a short excerpt of its chapter inside its own frame (DVDFab's dynamic thumbnail)
+            // animated thumbnails: each chapter button shows a short excerpt of its chapter inside its own frame (a dynamic thumbnail)
             var clips = !loop && job.Menu!.AnimatedThumbs && music == null ? Clips(p, movies) : [];
             if (!loop && clips.Count > 0)
             {
@@ -380,7 +380,7 @@ public static class Dvd
                     catch (InvalidDataException) { return null; } // an unreadable picture must not cost the whole disc: the frame stands in
                 }
                 // the artwork of the hovered state, and the model's own picture for the chosen state when it carries one
-                // (a marker such as DVDFab's selection/0.png is a small glyph: it keeps its own size instead of being stretched to the button)
+                // (a marker such as a small selection glyph: it keeps its own size instead of being stretched to the button)
                 (byte[] Px, int W, int H)? Marker(string? image)
                 {
                     if (image == null) return null;

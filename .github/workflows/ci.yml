@@ -58,9 +58,6 @@ jobs:
       - name: Build, a warning is a failure
         run: dotnet build BurnSmith.slnx -c Release -warnaserror
 
-      - name: Build BurnSmith.HdmvCheck, which is not in the solution
-        run: dotnet build src/BurnSmith.HdmvCheck -c Release -warnaserror
-
       # one check a step: a pwsh step reports only the exit code of its last command
       - name: check-update
         run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-update
@@ -75,15 +72,19 @@ jobs:
       - name: check-highlights
         run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-highlights
 
-      # only the templates in git here (DVD Forge, DVDStyler), no vendor one
+      # only the templates in git here (built-in and open library), no installed one
       - name: check-templates
         run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-templates
+
+      # the single pack format: convert the templates in git, then check every pack and what the library offers from it
+      - name: check-conversion
+        run: |
+          ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe convert-templates --force
+          ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-conversion
+          ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-library
 
       - name: check-bd
         run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-bd --no-dvd
 
       - name: check-reliability
         run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-reliability --no-dvd
-
-      - name: BurnSmith.HdmvCheck
-        run: ./src/BurnSmith.HdmvCheck/bin/Release/net10.0-windows/BurnSmith.HdmvCheck.exe

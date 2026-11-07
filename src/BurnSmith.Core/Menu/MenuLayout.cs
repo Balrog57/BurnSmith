@@ -49,7 +49,7 @@ public sealed record MenuButton(string Id, Box Rect, MenuAction Action)
     /// <summary>The shape of that artwork (<c>frame/0.dvd.mask.png</c>, 1-bit); null = the whole rectangle.</summary>
     public string? DvdHighlightMask { get; init; }
     /// <summary>
-    /// The template's own picture for the <em>chosen</em> state (DVDFab's <c>selection/0.png</c>, spumux's <c>select</c> image, Yuhan's
+    /// The template's own picture for the <em>chosen</em> state (a <c>selection/0.png</c> picture, spumux's <c>select</c> image, a theme's
     /// <c>select</c> attribute). Null = the silhouette of <see cref="DvdHighlightImage"/> stands for both states.
     /// </summary>
     public string? DvdSelectImage { get; init; }
@@ -109,7 +109,7 @@ public static class MenuBuilder
     /// <summary>Pages needed for <paramref name="count"/> buttons, <paramref name="perPage"/> on each.</summary>
     internal static int PageCount(int count, int perPage) => (count + perPage - 1) / perPage;
 
-    /// <summary>The installed template of a design (it can be gone: DVDFab moved or uninstalled).</summary>
+    /// <summary>The installed template of a design (it can be gone: uninstalled or deleted).</summary>
     static InstalledTemplate? Pack(MenuDesign d) => d.TemplateDir == null ? null
         : InstalledTemplate.Load(d.TemplateDir) ?? throw new FileNotFoundException($"Modèle introuvable : {d.TemplateDir} (dossier déplacé ou désinstallé ?)");
 
@@ -435,7 +435,7 @@ public static class MenuBuilder
         var audio = c.AudioNames.Count > 1 ? c.AudioNames : [];
         var subs = c.SubtitleNames;
         var ops = pack?.SetupBackdrop(c.PreviewPicture) ?? []; // a template without audio / subtitle rows: its background, BurnSmith's rows
-        // a template that places the page title or its Back button (Yuhan's ASLangTitleText / Return) has them used where it says
+        // a template that places the page title or its Back button (a theme's ASLangTitleText / Return) has them used where it says
         ops.Add(new Label(d.SettingsLabel, pack?.SetupTitle ?? new Box(0, 60, W, 120), 80, true));
         var buttons = new List<MenuButton>();
         var both = audio.Count > 0 && subs.Count > 0;

@@ -4,7 +4,7 @@ namespace BurnSmith.Core.Menu;
 
 public static class MenuFiles
 {
-    /// <summary>The text drawn on a button, for the highlight styles that recolour it (DVDFab's ChangeTextColor). Null = no label of its own.</summary>
+    /// <summary>The text drawn on a button, for the highlight styles that recolour it (the text-colour highlight style). Null = no label of its own.</summary>
     static string? LabelOf(MenuPage p, MenuButton b) => p.Ops.OfType<Label>().FirstOrDefault(l => l.Rect == b.Rect)?.Value;
 
     /// <summary>

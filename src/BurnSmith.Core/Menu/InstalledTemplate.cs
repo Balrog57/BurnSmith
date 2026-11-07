@@ -25,7 +25,7 @@ sealed class XNode(string name, Dictionary<string, string> attrs)
 }
 
 /// <summary>
-/// Tolerant XML reader: DVDFab's own template files contain mismatched closing tags (<c>&lt;home&gt;Home&lt;/scenes&gt;</c>)
+/// Tolerant XML reader: some template files contain mismatched closing tags (<c>&lt;home&gt;Home&lt;/scenes&gt;</c>)
 /// that XmlDocument refuses. A closing tag that does not match closes the innermost leaf instead.
 /// </summary>
 static partial class LooseXml
@@ -60,7 +60,7 @@ static partial class LooseXml
 }
 
 /// <summary>
-/// A DVDFab Blu-ray menu template (<c>template.bd.xml</c> + its PNGs) turned into <see cref="MenuPage"/>s: same artwork, same positions.
+/// A Blu-ray menu template (<c>template.bd.xml</c> + its PNGs) turned into <see cref="MenuPage"/>s: same artwork, same positions.
 /// The files are read from the user's own installation at run time; nothing of them is stored in BurnSmith.
 /// What the template cannot hold is filled in from the disc: title, chapter pictures and names, audio and subtitle names.
 /// </summary>
@@ -72,75 +72,97 @@ public sealed class InstalledTemplate
     readonly string dir;
     readonly XNode template, common;
 
+    /// <summary>The normalized template tree, as read from any vendor format. The unified pack format saves exactly this tree.</summary>
+    internal XNode Tree => template;
+    /// <summary>The folder the template's own files are read from (a vendor folder, or a converted pack folder).</summary>
+    internal string SourceDir => dir;
+    /// <summary>True when this template was read from BurnSmith's own pack (JSON + PNG assets).</summary>
+    public bool IsPack { get; }
+
     /// <summary>Why BurnSmith cannot draw this template (null = it can).</summary>
     public string? Unsupported { get; }
+    /// <summary>What the template is, which decides how it is read (see <see cref="TemplateKind"/>).</summary>
+    public TemplateKind Kind { get; }
     public string Name { get; }
-    /// <summary>"DVDFab Blu-ray", "DVDFab DVD" or "Leawo".</summary>
+    /// <summary>The neutral group label of <see cref="Kind"/> (see <see cref="TemplateLabel"/>).</summary>
     public string Category { get; }
-    /// <summary>Selection colour the template itself defines (Leawo's highlight), if any.</summary>
+    /// <summary>Selection colour the template itself defines, if any.</summary>
     public string? Accent => common.Child("accent")?.Text is { Length: > 0 } a ? a : null;
     public string? Thumbnail => thumbnail ?? new[] { "thumb4x3.bd.png", "Menu/background01.jpg" }.Select(f => Path.Combine(dir, f)).FirstOrDefault(File.Exists);
-    /// <summary>Colour and font of the template's own texts (DVDStyler's), used for the pages BurnSmith adds.</summary>
+    /// <summary>Colour and font of the template's own texts, used for the pages BurnSmith adds.</summary>
     public string? UiColor => common.Child("ui_color")?.Text is { Length: > 0 } c ? c : null;
     public string? UiFont => common.Child("font")?.Text is { Length: > 0 } f ? f : null;
     readonly string? thumbnail;
     /// <summary>The picture behind the main menu (null when the file is missing or unreadable).</summary>
     public string? BackgroundFile => Asset(template.Child("rootmenu")?.Child("bg")?.Child("image")?.Text);
 
-    InstalledTemplate(string dir, XNode template, string category, string? noLayout = null, string? thumbnail = null)
+    InstalledTemplate(string dir, XNode template, TemplateKind kind, string? noLayout = null, string? thumbnail = null, bool pack = false)
     {
         this.dir = dir;
         this.thumbnail = thumbnail;
         this.template = template;
-        Category = category;
+        Kind = kind;
+        IsPack = pack;
+        Category = TemplateLabel.Of(kind);
         common = template.Child("common") ?? new XNode("common", []);
         Name = common.Child("templatename")?.Text is { Length: > 0 } n ? n : Path.GetFileName(dir);
         Unsupported = noLayout ?? Check();
     }
 
+    /// <summary>The template of a converted pack: the same normalized tree, read from <c>template.json</c> with its PNG assets beside it.</summary>
+    static InstalledTemplate FromPack(string dir, TemplatePack pack)
+    {
+        var tree = pack.ToTree()!;
+        return new InstalledTemplate(dir, tree, pack.KindValue, pack.Unsupported, pack.ThumbnailFile(dir), pack: true);
+    }
+
     /// <summary>
-    /// Null when the folder is not a template: a DVDFab one (<c>template.bd.xml</c>, or <c>template.xml</c> for its DVD set) or a Leawo one
-    /// (<c>template.xml</c> / <c>template2.xml</c> with <c>TemplateDef</c>, or just <c>Menu</c> and <c>Scene</c> pictures, which are reported unsupported).
+    /// Null when the folder is not a template: a Blu-ray template (<c>template.bd.xml</c>), a DVD one (<c>template.xml</c> with flat values),
+    /// a picture theme (<c>template.xml</c> / <c>template2.xml</c> with <c>TemplateDef</c>, or just <c>Menu</c> and <c>Scene</c> pictures),
+    /// a <c>.dvdt</c> file, or a theme described by its own <c>config.xml</c>.
     /// </summary>
     public static InstalledTemplate? Load(string dir)
     {
         lock (Cache)
         {
             if (Cache.TryGetValue(dir, out var known)) return known;
+            // a converted pack (template.json + PNGs) is read exactly like a vendor template: the normalized tree is the same
+            if (Directory.Exists(dir) && File.Exists(Path.Combine(dir, TemplatePack.FileName)) && TemplatePack.TryRead(dir) is { HasLayout: true } pack)
+                return Cache[dir] = FromPack(dir, pack);
             var file = new[] { "template.bd.xml", "template.xml", "template2.xml" }.Select(f => Path.Combine(dir, f)).FirstOrDefault(File.Exists);
             InstalledTemplate? parsed = null;
-            if (dir.EndsWith(".dvdt", StringComparison.OrdinalIgnoreCase) && File.Exists(dir)) // DVDStyler: one file per template, pictures in <library>\backgrounds
+            if (dir.EndsWith(".dvdt", StringComparison.OrdinalIgnoreCase) && File.Exists(dir)) // one file per template, pictures in <library>\backgrounds
             {
                 var stem = System.IO.Path.GetFileNameWithoutExtension(dir);
                 var wide = stem.EndsWith("WS", StringComparison.Ordinal);
                 var name = (wide ? stem[..^2] : stem) + (wide ? " 16-9" : " 4-3");
                 var folder = System.IO.Path.GetDirectoryName(dir)!;
-                var tree = DvdStylerTemplate.Convert(LooseXml.Parse(File.ReadAllText(dir)), name, out var problem);
+                var tree = DvdtTemplate.Convert(LooseXml.Parse(File.ReadAllText(dir)), name, out var problem);
                 parsed = new InstalledTemplate(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(folder))!, "backgrounds"),
-                    tree ?? DvdStylerTemplate.Failed(name), "DVDStyler " + System.IO.Path.GetFileName(folder), tree == null ? problem : null,
+                    tree ?? DvdtTemplate.Failed(name), TemplateKind.Library, tree == null ? problem : null,
                     System.IO.Path.ChangeExtension(dir, ".png") is var png && File.Exists(png) ? png : null);
             }
-            else if (file == null && YuhanSkin.IsTheme(dir))
-                parsed = YuhanSkin.Build(dir) is { } yuhan
-                    ? new InstalledTemplate(dir, yuhan, "Yuhan", null, System.IO.Path.Combine(dir, "thumb_169.jpg"))
-                    : new InstalledTemplate(dir, new XNode("template", []), "Yuhan", "mise en page illisible (programme Yuhan absent ?)");
+            else if (file == null && ThemeSkin.IsTheme(dir))
+                parsed = ThemeSkin.Build(dir) is { } theme
+                    ? new InstalledTemplate(dir, theme, TemplateKind.Theme, null, System.IO.Path.Combine(dir, "thumb_169.jpg"))
+                    : new InstalledTemplate(dir, new XNode("template", []), TemplateKind.Theme, "mise en page illisible (fichier de thème absent ?)");
             else if (file != null)
             {
                 var text = File.ReadAllText(file);
-                text = System.Text.RegularExpressions.Regex.Replace(text, "(\\w+=\"\\d+)(\\s+)(\\w+=\")", "$1\"$2$3"); // Leawo's files miss a closing quote: Top="136 Width="209"
+                text = System.Text.RegularExpressions.Regex.Replace(text, "(\\w+=\"\\d+)(\\s+)(\\w+=\")", "$1\"$2$3"); // some files miss a closing quote: Top="136 Width="209
                 var doc = LooseXml.Parse(text);
-                if (doc.Child("template") is { } t) parsed = new InstalledTemplate(dir, AllInOne(t), "DVDFab Blu-ray");
-                else if (doc.Child("Template") is { } s) parsed = new InstalledTemplate(dir, Simple(s, dir), "DVDFab DVD");
+                if (doc.Child("template") is { } t) parsed = new InstalledTemplate(dir, AllInOne(t), TemplateKind.BluRay);
+                else if (doc.Child("Template") is { } s) parsed = new InstalledTemplate(dir, Simple(s, dir), TemplateKind.Dvd);
                 else if (doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect").StartsWith("16-9")) is { } def)
                 {
-                    var layout = Leawo(def, doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect") == "4-3"));
-                    // Leawo's own thumbnail positions cover one another in a few files (education01 16-9): its pictures are then laid out by BurnSmith
+                    var layout = PictureLayout(def, doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect") == "4-3"));
+                    // the thumbnail positions cover one another in a few files: its pictures are then laid out by BurnSmith
                     var skin = Directory.Exists(Path.Combine(dir, "Menu")) && Directory.Exists(Path.Combine(dir, "Scene")) && ThumbnailsOverlap(layout);
-                    parsed = new InstalledTemplate(dir, skin ? LeawoSkin.Build(dir) : layout, "Leawo");
+                    parsed = new InstalledTemplate(dir, skin ? PictureThemeSkin.Build(dir) : layout, TemplateKind.Pictures);
                 }
             }
             else if (Directory.Exists(Path.Combine(dir, "Menu")) && Directory.Exists(Path.Combine(dir, "Scene")))
-                parsed = new InstalledTemplate(dir, LeawoSkin.Build(dir), "Leawo"); // pictures only: BurnSmith lays them out
+                parsed = new InstalledTemplate(dir, PictureThemeSkin.Build(dir), TemplateKind.Pictures); // pictures only: BurnSmith lays them out
             return Cache[dir] = parsed;
         }
     }
@@ -163,7 +185,7 @@ public sealed class InstalledTemplate
     }
 
     /// <summary>
-    /// DVDFab's "all in one" templates (Streaming) have no main menu: their first scene page is the menu. It becomes the root page
+    /// A template laid out in one piece has no main menu: its first scene page is the menu. It becomes the root page
     /// (background, poster frame, volume name, Play and Scenes buttons in the template's font); the scene page keeps its thumbnails, gets the volume
     /// name as heading and a Home button at the top right (BurnSmith's own).
     /// </summary>
@@ -191,8 +213,8 @@ public sealed class InstalledTemplate
     }
 
     /// <summary>
-    /// DVDFab's DVD templates (<c>&lt;Template&gt;</c> with <c>label_left</c>, <c>video1_width</c>… values) rewritten as the Blu-ray tree,
-    /// scaled from the size of their background (720x480 for the DVD set) to the 1920x1080 canvas.
+    /// The DVD templates (<c>&lt;Template&gt;</c> with <c>label_left</c>, <c>video1_width</c>… values) rewritten as the Blu-ray tree,
+    /// scaled from the size of their background (720x480 for a DVD set) to the 1920x1080 canvas.
     /// </summary>
     static XNode Simple(XNode s, string dir)
     {
@@ -205,7 +227,7 @@ public sealed class InstalledTemplate
         string Scaled(string size) => ((int)(double.Parse(size, System.Globalization.CultureInfo.InvariantCulture) * sy)).ToString();
         XNode El(string name, params (string Key, string Value)[] attrs) => new(name, attrs.ToDictionary(a => a.Key, a => a.Value));
         XNode Leaf(string name, string text) { var n = El(name); n.Content.Append(text); return n; }
-        // DVDFab ships a 16:9 twin of the 4:3 background (bdbackground\bg0.png): the same layout (set on the 4:3 size) on artwork that is not stretched
+        // some templates ship a 16:9 twin of the 4:3 background (bdbackground\bg0.png): the same layout (set on the 4:3 size) on artwork that is not stretched
         var wide = "bdbackground/" + System.IO.Path.GetFileName(background);
         if (!File.Exists(System.IO.Path.Combine(dir, wide)) || PngSize(System.IO.Path.Combine(dir, wide)) is not (1920, 1080)) wide = background;
         XNode Bg() { var bg = El("bg"); bg.Kids.Add(Leaf("image", wide)); return bg; }
@@ -239,7 +261,7 @@ public sealed class InstalledTemplate
         {
             var r = Rect(title, $"video{i}").Split(',').Select(int.Parse).ToArray();
             var video = El("video", ("rect", string.Join(',', r)), ("frame_image", V(s, "frame")));
-            video.Kids.Add(El("name", ("rect", $"{r[0]},{r[1] + r[3] + 4},{r[2]},60"))); // DVDFab's DVD templates have no name box: under the thumbnail
+            video.Kids.Add(El("name", ("rect", $"{r[0]},{r[1] + r[3] + 4},{r[2]},60"))); // the DVD templates have no name box: under the thumbnail
             videos.Kids.Add(video);
         }
         scene.Kids.AddRange([videos, Pics(title)]);
@@ -254,10 +276,10 @@ public sealed class InstalledTemplate
     }
 
     /// <summary>
-    /// Leawo's <c>TemplateDef</c> (positions in 1920x1080 for the 16-9 set): text buttons on the background, a picture frame under the
+    /// A picture theme's <c>TemplateDef</c> (positions in 1920x1080 for the 16-9 set): text buttons on the background, a picture frame under the
     /// preview and under each thumbnail (whose position is an offset inside its frame), previous / next / back pictures.
     /// </summary>
-    static XNode Leawo(XNode def, XNode? reference)
+    static XNode PictureLayout(XNode def, XNode? reference)
     {
         string A(XNode? n, string name, string fallback = "") => n?.Attr(name, fallback) is { Length: > 0 } v ? v : fallback;
         var k = def.Attr("Aspect") == "16-9-2" ? 0.5 : 1.0; // the "16-9-2" files are laid out on a 3840x2160 canvas
@@ -302,7 +324,7 @@ public sealed class InstalledTemplate
         for (var i = 0; page?.Child("Frame")?.Child($"Frame{i}") is { } box; i++)
         {
             var offset = page.Child("videoscr")?.Child($"videoscr{i}");
-            // the 16-9 offsets of Leawo's files do not fit their own frame picture; the 4-3 block of the same file does: its proportions are used
+            // the 16-9 offsets of some files do not fit their own frame picture; the 4-3 block of the same file does: its proportions are used
             var refPage = reference?.Child("Scene")?.Child("Page");
             var refBox = refPage?.Child("Frame")?.Child($"Frame{i}");
             var refOffset = refPage?.Child("videoscr")?.Child($"videoscr{i}");
@@ -335,7 +357,7 @@ public sealed class InstalledTemplate
         return null;
     }
 
-    /// <summary>A PNG or JPEG file; some files of the portable DVDFab copy hold memory garbage instead of a picture.</summary>
+    /// <summary>A PNG or JPEG file; some files of a portable copy hold memory garbage instead of a picture.</summary>
     static bool IsImage(string path)
     {
         if (!File.Exists(path)) return false;
@@ -366,7 +388,7 @@ public sealed class InstalledTemplate
         return b with { DvdHighlightImage = art, DvdHighlightMask = IsImage(mask) && !IsBlank(mask) ? mask : null, DvdSelectImage = Asset(common.Child("selection")?.Text) };
     }
 
-    /// <summary>DVDFab draws a button picture at its own size, centred on the rectangle of the XML (which is often smaller).</summary>
+    /// <summary>The template draws a button picture at its own size, centred on the rectangle of the XML (which is often smaller).</summary>
     static Box Place(string picture, Box rect) =>
         PngSize(picture) is var (w, h) ? new Box(rect.X + (rect.W - w) / 2, rect.Y + (rect.H - h) / 2, w, h) : rect;
 
@@ -380,16 +402,16 @@ public sealed class InstalledTemplate
     }
 
     /// <summary>The template has rows for the audio / subtitle choice (the UHD ones lay that page out differently).</summary>
-    /// <summary>The page title the template places on its audio / subtitle page (Yuhan's <c>ASLangTitleText</c>), null when it has none.</summary>
+    /// <summary>The page title the template places on its audio / subtitle page (<c>ASLangTitleText</c>), null when it has none.</summary>
     public Box? SetupTitle => template.Child("setup")?.Child("setuptitle") is { } n ? n.Rect() : null;
 
-    /// <summary>The Back button the template places on that page (Yuhan's <c>Return</c>), null when it has none.</summary>
+    /// <summary>The Back button the template places on that page (<c>Return</c>), null when it has none.</summary>
     public Box? SetupBack => template.Child("setup")?.Child("Return") is { } n ? n.Rect() : null;
 
     public bool HasSetupLists => (template.Child("setup")?.Child("audiolist")?.Children("title").Any() ?? false) || (template.Child("setup")?.Child("subtitlelist")?.Children("title").Any() ?? false);
 
     /// <summary>
-    /// Le modèle décrit une seule liste de langues (Yuhan, <c>LangItemText</c>) : une page par catégorie au lieu d'une page à deux colonnes.
+    /// Le modèle décrit une seule liste de langues (<c>LangItemText</c>) : une page par catégorie au lieu d'une page à deux colonnes.
     /// C'est le seul interrupteur de ce mode : <see cref="SettingsIds"/>, donc les disques, l'aperçu et l'éditeur, en découlent.
     /// </summary>
     public bool HasSetupPages => template.Child("setup")?.Child("langitems")?.Children("item").Any() ?? false;
@@ -416,7 +438,7 @@ public sealed class InstalledTemplate
         var font = n.Attr("font", common.Child("font")?.Text ?? "Segoe UI");
         var hasFiles = Directory.EnumerateFiles(dir, "*.*").Any(f => f.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".otf", StringComparison.OrdinalIgnoreCase));
         var fontSize = double.TryParse(n.Attr("font_size", common.Child("font_size")?.Text ?? "32"), out var size) ? size : 32;
-        if (n.Attr("fit") == "1" && value.Length > 0) fontSize = Math.Min(fontSize, n.Rect().W / (value.Length * 0.6)); // DVDStyler shrinks a text to its box
+        if (n.Attr("fit") == "1" && value.Length > 0) fontSize = Math.Min(fontSize, n.Rect().W / (value.Length * 0.6)); // a text that overflows its box shrinks
         return new Text(value, n.Rect(), fontSize,
             font, hasFiles ? dir : null, n.Attr("color", common.Child("font_color")?.Text ?? "#FFFFFF"),
             n.Attr("bold", common.Child("font_bold")?.Text ?? "0") == "1", n.Attr("italic", common.Child("font_italic")?.Text ?? "0") == "1", align,
@@ -426,7 +448,7 @@ public sealed class InstalledTemplate
     // ---- shared page parts --------------------------------------------------
 
     /// <summary>
-    /// The text zones this page of the template declares (DVDFab fills them from an online search; here the user writes in them, and an empty one draws nothing).
+    /// The text zones this page of the template declares (the user writes in them, and an empty one draws nothing).
     /// <paramref name="autoInfo"/> stands in for an empty information line. A template that declares none has none.
     /// </summary>
     void TemplateTexts(List<Op> ops, List<MenuZone> zones, XNode page, MenuDesign d, string? autoInfo = null)
@@ -449,7 +471,7 @@ public sealed class InstalledTemplate
     }
 
     /// <param name="film">
-    /// A picture of the disc's own film, for the templates whose background is a frame of some film (DVDFab Streaming ships one as a sample and plays
+    /// A picture of the disc's own film, for the templates whose background is a frame of some film (a template can ship one as a sample and plays
     /// the real film there): it replaces the template's picture, the template's veil stays over it.
     /// </param>
     void Background(List<Op> ops, XNode page, string? film = null)
@@ -491,7 +513,7 @@ public sealed class InstalledTemplate
         }
     }
 
-    /// <summary>Leawo draws its picture frame first and the preview inside it (DVDFab's frames go on top of the picture).</summary>
+    /// <summary>Some templates draw their picture frame first and the preview inside it (others put the frame on top of the picture).</summary>
     void Under(List<Op> ops, XNode video)
     {
         if (Asset(video.Attr("frame_under")) is { } file) ops.Add(new Image(file, video.Rect("under_rect")));
@@ -506,7 +528,7 @@ public sealed class InstalledTemplate
 
     static readonly Dictionary<string, bool> Blanks = [];
 
-    /// <summary>A mask without any opaque pixel (DVDFab Streaming's thumbnail mask) would hide the whole picture: it is ignored.</summary>
+    /// <summary>A mask without any opaque pixel would hide the whole picture: it is ignored.</summary>
     static bool IsBlank(string? png)
     {
         if (png == null) return false;
@@ -532,11 +554,11 @@ public sealed class InstalledTemplate
     {
         var cells = MenuBuilder.Cells(d, c);
         var scene = template.Child("scenes")!.Child("tscenes")!.Child("scene")!;
-        // the same page as a list of lines when the design asks for it and the template describes one (Yuhan's ListTypeText)
+        // the same page as a list of lines when the design asks for it and the template describes one
         var listItems = d.SceneList ? scene.Child("list")?.Children("item").ToList() ?? [] : [];
         var perPage = listItems.Count > 0 ? listItems.Count : scene.Child("videoes")!.Children("video").Count();
         var total = cells.Count > 1 ? (cells.Count + perPage - 1) / perPage : 0;
-        // DVDFab's Streaming has no menu of its own: its first page of thumbnails, with the poster and the title, is the menu
+        // a template with no menu of its own: its first page of thumbnails, with the poster and the title, is the menu
         var pages = new List<MenuPage> { IsAllInOne && total > 0 ? Scenes(d, cells, 1, total, perPage, d.Title, c.PreviewPicture, c) : Root(d, c, cells.Count > 1) };
         for (var i = IsAllInOne && total > 0 ? 2 : 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, c.Series ? d.EpisodesLabel : d.ScenesLabel, c.PreviewPicture));
         if (c.HasBonus) // the template has no Bonus page: its scene page layout lists the extras
@@ -644,7 +666,7 @@ public sealed class InstalledTemplate
         if (withScenes) Add("scenes", n.Child("scenes"), Button("scenebuttontimage"), new MenuAction("page", "scenes1"), c.Series ? d.EpisodesLabel : d.ScenesLabel);
         // "none_setup" templates have no picture for Settings, and none has one for Bonus or Credits: plain capsules in a row under the other buttons, BurnSmith's own addition
         var pills = new List<(string Id, string Label, MenuAction Action)>();
-        // a template that draws a Bonus button (Yuhan's BonusText) puts it where it says; the others get BurnSmith's capsule
+        // a template that draws a Bonus button (<c>BonusText</c>) puts it where it says; the others get BurnSmith's capsule
         if (c.HasBonus)
         {
             if (n.Child("bonus")?.Attr("textbutton") == "1") Add("bonus", n.Child("bonus"), null, new MenuAction("page", "bonus1"), d.BonusLabel);
@@ -670,7 +692,7 @@ public sealed class InstalledTemplate
         return new MenuPage("root", ops, Link(buttons)) { Zones = zones };
     }
 
-    /// <param name="root">Not null when this page is the menu itself (DVDFab Streaming): it gets the disc's own lines and the Play / Settings / Credits capsules.</param>
+    /// <param name="root">Not null when this page is the menu itself (a template laid out in one piece): it gets the disc's own lines and the Play / Settings / Credits capsules.</param>
     MenuPage Scenes(MenuDesign d, List<MenuBuilder.Cell> cells, int number, int total, int perPage, string title, string? preview, MenuContent? root = null, string prefix = "scenes")
     {
         var s = template.Child("scenes")!.Child("tscenes")!.Child("scene")!;
@@ -678,7 +700,7 @@ public sealed class InstalledTemplate
         Background(ops, s, IsAllInOne ? preview : null);
         Pictures(ops, s);
         var zones = new List<MenuZone>();
-        if (s.Child("specialvideo")?.Child("video") is { } poster && d.ShowPreview) // DVDFab Streaming: the poster stays beside the thumbnails
+        if (s.Child("specialvideo")?.Child("video") is { } poster && d.ShowPreview) // a template laid out in one piece: the poster stays beside the thumbnails
         {
             ops.Add(Frame(poster, d.PosterOr(preview)));
             zones.Add(new("poster", poster.Rect()));
@@ -736,7 +758,7 @@ public sealed class InstalledTemplate
                 ops.Add(Txt(name, cell.Label, "center"));
                 if (cell.Action.Kind == "play") zones.Add(new($"name:{cell.Action.Playlist}", name.Rect()));
             }
-            buttons.Add(Dvd(new MenuButton(cell.Id, slots[i].Rect(), cell.Action) { FocusImage = Selected(framed.Frame) })); // none for Leawo: the accent frame
+            buttons.Add(Dvd(new MenuButton(cell.Id, slots[i].Rect(), cell.Action) { FocusImage = Selected(framed.Frame) })); // none for picture themes: the accent frame
         }
         void Glyph(string id, Box r, string glyph, MenuAction action)
         {
@@ -746,7 +768,7 @@ public sealed class InstalledTemplate
         void Nav(string id, string key, string image, string fallbackGlyph, MenuAction action)
         {
             if (s.Child(key) is not { } node) return;
-            // DVDStyler draws its arrows as vector art, and a template's picture can be missing or unreadable: BurnSmith draws a text button there
+            // some templates draw their arrows as vector art, and a template's picture can be missing or unreadable: BurnSmith draws a text button there
             var drawn = node.Attr("glyph");
             if (Button(image) is not { } file || drawn.Length > 0) { Glyph(id, node.Rect(), drawn.Length > 0 ? drawn : fallbackGlyph, action); return; }
             var box = Place(file, node.Rect());

@@ -1,5 +1,5 @@
 using System.Buffers.Binary;
-using BurnSmith.Core.Hdmv;
+using BurnSmith.Core.Disc;
 
 namespace BurnSmith.Core;
 
@@ -43,7 +43,7 @@ public static class PgsSubtitles
         long clearAt = -1;       // when the picture on screen ends (-1 = none)
         (int X, int Y, int W, int H) window;
 
-        void Segment(byte kind, long pts, long dts, byte[] body) => output.Write(Pgs.Segment(kind, (uint)pts, (uint)dts, body));
+        void Segment(byte kind, long pts, long dts, byte[] body) => output.Write(PgsStream.Segment(kind, (uint)pts, (uint)dts, body));
 
         byte[] Composition(byte state, int objects, int x, int y)
         {
@@ -77,7 +77,7 @@ public static class PgsSubtitles
             var pts = (long)Math.Round(start * Clock);
             if (clearAt >= 0 && clearAt < pts) Clear(); // when the next picture comes right at the end, it simply replaces this one
             clearAt = -1;
-            var data = Pgs.Rle(index, w, h);
+            var data = PgsStream.Pack(index, w, h);
             var dts = Math.Max(Math.Max(0, pts - (long)Math.Ceiling(w * h * 0.005625)), last); // 90000 * 8 / 128 Mb/s per pixel
             window = (x, y, w, h);
             Segment(CompositionKind, pts, dts, Composition(0x80, 1, x, y));
@@ -86,12 +86,12 @@ public static class PgsSubtitles
             for (var i = 0; i < palette.Length; i++)
             {
                 var (r, g, b, a) = palette[i];
-                var (yy, cb, cr) = i == 0 ? (16, 128, 128) : Pgs.YCbCr(r, g, b);
+                var (yy, cb, cr) = i == 0 ? (16, 128, 128) : PgsStream.ToYCbCr(r, g, b);
                 colors.AddRange([(byte)i, (byte)yy, (byte)cr, (byte)cb, i == 0 ? (byte)0 : a]); // index, Y, Cr, Cb, opacity
             }
             Segment(PaletteKind, pts, dts, [.. colors]);
             // the object: the first piece says how long the whole is and how big the picture, the others only go on
-            const int firstRoom = Pgs.MaxSegment - 11, nextRoom = Pgs.MaxSegment - 4;
+            const int firstRoom = PgsStream.MaxBody - 11, nextRoom = PgsStream.MaxBody - 4;
             for (int at = 0, id = 0; ; id++)
             {
                 var room = id == 0 ? firstRoom : nextRoom;
@@ -215,7 +215,7 @@ public static class PgsSubtitles
                     else if (pieces.TryGetValue(id, out var piece)) piece.Data.Write(body[4..]);
                     if ((sequence & 0x40) != 0 && pieces.Remove(id, out var done))
                     {
-                        try { objects[id] = (done.Width, done.Height, Pgs.Unrle(done.Data.ToArray(), done.Width, done.Height)); fresh = true; }
+                        try { objects[id] = (done.Width, done.Height, PgsStream.Unpack(done.Data.ToArray(), done.Width, done.Height)); fresh = true; }
                         catch (InvalidDataException) { objects.Remove(id); bad++; }
                     }
                 }

@@ -1,9 +1,9 @@
 # Builds the installer .\dist\BurnSmith-Setup-<version>.exe, the only file of a GitHub release and the one the in-app update downloads (Program Files; Inno Setup 6 is required).
 # It wraps .\dist\BurnSmith.exe, an intermediate step: self-contained, one file, with tsMuxeR inside. ffmpeg and ffprobe are not carried: installer\ffmpeg.iss finds or downloads them.
 # tsMuxeR is not in this repository: it is taken from this PC and zipped
-# into obj\payload\tools.zip, which the BurnSmith.Payload assembly embeds. Licences: see THIRD-PARTY-NOTICES.md (shipped in the zip).
+# into obj\payload\tools.zip, which the BurnSmith.Payload assembly embeds, with tsMuxeR's Apache-2.0 licence.
 # None of the templates below stops the script.
-# Likewise the pictures and layout files of the DVDFab / Leawo / Yuhan menu templates found on this PC (no fonts, no programs) go into
+# Likewise the pictures and layout files of the menu templates found on this PC (no fonts, no programs) go into
 # obj\payload\templates.zip. The first time it runs, the installed exe unpacks the tools into %LOCALAPPDATA%\BurnSmith\files
 # and the template pictures into Documents\BurnSmith\Templates.
 param(
@@ -25,7 +25,7 @@ if ($LASTEXITCODE -ne 0) { if (Test-Path $tz) { [IO.File]::Delete($tz) }; throw 
 $zip = "$payload\tools.zip"
 if (Test-Path $zip) { [IO.File]::Delete($zip) }
 $z = [IO.Compression.ZipFile]::Open($zip, 'Create')
-foreach ($e in @(@($TsMuxer, 'tsMuxeR.exe'), @("$root\docs\THIRD-PARTY-NOTICES.md", 'THIRD-PARTY-NOTICES.md'))) {
+foreach ($e in @(@($TsMuxer, 'tsMuxeR.exe'), @("$root\installer\tsMuxeR-LICENSE.txt", 'tsMuxeR-LICENSE.txt'))) {
     [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, $e[0], $e[1], 'Optimal')
 }
 $z.Dispose()

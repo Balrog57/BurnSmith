@@ -9,7 +9,7 @@ namespace BurnSmith.Core;
 /// <list type="bullet">
 /// <item>Programs (tsMuxeR): <c>%LOCALAPPDATA%\BurnSmith\files</c> for the installed copy, whose Program Files folder cannot be written;
 /// a <c>BurnSmith-data</c> folder next to the exe where that can be written, which development builds and the checks rely on.</item>
-/// <item>The template library (the open-source templates, the DVDFab / Leawo / Yuhan pictures the exe carries, and the user's own templates and
+/// <item>The template library (the open-source templates and pictures the exe carries, and the user's own templates and
 /// images): <c>Documents\BurnSmith\Templates</c>, a folder the user can see and back up.</item>
 /// </list>
 /// One sub-folder per payload, redone when what the exe carries differs: two builds carrying the same files share it.

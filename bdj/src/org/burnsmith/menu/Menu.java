@@ -101,7 +101,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private int loopPlaylist; // menu video playing behind the pages, 0 = none
     private final Hashtable pages = new Hashtable();
     private Page firstPage, page;
-    /** Button of the first page the viewer last started something from, so the menu opens on it again (DVDFab's GPR108). */
+    /** Button of the first page the viewer last started something from, so the menu opens on it again (kept in GPR108). */
     private int lastButton = -1;
     private Button focus;
     private int width = 1920, height = 1080;
@@ -225,7 +225,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         log("page " + p.id);
         page = p;
         focus = p.buttons.isEmpty() ? null : (Button) p.buttons.elementAt(0);
-        // back from a title: the button that started it is focused again, as DVDFab does with its GPR108
+        // back from a title: the button that started it is focused again, from GPR108
         if (p == firstPage && lastButton >= 0 && lastButton < p.buttons.size()) {
             focus = (Button) p.buttons.elementAt(lastButton);
             log("resume on button " + lastButton);
@@ -319,7 +319,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         }
     }
 
-    /** Remembers where the viewer started from, so the menu reopens on that button (DVDFab keeps it in GPR108 too). */
+    /** Remembers where the viewer started from, so the menu reopens on that button (GPR108). */
     private void remember(Button b) {
         if (page != firstPage) return; // the index only means something on the page the menu reopens on
         int i = page.buttons.indexOf(b);

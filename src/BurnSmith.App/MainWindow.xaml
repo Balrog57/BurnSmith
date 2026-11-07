@@ -12,7 +12,7 @@
       <Setter Property="CornerRadius" Value="14"/>
       <Setter Property="Padding" Value="20,16"/>
     </Style>
-    <!-- a column header: its left edge is a thin separator, as in DVDFab's table -->
+    <!-- a column header: its left edge is a thin separator, as in a table -->
     <Style x:Key="Col" TargetType="Border">
       <Setter Property="BorderBrush" Value="{StaticResource LineBrush}"/>
       <Setter Property="BorderThickness" Value="1,0,0,0"/>
@@ -58,7 +58,7 @@
           <ColumnDefinition Width="84"/>
           <ColumnDefinition Width="1.2*" MinWidth="100"/>
           <ColumnDefinition Width="1.2*" MinWidth="100"/>
-          <ColumnDefinition Width="124"/>
+          <ColumnDefinition Width="154"/>
         </Grid.ColumnDefinitions>
         <TextBlock Text="{Binding Shown}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,10,0"/>
         <TextBlock Grid.Column="1" Text="{Binding DurationText}" ToolTip="{Binding DurationTip}" VerticalAlignment="Center"/>
@@ -67,9 +67,10 @@
         <Button Grid.Column="4" Style="{StaticResource Drop}" Content="{Binding SubText}" ToolTip="Sous-titres gardés" Click="OnSubMenu"/>
         <StackPanel Grid.Column="5" Orientation="Horizontal" HorizontalAlignment="Right">
           <Button Style="{StaticResource IconBtn}" Content="&#xE768;" ToolTip="Prévisualisation (lecteur par défaut)" Click="OnRowPlay"/>
-          <Button Style="{StaticResource IconBtn}" Content="&#xE70F;" ToolTip="Éditer : rogner, effets, filigrane, sous-titres, chapitres" Click="OnRowEdit"/>
-          <Button Style="{StaticResource IconBtn}" Content="&#xE712;" ToolTip="Ordre, bonus, couper en deux titres, fusionner" Click="OnRowMore"/>
-          <Button Style="{StaticResource IconBtn}" Content="&#xE74D;" ToolTip="Supprimer le titre" Click="OnRowRemove"/>
+          <!-- the pencil: the whole video edit; the scissors: cutting on the video itself -->
+          <Button Style="{StaticResource IconBtn}" Content="&#xE70F;" ToolTip="Montage vidéo : nom dans le menu, découpe, volume, chapitres" Click="OnRowEdit"/>
+          <Button Style="{StaticResource IconBtn}" Content="&#xE8C6;" ToolTip="Coupe : garder seulement une partie de la vidéo" Click="OnRowCut"/>          <Button Style="{StaticResource IconBtn}" Content="&#xE74D;" ToolTip="Supprimer le titre de la liste" Click="OnRowRemove"/>
+          <Button Style="{StaticResource IconBtn}" Content="&#xE712;" ToolTip="Plus : ordre, bonus, vidéo de début, couper en deux titres, fusionner" Click="OnRowMore"/>
         </StackPanel>
       </Grid>
     </DataTemplate>
@@ -150,7 +151,7 @@
                 <ColumnDefinition Width="84"/>
                 <ColumnDefinition Width="1.2*" MinWidth="100"/>
                 <ColumnDefinition Width="1.2*" MinWidth="100"/>
-                <ColumnDefinition Width="124"/>
+                <ColumnDefinition Width="154"/>
               </Grid.ColumnDefinitions>
               <TextBlock Text="Nom" Style="{StaticResource Head}"/>
               <Border Grid.Column="1" Style="{StaticResource Col}"><TextBlock Text="Durée" Style="{StaticResource Head}"/></Border>

@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using BurnSmith.Core;
-using BurnSmith.Core.Hdmv;
+using BurnSmith.Core.Disc;
 using BurnSmith.Core.Menu;
 
 /// <summary>
@@ -221,17 +221,17 @@ static class BdCheck
     {
         static string Outcome(byte[] data, int w, int h)
         {
-            try { Pgs.Unrle(data, w, h); return "decoded"; }
+            try { PgsStream.Unpack(data, w, h); return "decoded"; }
             catch (InvalidDataException) { return "refused"; }
             catch (Exception e) { return e.GetType().Name; }
         }
         Part("RLE", () =>
         {
             byte[] pixels = [0, 0, 1, 1, 1, 1, 2, 0, .. Enumerable.Repeat((byte)1, 100), .. new byte[92]];
-            var rle = Pgs.Rle(pixels, 100, 2);
+            var rle = PgsStream.Pack(pixels, 100, 2);
             var cut = Enumerable.Range(0, rle.Length).Select(n => Outcome(rle[..n], 100, 2)).Distinct().ToList();
             Check("RLE data cut short anywhere is refused as bad data, or decodes when only the last end-of-line went", cut.Contains("refused") && cut.All(o => o is "refused" or "decoded"), string.Join(",", cut));
-            Check("the whole data still decodes to the same pixels", Pgs.Unrle(rle, 100, 2).SequenceEqual(pixels));
+            Check("the whole data still decodes to the same pixels", PgsStream.Unpack(rle, 100, 2).SequenceEqual(pixels));
             byte[][] ends = [[0], [0, 0x40], [0, 0x80], [0, 0xC0, 5]];
             var shown = ends.Select(e => Outcome(e, 2, 2)).ToList();
             Check("each of the four cuts inside a run", shown.All(o => o == "refused"), string.Join(",", shown));
@@ -253,7 +253,7 @@ static class BdCheck
                 var kind = whole[p + 10];
                 if (kind == 0x15 && !done) // the first picture loses the last byte of its data
                 {
-                    output.Write(Pgs.Segment(kind, System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(whole.AsSpan(p + 2)), System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(whole.AsSpan(p + 6)), whole.AsSpan(p + 13, size - 1)));
+                    output.Write(PgsStream.Segment(kind, System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(whole.AsSpan(p + 2)), System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(whole.AsSpan(p + 6)), whole.AsSpan(p + 13, size - 1)));
                     done = true;
                 }
                 else output.Write(whole, p, 13 + size);

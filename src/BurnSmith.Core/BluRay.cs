@@ -14,7 +14,7 @@ public sealed record BluRayJob(IReadOnlyList<DiscTitle> Titles, string OutDir, M
                                double CapacityGB = 0, PlaybackOptions? Playback = null);
 
 /// <summary>
-/// How the picture is made (DVDFab's video mode and quality). Defaults: a Blu-ray source that already fits is copied, otherwise x264 at constant
+/// How the picture is made (the video mode and quality). Defaults: a Blu-ray source that already fits is copied, otherwise x264 at constant
 /// quality <see cref="Crf"/> (lower = better, bigger); <see cref="DvdKbps"/> &gt; 0 sets the DVD video bit rate by hand (0 = fills the disc).
 /// Blu-ray: <see cref="BdKbps"/> &gt; 0 = x264 at that video bit rate; <see cref="FitDisc"/> = "Adapter au disque" (the source is kept while it fits
 /// <see cref="BluRayJob.CapacityGB"/>, else re-encoded at the bit rate that fills it); <see cref="Hd720"/> = a 1280x720 disc.
@@ -23,18 +23,18 @@ public sealed record EncodeOptions(bool ForceReencode = false, int Crf = 17, str
                                    int BdKbps = 0, bool FitDisc = false, bool Hd720 = false);
 
 /// <summary>
-/// DVDFab's "Mode de lecture" (Blu-ray menu). <see cref="StartAtFirstTitle"/>: the disc starts on the first title instead of the menu.
+/// The play mode (Blu-ray menu). <see cref="StartAtFirstTitle"/>: the disc starts on the first title instead of the menu.
 /// <see cref="PlayAll"/>: the titles follow each other. <see cref="Rewind"/>: when everything has played, go back to the start (the menu, or the
 /// first title) instead of stopping. Without <see cref="PlayAll"/> the disc returns to the menu after the title that was picked.
 /// </summary>
 public sealed record PlaybackOptions(bool StartAtFirstTitle = false, bool PlayAll = false, bool Rewind = true)
 {
-    /// <summary>The 3 radio buttons of DVDFab: 0 = menu then all titles, 1 = first title then all, 2 = back to the menu after the picked title.</summary>
+    /// <summary>The 3 radio buttons: 0 = menu then all titles, 1 = first title then all, 2 = back to the menu after the picked title.</summary>
     public int Mode => PlayAll ? (StartAtFirstTitle ? 1 : 0) : 2;
     public static PlaybackOptions FromMode(int mode, bool rewind) => new(mode == 1, mode != 2, mode == 2 || rewind);
 }
 
-/// <summary>DVDFab's "Sortie": the disc size and the picture size of a Blu-ray.</summary>
+/// <summary>The output: the disc size and the picture size of a Blu-ray.</summary>
 public sealed record BdProfile(string Name, double Gb, double UsableGb, bool Hd720)
 {
     // usable = nominal size minus file system and menu overhead (BD9 / BD5: Blu-ray structure on DVD-sized media)
@@ -222,8 +222,8 @@ public static class BluRay
         {
             // no menu: the film's own movie object plays the intro, then selects the subtitle, before it plays the film (the BACKUP copy is kept alike)
             List<byte[]> before = [];
-            if (intro != null) before.Add(Hdmv.HdmvCommand.PlayPl(IntroPlaylist));
-            if (muxed[0].DefaultSubtitle > 0) before.Add(Hdmv.HdmvCommand.SetStreams(subtitle: muxed[0].DefaultSubtitle));
+            if (intro != null) before.Add(Disc.Nav.PlayPlaylist(IntroPlaylist));
+            if (muxed[0].DefaultSubtitle > 0) before.Add(Disc.Nav.SelectStreams(subtitle: muxed[0].DefaultSubtitle));
             foreach (var movieObject in new[] { Path.Combine(job.OutDir, "BDMV", "MovieObject.bdmv"), Path.Combine(job.OutDir, "BDMV", "BACKUP", "MovieObject.bdmv") }.Where(File.Exists))
                 File.WriteAllBytes(movieObject, Bdmv.PrependToFilm(File.ReadAllBytes(movieObject), [.. before]));
             if (intro != null) log($"intro: {intro.DisplayName} plays first");
@@ -240,7 +240,7 @@ public static class BluRay
         var bdmv = Path.Combine(outDir, "BDMV");
         var number = -1;
         foreach (var file in new[] { Path.Combine(bdmv, "MovieObject.bdmv"), Path.Combine(bdmv, "BACKUP", "MovieObject.bdmv") })
-            File.WriteAllBytes(file, Bdmv.AppendObject(File.ReadAllBytes(file), out number, Hdmv.HdmvCommand.PlayPl(IntroPlaylist), Hdmv.HdmvCommand.JumpTitle(0)));
+            File.WriteAllBytes(file, Bdmv.AppendObject(File.ReadAllBytes(file), out number, Disc.Nav.PlayPlaylist(IntroPlaylist), Disc.Nav.JumpTitle(0)));
         foreach (var file in new[] { Path.Combine(bdmv, "index.bdmv"), Path.Combine(bdmv, "BACKUP", "index.bdmv") })
             File.WriteAllBytes(file, Bdmv.FirstPlayToObject(File.ReadAllBytes(file), number));
     }

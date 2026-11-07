@@ -1,42 +1,24 @@
-using System.Reflection.PortableExecutable;
-using System.Security.Cryptography;
 using System.Text;
 
 namespace BurnSmith.Core.Menu;
 
 /// <summary>
-/// Yuhan Blu-ray DVD Creator's menu themes (<c>PresetMenu\THEMExx</c>): one <c>config.dat</c> with the layout of every screen size, and the pictures of each
-/// size in its own folder. The layout file is encrypted with a key the program keeps in its own exe, so it is read from the user's installation at run
-/// time; the published exe carries the decrypted <c>config.xml</c> next to the pictures (made by <see cref="TemplateCatalog.Pack"/>), as it does for the
-/// other vendors' templates. Only the 1920x1080 branch is used, rewritten as the tree <see cref="InstalledTemplate"/> draws.
+/// Menu themes stored as one <c>config.xml</c> with the layout of every screen size, and the pictures of each size in its own folder.
+/// A theme installed on the machine keeps that layout in an encrypted <c>config.dat</c>; BurnSmith reads the plain carried <c>config.xml</c>
+/// (made by <see cref="TemplateCatalog.Pack"/>) next to the pictures. Only the 1920x1080 branch is used, rewritten as the tree
+/// <see cref="InstalledTemplate"/> draws.
 /// </summary>
-static class YuhanSkin
+static class ThemeSkin
 {
     const string Screen = "1920x1080";
-    const int KeyRva = 0x194020; // 32 bytes in the .data section of BlurayDVDCreator.exe: AES-128 key, then the CBC initialisation vector
 
     public static bool IsTheme(string dir) => Directory.Exists(Path.Combine(dir, Screen)) && (File.Exists(Path.Combine(dir, "config.xml")) || File.Exists(Path.Combine(dir, "config.dat")));
 
-    /// <summary>The layout file as text: the carried <c>config.xml</c>, or <c>config.dat</c> decrypted with the key of the installed program. Null when neither can be read.</summary>
+    /// <summary>The layout file as text: the carried <c>config.xml</c>. Null when it is absent or unreadable.</summary>
     public static string? ReadConfig(string dir)
     {
         var plain = Path.Combine(dir, "config.xml");
-        if (File.Exists(plain)) return File.ReadAllText(plain);
-        var exe = Path.Combine(dir, "..", "..", "BlurayDVDCreator.exe");
-        var data = Path.Combine(dir, "config.dat");
-        if (!File.Exists(exe) || !File.Exists(data)) return null;
-        try
-        {
-            using var pe = new PEReader(File.OpenRead(exe));
-            var key = pe.GetSectionData(KeyRva).GetContent(0, 32).ToArray();
-            using var aes = Aes.Create();
-            aes.Key = key[..16];
-            var bytes = aes.DecryptCbc(File.ReadAllBytes(data), key[16..], PaddingMode.None);
-            var length = bytes[0] | bytes[1] << 8; // the text is preceded by its length, the rest is padding
-            var xml = Encoding.UTF8.GetString(bytes, 2, Math.Min(length, bytes.Length - 2));
-            return xml.Contains("<MenuTemplate") ? xml : null;
-        }
-        catch (Exception e) when (e is CryptographicException or IOException or BadImageFormatException or ArgumentException or InvalidOperationException) { return null; }
+        return File.Exists(plain) ? File.ReadAllText(plain) : null;
     }
 
     static XNode El(string name, params (string Key, string Value)[] attrs) => new(name, attrs.ToDictionary(a => a.Key, a => a.Value));
@@ -65,7 +47,7 @@ static class YuhanSkin
         int Room(XNode? t, int limit = 1000) => Math.Max(200, Math.Min(limit, MenuBuilder.W - I(t, "Left") - 40));
 
         var common = El("common");
-        common.Kids.AddRange([Leaf("accent", Colour(branch.Child("Color")?.Child("Frame")?.Attr("Hover") ?? "#FF0080")), Leaf("templatename", $"{theme.Attr("Name", "Yuhan")} {Path.GetFileName(dir).Replace("THEME", "", StringComparison.OrdinalIgnoreCase)}"), // the names are only two kinds (Birthday, Natural): the number tells them apart
+        common.Kids.AddRange([Leaf("accent", Colour(branch.Child("Color")?.Child("Frame")?.Attr("Hover") ?? "#FF0080")), Leaf("templatename", $"{theme.Attr("Name", "Thème")} {Path.GetFileName(dir).Replace("THEME", "", StringComparison.OrdinalIgnoreCase)}"), // the names are only two kinds (Birthday, Natural): the number tells them apart
             Leaf("leftbuttontimage", Picture(page?.Child("ButtonPre"))), Leaf("rightbuttontimage", Picture(page?.Child("ButtonNext"))), Leaf("homebuttontimage", Picture(page?.Child("Return")))]);
 
         // ---- main menu: preview inside its frame, title, then Play / Scenes / Setup as text buttons
@@ -104,7 +86,7 @@ static class YuhanSkin
             videos.Kids.Add(video);
         }
         scene.Kids.Add(videos);
-        // the same chapters as a list of lines: the theme gives ten ItemText rectangles for it (DVDFab's "PlaylistScene", Yuhan's list mode)
+        // the same chapters as a list of lines: the theme gives ten ItemText rectangles for it
         if (page?.Child("ListTypeText") is { } list)
         {
             var items = El("list");
@@ -128,7 +110,7 @@ static class YuhanSkin
         var setupBg = El("bg");
         setupBg.Kids.Add(Leaf("image", Picture(branch.Child("Setup")?.Child("Background"))));
         setup.Kids.Add(setupBg);
-        // une seule liste de huit lignes : le thème décrit une page par catégorie, comme les clips setup_audio / setup_subtitle de Yuhan
+        // une seule liste de huit lignes : le thème décrit une page par catégorie, comme les clips setup_audio / setup_subtitle
         if (branch.Child("Setup") is { } lang && lang.Child("LangItemText")?.Child("ItemText0") != null)
         {
             setup.Kids.Add(Text("setuptitle", lang.Child("ASLangTitleText"), Room(lang.Child("ASLangTitleText")), "left"));

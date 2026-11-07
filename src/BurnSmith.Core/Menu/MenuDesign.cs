@@ -5,10 +5,13 @@ public sealed class MenuDesign
 {
     public string Name { get; set; } = "Midnight";
     public override string ToString() => Name; // what a screen reader says for a list item
-    /// <summary>Group in the template gallery (the vendor / disc type the template came from).</summary>
-    public string Category { get; set; } = "";
+    string category = "";
+    /// <summary>Group shown in the template gallery and in the element library (see <see cref="TemplateLabel"/>); a saved design that still holds an older group name shows the neutral one.</summary>
+    public string Category { get => TemplateLabel.Clean(category) is { Length: > 0 } neutral ? neutral : TemplateLabel.Of(Kind); set => category = value; }
+    /// <summary>What the template is; it decides how the file is read and drawn (see <see cref="TemplateKind"/>).</summary>
+    public TemplateKind Kind { get; set; }
     /// <summary>
-    /// Folder of an installed template (DVDFab / Leawo) read at run time from the user's own copy; null = plain gradient design.
+    /// Folder of an installed template read at run time from the user's own copy; null = plain gradient design.
     /// Its artwork decides the look and the layout; only the texts, tracks and pictures come from the disc.
     /// </summary>
     public string? TemplateDir { get; set; }
@@ -65,19 +68,19 @@ public sealed class MenuDesign
     /// <summary>Colour of the focus frame around the selected button.</summary>
     public string Accent { get; set; } = "#FFC83D";
     /// <summary>
-    /// How the selected button is marked when the template brings no picture for it, as DVDFab's <c>EButtonSelectedHighlightType</c>:
+    /// How the selected button is marked when the template brings no picture for it:
     /// "box" (an accent frame, BurnSmith's own), "underline" (a bar under the button), "textcolor" (the label in the accent colour, no frame).
     /// </summary>
     public string HighlightStyle { get; set; } = "box";
     /// <summary>
-    /// Colour of the selected button when it differs from <see cref="Accent"/> (DVDFab's <c>selected_custom_style_color</c>); empty = the accent.
+    /// Colour of the selected button when it differs from <see cref="Accent"/>; empty = the accent.
     /// A template that brings its own artwork for a button keeps that artwork.
     /// </summary>
     public string SelectionColor { get; set; } = "";
-    /// <summary>Opacity of the fill drawn inside the highlight, in percent (DVDFab's <c>selected_default_transparency</c>, 0 = a bare outline).</summary>
+    /// <summary>Opacity of the fill drawn inside the highlight, in percent (0 = a bare outline).</summary>
     public int SelectionOpacity { get; set; } = 18;
     /// <summary>
-    /// Scene thumbnails as short moving excerpts of their chapter instead of still pictures (DVDFab's "dynamic thumbnail"). The DVD menu is then
+    /// Scene thumbnails as short moving excerpts of their chapter instead of still pictures. The DVD menu is then
     /// built as a short clip: each thumbnail plays inside its own frame while the page stays still. Ignored on a moving menu (the page is already a
     /// video overlay) and on Blu-ray, where the menu is drawn by the xlet and cannot play several videos at once.
     /// </summary>
@@ -97,8 +100,8 @@ public sealed class MenuDesign
     /// <summary>False = the scene buttons are text only, without a picture.</summary>
     public bool Thumbnails { get; set; } = true;
     /// <summary>
-    /// Scene page as a <em>list</em> of lines instead of a grid of thumbnails (DVDFab's "PlaylistScene", Yuhan's <c>ListTypeText</c> with ten
-    /// <c>ItemText</c>). A template that describes such a list places the lines itself; the others fall back to the grid.
+    /// Scene page as a <em>list</em> of lines instead of a grid of thumbnails (the template's own list items).
+    /// A template that describes such a list places the lines itself; the others fall back to the grid.
     /// </summary>
     public bool SceneList { get; set; }
     /// <summary>Square corners instead of rounded ones.</summary>
@@ -169,7 +172,7 @@ public sealed class MenuDesign
     /// <summary>Takes the look of a template (picture, colours, font, button style, grid) and keeps this design's texts, title and music.</summary>
     public void TakeLook(MenuDesign t)
     {
-        Name = t.Name; Category = t.Category; TemplateDir = t.TemplateDir; BackgroundImage = t.BackgroundImage;
+        Name = t.Name; Category = t.Category; Kind = t.Kind; TemplateDir = t.TemplateDir; BackgroundImage = t.BackgroundImage;
         Top = t.Top; Bottom = t.Bottom; TextColor = t.TextColor; Accent = t.Accent; HighlightStyle = t.HighlightStyle; SelectionColor = t.SelectionColor; SelectionOpacity = t.SelectionOpacity; AnimatedThumbs = t.AnimatedThumbs; Font = t.Font;
         ButtonStyle = t.ButtonStyle; Cols = t.Cols; Rows = t.Rows; Thumbnails = t.Thumbnails; Square = t.Square;
         CardFill = t.CardFill; Glow = t.Glow; Dim = t.Dim;

@@ -61,6 +61,7 @@ public partial class App : Application
             OffScreen(window);
             window.Show();
         }
+        else if (e.Args.FirstOrDefault(a => a.StartsWith("cut=")) is { } cut) { window = new CutWindow(cut[4..], BurnSmith.Core.BluRay.Probe(cut[4..]).Duration, 60, null); OffScreen(window); window.Show(); }
         else if (e.Args.Contains("advanced")) { window = new AdvancedWindow("MY_DISC", 5, new BurnSmith.Core.EncodeOptions(FitDisc: true), new BurnSmith.Core.PlaybackOptions(), "bd", Output.Bds, Output.DefaultBd); OffScreen(window); window.Show(); }
         if (e.Args.Contains("focus")) // selection and keyboard focus states: the second template of the list, the first text box (the output folder on the main window)
         {

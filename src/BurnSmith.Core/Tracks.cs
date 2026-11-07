@@ -159,7 +159,7 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// <summary>
 /// One video of the disc. <see cref="Audio"/> / <see cref="Subtitles"/> are the kept <see cref="AudioTrack.Index"/> /
 /// <see cref="SubtitleTrack.Index"/> values in disc order; null = first audio only, no subtitles.
-/// The cut (DVDFab / Yuhan "video edit"): <see cref="Start"/> and <see cref="End"/> are seconds of the source file (End null = to the end),
+/// The cut ("video edit"): <see cref="Start"/> and <see cref="End"/> are seconds of the source file (End null = to the end),
 /// <see cref="Volume"/> a percentage of the sound, <see cref="ChapterAt"/> the chapter times in seconds of the source (null = the disc's
 /// "one every N minutes", empty = no chapters). <see cref="ChapterMinutes"/>: with no <see cref="ChapterAt"/>, one every N minutes for this video
 /// (null = the disc's setting). <see cref="Intro"/>: a video that plays once when the disc starts, before the menu (before the film when there is no menu);

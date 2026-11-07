@@ -21,7 +21,7 @@ public static class Bdmv
         var objects = ReadObjects(movieObject);
         if (objects.Count == 0) throw new InvalidDataException("MovieObject.bdmv has no object");
         objects[0] = [.. commands, .. objects[0]];
-        return Hdmv.HdmvNav.MovieObjects(objects);
+        return Disc.MovieObjectFile.Write(objects);
     }
 
     static List<IReadOnlyList<byte[]>> ReadObjects(byte[] movieObject)
@@ -45,7 +45,7 @@ public static class Bdmv
         var objects = ReadObjects(movieObject);
         index = objects.Count;
         objects.Add(commands);
-        return Hdmv.HdmvNav.MovieObjects(objects);
+        return Disc.MovieObjectFile.Write(objects);
     }
 
     /// <summary>

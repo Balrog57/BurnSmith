@@ -2,7 +2,7 @@ using BurnSmith.Core;
 
 namespace BurnSmith.App;
 
-/// <summary>DVDFab's "Sortie": a disc size (nominal, and the part a build may fill: the rest is file system and menu overhead) and, for a Blu-ray, a 720p or 1080p picture.</summary>
+/// <summary>The output: a disc size (nominal, and the part a build may fill: the rest is file system and menu overhead) and, for a Blu-ray, a 720p or 1080p picture.</summary>
 public sealed record Output(string Name, double Gb, double Usable, bool Hd720 = false)
 {
     public override string ToString() => $"{Name} ({Gb:0.#} Go)";

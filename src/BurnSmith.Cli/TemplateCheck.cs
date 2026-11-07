@@ -16,10 +16,10 @@ static class TemplateCheck
         var designs = usable.Where(f => only == null || f.Design.Name.Contains(only, StringComparison.OrdinalIgnoreCase)).Select(f => (f.Design, Composed: false)).ToList();
         if (matrix && only == null) designs.AddRange(ComposedDesigns().Select(d => (d, true)));
         var failed = 0;
-        // the DVD Forge and DVDStyler templates are in git, so even a machine with no vendor template has them: without them nothing, or little, would be checked
-        if (designs.Count == 0 || only == null && !(usable.Any(f => f.Design.Category == DvdForgeTemplates.Category) && usable.Any(f => f.Design.Category.StartsWith("DVDStyler"))))
+        // the built-in and open-library templates are in git, so even a machine with no installed template has them: without them nothing, or little, would be checked
+        if (designs.Count == 0 || only == null && !(usable.Any(f => f.Design.Kind == TemplateKind.BuiltIn) && usable.Any(f => f.Design.Kind == TemplateKind.Library)))
         {
-            Console.WriteLine($"FAIL {designs.Count} modèles trouvés, il manque ceux de DVD Forge ou de DVDStyler, ou --only ne désigne rien");
+            Console.WriteLine($"FAIL {designs.Count} modèles trouvés, il manque les modèles intégrés ou ceux de la bibliothèque libre, ou --only ne désigne rien");
             return 1;
         }
         var watch = System.Diagnostics.Stopwatch.StartNew();
@@ -105,7 +105,7 @@ static class TemplateCheck
                             yield return new MenuDesign
                             {
                                 Name = $"{style} {cols}x{rows}{(thumbs ? "" : " sans image")}{(square ? " carré" : "")}{(preview ? "" : " sans aperçu")}",
-                                Category = "Composé", ButtonStyle = style, Cols = cols, Rows = rows, Thumbnails = thumbs, Square = square, ShowPreview = preview,
+                                Category = TemplateLabel.Open, ButtonStyle = style, Cols = cols, Rows = rows, Thumbnails = thumbs, Square = square, ShowPreview = preview,
                             };
     }
 
@@ -134,7 +134,7 @@ static class TemplateCheck
             if (c.Series && (all.Action.Playlist != c.Titles![0].Playlist || all.Action.Mark != c.Titles.Count)) issues.Add($"{label}: « tout lire » ne couvre pas exactement les épisodes");
         if (c.HasSettings && (MenuBuilder.SettingsIds(design, c) is not { Count: > 0 } wanted || !wanted.All(ids.Contains))) issues.Add($"{label}: pas de page de réglages");
         if (design.CreditLines().Count > 0 && (!ids.Contains("credits") || !pages[0].Buttons.Any(b => b.Id == "credits"))) issues.Add($"{label}: pas de page ou de bouton crédits");
-        // DVDFab Streaming has no menu of its own: its first page of thumbnails is the root page
+        // a layout with no menu of its own has its first page of thumbnails as the root page
         if (cells > 1 && !ids.Contains("scenes1") && !pages[0].Buttons.Any(b => b.Id != "play" && b.Action.Kind is "play" or "chapter")) issues.Add($"{label}: pas de page de scènes");
 
         foreach (var p in pages)

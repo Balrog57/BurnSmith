@@ -26,7 +26,7 @@ public static class Tools
     /// <summary>Opens the zip of tools the exe carries (tsMuxeR); set by the app, null in a development build.</summary>
     public static Func<Stream?>? Payload { get; set; }
 
-    /// <summary>Opens the zip of DVDFab / Leawo template pictures the exe carries (made by publish.ps1 from this PC's installs); null when none.</summary>
+    /// <summary>Opens the zip of menu template pictures the exe carries (made by publish.ps1 from this PC's template folders); null when none.</summary>
     public static Func<Stream?>? TemplatePayload { get; set; }
 
     static string? bundledDir, templatesDir;
@@ -44,7 +44,7 @@ public static class Tools
     /// <summary>tsMuxeR carried by the exe, unpacked to a <c>tools</c> folder under <see cref="AppFiles.Root"/>; null when this exe carries none.</summary>
     public static string? BundledDir() { lock (bundledLock) return bundledDir ??= UnpackZip("tools", Payload); }
 
-    /// <summary>The DVDFab / Leawo / Yuhan template folders carried by the exe, unpacked to <c>Documents\BurnSmith\Templates\carried</c>; null when this exe carries none.</summary>
+    /// <summary>The menu template folders carried by the exe, unpacked to <c>Documents\BurnSmith\Templates\carried</c>; null when this exe carries none.</summary>
     public static string? TemplatesDir() { lock (bundledLock) return templatesDir ??= UnpackZip("carried", TemplatePayload, true); }
 
     public static string Find(string exe)

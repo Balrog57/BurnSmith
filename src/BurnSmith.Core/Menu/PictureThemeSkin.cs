@@ -4,13 +4,13 @@ using System.Windows.Media.Imaging;
 namespace BurnSmith.Core.Menu;
 
 /// <summary>
-/// Leawo's older built-in templates (business, childhood, education, holiday, nature, sports, standard, wedding, in three screen shapes)
-/// exist on disk as pictures only: Leawo keeps their layout elsewhere. Every one carries the same five pictures, whose transparent
+/// Older picture-only themes (business, childhood, education, holiday, nature, sports, standard, wedding, in three screen shapes)
+/// exist on disk as pictures only: their layout lives elsewhere. Every one carries the same five pictures, whose transparent
 /// openings are the real apertures (640x360 preview, 320x180 thumbnails in 1920x1080 terms), so BurnSmith measures each opening and lays
 /// the pictures out itself: preview frame centred, Play / Scenes under it, a 3 x 2 grid of thumbnail frames, previous / back / next below.
-/// The artwork is Leawo's, read from the user's installation; the positions are BurnSmith's own.
+/// The artwork is read from the user's installation; the positions are BurnSmith's own.
 /// </summary>
-static class LeawoSkin
+static class PictureThemeSkin
 {
     const int W = MenuBuilder.W, H = MenuBuilder.H;
 

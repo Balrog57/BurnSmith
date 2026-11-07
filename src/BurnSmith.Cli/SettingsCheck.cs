@@ -3,15 +3,15 @@ using BurnSmith.Core;
 using BurnSmith.Core.Menu;
 
 /// <summary>
-/// La page de réglages à une liste (thèmes Yuhan, <c>LangItemText</c>) : deux pages, audio et sous-titres. Un thème d'essai écrit ici, aux coordonnées de Yuhan, fait tourner
-/// ces vérifications partout, même sans modèle commercial ; <c>Birthday 01</c> et <c>01movie</c> n'existent que sur un PC qui les a, et leur absence est dite, pas comptée comme un succès.
+/// La page de réglages à une liste (thèmes <c>config.xml</c>, <c>LangItemText</c>) : deux pages, audio et sous-titres. Un thème d'essai écrit ici, aux coordonnées d'un thème
+/// à liste, fait tourner ces vérifications partout, même sans modèle installé ; <c>Birthday 01</c> et <c>01movie</c> n'existent que sur un PC qui les a, et leur absence est dite, pas comptée comme un succès.
 /// </summary>
 static class SettingsCheck
 {
     static MenuContent Content(int audio, int subs, int chapters = 1) => new(1, null, Enumerable.Repeat<string?>(null, chapters).ToList(), null,
         Enumerable.Range(1, audio).Select(i => $"Piste {i}").ToList(), Enumerable.Range(1, subs).Select(i => $"Sous-titre {i}").ToList());
 
-    /// <summary>Un thème au format de Yuhan : le fichier en clair que le programme publié porte aussi. <paramref name="list"/> false = sans liste de langues, comme ceux qui n'en ont pas.</summary>
+    /// <summary>Un thème au format <c>config.xml</c> : le fichier en clair que le programme publié porte aussi. <paramref name="list"/> false = sans liste de langues, comme ceux qui n'en ont pas.</summary>
     static MenuDesign Theme(string root, string name, bool list)
     {
         var dir = Path.Combine(root, name);
@@ -33,7 +33,7 @@ static class SettingsCheck
         return TemplateCatalog.Find(dir) ?? throw new InvalidOperationException($"thème d'essai refusé : {name}");
     }
 
-    /// <summary>Ce qui ne demande ni dvdauthor ni modèle commercial, plus Birthday 01 et 01movie quand ils sont là.</summary>
+    /// <summary>Ce qui ne demande ni dvdauthor ni modèle installé, plus Birthday 01 et 01movie quand ils sont là.</summary>
     public static void Model(Action<string, bool> check)
     {
         var dir = Path.Combine(Path.GetTempPath(), "bs_settings_" + Guid.NewGuid().ToString("N")[..8]);
@@ -51,9 +51,9 @@ static class SettingsCheck
                        covered.All(t => t.Pages.Count == 2 && t.Pages.All(p => Overlaps(p).Count == 0 && p.Ops.OfType<Text>().First().Value == (p.Id == "settings_sub" ? t.Theme.SubtitlesLabel : t.Theme.AudioLabel))));
 
             OnePage(check, "thème sans liste de langues", Theme(dir, "THEME02", false));
-            OnePage(check, "modèle DVD Forge (dans git)", TemplateCatalog.Scan().Usable.Select(f => f.Design).First(d => d.Category == DvdForgeTemplates.Category));
-            if (TemplateCatalog.Find("01movie") is { } dvdfab) OnePage(check, "01movie", dvdfab);
-            else Console.WriteLine("skip 01movie absent de ce PC : le modèle DVDFab n'est pas vérifié ici (DVD Forge l'est, même chemin)");
+            OnePage(check, "modèle intégré (dans git)", TemplateCatalog.Scan().Usable.Select(f => f.Design).First(d => d.Kind == TemplateKind.BuiltIn));
+            if (TemplateCatalog.Find("01movie") is { } movie) OnePage(check, "01movie", movie);
+            else Console.WriteLine("skip 01movie absent de ce PC : ce modèle n'est pas vérifié ici (le modèle intégré l'est, même chemin)");
 
             var text = new MenuContent(1, null, [null], null, ["Piste 1", "Piste 2"], ["Sous-titre 1"]);
             var plain = new MenuDesign();

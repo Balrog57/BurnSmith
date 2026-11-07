@@ -8,7 +8,7 @@ dist/
 # xlet compiler output (assets/bdj/menu.jar is the committed build)
 bdj/build/
 
-# third-party programs live here but are not redistributed from this repo (see README)
+# external programs (ffmpeg, tsMuxeR, dvdauthor, spumux) live here but are not redistributed from this repo
 tools/*
 !tools/vlctest.ps1
 
@@ -17,5 +17,5 @@ vlc-help.txt
 *_work/
 BurnSmith-data/
 
-# decompilation bench: copies of vendor binaries, test films and rendered pages (never redistributed)
+# scratch bench: copies of binaries, test films and rendered pages (never redistributed)
 analysis/

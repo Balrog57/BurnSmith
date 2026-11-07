@@ -8,12 +8,12 @@ public sealed record Element(string Name, string Source, string Path, bool Remov
 
 /// <summary>
 /// The pictures a menu can be composed from. Three sources, each kept where it is:
-/// the open-source ones shipped in the exe (DVDStyler), the backgrounds of the templates installed on this PC (DVDFab, Leawo:
-/// listed by path, read at run time, never copied), and the user's own imports (copied to %APPDATA%\BurnSmith\library\backgrounds).
+/// the open-source ones shipped in the exe, the backgrounds of the templates installed on this PC
+/// (listed by path, read at run time, never copied), and the user's own imports (copied to %APPDATA%\BurnSmith\library\backgrounds).
 /// </summary>
 public static class ElementLibrary
 {
-    public const string Shipped = "DVDStyler", Mine = "Mes images";
+    public const string Open = TemplateLabel.Open, Mine = "Mes images";
     static readonly string[] Extensions = [".jpg", ".jpeg", ".png", ".bmp"];
 
     /// <summary>The user's own pictures: Documents\BurnSmith\Templates\images (earlier versions: %APPDATA%\BurnSmith\library\backgrounds, copied over once).</summary>
@@ -25,7 +25,7 @@ public static class ElementLibrary
     public static readonly (string Label, string Value)[] ButtonStyles =
         [("Capsules", "Pill"), ("Texte seul", "Text"), ("Cartes", "Card"), ("Cadre classique", "Frame"), ("Verre néon", "Glass")];
 
-    /// <summary>The pictures that travel in the exe, by the prefix a design stores them with: the open-source library and the DVDFab / Leawo / Yuhan pictures.</summary>
+    /// <summary>The pictures that travel in the exe, by the prefix a design stores them with: the open-source library and the carried template pictures.</summary>
     static IEnumerable<(string Prefix, string? Root)> Carried() => [("lib:", OpenLibrary.Dir()), ("carried:", Tools.TemplatesDir())];
 
     /// <summary>
@@ -61,20 +61,64 @@ public static class ElementLibrary
         if (Directory.Exists(UserDir))
             list.AddRange(Directory.EnumerateFiles(UserDir).Where(IsPicture).Order().Select(f => new Element(System.IO.Path.GetFileNameWithoutExtension(f), Mine, f, true)));
 
-        if (OpenLibrary.Dir() is { } lib && Directory.Exists(System.IO.Path.Combine(lib, "dvdstyler", "backgrounds")))
-            list.AddRange(Directory.EnumerateFiles(System.IO.Path.Combine(lib, "dvdstyler", "backgrounds")).Where(IsPicture).Order()
-                .Select(f => new Element(Pretty(System.IO.Path.GetFileNameWithoutExtension(f)), Shipped, f)));
+        if (OpenLibrary.Dir() is { } lib && Directory.Exists(System.IO.Path.Combine(lib, "open", "backgrounds")))
+            list.AddRange(Directory.EnumerateFiles(System.IO.Path.Combine(lib, "open", "backgrounds")).Where(IsPicture).Order()
+                .Select(f => new Element(Pretty(System.IO.Path.GetFileNameWithoutExtension(f)), Open, f)));
 
-        // the installed templates' own backgrounds, by path
+        // the installed templates' own backgrounds, by path: a converted pack lists every picture it keeps as a background
         foreach (var found in usable.Where(f => f.Design.TemplateDir != null))
-            if (InstalledTemplate.Load(found.Design.TemplateDir!)?.BackgroundFile is { } file && !found.Design.Category.StartsWith("DVDStyler"))
+        {
+            var dir = found.Design.TemplateDir!;
+            if (TemplatePack.TryRead(dir) is { } pack)
+            {
+                var pictures = pack.Assets.Where(a => a.Role == "background").ToList();
+                foreach (var asset in pictures)
+                {
+                    if (PackFile(dir, asset.Path) is not { } packPicture) continue;
+                    var suffix = pictures.Count > 1 ? " · " + (PageLabel(asset.Page) is { Length: > 0 } p ? p : Pretty(System.IO.Path.GetFileNameWithoutExtension(asset.Path))) : "";
+                    list.Add(new Element(found.Design.Name + suffix, found.Design.Category, packPicture));
+                }
+                continue;
+            }
+            if (InstalledTemplate.Load(dir)?.BackgroundFile is { } file)
                 list.Add(new Element(found.Design.Name, found.Design.Category, file));
+        }
 
-        // a template folder BurnSmith cannot lay out still has its picture (Leawo: Menuackground01.jpg)
+        // a template folder BurnSmith cannot lay out still has its picture 
         foreach (var s in skipped)
-            if (System.IO.Path.Combine(s.Dir, "Menu", "background01.jpg") is var picture && File.Exists(picture)) list.Add(new Element(s.Name, "Leawo", picture));
+            if (System.IO.Path.Combine(s.Dir, "Menu", "background01.jpg") is var picture && File.Exists(picture)) list.Add(new Element(s.Name, TemplateLabel.Themes, picture));
 
         return list.DistinctBy(e => e.Path, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>The file of a pack asset, or null when the picture was removed from the folder.</summary>
+    static string? PackFile(string dir, string relative)
+    {
+        var file = System.IO.Path.Combine(dir, relative.Replace('/', System.IO.Path.DirectorySeparatorChar));
+        return File.Exists(file) ? file : null;
+    }
+
+    static string PageLabel(string? page) => page switch
+    {
+        "root" => "menu",
+        "scenes" => "scènes",
+        "settings" => "réglages",
+        _ => "",
+    };
+
+    /// <summary>The role a pack picture plays, read from the folder names the templates use.</summary>
+    static string ButtonLabel(string relative)
+    {
+        var p = relative.Replace('\\', '/').ToLowerInvariant();
+        foreach (var (prefix, label) in new[]
+                 {
+                     ("play/", "Lecture"), ("scenes/", "Scènes"), ("setup/", "Réglages"), ("home/", "Accueil"),
+                     ("left/", "Précédent"), ("right/", "Suivant"),
+                     ("scene/back", "Retour"), ("scene/previous", "Précédent"), ("scene/next", "Suivant"),
+                     ("1920x1080/back", "Retour"), ("1920x1080/previous", "Précédent"), ("1920x1080/next", "Suivant"),
+                 })
+            if (p.StartsWith(prefix, StringComparison.Ordinal)) return label;
+        return Pretty(System.IO.Path.GetFileNameWithoutExtension(p));
     }
 
     /// <summary>"05_easyblue" -> "easyblue", "frosty_forest" -> "frosty forest".</summary>
@@ -103,8 +147,8 @@ public static class ElementLibrary
     static string? SubOf(string file) =>
         Directory.EnumerateFiles(System.IO.Path.GetDirectoryName(file)!, System.IO.Path.GetFileNameWithoutExtension(file) + ".sub.*").FirstOrDefault(IsPicture);
 
-    /// <summary>The button pictures a template folder carries: DVDFab's "play\0.normal.png" with its "0.sub.png", Leawo's and Yuhan's arrows (one picture, no selected state).</summary>
-    static IEnumerable<(string Role, string Normal, string? Focus)> VendorButtons(string dir)
+    /// <summary>The button pictures a template folder carries: "play\0.normal.png" with its "0.sub.png", or a single arrow picture (no selected state).</summary>
+    static IEnumerable<(string Role, string Normal, string? Focus)> TemplateButtons(string dir)
     {
         foreach (var (folder, role) in new[] { ("play", "Lecture"), ("scenes", "Scènes"), ("home", "Accueil"), ("setup", "Réglages"), ("left", "Précédent"), ("right", "Suivant") })
         {
@@ -118,8 +162,8 @@ public static class ElementLibrary
     }
 
     /// <summary>
-    /// Every button, grouped by source: BurnSmith's own looks, the user's imports, then the button pictures of the templates (DVDFab, Leawo, Yuhan;
-    /// a picture several templates share is listed once). Unreadable pictures are left out.
+    /// Every button, grouped by source: BurnSmith's own looks, the user's imports, then the button pictures of the templates
+    /// (a picture several templates share is listed once). Unreadable pictures are left out.
     /// </summary>
     public static List<ButtonItem> Buttons((List<TemplateCatalog.Found> Usable, List<TemplateCatalog.Skipped> Skipped)? scan = null)
     {
@@ -130,14 +174,26 @@ public static class ElementLibrary
 
         var seen = new HashSet<string>();
         foreach (var found in (scan ?? TemplateCatalog.Scan()).Usable)
-            if (found.Design.TemplateDir is { } dir && Directory.Exists(dir))
-                foreach (var (role, normal, focus) in VendorButtons(dir))
-                {
-                    if (MenuRenderer.Size(normal) == null || (focus != null && MenuRenderer.Size(focus) == null)) continue; // a damaged picture
-                    var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(normal))) + (focus == null ? "" : "+" + new FileInfo(focus).Length);
-                    if (seen.Add(key)) list.Add(new ButtonItem($"{found.Design.Name} · {role}", found.Design.Category, normal, focus));
-                }
+        {
+            if (found.Design.TemplateDir is not { } dir || !Directory.Exists(dir)) continue;
+            if (TemplatePack.TryRead(dir) is { } pack)
+            {
+                // a pack keeps the selected state beside its normal picture: no folder guesswork
+                foreach (var asset in pack.Assets.Where(a => a.Role == "button"))
+                    Add(found, ButtonLabel(asset.Path), PackFile(dir, asset.Path), asset.Focus is { } sub ? PackFile(dir, sub) : null);
+                continue;
+            }
+            foreach (var (role, normal, focus) in TemplateButtons(dir)) Add(found, role, normal, focus);
+        }
         return list;
+
+        void Add(TemplateCatalog.Found found, string role, string? normal, string? focus)
+        {
+            if (normal == null) return;
+            if (MenuRenderer.Size(normal) == null || (focus != null && MenuRenderer.Size(focus) == null)) return; // a damaged picture
+            var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(normal))) + (focus == null ? "" : "+" + new FileInfo(focus).Length);
+            if (seen.Add(key)) list.Add(new ButtonItem($"{found.Design.Name} · {role}", found.Design.Category, normal, focus));
+        }
     }
 
     /// <summary>Copies a button picture, and the one shown when it is selected, into the user's buttons.</summary>

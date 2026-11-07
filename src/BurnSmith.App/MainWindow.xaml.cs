@@ -513,7 +513,7 @@ public partial class MainWindow : Window
         RefreshThumb();
     }
 
-    static BitmapImage? LoadImage(string? file)
+    internal static BitmapImage? LoadImage(string? file)
     {
         if (file == null || !File.Exists(file)) return null;
         var img = new BitmapImage();
@@ -575,13 +575,14 @@ public partial class MainWindow : Window
     /// <summary>One frame of the movie at <paramref name="seconds"/>, used as the picture on the menu preview.</summary>
     static string? ExtractPreview(string path, double seconds) => ExtractFrame(path, seconds, Path.Combine(Path.GetTempPath(), "BurnSmith", "preview.jpg"), 800, 450);
 
-    static string? ExtractFrame(string path, double seconds, string file, int w, int h)
+    /// <summary><paramref name="fill"/>: cropped to fill w×h, else the whole picture within w×h.</summary>
+    internal static string? ExtractFrame(string path, double seconds, string file, int w, int h, bool fill = true)
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(file)!);
             Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", seconds.ToString("0.###", CultureInfo.InvariantCulture),
-                "-i", path, "-frames:v", "1", "-q:v", "2", "-vf", $"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}", file]);
+                "-i", path, "-frames:v", "1", "-q:v", "2", "-vf", fill ? $"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}" : $"scale={w}:{h}:force_original_aspect_ratio=decrease", file]);
             return File.Exists(file) ? file : null;
         }
         catch (Exception) { return null; } // the preview just shows an empty frame
@@ -726,7 +727,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// The pencil: DVDFab's "Éditer" (name in the menu, crop, effects and volume, watermark, burnt subtitle, part kept, chapters).
+    /// The pencil: the video edit (name in the menu, crop, effects and volume, watermark, burnt subtitle, part kept, chapters).
     /// A tab's "Appliquer à tous" copies that tab to every other video.
     /// </summary>
     async void OnRowEdit(object s, RoutedEventArgs e)
@@ -742,6 +743,21 @@ public partial class MainWindow : Window
             if (dlg.ApplyAll.Contains("effect")) other.Volume = dlg.Volume;
             other.Refresh();
         }
+        await Edited(entry);
+    }
+
+    /// <summary>The scissors: cutting, the part kept chosen on the video itself.</summary>
+    async void OnRowCut(object s, RoutedEventArgs e)
+    {
+        if (Row(s) is not { } entry) return;
+        var dlg = new CutWindow(entry.Path, entry.Info.Duration, entry.Start, entry.End) { Owner = this };
+        if (dlg.ShowDialog() != true) return;
+        (entry.Start, entry.End) = (dlg.Start, dlg.End);
+        await Edited(entry);
+    }
+
+    async Task Edited(Entry entry)
+    {
         entry.Refresh();
         Update(); // the size follows the length kept
         RefreshThumb(); // the name and the chapters are on the menu

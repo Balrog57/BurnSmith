@@ -188,10 +188,37 @@ public partial class MenuEditorWindow : Window
 
     void OnAddFolder(object s, RoutedEventArgs e)
     {
-        var dlg = new OpenFolderDialog { Title = "Dossier contenant des modèles (DVDFab…)" };
+        var dlg = new OpenFolderDialog { Title = "Dossier contenant des modèles de menu" };
         if (dlg.ShowDialog(this) != true) return;
         TemplateCatalog.AddFolder(dlg.FolderName);
         LoadCatalog();
+    }
+
+    /// <summary>
+    /// Converts every template installed on this PC to the single pack format (template.json + PNG pictures in
+    /// Documents\BurnSmith\Templates\converted), then refreshes the gallery and the Fonds / Boutons lists.
+    /// A pack that already exists is kept, so the user's own edits are never overwritten.
+    /// </summary>
+    async void OnConvertAll(object s, RoutedEventArgs e)
+    {
+        ConvertBtn.IsEnabled = false;
+        ConvertNote.Text = "Conversion des modèles…";
+        var progress = new Progress<string>(line => ConvertNote.Text = line);
+        try
+        {
+            var result = await Task.Run(() => TemplatePack.ConvertAll(line => ((IProgress<string>)progress).Report(line)));
+            LoadCatalog();
+            CustomList.ItemsSource = Templates.List();
+            ConvertNote.Text = $"{result.Converted} converti(s), {result.Skipped} déjà présent(s), {result.Failed} échec(s) — dossier Documents\\BurnSmith\\Templates\\converted";
+            if (result.Failed > 0)
+                MessageBox.Show(this, string.Join(Environment.NewLine, result.Messages.Take(10)), "Modèles non convertis");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException)
+        {
+            ConvertNote.Text = "";
+            MessageBox.Show(this, ex.Message, "BurnSmith");
+        }
+        finally { ConvertBtn.IsEnabled = true; }
     }
 
     static BitmapImage Decode(byte[] bytes, int width = 0)
@@ -558,14 +585,14 @@ public partial class MenuEditorWindow : Window
         }
     }
 
-    /// <summary>A click on the page that misses the selected element's outline and handles lets go of it, as in DVDStyler.</summary>
+    /// <summary>A click on the page that misses the selected element's outline and handles lets go of it.</summary>
     void OnStageMouse(object s, System.Windows.Input.MouseButtonEventArgs e)
     {
         Stage.Focus();
         if (sel != null && (e.OriginalSource as FrameworkElement)?.Tag as string != "element") SelectElem(null);
     }
 
-    // ---------------------------------------------------------------- free elements (DVDStyler-style placement)
+    // ---------------------------------------------------------------- free elements (free placement)
     MenuElement? sel;
     bool elemSync;
     const int Handle = 30, MinW = 40, MinH = 20; // size of a resize handle on the 1920x1080 page, smallest element
@@ -1049,7 +1076,7 @@ public partial class MenuEditorWindow : Window
     void OnPrev(object s, RoutedEventArgs e) => Step(-1);
     void OnNext(object s, RoutedEventArgs e) => Step(1);
 
-    /// <summary>Which of DVDFab's three highlight styles marks the chosen button (a template with its own artwork keeps it).</summary>
+    /// <summary>Which of the three highlight styles marks the chosen button (a template with its own artwork keeps it).</summary>
     void OnPickHighlight(object s, SelectionChangedEventArgs e)
     {
         if (HlBox.SelectedValue is not string style) return;

@@ -41,7 +41,6 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "..\dist\BurnSmith.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\docs\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 ; copied into dist by publish.ps1 from the runtime packs of the build
 Source: "..\dist\dotnet-runtime-LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\dotnet-runtime-THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion

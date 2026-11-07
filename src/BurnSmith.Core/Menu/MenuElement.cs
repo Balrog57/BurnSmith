@@ -1,7 +1,7 @@
 namespace BurnSmith.Core.Menu;
 
 /// <summary>
-/// An element the user places by hand on the menu pages, as in DVDStyler: a text, a picture or a box, with its own place and size.
+/// An element the user places by hand on the menu pages: a text, a picture or a box, with its own place and size.
 /// Geometry is in pixels of the 1920x1080 layout (the renderer scales it with the rest of the page), so what the editor shows is what the disc gets.
 /// Elements are drawn over the page, after its own artwork and buttons; they are baked into the page picture, so they show on a DVD and on a
 /// Blu-ray menu alike.

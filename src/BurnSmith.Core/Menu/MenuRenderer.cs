@@ -83,7 +83,7 @@ public static class MenuRenderer
 
     /// <summary>
     /// Transparent PNG of a button's selected state, sized like the button plus the focus margin. A template's own artwork wins; otherwise the
-    /// design's highlight style draws it — DVDFab's three kinds (<c>EButtonSelectedHighlightType</c>): a box, an underline, or the label in the accent
+    /// design's highlight style draws it — three kinds: a box, an underline, or the label in the accent
     /// colour. <paramref name="label"/> is the button's text, needed by the last one; null = the frame.
     /// </summary>
     public static byte[] Focus(MenuDesign d, MenuButton b, double scale = 1, string? label = null)
@@ -101,10 +101,10 @@ public static class MenuRenderer
             }
             switch (style)
             {
-                case "underline": // a bar under the button, as DVDFab's DrawUnderline
+                case "underline": // a bar under the button, as an underline
                     dc.DrawRectangle(new SolidColorBrush(Col(d.SelectionInk, Math.Max(0.15, d.SelectionOpacity / 100.0))), null, new Rect(m, box.H - 12, b.Rect.W, 8));
                     break;
-                case "textcolor": // no frame: the label is redrawn in the accent colour (DVDFab's ChangeTextColor)
+                case "textcolor": // no frame: the label is redrawn in the accent colour (the text-colour style)
                     DrawLabel(dc, d, new Label(label!, new Box(m, m, b.Rect.W, b.Rect.H), Math.Clamp(b.Rect.H / 3, 20, 54), true), Col(d.SelectionInk));
                     break;
                 default: // "box": the accent frame BurnSmith has always drawn
