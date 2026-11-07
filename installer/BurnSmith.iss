@@ -56,6 +56,7 @@ Filename: "{app}\BurnSmith.exe"; Description: "{cm:LaunchProgram,BurnSmith}"; Fl
 Filename: "{app}\BurnSmith.exe"; Flags: nowait postinstall runasoriginaluser skipifnotsilent; Check: Relaunch
 
 #include "ffmpeg.iss"
+#include "running.iss"
 
 [Code]
 function Relaunch: Boolean;

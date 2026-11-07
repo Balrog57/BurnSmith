@@ -22,6 +22,7 @@ public partial class App : Application
         // only these two see what runs off the window's thread; the app is dying in the first, so what it started must die with it
         AppDomain.CurrentDomain.UnhandledException += (_, x) => { BurnSmith.Core.AppFiles.LogError("Erreur fatale", x.ExceptionObject as Exception ?? new InvalidOperationException($"{x.ExceptionObject}")); BurnSmith.Core.Tools.KillAll(); };
         TaskScheduler.UnobservedTaskException += (_, x) => BurnSmith.Core.AppFiles.LogError("Tâche en arrière-plan", x.Exception);
+        if (BurnSmith.Core.Updater.IsInstalled()) try { running = new System.Threading.Mutex(false, "BurnSmithRunning"); } catch (UnauthorizedAccessException) { } // installer\running.iss waits for it; another account's copy already holds that name
         BurnSmith.Core.AppFiles.Root(); // now, before the unpack below takes its lock: the log needs this answer without waiting
         BurnSmith.Core.Tools.Payload = () => BurnSmith.Payload.Payload.Open(); // a lambda: the large assembly loads only when this runs
         BurnSmith.Core.Tools.TemplatePayload = () => BurnSmith.Payload.Payload.OpenTemplates();
@@ -70,6 +71,7 @@ public partial class App : Application
     }
 
     bool snapshotRun, showingError;
+    static System.Threading.Mutex? running; // static: held until the process ends
 
     /// <summary>
     /// An error nobody caught on the window's thread: written to the log and shown, and the app goes on, since a build running on another thread is not hurt.

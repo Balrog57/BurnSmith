@@ -44,6 +44,17 @@ try {
     Check 'the copy is untouched' ((Get-Item "$own\ffmpeg.exe").LastWriteTimeUtc -eq $before)
     Check 'one PATH entry' ((GetPath 'Machine').Value -eq "$other;$fake;$own")
 
+    'Uninstall of a running app: nothing moves, and it says so by its exit code'
+    Check 'the app and the uninstaller use one name' ((Get-Content "$PSScriptRoot\running.iss" -Raw) -match "'BurnSmithRunning'" -and (Get-Content "$PSScriptRoot\..\src\BurnSmith.App\App.xaml.cs" -Raw) -match '"BurnSmithRunning"')
+    $held = [Threading.Mutex]::new($false, 'BurnSmithRunning')
+    $before = (Get-ChildItem $app -Recurse -File).Count
+    $u = Start-Process "$app\unins000.exe" -ArgumentList '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -PassThru -Wait
+    $held.Dispose()
+    Start-Sleep 3
+    Check 'it fails, without hanging' ($u.ExitCode -ne 0)
+    Check 'every file is still there' ((Get-ChildItem $app -Recurse -File).Count -eq $before -and (Test-Path "$app\unins000.exe") -and (Test-Path "$own\ffmpeg.exe"))
+    Check 'the PATH entry is still there' ((GetPath 'Machine').Value -eq "$other;$fake;$own")
+
     'Uninstall: the PATH entry and the folder only'
     Set-Content "$app\tools\mine.txt" 'kept'
     Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait

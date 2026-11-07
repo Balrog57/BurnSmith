@@ -31,3 +31,4 @@ Source: "..\LICENSE"; DestDir: "{app}"
 Filename: "{cmd}"; Parameters: "/c if exist ""{app}\tools\ffmpeg\ffmpeg.exe"" echo present> ""{app}\run-saw.txt"""; Flags: runhidden postinstall skipifnotsilent
 
 #include "ffmpeg.iss"
+#include "running.iss"
