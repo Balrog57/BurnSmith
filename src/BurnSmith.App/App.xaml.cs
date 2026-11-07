@@ -53,7 +53,14 @@ public partial class App : Application
             win.ShowTabs(Number("lib"), Number("tab"), e.Args.Contains("button"));
             if (e.Args.FirstOrDefault(a => a == "scroll" || a.StartsWith("scroll=")) is { } scroll) win.ScrollProps(scroll.Length > 7 ? double.Parse(scroll[7..], System.Globalization.CultureInfo.InvariantCulture) : null);
         }
-        else if (e.Args.Contains("edit")) { window = new VideoEditWindow("Épisode 1", 5400, 90, 3600, 120, [600, 1800, 3000], null, 5); OffScreen(window); window.Show(); }
+        else if (e.Args.FirstOrDefault(a => a == "edit" || a.StartsWith("edit=")) is { } edit) // edit=crop|effect|watermark|subtitle|chapters: that tab; with a video, its real frames
+        {
+            var info = videos.Count > 0 ? BurnSmith.Core.BluRay.Probe(videos[0]) : new BurnSmith.Core.SourceInfo("h264", 1920, 1080, 25, "ac3", 2, 5400, [], []);
+            window = new VideoEditWindow(videos.FirstOrDefault() ?? "Épisode 1.mkv", info, "Épisode 1", 90, 3600, 120, [600, 1800, 3000], null, 5,
+                                         new BurnSmith.Core.VideoEffects(Brightness: 10, WatermarkText: "BurnSmith", WatermarkSize: 64, BurnSubtitle: videos.Select(v => Path.ChangeExtension(v, ".srt")).FirstOrDefault(File.Exists)), edit.Length > 5 ? edit[5..] : null);
+            OffScreen(window);
+            window.Show();
+        }
         else if (e.Args.Contains("advanced")) { window = new AdvancedWindow("MY_DISC", 5, new BurnSmith.Core.EncodeOptions(FitDisc: true), new BurnSmith.Core.PlaybackOptions(), "bd", Output.Bds, Output.DefaultBd); OffScreen(window); window.Show(); }
         if (e.Args.Contains("focus")) // selection and keyboard focus states: the second template of the list, the first text box (the output folder on the main window)
         {

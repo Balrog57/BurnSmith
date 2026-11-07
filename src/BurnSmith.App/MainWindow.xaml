@@ -67,7 +67,7 @@
         <Button Grid.Column="4" Style="{StaticResource Drop}" Content="{Binding SubText}" ToolTip="Sous-titres gardés" Click="OnSubMenu"/>
         <StackPanel Grid.Column="5" Orientation="Horizontal" HorizontalAlignment="Right">
           <Button Style="{StaticResource IconBtn}" Content="&#xE768;" ToolTip="Prévisualisation (lecteur par défaut)" Click="OnRowPlay"/>
-          <Button Style="{StaticResource IconBtn}" Content="&#xE70F;" ToolTip="Modifier : nom dans le menu, découpe, volume, chapitres" Click="OnRowEdit"/>
+          <Button Style="{StaticResource IconBtn}" Content="&#xE70F;" ToolTip="Éditer : rogner, effets, filigrane, sous-titres, chapitres" Click="OnRowEdit"/>
           <Button Style="{StaticResource IconBtn}" Content="&#xE712;" ToolTip="Ordre, bonus, couper en deux titres, fusionner" Click="OnRowMore"/>
           <Button Style="{StaticResource IconBtn}" Content="&#xE74D;" ToolTip="Supprimer le titre" Click="OnRowRemove"/>
         </StackPanel>

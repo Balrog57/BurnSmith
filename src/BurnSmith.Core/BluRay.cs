@@ -490,7 +490,8 @@ public static class BluRay
         // a cut that starts later must be re-encoded to begin on the exact frame (a copy starts on the keyframe before it); a 4K disc is never re-encoded, so it is copied
         var copyCut = title.Start == 0 || job.Uhd;
         // a 4K source is 10-bit HEVC at its own levels: only the H.264 of a Blu-ray has a player's limits to check
-        var videoOk = !enc.ForceReencode && kbps == 0 && copyCut && (job.Uhd ? s.VideoCodec == "hevc" : s.PlayerReadyH264) && s.Width == w && s.Height == h && fpsOk;
+        var videoOk = !enc.ForceReencode && kbps == 0 && copyCut && (job.Uhd ? s.VideoCodec == "hevc" : s.PlayerReadyH264) && s.Width == w && s.Height == h && fpsOk
+                      && title.Effects is null or { IsEmpty: true }; // effects are drawn into the picture, so it is made again
         if (job.Uhd && !videoOk)
             // shortcut: UHD sources must already be 2160p HEVC; HDR-aware re-encoding is not implemented yet
             throw new NotSupportedException("UHD needs a 3840x2160 HEVC source at 23.976/24/25 fps");
@@ -503,7 +504,7 @@ public static class BluRay
         args.AddRange(["-i", title.Video, "-map", "0:v:0"]);
         foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
         if (videoOk) args.AddRange(["-c:v", "copy"]);
-        else args.AddRange(["-vf", $"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1",
+        else args.AddRange(["-vf", title.Effects is { IsEmpty: false } fx ? fx.Vf(s.Width, s.Height, title.Start, Fit(w, h)) : Fit(w, h),
                             "-r", DiscRate(s.Fps).Ffmpeg,
                             "-c:v", "libx264", "-preset", enc.Preset, "-pix_fmt", "yuv420p"]);
         if (!videoOk)
@@ -535,6 +536,8 @@ public static class BluRay
         foreach (var (t, file) in subs.Where(x => x.Track.File == null && x.Track.IsVobSub)) WriteEmbeddedVobSub(title, t, s.Duration, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
         foreach (var (t, file) in subs.Where(x => !x.Track.IsPicture)) TidySubtitle(file);
     }
+
+    static string Fit(int w, int h) => $"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1";
 
     /// <summary>
     /// ffmpeg turns ASS into SRT with a font tag around each line and {\an8}-style codes: tsMuxeR then renders no subtitle at all (found with an

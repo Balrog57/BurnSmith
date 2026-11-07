@@ -754,6 +754,20 @@ if (a.Count >= 1 && a[0] == "check-edit")
             Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=s=640x360:d=1", "-pix_fmt", "yuv420p", "-c:v", "libx264", .. settings, F(name)]);
         Check("two clips of one size and codec but another H.264 profile or reordering are not joined; the same clip is",
               !MediaMaker.SameLayout(BluRay.Probe(F("x.mkv")), BluRay.Probe(F("y.mkv"))) && MediaMaker.SameLayout(BluRay.Probe(F("x.mkv")), BluRay.Probe(F("x.mkv"))));
+        // the video editor's effects as one ffmpeg graph: turned, cropped, coloured, a watermark and a burnt subtitle read from a folder with a space in its name
+        Directory.CreateDirectory(F("a b"));
+        File.WriteAllText(F("a b/s.srt"), "1\r\n00:00:00,000 --> 00:00:10,000\r\nBonjour\r\n");
+        var fx = new VideoEffects(Rotate: 90, CropLeft: 40, CropRight: 60, CropTop: 10, Brightness: 20, WhiteBalance: 30, Look: "Sépia",
+                                  Watermark: F("b.jpg"), WatermarkWidth: 0.25, WatermarkOpacity: 50, BurnSubtitle: F("a b/s.srt"), BurnDelay: 2);
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", F("a.png"), "-vf", fx.Vf(800, 600, 3, "null"), F("fx.png")]);
+        var fxOut = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", F("fx.png")]).Trim();
+        Check("video effects: rotation, crop, colour, watermark and a burnt subtitle make one graph ffmpeg runs; the picture is 600x800 less the crop",
+              fx.Size(800, 600) == (500, 790) && fxOut == "500,790" && new VideoEffects().IsEmpty && !fx.IsEmpty
+              && new VideoEffects().Take(fx, "crop") is { Rotate: 90, CropLeft: 40, Brightness: 0 });
+        // the same graph on a real video cut like a title (-ss before -i), fitted to the disc frame as Blu-ray.Prepare does: every frame comes out
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", "1", "-t", "2", "-i", F("show.mkv"), "-vf", fx.Vf(1920, 1080, 1, "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1"),
+            "-r", "25", "-c:v", "libx264", "-preset", "ultrafast", "-an", F("fx.mkv")]);
+        Check("video effects on a cut video: 2 s give 50 frames of 1920x1080", Frames(F("fx.mkv")) == 50 && BluRay.Probe(F("fx.mkv")) is { Width: 1920, Height: 1080 });
     }
     catch (FileNotFoundException e) { Check($"slideshow and song videos: {e.Message}", false); }
     finally { if (Directory.Exists(mediaDir)) Directory.Delete(mediaDir, true); }

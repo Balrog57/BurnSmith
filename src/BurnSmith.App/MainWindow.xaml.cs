@@ -46,6 +46,8 @@ public partial class MainWindow : Window
         public int? DefaultSub { get; set; }
         /// <summary>Languages set by hand on the video's own tracks (see <see cref="DiscTitle.TrackLanguage"/>).</summary>
         public Dictionary<string, string> TrackLanguage { get; set; } = [];
+        /// <summary>Rotation, crop, colour, watermark and burnt subtitle of the video editor (null = none).</summary>
+        public VideoEffects? Effects { get; set; }
         /// <summary>The name as the table shows it.</summary>
         public string Shown => Intro ? $"Début · {Name}" : Bonus ? $"Bonus · {Name}" : Name;
 
@@ -63,13 +65,13 @@ public partial class MainWindow : Window
         public string SubText => Summary(Subs.OrderBy(i => i == DefaultSub ? 0 : 1).Select(i => (Tracks.Subtitles.FirstOrDefault(t => t.Index == i)?.Name ?? "?") + (i == DefaultSub ? " (défaut)" : "")).ToList());
 
         static string Summary(List<string> names) => names.Count == 0 ? "Aucun" : names.Count == 1 ? names[0] : $"{names[0]} +{names.Count - 1}";
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage);
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects);
 
         /// <summary>Another row for the same video with the same settings (a title cut in two).</summary>
         public Entry Clone() => new(Path, Info)
         {
             Name = Name, Audio = [.. Audio], Subs = [.. Subs], Extra = [.. Extra], Start = Start, End = End, Volume = Volume, ChapterAt = ChapterAt,
-            ChapterMinutes = ChapterMinutes, Bonus = Bonus, Intro = Intro, DefaultAudio = DefaultAudio, DefaultSub = DefaultSub, TrackLanguage = new(TrackLanguage),
+            ChapterMinutes = ChapterMinutes, Bonus = Bonus, Intro = Intro, DefaultAudio = DefaultAudio, DefaultSub = DefaultSub, TrackLanguage = new(TrackLanguage), Effects = Effects,
         };
     }
 
@@ -676,7 +678,7 @@ public partial class MainWindow : Window
             var joined = new Entry(file, info)
             {
                 Name = entry.Name, Audio = [.. entry.Audio.Where(a => a < info.Audio.Count)], Subs = [.. entry.Subs.Where(s => s < info.Subtitles.Count)],
-                Volume = entry.Volume, Bonus = entry.Bonus, Intro = entry.Intro, DefaultAudio = entry.DefaultAudio, DefaultSub = entry.DefaultSub, TrackLanguage = new(entry.TrackLanguage), // the join keeps both videos' (equal) streams
+                Volume = entry.Volume, Bonus = entry.Bonus, Intro = entry.Intro, DefaultAudio = entry.DefaultAudio, DefaultSub = entry.DefaultSub, TrackLanguage = new(entry.TrackLanguage), Effects = entry.Effects, // the join keeps both videos' (equal) streams
             };
             if (entry.Extra.Count + next.Extra.Count > 0) Warn("Les fichiers de sous-titres ajoutés aux deux vidéos ne suivent pas la fusion.");
             titles[i] = joined;
@@ -723,13 +725,23 @@ public partial class MainWindow : Window
         RefreshThumb(); // episode order changes the menu
     }
 
-    /// <summary>The pencil: the name shown in the menu, the part kept, the volume and the chapters of this video.</summary>
+    /// <summary>
+    /// The pencil: DVDFab's "Éditer" (name in the menu, crop, effects and volume, watermark, burnt subtitle, part kept, chapters).
+    /// A tab's "Appliquer à tous" copies that tab to every other video.
+    /// </summary>
     async void OnRowEdit(object s, RoutedEventArgs e)
     {
         if (Row(s) is not { } entry) return;
-        var dlg = new VideoEditWindow(entry.Name, entry.Info.Duration, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes, chapterMinutes) { Owner = this };
+        var dlg = new VideoEditWindow(entry.Path, entry.Tracks, entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes, chapterMinutes, entry.Effects) { Owner = this };
         if (dlg.ShowDialog() != true) return;
-        (entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes) = (dlg.NameText, dlg.Start, dlg.End, dlg.Volume, dlg.ChapterAt, dlg.ChapterMinutes);
+        (entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes, entry.Effects) = (dlg.NameText, dlg.Start, dlg.End, dlg.Volume, dlg.ChapterAt, dlg.ChapterMinutes, dlg.Effects);
+        foreach (var other in titles.Where(t => t != entry && dlg.ApplyAll.Count > 0))
+        {
+            var fx = dlg.ApplyAll.Aggregate(other.Effects ?? new VideoEffects(), (o, part) => o.Take(dlg.Effects ?? new VideoEffects(), part));
+            other.Effects = fx.IsEmpty ? null : fx;
+            if (dlg.ApplyAll.Contains("effect")) other.Volume = dlg.Volume;
+            other.Refresh();
+        }
         entry.Refresh();
         Update(); // the size follows the length kept
         RefreshThumb(); // the name and the chapters are on the menu

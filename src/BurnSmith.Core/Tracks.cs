@@ -169,12 +169,14 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// <see cref="DefaultAudio"/> / <see cref="DefaultSubtitle"/> (an <see cref="AudioTrack.Index"/> / <see cref="SubtitleTrack.Index"/> among those kept): what
 /// plays and shows when the disc starts. Null: the first audio, no subtitles. The default audio goes first, so it is audio 1 everywhere (the menu's
 /// pages, a DVD's first stream, the first of a Blu-ray's list); the default subtitle is selected by the disc itself (<see cref="DefaultSubtitleNumber"/>).
+/// <see cref="Effects"/>: rotation, crop, colour, watermark and burnt subtitle drawn into the picture (null = none).
 /// <see cref="TrackLanguage"/>: languages set by hand on the video's own tracks (key <see cref="LanguageKey"/>, value an ISO 639-2 code), for a track the file leaves "und" or mislabels.
 /// </summary>
 public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<int>? Audio = null, IReadOnlyList<int>? Subtitles = null,
                                double Start = 0, double? End = null, int Volume = 100, IReadOnlyList<double>? ChapterAt = null,
                                IReadOnlyList<ExternalSubtitle>? External = null, bool Bonus = false, int? DefaultAudio = null, int? DefaultSubtitle = null,
-                               int? ChapterMinutes = null, bool Intro = false, IReadOnlyDictionary<string, string>? TrackLanguage = null)
+                               int? ChapterMinutes = null, bool Intro = false, IReadOnlyDictionary<string, string>? TrackLanguage = null,
+                               VideoEffects? Effects = null)
 {
     public string DisplayName => Name ?? Path.GetFileNameWithoutExtension(Video);
 

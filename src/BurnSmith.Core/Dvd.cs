@@ -138,7 +138,8 @@ public static class Dvd
         if (title.End != null) args.AddRange(["-t", src.Duration.ToString("0.###", Inv)]);
         args.AddRange(["-i", title.Video, "-map", "0:v:0"]);
         foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
-        args.AddRange(["-vf", $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale=1024:576:force_original_aspect_ratio=decrease,pad=1024:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h},setsar={sar},{rate}",
+        var fit = $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale=1024:576:force_original_aspect_ratio=decrease,pad=1024:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h},setsar={sar},{rate}";
+        args.AddRange(["-vf", title.Effects is { IsEmpty: false } fx ? fx.Vf(src.Width, src.Height, title.Start, fit) : fit,
             "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", "16:9", "-b:v", $"{videoBps / 1000}k"]);
         if (audio.Count == 0) args.Add("-an");
         for (var j = 0; j < audio.Count; j++)
