@@ -30,6 +30,8 @@ public partial class VideoEditWindow : Window
     public int? ChapterMinutes { get; private set; }
     /// <summary>Null = none.</summary>
     public VideoEffects? Effects { get; private set; }
+    /// <summary>The parts kept when there are several (DVDFab's output clips); null = only <see cref="Start"/> to <see cref="End"/>.</summary>
+    public IReadOnlyList<Clip>? Clips { get; private set; }
     public HashSet<string> ApplyAll { get; } = [];
 
     static readonly (string Name, string Hex)[] Colors =
@@ -40,6 +42,7 @@ public partial class VideoEditWindow : Window
     readonly SourceInfo info;
     readonly double duration;
     readonly List<double> times;
+    readonly List<Clip> clips;
     readonly string temp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "BurnSmith", "edit");
     readonly System.Windows.Threading.DispatcherTimer seekTimer, fxTimer;
     readonly bool ready;
@@ -50,7 +53,7 @@ public partial class VideoEditWindow : Window
     bool looksMade, syncing;
 
     public VideoEditWindow(string video, SourceInfo info, string name, double start, double? end, int volume, IReadOnlyList<double>? chapterAt, int? chapterMinutes,
-                           int discMinutes, VideoEffects? effects, string? part = null)
+                           int discMinutes, VideoEffects? effects, string? part = null, IReadOnlyList<Clip>? clips = null)
     {
         InitializeComponent();
         this.video = video;
@@ -60,7 +63,8 @@ public partial class VideoEditWindow : Window
         // the row button used opens the window on its tab: "cut" and "chapters" on Chapitres, else the tab of that name
         var tab = Tabs.Items.Cast<TabItem>().FirstOrDefault(t => (string)t.Tag == (part == "cut" ? "chapters" : part));
         if (tab != null) Tabs.SelectedItem = tab;
-        Loaded += (_, _) => (part is "cut" ? StartCheck : part is "chapters" ? ChapDisc : (Control)NameBox).Focus();
+        Loaded += (_, _) => (part is "cut" ? PosBox : part is "chapters" ? ChapDisc : (Control)NameBox).Focus();
+        Closed += (_, _) => playing?.Cancel();
 
         NameText = name;
         Start = start;
@@ -70,10 +74,8 @@ public partial class VideoEditWindow : Window
         ChapterMinutes = chapterMinutes;
         NameBox.Text = name;
         SourceText.Text = $"{info.Width}x{info.Height} · {Timecode.Format(duration)}";
-        StartCheck.IsChecked = start > 0;
-        StartBox.Text = Timecode.Format(start);
-        EndCheck.IsChecked = end != null;
-        EndBox.Text = Timecode.Format(end ?? duration);
+        this.clips = clips is { Count: > 1 } ? [.. clips] : [new Clip(start, Math.Min(end ?? duration, duration))];
+        TotalText.Text = "/ " + Timecode.Format(duration);
         VolumeSlider.Value = volume;
         ChapDisc.Content = $"Comme le disque (un chapitre toutes les {discMinutes} min)";
         times = chapterAt?.Order().ToList() ?? [];
@@ -105,7 +107,7 @@ public partial class VideoEditWindow : Window
         fxTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
         fxTimer.Tick += async (_, _) => { fxTimer.Stop(); await RenderOutput(); };
         ready = true;
-        OnCut(null!, null!);
+        ShowClips();
         OnVolume(null!, null!);
         OnChapterMode(null!, null!);
         ShowTimes();
@@ -219,12 +221,93 @@ public partial class VideoEditWindow : Window
     {
         if (!ready) return;
         TimeText.Text = $"{Timecode.Format(SeekSlider.Value)} / {Timecode.Format(duration)}";
+        if (!PosBox.IsKeyboardFocusWithin) PosBox.Text = Timecode.Format(SeekSlider.Value);
+        if (advancing) return; // the player moved it
+        Stop(); // the user moved it: the player stops there
         seekTimer.Stop();
         seekTimer.Start();
     }
 
-    void OnBack(object s, RoutedEventArgs e) => SeekSlider.Value = Math.Max(0, SeekSlider.Value - 10);
-    void OnForward(object s, RoutedEventArgs e) => SeekSlider.Value = Math.Min(duration, SeekSlider.Value + 10);
+    /// <summary>The buttons under the slider: Tag is the step in seconds.</summary>
+    void OnStep(object s, RoutedEventArgs e) => SeekSlider.Value = Math.Clamp(SeekSlider.Value + double.Parse((string)((Button)s).Tag, CultureInfo.InvariantCulture), 0, duration);
+
+    void OnPosKey(object s, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        OnPosEdited(s, e);
+        e.Handled = true; // not the window's OK
+    }
+
+    void OnPosEdited(object s, RoutedEventArgs e)
+    {
+        if (Timecode.Parse(PosBox.Text) is { } t) SeekSlider.Value = Math.Clamp(t, 0, duration);
+        PosBox.Text = Timecode.Format(SeekSlider.Value);
+    }
+
+    // ---- playing: ffmpeg decodes from the slider's time at the video's own pace into the source picture (no sound, no effects) ----
+
+    CancellationTokenSource? playing;
+    bool advancing;
+
+    void OnPlay(object s, RoutedEventArgs e)
+    {
+        if (playing != null) Stop();
+        else _ = Play(duration);
+    }
+
+    void Stop()
+    {
+        if (playing == null) return;
+        playing.Cancel();
+        playing = null;
+        PlayButton.Content = "";
+        ShowCrop();
+        seekTimer.Stop();
+        seekTimer.Start(); // the still frames and the output picture of where it stopped
+    }
+
+    /// <summary>Plays from the slider's time up to <paramref name="until"/> (a clip's end, or the end of the file).</summary>
+    async Task Play(double until)
+    {
+        if (!File.Exists(video)) return;
+        const int Fps = 25;
+        var scale = Math.Min(456.0 / Math.Max(1, info.Width), 232.0 / Math.Max(1, info.Height));
+        int w = Math.Max(2, (int)(info.Width * scale) / 2 * 2), h = Math.Max(2, (int)(info.Height * scale) / 2 * 2);
+        var cts = playing = new CancellationTokenSource();
+        PlayButton.Content = "";
+        ShowCrop();
+        var from = SeekSlider.Value >= until - 0.5 ? 0 : SeekSlider.Value;
+        var psi = new System.Diagnostics.ProcessStartInfo(Ffmpeg) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+        foreach (var a in new[] { "-v", "error", "-re", "-ss", N(from), "-i", video, "-an", "-sn", "-vf", $"fps={Fps},scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1" })
+            psi.ArgumentList.Add(a);
+        System.Diagnostics.Process? ffmpeg = null;
+        try
+        {
+            ffmpeg = System.Diagnostics.Process.Start(psi)!;
+            var bmp = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgr24, null);
+            SourceImage.Source = bmp;
+            var picture = new byte[w * h * 3];
+            for (var n = 1; ; n++)
+            {
+                await ffmpeg.StandardOutput.BaseStream.ReadExactlyAsync(picture, cts.Token);
+                bmp.WritePixels(new Int32Rect(0, 0, w, h), picture, w * 3, 0);
+                var at = Math.Min(from + (double)n / Fps, duration);
+                advancing = true;
+                SeekSlider.Value = at;
+                advancing = false;
+                if (at >= until) break;
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (EndOfStreamException) { } // the end of the file
+        catch (Exception ex) { MessageBox.Show(this, "Lecture impossible : " + ex.Message, "Lecture", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally
+        {
+            try { ffmpeg?.Kill(); } catch (Exception) { } // already gone
+            ffmpeg?.Dispose();
+            if (playing == cts) Stop();
+        }
+    }
 
     /// <summary>The source frame at the slider, full size (the crop and the watermark are in its pixels), then the output made from it.</summary>
     async Task ReadFrame()
@@ -239,7 +322,7 @@ public partial class VideoEditWindow : Window
             await Task.Run(() => Tools.Run(Ffmpeg, ["-y", "-v", "error", "-ss", N(at), "-i", video, "-frames:v", "1", "-update", "1", file]));
         }
         catch (Exception) { return; } // a frame that cannot be read leaves the last one
-        if (mine != frameVersion || !File.Exists(file)) return;
+        if (mine != frameVersion || !File.Exists(file) || playing != null) return;
         frame = file;
         frameAt = at;
         SourceImage.Source = Load(file);
@@ -317,6 +400,138 @@ public partial class VideoEditWindow : Window
         OutSizeText.Text = $"Taille de sortie : {w}x{h}";
         if (!CropWBox.IsKeyboardFocusWithin) CropWBox.Text = w.ToString();
         if (!CropHBox.IsKeyboardFocusWithin) CropHBox.Text = h.ToString();
+        ShowCrop();
+    }
+
+    // the crop frame on the source picture: the picture is shown turned and flipped like the output, so the margins are drawn where they cut
+
+    /// <summary>Where the turned frame sits in the source box: its scale (screen pixels per video pixel) and top left corner.</summary>
+    (double Scale, double X, double Y) Placement()
+    {
+        var (fw, fh) = Turned;
+        var (cw, ch) = (SourceBox.ActualWidth, SourceBox.ActualHeight);
+        var scale = Math.Min(cw / Math.Max(1, fw), ch / Math.Max(1, fh));
+        return (scale, (cw - fw * scale) / 2, (ch - fh * scale) / 2);
+    }
+
+    (int Top, int Bottom, int Left, int Right) Margins() => (Math.Max(0, Int(TopBox.Text, 0)), Math.Max(0, Int(BottomBox.Text, 0)), Math.Max(0, Int(LeftBox.Text, 0)), Math.Max(0, Int(RightBox.Text, 0)));
+
+    void ShowCrop()
+    {
+        SourceTurn.Angle = rotate;
+        SourceFlip.ScaleX = FlipHButton.IsChecked == true ? -1 : 1;
+        SourceFlip.ScaleY = FlipVButton.IsChecked == true ? -1 : 1;
+        CropCanvas.Visibility = Tabs.SelectedIndex == 0 && playing == null ? Visibility.Visible : Visibility.Collapsed;
+        if (SourceBox.ActualWidth < 1) return;
+        var (scale, x, y) = Placement();
+        var (fw, fh) = Turned;
+        var (top, bottom, left, right) = Margins();
+        var inner = new Rect(x + left * scale, y + top * scale, Math.Max(0, (fw - left - right) * scale), Math.Max(0, (fh - top - bottom) * scale));
+        Canvas.SetLeft(CropRect, inner.X);
+        Canvas.SetTop(CropRect, inner.Y);
+        (CropRect.Width, CropRect.Height) = (inner.Width, inner.Height);
+        CropShade.Data = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(x, y, fw * scale, fh * scale)), new RectangleGeometry(inner));
+        // the handles: the four corners and the middle of each side
+        if (CropCanvas.Children.Count == 2)
+            for (var k = 0; k < 8; k++) CropCanvas.Children.Add(new Rectangle { Width = 8, Height = 8, Fill = Brushes.White, IsHitTestVisible = false });
+        var points = new[] { inner.TopLeft, inner.TopRight, inner.BottomLeft, inner.BottomRight,
+                             new Point(inner.X + inner.Width / 2, inner.Y), new Point(inner.X + inner.Width / 2, inner.Bottom), new Point(inner.X, inner.Y + inner.Height / 2), new Point(inner.Right, inner.Y + inner.Height / 2) };
+        for (var k = 0; k < 8; k++)
+        {
+            Canvas.SetLeft(CropCanvas.Children[2 + k], points[k].X - 4);
+            Canvas.SetTop(CropCanvas.Children[2 + k], points[k].Y - 4);
+        }
+    }
+
+    void OnSourceBoxSize(object s, SizeChangedEventArgs e) => ShowCrop();
+
+    void OnTab(object s, SelectionChangedEventArgs e)
+    {
+        if (e.OriginalSource == Tabs && ready) ShowCrop(); // the lists inside the tabs raise this event too
+    }
+
+    // what a drag holds: the sides it moves (left, top, right, bottom; all four = the whole frame), where it began and the margins then
+    (bool L, bool T, bool R, bool B) dragSides;
+    Point dragFrom;
+    (int Top, int Bottom, int Left, int Right) dragMargins;
+    bool dragging;
+
+    /// <summary>The sides a press at <paramref name="p"/> takes: near a corner two, near a side one, inside the frame all four, outside none.</summary>
+    (bool L, bool T, bool R, bool B) SidesAt(Point p)
+    {
+        var r = new Rect(Canvas.GetLeft(CropRect), Canvas.GetTop(CropRect), CropRect.Width, CropRect.Height);
+        const double near = 8;
+        bool l = Math.Abs(p.X - r.Left) < near, rt = Math.Abs(p.X - r.Right) < near, t = Math.Abs(p.Y - r.Top) < near, b = Math.Abs(p.Y - r.Bottom) < near;
+        bool inX = p.X > r.Left - near && p.X < r.Right + near, inY = p.Y > r.Top - near && p.Y < r.Bottom + near;
+        if (!inX || !inY) return default;
+        if (l || rt || t || b) return (l, t, rt && !l, b && !t);
+        return (true, true, true, true);
+    }
+
+    void OnCropDown(object s, MouseButtonEventArgs e)
+    {
+        var sides = SidesAt(e.GetPosition(CropCanvas));
+        if (sides == default) return;
+        (dragSides, dragFrom, dragMargins, dragging) = (sides, e.GetPosition(CropCanvas), Margins(), true);
+        CropCanvas.CaptureMouse();
+        e.Handled = true;
+    }
+
+    void OnCropMove(object s, MouseEventArgs e)
+    {
+        var p = e.GetPosition(CropCanvas);
+        if (!dragging)
+        {
+            var (l, t, r, b) = SidesAt(p);
+            CropCanvas.Cursor = (l && t) || (r && b) ? (l && r ? Cursors.SizeAll : Cursors.SizeNWSE) : (l && b) || (r && t) ? Cursors.SizeNESW
+                : l || r ? Cursors.SizeWE : t || b ? Cursors.SizeNS : Cursors.Arrow;
+            return;
+        }
+        var (scale, _, _) = Placement();
+        var (fw, fh) = Turned;
+        int dx = (int)Math.Round((p.X - dragFrom.X) / scale), dy = (int)Math.Round((p.Y - dragFrom.Y) / scale);
+        var (top, bottom, left, right) = dragMargins;
+        const int min = 16;
+        if (dragSides is (true, true, true, true)) // the whole frame moves, its size kept
+        {
+            dx = Math.Clamp(dx, -left, right);
+            dy = Math.Clamp(dy, -top, bottom);
+            SetMargins(top + dy, bottom - dy, left + dx, right - dx);
+            return;
+        }
+        if (dragSides.L) left = Math.Clamp(left + dx, 0, fw - right - min);
+        if (dragSides.R) right = Math.Clamp(right - dx, 0, fw - left - min);
+        if (dragSides.T) top = Math.Clamp(top + dy, 0, fh - bottom - min);
+        if (dragSides.B) bottom = Math.Clamp(bottom - dy, 0, fh - top - min);
+        var corner = (dragSides.L || dragSides.R) && (dragSides.T || dragSides.B);
+        if (corner && RatioValue() is { } ratio)
+        {
+            // a fixed shape: the width leads, the height follows, the opposite corner stays
+            var w = fw - left - right;
+            var h = (int)Math.Round(w / ratio);
+            if (h > fh - (dragSides.T ? bottom : top)) { h = fh - (dragSides.T ? bottom : top); w = (int)Math.Round(h * ratio); }
+            if (dragSides.L) left = fw - right - w; else right = fw - left - w;
+            if (dragSides.T) top = fh - bottom - h; else bottom = fh - top - h;
+        }
+        else if (!corner) RatioBox.SelectedIndex = 0; // one side alone changes the shape
+        var index = RatioBox.SelectedIndex;
+        SetMargins(top, bottom, left, right);
+        RatioBox.SelectedIndex = index;
+    }
+
+    void OnCropUp(object s, MouseButtonEventArgs e)
+    {
+        if (!dragging) return;
+        dragging = false;
+        CropCanvas.ReleaseMouseCapture();
+    }
+
+    /// <summary>The shape asked for in the Format list (width / height), null for Libre.</summary>
+    double? RatioValue()
+    {
+        var tag = TagOf(RatioBox);
+        if (tag == "orig") return Turned.W / (double)Math.Max(1, Turned.H);
+        return double.TryParse(tag, NumberStyles.Float, CultureInfo.InvariantCulture, out var r) ? r : null;
     }
 
     void OnRotate(object s, RoutedEventArgs e)
@@ -358,7 +573,7 @@ public partial class VideoEditWindow : Window
     /// <summary>A shape picked: the largest box of that shape in the middle of the picture.</summary>
     void OnRatio(object s, SelectionChangedEventArgs e)
     {
-        if (!ready || syncing || !double.TryParse(TagOf(RatioBox), NumberStyles.Float, CultureInfo.InvariantCulture, out var ratio)) return;
+        if (!ready || syncing || RatioValue() is not { } ratio) return;
         var (fw, fh) = Turned;
         var (w, h) = fw / (double)fh > ratio ? ((int)(fh * ratio), fh) : (fw, (int)(fw / ratio));
         var (left, top) = ((fw - w) / 2, (fh - h) / 2);
@@ -463,46 +678,166 @@ public partial class VideoEditWindow : Window
 
     // ---- Chapitres ----
 
-    /// <summary>The part kept, or why the times typed do not make one. An end at the end of the file is no cut at all.</summary>
-    bool TryCut(out double start, out double? end, out string error)
+    /// <summary>Why the clips do not make a disc (null when they do): each lasts a second or more, inside the file, after the one before.</summary>
+    string? ClipError()
     {
-        start = 0;
-        end = null;
-        error = "";
-        if (StartCheck.IsChecked == true)
+        for (var k = 0; k < clips.Count; k++)
         {
-            if (Timecode.Parse(StartBox.Text) is not { } s || s >= duration) { error = "Début : un temps dans la vidéo est attendu (h:mm:ss)."; return false; }
-            start = s;
+            var c = clips[k];
+            if (c.From < 0 || c.To > duration + 0.05) return $"Clip {k + 1} : ses temps doivent être dans la vidéo (0:00:00 à {Timecode.Format(duration)}).";
+            if (c.To - c.From < 1) return $"Clip {k + 1} : il doit durer au moins une seconde.";
+            if (k > 0 && c.From < clips[k - 1].To - 0.01) return $"Clip {k + 1} : il doit commencer après la fin du clip {k}.";
         }
-        if (EndCheck.IsChecked == true)
-        {
-            if (Timecode.Parse(EndBox.Text) is not { } e) { error = "Fin : un temps dans la vidéo est attendu (h:mm:ss)."; return false; }
-            if (e < duration - 0.05) end = e;
-        }
-        if ((end ?? duration) - start < 1) { error = "La partie gardée doit durer au moins une seconde."; return false; }
-        return true;
+        return null;
     }
 
-    void OnCut(object s, RoutedEventArgs e)
+    /// <summary>One block per clip as DVDFab shows them: its start and end (typed, or taken from the slider), its length, play and delete.</summary>
+    void ShowClips()
     {
-        if (!ready) return;
-        StartBox.IsEnabled = StartCheck.IsChecked == true;
-        EndBox.IsEnabled = EndCheck.IsChecked == true;
-        var ok = TryCut(out var start, out var end, out var error);
-        KeptText.Text = ok ? $"Durée sur le disque : {Timecode.Format((end ?? duration) - start)}" : error;
-        if (ok) KeptText.ClearValue(TextBlock.ForegroundProperty);
+        ClipPanel.Children.Clear();
+        for (var k = 0; k < clips.Count; k++)
+        {
+            var i = k;
+            var block = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
+            var head = new DockPanel();
+            var delete = new Button { Style = (Style)FindResource("IconBtn"), Content = "", ToolTip = "Supprimer ce clip (sa partie est enlevée du disque)", IsEnabled = clips.Count > 1 };
+            delete.Click += (_, _) => { clips.RemoveAt(i); ShowClips(); };
+            var play = new Button { Style = (Style)FindResource("IconBtn"), Content = "", ToolTip = "Lire ce clip" };
+            play.Click += (_, _) => { Stop(); SeekSlider.Value = clips[i].From; _ = Play(clips[i].To); };
+            DockPanel.SetDock(delete, Dock.Right);
+            DockPanel.SetDock(play, Dock.Right);
+            head.Children.Add(delete);
+            head.Children.Add(play);
+            head.Children.Add(new TextBlock { Text = $"Clip {k + 1}  ·  durée {Timecode.Format(Math.Max(0, clips[k].To - clips[k].From))}", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+            block.Children.Add(head);
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+            foreach (var isStart in new[] { true, false })
+            {
+                line.Children.Add(new TextBlock { Text = isStart ? "Heure de début :" : "Heure de fin :", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(isStart ? 0 : 16, 0, 6, 0) });
+                var box = new TextBox { Style = (Style)FindResource("Time"), Text = Timecode.Format(isStart ? clips[k].From : clips[k].To) };
+                var first = isStart;
+                void Typed()
+                {
+                    if (Timecode.Parse(box.Text) is { } t) clips[i] = first ? clips[i] with { From = Math.Round(t, 2) } : clips[i] with { To = Math.Round(t, 2) };
+                    ShowClips();
+                }
+                box.LostFocus += (_, _) => { if (box.Text != Timecode.Format(first ? clips[i].From : clips[i].To)) Typed(); };
+                box.PreviewKeyDown += (_, e) => { if (e.Key == Key.Enter) { Typed(); e.Handled = true; } };
+                var here = new Button { Style = (Style)FindResource("IconBtn"), Content = "", ToolTip = isStart ? "Début ici (à la position de l'aperçu)" : "Fin ici (à la position de l'aperçu)" };
+                here.Click += (_, _) =>
+                {
+                    var t = Math.Round(SeekSlider.Value, 2);
+                    clips[i] = first ? clips[i] with { From = t } : clips[i] with { To = t };
+                    ShowClips();
+                };
+                line.Children.Add(box);
+                line.Children.Add(here);
+            }
+            block.Children.Add(line);
+            ClipPanel.Children.Add(block);
+        }
+        var error = ClipError();
+        var kept = clips.Sum(c => Math.Max(0, c.To - c.From));
+        KeptText.Text = error ?? $"Durée sur le disque : {Timecode.Format(kept)}" + (clips.Count > 1 ? $" ({clips.Count} clips, {Timecode.Format(Math.Max(0, clips[^1].To - clips[0].From - kept))} enlevés entre eux)" : "");
+        if (error == null) KeptText.ClearValue(TextBlock.ForegroundProperty);
         else KeptText.SetResourceReference(TextBlock.ForegroundProperty, "AccentTextFillColorPrimaryBrush");
+        ShowMarks();
     }
 
-    void OnStartHere(object s, RoutedEventArgs e) { StartCheck.IsChecked = true; StartBox.Text = Timecode.Format(SeekSlider.Value); }
-    void OnEndHere(object s, RoutedEventArgs e) { EndCheck.IsChecked = true; EndBox.Text = Timecode.Format(SeekSlider.Value); }
+    /// <summary>"Couper ici": the clip under the slider becomes two that meet there.</summary>
+    void OnSplitClip(object s, RoutedEventArgs e)
+    {
+        var t = Math.Round(SeekSlider.Value, 2);
+        var k = clips.FindIndex(c => t > c.From + 1 && t < c.To - 1);
+        if (k < 0)
+        {
+            MessageBox.Show(this, "Placez l'aperçu dans un clip, à plus d'une seconde de ses bords.", "Couper ici", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        clips.Insert(k + 1, clips[k] with { From = t });
+        clips[k] = clips[k] with { To = t };
+        ShowClips();
+    }
+
+    /// <summary>A clip of a minute (less at the end of the file) where the slider is, outside the clips already there.</summary>
+    void OnAddClip(object s, RoutedEventArgs e)
+    {
+        var from = Math.Round(SeekSlider.Value, 2);
+        var to = Math.Min(duration, from + 60);
+        if (clips.FirstOrDefault(c => c.From > from) is { } next) to = Math.Min(to, next.From);
+        if (to - from < 1 || clips.Any(c => from >= c.From && from < c.To))
+        {
+            MessageBox.Show(this, "Placez l'aperçu en dehors des clips déjà là, devant au moins une seconde libre.", "Ajouter un clip", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        clips.Add(new Clip(from, to));
+        clips.Sort((a, b) => a.From.CompareTo(b.From));
+        ShowClips();
+    }
+
+    void OnClipsDefault(object s, RoutedEventArgs e)
+    {
+        clips.Clear();
+        clips.Add(new Clip(0, duration));
+        ShowClips();
+    }
+
+    /// <summary>The clips (coloured) and the chapters of the list (white) under the slider.</summary>
+    void ShowMarks()
+    {
+        Marks.Children.Clear();
+        var w = Marks.ActualWidth;
+        if (w < 1 || duration <= 0) return;
+        Marks.Children.Add(new Rectangle { Width = w, Height = 4, Fill = (Brush)FindResource("LineBrush") });
+        foreach (var c in clips)
+        {
+            var bar = new Rectangle { Width = Math.Max(1, (c.To - c.From) / duration * w), Height = 4, Fill = (Brush)FindResource("AccentBrush") };
+            Canvas.SetLeft(bar, Math.Max(0, c.From) / duration * w);
+            Marks.Children.Add(bar);
+        }
+        if (ChapCustom.IsChecked != true) return;
+        foreach (var t in times.Where(t => t > 0 && t < duration))
+        {
+            var tick = new Rectangle { Width = 2, Height = 8, Fill = Brushes.White };
+            Canvas.SetLeft(tick, t / duration * w - 1);
+            Marks.Children.Add(tick);
+        }
+    }
+
+    void OnMarksSize(object s, SizeChangedEventArgs e) => ShowMarks();
+
+    /// <summary>"Insertion automatique": the custom list filled with one chapter every N minutes of the disc, set at their times in the original file.</summary>
+    void OnAutoInsert(object s, RoutedEventArgs e)
+    {
+        if (!(int.TryParse(EveryBox.Text.Trim(), out var minutes) && minutes is >= 1 and <= 600))
+        {
+            MessageBox.Show(this, "Entrez un nombre de minutes entre 1 et 600.", "Chapitres", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        times.Clear();
+        var passed = 0.0; // disc time at the start of the clip
+        foreach (var c in clips)
+        {
+            for (var at = Math.Ceiling(passed / (minutes * 60.0)) * minutes * 60; at < passed + c.To - c.From; at += minutes * 60)
+                if (at > 0) times.Add(Math.Round(c.From + at - passed, 1));
+            passed += c.To - c.From;
+        }
+        ChapCustom.IsChecked = true;
+        ShowTimes();
+    }
 
     void OnChapterMode(object s, RoutedEventArgs e)
     {
-        if (ready) ListPanel.IsEnabled = ChapCustom.IsChecked == true;
+        if (!ready) return;
+        ListPanel.IsEnabled = ChapCustom.IsChecked == true;
+        ShowMarks();
     }
 
-    void ShowTimes() => ChapterList.ItemsSource = times.Select(Timecode.Format).ToList();
+    void ShowTimes()
+    {
+        ChapterList.ItemsSource = times.Select(Timecode.Format).ToList();
+        if (ready) ShowMarks();
+    }
 
     void OnInsert(object s, RoutedEventArgs e)
     {
@@ -539,7 +874,15 @@ public partial class VideoEditWindow : Window
 
     void OnOk(object s, RoutedEventArgs e)
     {
-        if (!TryCut(out var start, out var end, out _)) { Tabs.SelectedIndex = 4; return; } // the reason is already shown under the times
+        if (ClipError() != null) { Tabs.SelectedIndex = 4; return; } // the reason is already shown under the clips
+        Stop();
+        // clips that meet (after "Couper ici") are one part again
+        var kept = new List<Clip>();
+        foreach (var c in clips)
+            if (kept.Count > 0 && c.From <= kept[^1].To + 0.01) kept[^1] = kept[^1] with { To = c.To };
+            else kept.Add(c);
+        var start = kept[0].From < 0.05 ? 0 : kept[0].From;
+        double? end = kept[^1].To < duration - 0.05 ? kept[^1].To : null; // an end at the end of the file is no cut at all
         var minutes = 0;
         if (ChapEvery.IsChecked == true && !(int.TryParse(EveryBox.Text.Trim(), out minutes) && minutes is >= 1 and <= 600))
         {
@@ -562,6 +905,7 @@ public partial class VideoEditWindow : Window
         ChapterMinutes = ChapEvery.IsChecked == true ? minutes : null;
         ChapterAt = ChapDisc.IsChecked == true || ChapEvery.IsChecked == true ? null : ChapNone.IsChecked == true ? [] : times.ToList();
         Effects = fx.IsEmpty ? null : fx;
+        Clips = kept.Count > 1 ? kept : null;
         DialogResult = true;
     }
 }

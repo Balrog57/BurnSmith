@@ -57,7 +57,8 @@ public partial class App : Application
         {
             var info = videos.Count > 0 ? BurnSmith.Core.BluRay.Probe(videos[0]) : new BurnSmith.Core.SourceInfo("h264", 1920, 1080, 25, "ac3", 2, 5400, [], []);
             window = new VideoEditWindow(videos.FirstOrDefault() ?? "Épisode 1.mkv", info, "Épisode 1", 90, 3600, 120, [600, 1800, 3000], null, 5,
-                                         new BurnSmith.Core.VideoEffects(Brightness: 10, WatermarkText: "BurnSmith", WatermarkSize: 64, BurnSubtitle: videos.Select(v => Path.ChangeExtension(v, ".srt")).FirstOrDefault(File.Exists)), edit.Length > 5 ? edit[5..] : null);
+                                         new BurnSmith.Core.VideoEffects(Brightness: 10, WatermarkText: "BurnSmith", WatermarkSize: 64, BurnSubtitle: videos.Select(v => Path.ChangeExtension(v, ".srt")).FirstOrDefault(File.Exists)), edit.Length > 5 ? edit[5..] : null,
+                                         [new(90, 600), new(900, 1500)]);
             OffScreen(window);
             window.Show();
         }

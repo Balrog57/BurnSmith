@@ -477,7 +477,7 @@ public static class BluRay
     /// a second early. So a title that starts later has its sound re-encoded too (decoded, then cut exactly); a 4K disc copies both from the same keyframe and stays in step.
     /// Only 48 kHz is copied: a disc does not take 44.1 kHz.
     /// </summary>
-    static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && (t.Start == 0 || uhd) && a.SampleRate == 48000 && a.Codec is "ac3" or "dts" or "truehd";
+    static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && (t.Start == 0 || uhd) && t.Gaps.Count == 0 && a.SampleRate == 48000 && a.Codec is "ac3" or "dts" or "truehd";
 
     /// <summary>
     /// Remuxes to prepared.ts (ffmpeg numbers the streams from PID 256: video = 256, kept audio = 257..), re-encoding only what a Blu-ray cannot carry,
@@ -492,17 +492,19 @@ public static class BluRay
         var copyCut = title.Start == 0 || (job.Uhd && !enc.ForceReencode && kbps == 0);
         // a 4K source is 10-bit HEVC at its own levels: only the H.264 of a Blu-ray has a player's limits to check
         var videoOk = !enc.ForceReencode && kbps == 0 && copyCut && (job.Uhd ? s.VideoCodec == "hevc" : s.PlayerReadyH264) && s.Width == w && s.Height == h && fpsOk
-                      && title.Effects is null or { IsEmpty: true }; // effects are drawn into the picture, so it is made again
+                      && title.Effects is null or { IsEmpty: true } // effects are drawn into the picture, so it is made again
+                      && title.Gaps.Count == 0; // several clips are joined frame by frame
         if (job.Uhd && videoOk && title.Start > 0) log($"{title.DisplayName}: 4K is not re-encoded, so the cut starts on the keyframe before {Timecode.Format(title.Start)}");
 
         // -ss / -t before -i cut the input itself: the video, the sound and the subtitle files written below all start and stop together
         var args = new List<string> { "-y", "-v", "warning" };
         if (title.Start > 0) args.AddRange(["-ss", title.Start.ToString(Inv)]);
-        if (title.End != null) args.AddRange(["-t", s.Duration.ToString("0.###", Inv)]);
+        var span = s.Duration + title.GapLength; // the part read: from the first clip's start to the last one's end
+        if (title.End != null) args.AddRange(["-t", span.ToString("0.###", Inv)]);
         args.AddRange(["-i", title.Video, "-map", "0:v:0"]);
         foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
         if (videoOk) args.AddRange(["-c:v", "copy"]);
-        else args.AddRange(["-vf", title.Effects is { IsEmpty: false } fx ? fx.Vf(s.Width, s.Height, title.Start, Fit(w, h)) : Fit(w, h),
+        else args.AddRange(["-vf", (title.Effects is { IsEmpty: false } fx ? fx.Vf(s.Width, s.Height, title.Start, Fit(w, h)) : Fit(w, h)) + (title.Gaps.Count > 0 ? "," + title.GapFilter(false) : ""),
                             "-r", DiscRate(s.Fps).Ffmpeg,
                             "-c:v", job.Uhd ? "libx265" : "libx264", "-preset", enc.Preset, "-pix_fmt", job.Uhd ? "yuv420p10le" : "yuv420p"]);
         if (!videoOk && job.Uhd)
@@ -528,19 +530,16 @@ public static class BluRay
             {
                 args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", audio[j].Channels > 2 ? "640k" : "448k", $"-ar:a:{j}", "48000"]);
                 if (audio[j].Channels > 6) args.AddRange([$"-ac:a:{j}", "6"]); // AC-3 tops out at 5.1
-                if (title.Volume != 100) args.AddRange([$"-filter:a:{j}", $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}"]);
+                var af = string.Join(",", new[] { title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "" }.Where(f => f.Length > 0));
+                if (af.Length > 0) args.AddRange([$"-filter:a:{j}", af]);
             }
         }
         args.AddRange(["-sn", "-dn", output]);
-        foreach (var (t, file) in subs.Where(x => x.Track.File == null && !x.Track.IsVobSub)) // the video's own tracks (a VobSub is made apart); the subtitle files are converted apart
-        {
-            args.AddRange(["-map", $"0:s:{t.Index}", "-c:s", t.IsPgs ? "copy" : "srt"]);
-            if (title.End != null) args.AddRange(["-t", s.Duration.ToString("0.###", Inv)]); // the input's -t lets later subtitle cues through
-            args.AddRange(["-f", t.IsPgs ? "sup" : "srt", file]);
-        }
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
-        foreach (var (t, file) in subs.Where(x => x.Track.File != null)) WriteExternalSubtitle(title, t, s.Duration, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
-        foreach (var (t, file) in subs.Where(x => x.Track.File == null && x.Track.IsVobSub)) WriteEmbeddedVobSub(title, t, s.Duration, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
+        WriteOwnSubtitles(title, subs.Where(x => x.Track.File == null && !x.Track.IsVobSub).ToList(), span, log); // a VobSub is made apart, the subtitle files too
+        foreach (var (t, file) in subs.Where(x => x.Track.File != null)) WriteExternalSubtitle(title, t, span, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
+        foreach (var (t, file) in subs.Where(x => x.Track.File == null && x.Track.IsVobSub)) WriteEmbeddedVobSub(title, t, span, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
+        foreach (var (_, file) in subs) title.CloseGaps(file, span);
         foreach (var (t, file) in subs.Where(x => !x.Track.IsPicture)) TidySubtitle(file);
     }
 
@@ -559,6 +558,21 @@ public static class BluRay
         var text = File.ReadAllText(file);
         var clean = System.Text.RegularExpressions.Regex.Replace(text, @"\{\\[^}]*\}|</?font[^>]*>", "");
         if (clean != text) File.WriteAllText(file, clean);
+    }
+
+    /// <summary>
+    /// The video's own text and PGS tracks, read whole in one pass and cut at the exact times like a subtitle file. Not in the picture's pass: an input -ss
+    /// starts the subtitles at the keyframe before the cut (found on a real episode: every cue 0.74 s late), where the decoded picture and sound start on the exact frame.
+    /// </summary>
+    public static void WriteOwnSubtitles(DiscTitle title, IReadOnlyList<(SubtitleTrack Track, string File)> subs, double span, Action<string> log)
+    {
+        if (subs.Count == 0) return;
+        var args = new List<string> { "-y", "-v", "warning", "-i", title.Video };
+        foreach (var (t, file) in subs) args.AddRange(["-map", $"0:s:{t.Index}", "-c:s", t.IsPgs ? "copy" : "srt", "-f", t.IsPgs ? "sup" : "srt", file]);
+        Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
+        foreach (var (t, file) in subs)
+            if (t.IsPgs) File.WriteAllBytes(file, PgsSubtitles.Cut(File.ReadAllBytes(file), title.Start, span));
+            else File.WriteAllText(file, ExternalSubtitle.Cut(File.ReadAllText(file), title.Start, span));
     }
 
     /// <summary>A VobSub inside the video as the PGS file the disc tools take: made for a <paramref name="plane"/>-sized screen (<see cref="VobSub.FromVideo"/>), cut like the video.</summary>

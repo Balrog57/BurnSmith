@@ -48,6 +48,8 @@ public partial class MainWindow : Window
         public Dictionary<string, string> TrackLanguage { get; set; } = [];
         /// <summary>Rotation, crop, colour, watermark and burnt subtitle of the video editor (null = none).</summary>
         public VideoEffects? Effects { get; set; }
+        /// <summary>The parts kept when there are several (see <see cref="DiscTitle.Clips"/>; null = only <see cref="Start"/> to <see cref="End"/>).</summary>
+        public IReadOnlyList<Clip>? Clips { get; set; }
         /// <summary>The name as the table shows it.</summary>
         public string Shown => Intro ? $"Début · {Name}" : Bonus ? $"Bonus · {Name}" : Name;
 
@@ -65,13 +67,13 @@ public partial class MainWindow : Window
         public string SubText => Summary(Subs.OrderBy(i => i == DefaultSub ? 0 : 1).Select(i => (Tracks.Subtitles.FirstOrDefault(t => t.Index == i)?.Name ?? "?") + (i == DefaultSub ? " (défaut)" : "")).ToList());
 
         static string Summary(List<string> names) => names.Count == 0 ? "Aucun" : names.Count == 1 ? names[0] : $"{names[0]} +{names.Count - 1}";
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects);
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects, Clips);
 
         /// <summary>Another row for the same video with the same settings (a title cut in two).</summary>
         public Entry Clone() => new(Path, Info)
         {
             Name = Name, Audio = [.. Audio], Subs = [.. Subs], Extra = [.. Extra], Start = Start, End = End, Volume = Volume, ChapterAt = ChapterAt,
-            ChapterMinutes = ChapterMinutes, Bonus = Bonus, Intro = Intro, DefaultAudio = DefaultAudio, DefaultSub = DefaultSub, TrackLanguage = new(TrackLanguage), Effects = Effects,
+            ChapterMinutes = ChapterMinutes, Bonus = Bonus, Intro = Intro, DefaultAudio = DefaultAudio, DefaultSub = DefaultSub, TrackLanguage = new(TrackLanguage), Effects = Effects, Clips = Clips,
         };
     }
 
@@ -630,6 +632,7 @@ public partial class MainWindow : Window
         second.Name = entry.Name + " (2/2)";
         entry.Name += " (1/2)";
         (entry.End, second.Start) = (at, at);
+        entry.Clips = second.Clips = null; // the clips were for the whole
         titles.Insert(titles.IndexOf(entry) + 1, second);
         entry.Refresh();
         AfterTitlesChanged();
@@ -711,9 +714,9 @@ public partial class MainWindow : Window
     async void OnRowEdit(object s, RoutedEventArgs e)
     {
         if (Row(s) is not { } entry) return;
-        var dlg = new VideoEditWindow(entry.Path, entry.Tracks, entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes, chapterMinutes, entry.Effects) { Owner = this };
+        var dlg = new VideoEditWindow(entry.Path, entry.Tracks, entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes, chapterMinutes, entry.Effects, clips: entry.Clips) { Owner = this };
         if (dlg.ShowDialog() != true) return;
-        (entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes, entry.Effects) = (dlg.NameText, dlg.Start, dlg.End, dlg.Volume, dlg.ChapterAt, dlg.ChapterMinutes, dlg.Effects);
+        (entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes, entry.Effects, entry.Clips) = (dlg.NameText, dlg.Start, dlg.End, dlg.Volume, dlg.ChapterAt, dlg.ChapterMinutes, dlg.Effects, dlg.Clips);
         foreach (var other in titles.Where(t => t != entry && dlg.ApplyAll.Count > 0))
         {
             var fx = dlg.ApplyAll.Aggregate(other.Effects ?? new VideoEffects(), (o, part) => o.Take(dlg.Effects ?? new VideoEffects(), part));
@@ -730,7 +733,7 @@ public partial class MainWindow : Window
         if (Row(s) is not { } entry) return;
         var dlg = new CutWindow(entry.Path, entry.Info.Duration, entry.Start, entry.End) { Owner = this };
         if (dlg.ShowDialog() != true) return;
-        (entry.Start, entry.End) = (dlg.Start, dlg.End);
+        (entry.Start, entry.End, entry.Clips) = (dlg.Start, dlg.End, null); // one part kept: the editor's clips give way
         await Edited(entry);
     }
 
