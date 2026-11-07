@@ -24,6 +24,7 @@ MinVersion=10.0
 OutputDir=..\dist
 OutputBaseFilename=BurnSmith-Setup-{#AppVersion}
 UninstallDisplayIcon={app}\BurnSmith.exe
+SetupIconFile=..\assets\burnsmith.ico
 WizardStyle=modern
 ; the exe is already compressed (single file, compressed), so a fast pass is enough
 Compression=lzma2/fast

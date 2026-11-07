@@ -1,5 +1,7 @@
 # BurnSmith
 
+![BurnSmith](assets/logo-burnsmith.svg)
+
 **Créateur de disques Blu-ray, Blu-ray 4K et DVD avec menus, pour Windows. Libre et gratuit.**
 
 Glissez vos vidéos, choisissez un menu parmi **144 modèles** (ou dessinez le vôtre), cliquez sur *Démarrer* : vous obtenez un dossier de disque, une image ISO, ou le disque gravé.

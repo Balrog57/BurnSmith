@@ -12,7 +12,14 @@
     <Version>0.5.4</Version>
     <!-- Application.ThemeMode (native Fluent theme) is still flagged experimental in .NET 10 -->
     <NoWarn>$(NoWarn);WPF0001</NoWarn>
+    <!-- exe, taskbar and title-bar icon (windows without their own Icon take the exe's) -->
+    <ApplicationIcon>..\..\assets\burnsmith.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 420px copy of assets\burnsmith_logo_emblem.jpg: WPF shows a splash at its pixel size -->
+    <SplashScreen Include="..\..\assets\splash.jpg" Link="splash.jpg" />
+  </ItemGroup>
 
   <ItemGroup>
     <Using Include="System.IO" />
