@@ -1140,13 +1140,14 @@ if (a.Count >= 1 && a[0] == "templates")
     return 0;
 }
 
-// burnsmith drives | iso <disc folder> <out.iso> [--label X] [--dvd] | burn <image.iso> <F:>   (Windows' own IMAPI2, nothing to install)
+// burnsmith drives | iso <disc folder> <out.iso> [--label X] [--dvd] | burn <image.iso> <F:>   (images: IMAPI2; burning: ImgBurn when installed, else IMAPI2)
 if (a.Count >= 1 && a[0] == "drives")
 {
-    var drives = Imapi.Drives();
+    Console.WriteLine($"ImgBurn: {Iso.ImgBurn() ?? "absent (burning through IMAPI2)"}");
+    var drives = Iso.Drives();
     foreach (var d in drives)
     {
-        var disc = d.Letter.Length > 0 ? Imapi.Inspect(d.Letter) : null;
+        var disc = d.Letter.Length > 0 && d.Id != d.Letter ? Imapi.Inspect(d.Letter) : null; // Id == Letter: a drive only ImgBurn reaches
         Console.WriteLine($"{(d.Letter.Length > 0 ? d.Letter : "?"),-3} {d.Name} - {(disc == null ? "no usable disc" : $"{disc.Kind}, {(disc.Blank ? "blank" : "not blank")}, {disc.FreeBytes / 1e9:0.0} GB free")}");
     }
     if (drives.Count == 0) Console.WriteLine("no disc burner visible to Windows");

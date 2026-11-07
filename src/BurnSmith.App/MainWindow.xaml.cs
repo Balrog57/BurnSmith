@@ -211,11 +211,7 @@ public partial class MainWindow : Window
         refreshingDrives = true;
         try
         {
-            var drives = await Task.Run(() =>
-            {
-                try { return Imapi.Drives().Where(d => d.Letter.Length > 0).ToList(); }
-                catch (Exception) { return new List<Imapi.Drive>(); } // IMAPI2 unavailable: no burning, creating still works
-            });
+            var drives = await Task.Run(Iso.Drives); // none: no burning, creating still works
             if (busy) return;
             if (!drives.Select(d => d.Id).SequenceEqual(DriveBox.Items.Cast<Imapi.Drive>().Select(d => d.Id)))
             {
