@@ -1231,7 +1231,8 @@ var titles = videos.Select((v, k) =>
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
 // bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (fit = "Adapter au disque"),
-//     --capacity GB (usable size, instead of the profile's), --play-mode 0|1|2 (menu then all titles | first title then all | back to the menu) [--no-rewind]
+//     --capacity GB (usable size, instead of the profile's), --play-mode 0|1|2 (menu then all titles | first title then all | back to the menu) [--no-rewind] (DVD too)
+// dvd: --pal | --ntsc (default: as the first video), --4x3 (4:3 titles, the menu stays 16:9)
 var profile = BdProfile.Find(Opt("--profile") ?? "BD25");
 var quality = Opt("--quality") ?? "source";
 var rate = int.TryParse(quality, out var q) ? (q < 1000 ? q * 1000 : q) : 0; // "15" = 15 Mb/s
@@ -1243,7 +1244,8 @@ var playback = int.TryParse(Opt("--play-mode"), out var mode) ? PlaybackOptions.
 if (a[0] == "bd")
     BluRay.Build(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback), Console.WriteLine);
 else
-    Dvd.Build(new DvdJob(titles, Path.GetFullPath(outDir), design, chapters, Encode: encode), Console.WriteLine);
+    Dvd.Build(new DvdJob(titles, Path.GetFullPath(outDir), design, chapters, Encode: encode with { DvdPal = a.Contains("--pal") ? true : a.Contains("--ntsc") ? false : null, DvdWide = !a.Contains("--4x3") },
+                         Playback: playback), Console.WriteLine);
 var problems = DiscCheck.Folder(Path.GetFullPath(outDir));
 Console.WriteLine(problems.Count == 0 ? "disc structure checked: no problem" : "disc structure: " + string.Join(" ; ", problems));
 return problems.Count == 0 ? 0 : 1;

@@ -18,9 +18,10 @@ public sealed record BluRayJob(IReadOnlyList<DiscTitle> Titles, string OutDir, M
 /// quality <see cref="Crf"/> (lower = better, bigger); <see cref="DvdKbps"/> &gt; 0 sets the DVD video bit rate by hand (0 = fills the disc).
 /// Blu-ray: <see cref="BdKbps"/> &gt; 0 = x264 at that video bit rate; <see cref="FitDisc"/> = "Adapter au disque" (the source is kept while it fits
 /// <see cref="BluRayJob.CapacityGB"/>, else re-encoded at the bit rate that fills it); <see cref="Hd720"/> = a 1280x720 disc.
+/// DVD: <see cref="DvdPal"/> forces PAL (true) or NTSC (false), null follows the first video; <see cref="DvdWide"/> false = 4:3 titles (the menu stays 16:9).
 /// </summary>
 public sealed record EncodeOptions(bool ForceReencode = false, int Crf = 17, string Preset = "medium", int DvdKbps = 0,
-                                   int BdKbps = 0, bool FitDisc = false, bool Hd720 = false);
+                                   int BdKbps = 0, bool FitDisc = false, bool Hd720 = false, bool? DvdPal = null, bool DvdWide = true);
 
 /// <summary>
 /// The play mode (Blu-ray menu). <see cref="StartAtFirstTitle"/>: the disc starts on the first title instead of the menu.

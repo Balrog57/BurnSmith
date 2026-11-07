@@ -358,7 +358,7 @@ public partial class MainWindow : Window
         if (titles.Count > 0)
         {
             // shortcut: a 4K disc is sized by its source files (HEVC is kept), the audio dropped from them is not subtracted
-            est = kind == "dvd" ? Dvd.EstimateGB(titles.Select(t => (t.OnDisc, t.ToDisc())).ToList(), cap.Usable) : Estimate(cap, encode) ?? titles.Sum(t => Tools.SizeOf(t.Path) * t.OnDisc.Duration / t.Info.Duration) / 1e9;
+            est = Estimate(cap, encode) ?? titles.Sum(t => Tools.SizeOf(t.Path) * t.OnDisc.Duration / t.Info.Duration) / 1e9;
             if (est > cap.Usable) note = "\ntrop grand pour ce support";
             if (titles.Any(t => !File.Exists(t.Path))) note = "\nune vidéo source est introuvable";
             if (kind == "uhd" && titles.Any(t => t.Info.VideoCodec != "hevc" || t.Info.Height != 2160)) note = "\nles sources doivent être en HEVC 2160p";
@@ -370,7 +370,8 @@ public partial class MainWindow : Window
 
     /// <summary>Size in GB of the Blu-ray for an output and an encoding (the video at the fitted rate, plus audio and menu); null for a DVD, a 4K disc or no video.</summary>
     double? Estimate(Output output, EncodeOptions enc) =>
-        kind != "bd" || titles.Count == 0 ? null
+        titles.Count == 0 || kind == "uhd" ? null
+        : kind == "dvd" ? Dvd.EstimateGB(titles.Select(t => (t.OnDisc, t.ToDisc())).ToList(), output.Usable, enc.DvdKbps)
         : BluRay.EstimateGB(new BluRayJob(titles.Select(t => t.ToDisc()).ToList(), "", MenuCheck.IsChecked == true || NeedsMenu(titles.Select(t => t.ToDisc())) ? design : null, false, "X", chapterMinutes, enc, output.Usable),
             titles.Select(t => t.OnDisc).ToList());
 
@@ -1079,7 +1080,7 @@ public partial class MainWindow : Window
 
         var ok = await Work("Création du disque…", (log, progress, token) =>
         {
-            if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable, enc), log, token);
+            if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable, enc, play), log, token);
             else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes, enc, cap.Usable, play), log, token);
             var iso = IsoFile(outDir);
             File.Delete(iso); // an image of an earlier build must never be burnt by mistake
