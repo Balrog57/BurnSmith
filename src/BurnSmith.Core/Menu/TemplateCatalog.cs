@@ -141,6 +141,8 @@ public static class TemplateCatalog
             ? Directory.EnumerateFiles(Path.Combine(lib, "open", "templates"), "*.dvdt", SearchOption.AllDirectories) : [];
         foreach (var dir in Roots().SelectMany(r => TemplateFolders(r)).Concat(dvdt).Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            // a converted pack is read above, in its own format: walking it as a raw template would list its pictures twice
+            if (Directory.Exists(dir) && TemplatePack.TryRead(dir) is not null) continue;
             var pack = InstalledTemplate.Load(dir);
             if (pack == null) continue;
             var design = Design(dir, pack);
@@ -165,6 +167,8 @@ public static class TemplateCatalog
         var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var dir in (roots ?? UserRoots()).SelectMany(r => TemplateFolders(r)).Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            // a pack BurnSmith made from a template is not a source: the library can be named as a whole, its converted folder included
+            if (TemplatePack.TryRead(dir) is not null) continue;
             if (InstalledTemplate.Load(dir) is not { Unsupported: null } pack) continue;
             var name = Path.GetFileName(dir);
             var prefix = pack.Kind switch
