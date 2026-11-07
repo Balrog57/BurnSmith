@@ -768,6 +768,10 @@ if (a.Count >= 1 && a[0] == "check-edit")
         Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", "1", "-t", "2", "-i", F("show.mkv"), "-vf", fx.Vf(1920, 1080, 1, "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1"),
             "-r", "25", "-c:v", "libx264", "-preset", "ultrafast", "-an", F("fx.mkv")]);
         Check("video effects on a cut video: 2 s give 50 frames of 1920x1080", Frames(F("fx.mkv")) == 50 && BluRay.Probe(F("fx.mkv")) is { Width: 1920, Height: 1080 });
+        // a camcorder's 702x574 at 16:15 is 748 wide as seen: fitted into 1920x1080 it is 1408 wide (1080 * 748 / 574), not 1320 (the stored shape, squeezed)
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "color=white:s=702x574:d=1,setsar=16/15", "-frames:v", "1", "-vf", BluRay.Fit(1920, 1080) + ",crop=1920:1:0:540,format=gray", "-f", "rawvideo", F("row.raw")]);
+        var seen = File.ReadAllBytes(F("row.raw")).Count(b => b > 128); // the white columns of the middle line
+        Check($"non-square pixels are made square before the Blu-ray fit: a 702x574 16:15 picture is about 1408 wide on the disc (here {seen})", Math.Abs(seen - 1408) <= 4);
     }
     catch (FileNotFoundException e) { Check($"slideshow and song videos: {e.Message}", false); }
     finally { if (Directory.Exists(mediaDir)) Directory.Delete(mediaDir, true); }
@@ -1158,7 +1162,8 @@ var titles = videos.Select((v, k) =>
         if (!System.Text.RegularExpressions.Regex.IsMatch(kv[0].Trim(), "^[as][0-9]+$") || code == null) throw new ArgumentException($"--track-lang: a track and a language are expected (a0=fre,s1=eng), not '{pair}'");
         (trackLanguage ??= [])[kv[0].Trim()] = code;
     }
-    return new DiscTitle(v, null, Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes, own.Contains("--intro"), trackLanguage);
+    return new DiscTitle(v, null, Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes, own.Contains("--intro"), trackLanguage,
+                          Own("--effects") is { } fx ? System.Text.Json.JsonSerializer.Deserialize<VideoEffects>(File.ReadAllText(fx)) : null); // --effects FILE.json: the video editor's settings (VideoEffects, by property name)
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
 // bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (fit = "Adapter au disque"),

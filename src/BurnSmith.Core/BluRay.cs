@@ -430,7 +430,7 @@ public static class BluRay
         else if (src is { Audio.Count: > 0 }) args.AddRange(["-map", "0:a:0"]);
         var hasAudio = music != null || src is { Audio.Count: > 0 };
         args.AddRange(["-t", seconds.ToString(Inv),
-            "-vf", $"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1", "-r", fps,
+            "-vf", Fit(w, h), "-r", fps,
             "-c:v", "libx264", "-preset", "fast", "-crf", "19", "-pix_fmt", "yuv420p",
             "-x264-params", "bluray-compat=1:level=41:vbv-maxrate=20000:vbv-bufsize=20000:keyint=24:slices=4:bframes=3:b-pyramid=strict:open-gop=0"]);
         if (hasAudio) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2", "-ar", "48000"]); // the first title's own sound can be anything
@@ -537,7 +537,11 @@ public static class BluRay
         foreach (var (t, file) in subs.Where(x => !x.Track.IsPicture)) TidySubtitle(file);
     }
 
-    static string Fit(int w, int h) => $"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1";
+    /// <summary>
+    /// A picture fitted into the disc's <paramref name="w"/> x <paramref name="h"/> frame with bars, as it is seen: non-square pixels (a DVD rip, a camcorder's
+    /// 702x574 at 16:15) are first made square, else the fit would read the stored size and squeeze the picture.
+    /// </summary>
+    public static string Fit(int w, int h) => $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1";
 
     /// <summary>
     /// ffmpeg turns ASS into SRT with a font tag around each line and {\an8}-style codes: tsMuxeR then renders no subtitle at all (found with an

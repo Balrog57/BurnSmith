@@ -261,7 +261,7 @@ public partial class VideoEditWindow : Window
         string? error = null;
         await Task.Run(() =>
         {
-            try { Tools.Run(Ffmpeg, ["-y", "-v", "error", "-i", src, "-vf", fx.Vf(info.Width, info.Height, at, "scale=960:540:force_original_aspect_ratio=decrease,pad=960:540:(ow-iw)/2:(oh-ih)/2"), "-frames:v", "1", "-update", "1", file]); }
+            try { Tools.Run(Ffmpeg, ["-y", "-v", "error", "-i", src, "-vf", fx.Vf(info.Width, info.Height, at, BluRay.Fit(960, 540)), "-frames:v", "1", "-update", "1", file]); }
             catch (Exception ex) { error = ex.Message.Split('\n')[0]; }
         });
         if (mine != outputVersion) return;
