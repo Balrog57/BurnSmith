@@ -377,7 +377,7 @@ public sealed class InstalledTemplate
 
     /// <summary>
     /// The DVD subpicture of a button: the template's highlighted artwork (<c>frame/0.dvd.sub.png</c> beside <c>frame/0.dvd.normal.png</c>) is
-    /// exactly spumux's <c>highlight</c> image, and its <c>.mask.</c> twin gives the shape. Only artwork that has such a twin qualifies — a star
+    /// exactly the DVD's <c>highlight</c> image, and its <c>.mask.</c> twin gives the shape. Only artwork that has such a twin qualifies — a star
     /// marker beside a text button is not a button picture, and there BurnSmith keeps its own four-colour frame.
     /// </summary>
     MenuButton Dvd(MenuButton b)

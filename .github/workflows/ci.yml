@@ -62,7 +62,7 @@ jobs:
       - name: check-update
         run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-update
 
-      # --no-dvd: dvdauthor and spumux are not redistributable, so what needs them runs only on a PC that has them; each check names what it passes over
+      # --no-dvd: the real DVD builds are slow, they run on a PC; each check names what it passes over
       - name: check-edit
         run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-edit --no-dvd
 

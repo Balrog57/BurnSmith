@@ -18,9 +18,9 @@ Une seule fenêtre, en thème sombre : on dépose ses vidéos, et tout ce qu'il 
 
 Avant de graver, BurnSmith **contrôle le disque qu'il vient de construire** (fichiers, en-têtes, tailles, structure de l'image ISO) et refuse de graver s'il trouve une anomalie.
 
-### Rapide, rien à installer en plus pour le Blu-ray
+### Rapide, rien à installer en plus
 
-- **Un seul installateur** : tsMuxeR et les modèles sont dedans, et il trouve ffmpeg sur le PC ou le télécharge. Le Blu-ray ne demande rien d'autre ; le DVD demande deux outils en plus (voir *Démarrer*). Pas de logiciel de gravure à ajouter : l'ISO et la gravure passent par Windows (IMAPI2).
+- **Un seul installateur** : tsMuxeR et les modèles sont dedans, et il trouve ffmpeg sur le PC ou le télécharge. Ni le Blu-ray ni le DVD ne demandent autre chose. Pas de logiciel de gravure à ajouter : l'ISO et la gravure passent par Windows (IMAPI2).
 - **On ne réencode pas ce qu'on peut garder.** Une vidéo Blu-ray déjà conforme est recopiée telle quelle ; avec *Adapter au disque*, elle reste intacte tant qu'elle tient sur le disque et n'est refaite qu'au débit qui le remplit si elle est trop grosse. En 4K, *Passthrough* garde la vidéo HEVC telle quelle ; *Conversion* la refait en HEVC 10 bits.
 
 ### 144 modèles de menu
@@ -56,7 +56,7 @@ Télécharger `BurnSmith-Setup-<version>.exe` dans [Releases](https://github.com
 
 La **bibliothèque de modèles** est dans `Documents\BurnSmith\Templates` : un dossier visible, à sauvegarder ou à enrichir. Vos modèles et vos images n'y sont jamais effacés, même à la désinstallation ([détails](docs/MODELES.md#où-sont-les-modèles-sur-le-disque)).
 
-Le mode **DVD** demande en plus `dvdauthor.exe` et `spumux.exe`, à indiquer par la variable d'environnement `BURNSMITH_TOOLS` ou le `PATH` ([détails](docs/COMPILER-ET-LIGNE-DE-COMMANDE.md)). Pour compiler vous-même : même document.
+Le mode **DVD** n'a besoin de rien d'autre que ffmpeg : BurnSmith écrit lui-même la structure VIDEO_TS (IFO, navigation, menus, sous-titres). Pour compiler vous-même : [COMPILER-ET-LIGNE-DE-COMMANDE.md](docs/COMPILER-ET-LIGNE-DE-COMMANDE.md).
 
 ## Documentation
 

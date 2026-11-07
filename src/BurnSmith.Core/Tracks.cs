@@ -256,7 +256,7 @@ public static class Languages
         ["rum"] = "ro", ["ron"] = "ro",
     };
 
-    public static string Iso1(string lang) => TwoLetter.GetValueOrDefault(lang, "xx"); // "xx" = unknown, accepted by dvdauthor
+    public static string Iso1(string lang) => TwoLetter.GetValueOrDefault(lang, "xx"); // "xx" = unknown
 
     /// <summary>Three letters for tsMuxeR; "und" when the file does not say.</summary>
     public static string Iso2(string lang) => lang.Length == 3 ? lang : "und";

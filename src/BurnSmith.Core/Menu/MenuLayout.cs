@@ -49,7 +49,7 @@ public sealed record MenuButton(string Id, Box Rect, MenuAction Action)
     /// <summary>The shape of that artwork (<c>frame/0.dvd.mask.png</c>, 1-bit); null = the whole rectangle.</summary>
     public string? DvdHighlightMask { get; init; }
     /// <summary>
-    /// The template's own picture for the <em>chosen</em> state (a <c>selection/0.png</c> picture, spumux's <c>select</c> image, a theme's
+    /// The template's own picture for the <em>chosen</em> state (a <c>selection/0.png</c> picture, the DVD's <c>select</c> image, a theme's
     /// <c>select</c> attribute). Null = the silhouette of <see cref="DvdHighlightImage"/> stands for both states.
     /// </summary>
     public string? DvdSelectImage { get; init; }

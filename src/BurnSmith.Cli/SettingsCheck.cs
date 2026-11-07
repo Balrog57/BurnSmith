@@ -33,7 +33,7 @@ static class SettingsCheck
         return TemplateCatalog.Find(dir) ?? throw new InvalidOperationException($"thème d'essai refusé : {name}");
     }
 
-    /// <summary>Ce qui ne demande ni dvdauthor ni modèle installé, plus Birthday 01 et 01movie quand ils sont là.</summary>
+    /// <summary>Ce qui ne demande ni DVD réel ni modèle installé, plus Birthday 01 et 01movie quand ils sont là.</summary>
     public static void Model(Action<string, bool> check)
     {
         var dir = Path.Combine(Path.GetTempPath(), "bs_settings_" + Guid.NewGuid().ToString("N")[..8]);
@@ -183,7 +183,7 @@ static class SettingsCheck
             int U32(int o) => (int)BinaryPrimitives.ReadUInt32BigEndian(vts.AsSpan(o));
             var table = U32(0xD0) * 2048 + U32(U32(0xD0) * 2048 + 12); // les chaînes de menu de la première langue
             int Chain(int n) => table + U32(table + 8 * n + 4);
-            // sans la chaîne d'entrée que dvdauthor ajoute, qui n'a pas de cellule : l'indice + 1 est le numéro que donnent les sauts
+            // les chaînes qui ont une cellule : l'indice + 1 est le numéro que donnent les sauts
             var pages = Enumerable.Range(1, U16(table)).Select(Chain).Where(p => vts[p + 3] > 0).ToList();
             string Post(int pgc)
             {

@@ -3,7 +3,7 @@ using System.IO.Compression;
 namespace BurnSmith.Core.Menu;
 
 /// <summary>
-/// DVD subpictures (spumux) accept at most 4 colours, so highlight images are written as 2-bit indexed PNGs
+/// DVD subpictures accept at most 4 colours, so highlight images are written as 2-bit indexed PNGs
 /// with a per-colour alpha. WPF cannot produce those, hence this small writer.
 /// </summary>
 public static class IndexedPng

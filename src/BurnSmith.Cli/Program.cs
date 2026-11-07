@@ -84,7 +84,7 @@ if (a.Count >= 3 && a[0] is "slideshow" or "song" or "join")
     Console.WriteLine("ok   " + made);
     return 0;
 }
-// --no-dvd, for CI only (dvdauthor and spumux are not redistributable): check-bd, check-edit and check-reliability name and pass over what needs them; without it a missing tool is a failure
+// --no-dvd: check-bd, check-edit and check-reliability name and pass over the real DVD builds (slow)
 // burnsmith check-bd [--no-dvd] : short clips through the real builds, then what a player needs of them read with ffprobe (sound rate, bit depth, level, sync), the DVD refusals, the work folder, damaged PGS
 if (a.Count >= 1 && a[0] == "check-bd") return BdCheck.Run(a.Contains("--no-dvd"));
 // burnsmith check-reliability [--no-dvd] : Cancel on real Blu-ray and DVD encodes (how fast, no process left, no work folder, not a tool failure), half an image, a source gone, the error log, closing
@@ -119,13 +119,13 @@ if (a.Count >= 1 && a[0] == "check-highlights")
         var hlOne = hlButtons.First();
         var (hlPx, hlW, hlH) = MenuRenderer.Sta(() => MenuRenderer.Raster(hlOne.DvdHighlightImage!, hlOne.DvdHighlightMask, 120, 80));
         var hlOpaque = hlPx.Where((_, i) => i % 4 == 3).Count(alpha => alpha >= 128);
-        Check("le raster a la taille du bouton et des pixels visibles (c'est ce que spumux affichera)",
+        Check("le raster a la taille du bouton et des pixels visibles (c'est ce que le lecteur affichera)",
               hlW == 120 && hlH == 80 && hlOpaque > 0);
         // l'état choisi vient du modèle : son propre marqueur (selection/0.png), pas la silhouette du survol
         var hlSel = hlButtons.Select(b => b.DvdSelectImage).FirstOrDefault(i => i != null);
         Check("le modèle nomme l'image de l'état choisi, et son marqueur donne une forme visible", hlSel != null && File.Exists(hlSel));
 
-        // --out DOSSIER : écrit les deux images de page (survol et choisi) telles que spumux les recevra, pour les regarder
+        // --out DOSSIER : écrit les deux images de page (survol et choisi) telles que le surlignage DVD les reçoit, pour les regarder
         if (Opt("--out") is { } hlDir)
         {
             Directory.CreateDirectory(hlDir);
@@ -775,13 +775,12 @@ if (a.Count >= 1 && a[0] == "check-edit")
     }
     catch (FileNotFoundException e) { Check($"slideshow and song videos: {e.Message}", false); }
     finally { if (Directory.Exists(mediaDir)) Directory.Delete(mediaDir, true); }
-    // a DVD with a start video, made for real when ffmpeg and dvdauthor are there: the first-play command jumps to the title after the film, with and without a menu
+    // a DVD with a start video, made for real with ffmpeg: the first-play command jumps to the title after the film, with and without a menu
     var introDir = Path.Combine(Path.GetTempPath(), "bs_dvdintro_" + Guid.NewGuid().ToString("N")[..8]);
     if (a.Contains("--no-dvd")) Console.WriteLine("skip a DVD's start video, the Settings page after it, an NTSC start video on a PAL film (--no-dvd)");
     else try
     {
         var ffmpeg = Tools.Find("ffmpeg.exe");
-        Tools.Find("dvdauthor.exe"); Tools.Find("spumux.exe");
         Directory.CreateDirectory(introDir);
         foreach (var (name, source) in new[] { ("film.mkv", "testsrc2=s=320x240:d=2"), ("intro.mkv", "smptebars=s=320x240:d=2") })
             Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", source, "-f", "lavfi", "-i", "sine=f=440:d=2", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "ac3", Path.Combine(introDir, name)]);
@@ -824,7 +823,7 @@ if (a.Count >= 1 && a[0] == "check-edit")
         var titleChains = U32(vts, 0xCC) * 2048;
         var menuChains = U32(vts, 0xD0) * 2048 + U32(vts, U32(vts, 0xD0) * 2048 + 12); // the first language's
         var (filmPgc, introPgc) = (Chain(vts, titleChains, 1), Chain(vts, titleChains, 2));
-        var pages = Enumerable.Range(1, U16(vts, menuChains)).Select(i => Chain(vts, menuChains, i)).Where(p => vts[p + 3] > 0).ToList(); // without dvdauthor's own entry chain, which has no cell
+        var pages = Enumerable.Range(1, U16(vts, menuChains)).Select(i => Chain(vts, menuChains, i)).Where(p => vts[p + 3] > 0).ToList(); // only the chains with a cell
         var menuVob = File.ReadAllBytes(Path.Combine(mixedDisc, "VIDEO_TS", "VTS_01_0.VOB"));
         var rootPci = Sector(vts, pages[0], 8) * 2048 + 0x2D; // its first navigation pack holds the buttons
         var rootButtons = Enumerable.Range(0, menuVob[rootPci + 0x71]).Select(i => Hex(menuVob, rootPci + 0x8E + 18 * i + 10)).ToList();

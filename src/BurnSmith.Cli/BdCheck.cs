@@ -30,7 +30,7 @@ static class BdCheck
         catch (Exception e) { Check(what, false, $"{e.GetType().Name}: {e.Message.Split('\n')[0]}"); }
     }
 
-    /// <summary>A part that needs dvdauthor or spumux, not redistributable, so absent from CI: only --no-dvd passes over it, and says so; otherwise a missing tool fails it.</summary>
+    /// <summary>A part that builds a real DVD (slow): only --no-dvd passes over it, and says so.</summary>
     static void DvdPart(string what, Action work)
     {
         if (noDvd) Console.WriteLine($"skip {what} (--no-dvd)");
@@ -268,7 +268,7 @@ static class BdCheck
             var lines = new List<string>();
             var clip = Clip("subclip.mkv", "testsrc=s=320x240:r=25:d=2", 48000, ["-pix_fmt", "yuv420p"], Ac3At48);
             Dvd.Build(new DvdJob([new DiscTitle(clip, Subtitles: [0], External: [new ExternalSubtitle(F("damaged.sup"), "fre")])], F("subdvd")), l => { lock (lines) lines.Add(l); });
-            Check("a DVD with that .sup builds, and keeps its subtitles", DiscCheck.Folder(F("subdvd")).Count == 0 && lines.Any(l => l.Contains("spumux")) && !lines.Any(l => l.Contains("subtitles dropped")), string.Join(" ; ", DiscCheck.Folder(F("subdvd"))));
+            Check("a DVD with that .sup builds, and keeps its subtitles", DiscCheck.Folder(F("subdvd")).Count == 0 && lines.Any(l => l.Contains("subtitles: render + mux")) && !lines.Any(l => l.Contains("subtitles dropped")), string.Join(" ; ", DiscCheck.Folder(F("subdvd"))));
         });
         DvdPart("a film on a DVD", () =>
         {
@@ -333,7 +333,7 @@ static class BdCheck
         return (ended ? p.ExitCode : -1, text.ToString(), !ended);
     }
 
-    /// <summary>Finding 7: a DVD that cannot be finished is refused before anything is encoded, and what does not need spumux still builds without it.</summary>
+    /// <summary>Finding 7: a DVD that cannot be finished is refused before anything is encoded; a DVD needs no authoring tool besides ffmpeg.</summary>
     static void DvdRefusals()
     {
         Part("DVD sums", () =>
@@ -342,9 +342,6 @@ static class BdCheck
             long Needed(DiscTitle t) => Dvd.NeededBytes(new DvdJob([t], ""), [(hour, t)], 4_000_000);
             var plain = Needed(new DiscTitle("x")); // (4 Mb/s + 192 kb/s) for an hour = 1.886 GB, twice, plus 5 %
             Check("space needed: the MPEG and its VOB; one more copy with subtitles", Math.Abs(plain - 3.96e9) < 0.01e9 && Math.Abs(Needed(new DiscTitle("x", Subtitles: [0])) - 5.94e9) < 0.01e9, $"{plain}");
-            Check("spumux is needed for a menu or a subtitle, not for a start video's nothing",
-                  Dvd.NeededTools(new DvdJob([new DiscTitle("x")], "")).SequenceEqual(["dvdauthor.exe"]) && Dvd.NeededTools(new DvdJob([new DiscTitle("x", Subtitles: [0], Intro: true), new DiscTitle("y")], "")).SequenceEqual(["dvdauthor.exe"])
-                  && Dvd.NeededTools(new DvdJob([new DiscTitle("x", Subtitles: [0])], "")).Contains("spumux.exe") && Dvd.NeededTools(new DvdJob([new DiscTitle("x")], "", new MenuDesign())).Contains("spumux.exe"));
         });
         Part("DVD refusals", () =>
         {
@@ -355,27 +352,13 @@ static class BdCheck
             Directory.CreateDirectory(nothing);
             var clip = Clip("dvdclip.mkv", "testsrc=s=320x240:r=25:d=2", 48000, ["-pix_fmt", "yuv420p"], Ac3At48);
             File.WriteAllText(F("dvdclip.fr.srt"), "1\n00:00:00,500 --> 00:00:01,500\nBonjour\n");
-
-            void Refused(string what, string missing, string tools, string name, params string[] more)
-            {
-                var result = Isolated(cli, tools, 120, ["dvd", "--video", clip, "--out", F(name), .. more]);
-                Check(what, result.Exit != 0 && result.Output.Contains(missing) && !result.Output.Contains("encode 1") && !Directory.Exists(F(name) + "_work"),
-                      $"exit {result.Exit}, {(result.Output.Contains("encode 1") ? "it encoded first" : "nothing encoded")}, {(result.Output.Contains(missing) ? "names " + missing : "does not name " + missing)}");
-            }
-            Refused("no dvdauthor: refused before anything is encoded", "dvdauthor.exe", nothing, "nodvdauthor", "--no-menu");
-            if (noDvd) { Console.WriteLine("skip no spumux refused or still building, no room on the drive (--no-dvd)"); return; }
-            var real = Path.GetDirectoryName(Tools.Find("dvdauthor.exe"))!;
-            var noSpumux = F("no-spumux");
-            Directory.CreateDirectory(noSpumux);
-            foreach (var file in Directory.EnumerateFiles(real).Where(x => !Path.GetFileName(x).Equals("spumux.exe", StringComparison.OrdinalIgnoreCase))) File.Copy(file, Path.Combine(noSpumux, Path.GetFileName(file)));
-            Refused("no spumux, a subtitle: refused before anything is encoded, not \"subtitles dropped\"", "spumux.exe", noSpumux, "nospumuxsub", "--no-menu", "--sub-file", F("dvdclip.fr.srt"));
-            Refused("no spumux, a menu: refused before anything is encoded", "spumux.exe", noSpumux, "nospumuxmenu");
-            var plain = Isolated(cli, noSpumux, 120, "dvd", "--video", clip, "--out", F("plaindvd"), "--no-menu");
-            Check("no spumux, neither menu nor subtitle: the DVD still builds", plain.Exit == 0, plain.Output.Split('\n').TakeLast(4).FirstOrDefault() ?? "");
+            if (noDvd) { Console.WriteLine("skip a menu and a subtitle with ffmpeg alone, no room on the drive (--no-dvd)"); return; }
+            var built = Isolated(cli, nothing, 300, "dvd", "--video", clip, "--out", F("plaindvd"), "--sub-file", F("dvdclip.fr.srt"));
+            Check("a menu and a subtitle, no tool but ffmpeg: the DVD builds", built.Exit == 0 && File.Exists(Path.Combine(F("plaindvd"), "VIDEO_TS", "VIDEO_TS.IFO")), built.Output.Split('\n').TakeLast(4).FirstOrDefault() ?? "");
 
             // far more than any drive holds at the lowest rate; a file this long is a few frames, so only the sums see it
             Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "color=s=64x64:r=1/36000:d=360000000", "-frames:v", "10000", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", F("huge.mkv")]);
-            var full = Isolated(cli, real, 30, "dvd", "--video", F("huge.mkv"), "--out", F("hugedvd"), "--no-menu");
+            var full = Isolated(cli, nothing, 30, "dvd", "--video", F("huge.mkv"), "--out", F("hugedvd"), "--no-menu");
             Check("no room on the drive: refused before anything is encoded", full.Exit != 0 && !full.TimedOut && !full.Output.Contains("encode 1") && !Directory.Exists(F("hugedvd") + "_work"),
                   full.TimedOut ? "still encoding after 30 s" : full.Output.Split('\n').FirstOrDefault() ?? "");
         });

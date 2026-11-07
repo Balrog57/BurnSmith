@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using System.Xml.Linq;
+using BurnSmith.Core.DvdVideo;
 using BurnSmith.Core.Menu;
 using static BurnSmith.Core.Menu.IndexedPng;
 
@@ -11,7 +11,7 @@ namespace BurnSmith.Core;
 public sealed record DvdJob(IReadOnlyList<DiscTitle> Titles, string OutDir, MenuDesign? Menu = null, int ChapterMinutes = 5, double CapacityGB = 4.2, EncodeOptions? Encode = null,
                             PlaybackOptions? Playback = null);
 
-/// <summary>ffmpeg (MPEG-2 + AC-3) -> spumux (button highlights, text subtitles) -> dvdauthor (VIDEO_TS with menus).</summary>
+/// <summary>ffmpeg (MPEG-2 + AC-3, then the subpictures muxed in: button highlights, subtitles) -> <see cref="Authoring"/> (VIDEO_TS with menus).</summary>
 public static class Dvd
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -56,7 +56,6 @@ public static class Dvd
         var work = job.OutDir + "_work";
         var videoBps = job.Encode is { DvdKbps: > 0 } manual ? Math.Clamp(manual.DvdKbps, 1500, 9000) * 1000 : VideoBitrate(items, job.CapacityGB); // by hand, else what fills the disc
         // before the earlier disc is emptied and anything is encoded: a job that cannot finish is told at once
-        foreach (var tool in NeededTools(job)) Tools.Find(tool);
         CheckRoom(job.OutDir, NeededBytes(job, items, videoBps));
         Tools.FreshFolder(work); // first: a locked file there must not cost the earlier disc
         try { Tools.PrepareOutput(job.OutDir); Author(job, intro, introSource, sources, videoBps, pal, mainCount, work, log); }
@@ -64,13 +63,9 @@ public static class Dvd
         log("done: " + job.OutDir);
     }
 
-    /// <summary>The programs a job cannot do without: dvdauthor always, spumux for a menu (it adds the buttons of every page) or for subtitles (the intro carries none).</summary>
-    public static List<string> NeededTools(DvdJob job) =>
-        job.Menu != null || job.Titles.Any(t => !t.Intro && t.Subtitles is { Count: > 0 }) ? ["dvdauthor.exe", "spumux.exe"] : ["dvdauthor.exe"];
-
     /// <summary>
-    /// The disc space a build takes at its fullest, in the work folder and the output (one drive, the first being named after the other): each MPEG stays there while dvdauthor
-    /// writes its VOB, and spumux makes one more copy of it. 5 % for the program stream around the video and the sound.
+    /// The disc space a build takes at its fullest, in the work folder and the output (one drive, the first being named after the other): each MPEG stays there while its VOB
+    /// is written, and muxing the subtitles in makes one more copy of it. 5 % for the program stream around the video and the sound.
     /// shortcut: the menu is a rough ceiling (its pages are not known yet, a looping page weighs about 0.5 MB/s in three copies), work it out from the pages if it refuses a build that would fit.
     /// </summary>
     public static long NeededBytes(DvdJob job, IReadOnlyList<(SourceInfo Src, DiscTitle Title)> items, int videoBps)
@@ -102,10 +97,10 @@ public static class Dvd
         if (movies.Any(m => m.Audio.Count != movies[0].Audio.Count || m.Subtitles.Count != movies[0].Subtitles.Count))
             log("warning: the videos do not have the same number of audio/subtitle tracks; the menu follows the first one");
         Movie? introMovie = null;
-        if (intro != null) // one audio track and no subtitles: nothing to choose while it plays, and no spumux pass
+        if (intro != null) // one audio track and no subtitles: nothing to choose while it plays, and no subtitle pass
             introMovie = EncodeTitle(job, movies.Count + 1, introSource!, intro with { Audio = [.. intro.KeptAudio(introSource!).Take(1).Select(a => a.Index)], Subtitles = null, External = null, DefaultAudio = null, DefaultSubtitle = null }, pal, videoBps, work, log);
 
-        var menuPages = new List<(MenuPage Page, string Mpg)>();
+        var menuPages = new List<MenuOut>();
         // a menu that plays on its own (moving clip or music) starts again when it ends: each page is its own PGC, so the sound restarts when another page opens
         var restarts = job.Menu is { } design && (design.Loop || design.ExistingMusic() != null);
         if (job.Menu != null) menuPages = BuildMenus(job, sources, movies, work, pal, log);
@@ -118,11 +113,7 @@ public static class Dvd
                 log("warning: the movie and the looping menu together may not fit the disc; shorten the menu loop or use a lower quality");
         }
 
-        log("author: dvdauthor");
-        var xml = Path.Combine(work, "dvd.xml");
-        File.WriteAllText(xml, AuthorXml(job.OutDir, pal, movies, mainCount, menuPages, restarts, introMovie, job.Encode?.DvdWide ?? true, job.Playback ?? new()).ToString());
-        // this dvdauthor build wants exactly "-o dest -x script -h N" plus one more argument (it reads argv[7] unchecked and crashes without)
-        Tools.Run(Tools.Find("dvdauthor.exe"), ["-o", job.OutDir, "-x", xml, "-h", "0", "-q"], log, env: new Dictionary<string, string> { ["VIDEO_FORMAT"] = pal ? "PAL" : "NTSC" });
+        Authoring.Write(DiscOf(pal, movies, mainCount, menuPages, restarts, introMovie, job.Encode?.DvdWide ?? true, job.Playback ?? new()), job.OutDir, log);
         Directory.CreateDirectory(Path.Combine(job.OutDir, "AUDIO_TS")); // empty, but players and tools expect it
     }
 
@@ -155,7 +146,7 @@ public static class Dvd
         if (ntscFilm) args.AddRange(["-flags", "+ildct+ilme"]);
         args.AddRange(["-sn", "-dn", movie]);
 
-        // text subtitles are drawn by DvdSubtitles, PGS pictures redrawn (spumux has no text renderer); other bitmap formats would need OCR
+        // text subtitles are drawn by DvdSubtitles, PGS pictures redrawn; other bitmap formats would need OCR
         var subs = new List<(SubtitleTrack Track, string File)>();
         foreach (var s in title.KeptSubtitles(src))
         {
@@ -173,7 +164,7 @@ public static class Dvd
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
         foreach (var (s, file) in subs.Where(x => x.Track.File == null && x.Track.IsVobSub)) BluRay.WriteEmbeddedVobSub(title, s, src.Duration, file, (720, 480), log);
         foreach (var (s, file) in subs.Where(x => x.Track.File != null)) BluRay.WriteExternalSubtitle(title, s, src.Duration, file, (720, 480), log); // a VobSub becomes PGS on a 720x480 plane, which PgsStream maps onto the frame whatever its height
-        // spumux refuses a file with no cue, and then the whole movie would lose its subtitles: a track with nothing to show in the part kept is left out
+        // a track with nothing to show in the part kept is left out: it would be a choice that shows nothing
         subs.RemoveAll(x =>
         {
             var empty = !DvdSubtitles.HasCues(x.File);
@@ -199,28 +190,40 @@ public static class Dvd
         return new Movie(movie, audio, carried, title.ChapterList(src.Duration, job.ChapterMinutes), title.DefaultSubtitleNumber(carried));
     }
 
-    /// <summary>One spumux pass that adds a subtitle stream per entry (cues drawn by <see cref="DvdSubtitles"/>).</summary>
+    /// <summary>
+    /// One ffmpeg pass that adds a subtitle stream per entry, in order (0x20, 0x21...): each track's cues drawn by <see cref="DvdSubtitles"/> into
+    /// subpictures, written as VobSub, copied into the movie. Its timestamps are kept (-copyts), the cues being moved by the movie's first one.
+    /// </summary>
     static void AddSubtitles(string movie, string output, List<(SubtitleTrack Track, string File)> subs, bool pal, bool wide, string work, Action<string> log)
     {
-        log("subtitles: render + spumux");
+        log("subtitles: render + mux");
         var name = Path.GetFileNameWithoutExtension(movie);
-        // this spumux build writes every subtitle as stream 0x20: add them last to first, moving the earlier ones up one id each time
-        var current = movie;
-        for (var k = subs.Count - 1; k >= 0; k--)
+        var h = pal ? 576 : 480;
+        var start = VideoStart(movie);
+        var args = new List<string> { "-y", "-v", "warning", "-i", movie };
+        for (var k = 0; k < subs.Count; k++)
         {
-            var (prefix, h) = ($"{name}_s{k + 1}_", pal ? 576 : 480);
-            var spu = new XElement("subpictures", subs[k].Track.IsPicture ? DvdSubtitles.PgsStream(subs[k].File, work, prefix, 720, h, log)
-                                                                        : DvdSubtitles.Stream(subs[k].File, work, prefix, 720, h, wide ? (pal ? 64.0 / 45 : 32.0 / 27) : pal ? 16.0 / 15 : 8.0 / 9));
-            var xml = Path.Combine(work, $"{name}_s{k + 1}.xml");
-            new XDocument(spu).Save(xml);
-            var next = k == 0 ? output : Path.Combine(work, $"{name}_pass{k}.mpg");
-            Tools.Run(Tools.Find("spumux.exe"), [Path.GetFileName(xml), current, next], log, work);
-            if (!File.Exists(next) || new FileInfo(next).Length < new FileInfo(movie).Length / 2)
-                throw new InvalidOperationException("spumux produced no usable file");
-            if (current != movie) File.Delete(current);
-            if (k > 0) DvdSubtitles.ShiftStreams(next);
-            current = next;
+            var pictures = subs[k].Track.IsPicture ? DvdSubtitles.PgsPictures(subs[k].File, 720, h, log) : DvdSubtitles.Pictures(subs[k].File, 720, h, wide ? (pal ? 64.0 / 45 : 32.0 / 27) : pal ? 16.0 / 15 : 8.0 / 9);
+            var idx = Path.Combine(work, $"{name}_s{k + 1}.idx");
+            Spu.WriteVobSub(idx, pictures, 720, h, Languages.Iso1(subs[k].Track.Lang), DvdSubtitles.Rgb, [0, 1, 2, 3], [0, 15, 15, 15], false, start);
+            args.AddRange(["-i", idx]);
         }
+        args.AddRange(["-map", "0:v", "-map", "0:a?"]);
+        for (var k = 0; k < subs.Count; k++) args.AddRange(["-map", $"{k + 1}:0"]);
+        args.AddRange([.. Remux, output]);
+        Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
+        if (!File.Exists(output) || new FileInfo(output).Length < new FileInfo(movie).Length / 2)
+            throw new InvalidOperationException("the subtitle pass produced no usable file");
+    }
+
+    /// <summary>Copy into a DVD program stream (2048-byte packs, a navigation pack at each picture group), the timestamps kept.</summary>
+    static readonly string[] Remux = ["-c", "copy", "-copyts", "-f", "dvd", "-muxrate", "10080000", "-packetsize", "2048"];
+
+    /// <summary>The first video timestamp of a program stream, in seconds: where its time 0 is.</summary>
+    static double VideoStart(string mpg)
+    {
+        var text = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=start_time", "-of", "default=nw=1:nk=1", mpg]).Trim();
+        return double.TryParse(text, NumberStyles.Float, Inv, out var s) ? s : 0;
     }
 
     /// <summary>
@@ -249,7 +252,10 @@ public static class Dvd
         return clips;
     }
 
-    static List<(MenuPage, string)> BuildMenus(DvdJob job, List<SourceInfo> sources, List<Movie> movies, string work, bool pal, Action<string> log)
+    /// <summary>A menu page on the disc: its program stream (the highlight subpicture in it), its colours, its buttons' rectangles on the frame.</summary>
+    sealed record MenuOut(MenuPage Page, string Mpg, int[] Colors, List<(int X0, int Y0, int X1, int Y1)> Rects);
+
+    static List<MenuOut> BuildMenus(DvdJob job, List<SourceInfo> sources, List<Movie> movies, string work, bool pal, Action<string> log)
     {
         log("menu: render");
         var ffmpeg = Tools.Find("ffmpeg.exe");
@@ -304,7 +310,7 @@ public static class Dvd
         if (loop) log($"menu: moving background, {loopSeconds}s from {Path.GetFileName(loopFile)} at {loopStart}s{(music != null ? " + music" : "")}");
         else if (music != null) log($"menu: music from {Path.GetFileName(musicFile)}, {loopSeconds}s on every page");
 
-        var result = new List<(MenuPage, string)>();
+        var result = new List<MenuOut>();
         for (var i = 0; i < pages.Count; i++)
         {
             var p = pages[i];
@@ -373,7 +379,7 @@ public static class Dvd
             var sy = h / (double)MenuBuilder.H;
             var hl = new Canvas(w, h);
             var sel = new Canvas(w, h);
-            // spumux reads the page button by button, so the model's per-button artwork is rasterised at the button's size on the page
+            // the model's per-button artwork is rasterised at the button's size on the page
             var art = MenuRenderer.Sta(() => p.Buttons.Select(b =>
             {
                 int bw = (int)Math.Round(b.Rect.W * sx), bh = (int)Math.Round(b.Rect.H * sy);
@@ -395,8 +401,7 @@ public static class Dvd
                 }
                 return (Hl: At(b.DvdHighlightImage, b.DvdHighlightMask), Sel: Marker(b.DvdSelectImage), W: bw, H: bh);
             }).ToList());
-            var sub = new XElement("spu", new XAttribute("start", "00:00:00.00"), new XAttribute("highlight", $"hl_{p.Id}.png"),
-                new XAttribute("select", $"sel_{p.Id}.png"), new XAttribute("force", "yes"));
+            var rects = new List<(int X0, int Y0, int X1, int Y1)>();
             for (var k = 0; k < p.Buttons.Count; k++)
             {
                 var b = p.Buttons[k];
@@ -417,26 +422,22 @@ public static class Dvd
                     hl.Frame(x0, y0, x1, y1, 3, 1);
                     sel.Frame(x0, y0, x1, y1, 4, 2);
                 }
-                sub.Add(new XElement("button", new XAttribute("name", b.Id),
-                    new XAttribute("x0", x0), new XAttribute("y0", y0), new XAttribute("x1", x1), new XAttribute("y1", y1),
-                    Nav("up", b.Up), Nav("down", b.Down), Nav("left", b.Left), Nav("right", b.Right)));
+                rects.Add((x0, y0, Math.Min(w - 1, x1), Math.Min(h - 1, y1)));
             }
+            // one subpicture for both states: code 1 = shown when selected, 2 = when activated, 3 = both; hidden until a button is lit
+            var codes = new byte[w * h];
+            for (var c = 0; c < codes.Length; c++) codes[c] = (byte)((hl.Pixels[c] != 0 ? 1 : 0) | (sel.Pixels[c] != 0 ? 2 : 0));
             // one tint for the whole page (a subpicture has four colours): the artwork's own average, else the design's accent
             var accent = art.Select(x => x.Hl).FirstOrDefault(x => x != null) is { } first ? Average(first.Px, first.W, first.H) : Hex(job.Menu!.SelectionInk);
-            Rgba[] palette = [new(0, 0, 0, 0), accent, new(255, 255, 255, 255), new(0, 0, 0, 0)];
-            File.WriteAllBytes(Path.Combine(work, $"hl_{p.Id}.png"), Encode(hl, palette));
-            File.WriteAllBytes(Path.Combine(work, $"sel_{p.Id}.png"), Encode(sel, palette));
-            var spuXml = Path.Combine(work, $"spu_{p.Id}.xml");
-            new XDocument(new XElement("subpictures", new XElement("stream", sub))).Save(spuXml);
+            int[] clut = [0x000000, accent.R << 16 | accent.G << 8 | accent.B, 0xFFFFFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            var idx = Path.Combine(work, $"hl_{p.Id}.idx");
+            Spu.WriteVobSub(idx, [new Spu.Picture(0, null, codes, w, h)], w, h, "en", clut, [0, 0, 0, 0], [0, 0, 0, 0], true, VideoStart(plain));
 
             var final = Path.Combine(work, $"menu_{p.Id}.mpg");
-            // this spumux build takes "script input output" (no stdin/stdout, no -m), PNG paths relative to the cwd
-            Tools.Run(Tools.Find("spumux.exe"), [Path.GetFileName(spuXml), plain, final], log, work);
-            result.Add((p, final));
+            Tools.Run(ffmpeg, ["-y", "-v", "warning", "-i", plain, "-i", idx, "-map", "0:v", "-map", "0:a?", "-map", "1:0", .. Remux, final], log);
+            result.Add(new MenuOut(p, final, clut, rects));
         }
         return result;
-
-        static XAttribute? Nav(string name, string? target) => target == null ? null : new XAttribute(name, target);
     }
 
     static Rgba Hex(string s) => new(Convert.ToByte(s.Substring(1, 2), 16), Convert.ToByte(s.Substring(3, 2), 16), Convert.ToByte(s.Substring(5, 2), 16), 255);
@@ -445,104 +446,110 @@ public static class Dvd
     /// <param name="intro">The start video: the title after the last one, which the first-play jump goes to; it ends on the menu (or on the first title when there is none).</param>
     /// <param name="wide">false = 4:3 titles; the menus stay 16:9 (their pictures are drawn that way).</param>
     /// <param name="play">Start on the menu or on the first title; after a title, the next main one (play all) or the menu; at the very end, start again or stop.</param>
-    static XDocument AuthorXml(string dest, bool pal, List<Movie> movies, int mainCount, List<(MenuPage Page, string Mpg)> menus, bool loop, Movie? intro, bool wide, PlaybackOptions play)
+    static DvdDisc DiscOf(bool pal, List<Movie> movies, int mainCount, List<MenuOut> menus, bool loop, Movie? intro, bool wide, PlaybackOptions play)
     {
-        var fmt = pal ? "pal" : "ntsc";
         var series = movies.Count > 1;
-        XElement Video(bool wideVideo = true) => wideVideo ? new("video", new XAttribute("format", fmt), new XAttribute("aspect", "16:9"), new XAttribute("widescreen", "nopanscan"))
-                                                       : new("video", new XAttribute("format", fmt), new XAttribute("aspect", "4:3"));
-        string Chapters(Movie m) => string.Join(',', m.ChapterTimes.Select(t => TimeSpan.FromSeconds(t).ToString(@"h\:mm\:ss", Inv)));
-
         // menu PGCs are numbered in order: 1 = root, then the scene/episode pages, then the settings pages
         int MenuNumber(string pageId) => menus.FindIndex(m => m.Page.Id == pageId) + 1;
         var settings = menus.Where(m => m.Page.Id.StartsWith("settings_")).Select(m => m.Page.Id).ToList();
         var states = settings.Select(id => Regex.Match(id, @"settings_(\d+)_(\d+)")).Where(m => m.Success).Select(m => (A: int.Parse(m.Groups[1].Value), S: int.Parse(m.Groups[2].Value), Id: m.Value)).ToList();
 
-        // g1 = 1 while "play all" runs, g2 = chosen audio (1-based), g3 = chosen subtitle (0 = off); they select the settings page to show
-        // one compare per jump, on g6 = 64 * g2 + g3: dvdauthor compiles "if (g2 == A && g3 == S) jump menu N" (and the nested form) into a link that tests g2 only,
-        // so the page always showed the first subtitle choice whatever g3 was
-        string Enter() => states.Count == 0 ? "" :
-            "g6 = g2; g6 *= 64; g6 += g3; " + string.Concat(states.Select(s => $"if (g6 == {64 * s.A + s.S}) jump menu {MenuNumber(s.Id)}; ")) + $"jump menu {MenuNumber(states[0].Id)};";
+        // g1 = 1 while "play all" runs, g2 = chosen audio (1-based), g3 = chosen subtitle (0 = off); they select the settings page to show,
+        // with one compare per jump, on g6 = 64 * g2 + g3
+        List<ulong> Enter()
+        {
+            if (states.Count == 0) return [];
+            List<ulong> c = [Vm.SetReg(6, 2), Vm.Mul(6, 64), Vm.AddReg(6, 3)];
+            c.AddRange(states.Select(s => Vm.LinkPgc(MenuNumber(s.Id), 6, 64 * s.A + s.S)));
+            c.Add(Vm.LinkPgc(MenuNumber(states[0].Id)));
+            return c;
+        }
 
         // la page d'une catégorie, celle du choix en cours : l'autre registre n'y entre pas
-        string EnterChoice(string target, string register)
+        List<ulong> EnterChoice(string target, int register)
         {
             var mine = settings.Where(id => id.StartsWith(target + "_", StringComparison.Ordinal)).ToList();
-            return mine.Count == 0 ? "" : string.Concat(mine.Select(id => $"if ({register} == {id[(target.Length + 1)..]}) jump menu {MenuNumber(id)}; ")) + $"jump menu {MenuNumber(mine[0])};";
+            if (mine.Count == 0) return [];
+            List<ulong> c = [.. mine.Select(id => Vm.LinkPgc(MenuNumber(id), register, int.Parse(id[(target.Length + 1)..])))];
+            c.Add(Vm.LinkPgc(MenuNumber(mine[0])));
+            return c;
         }
 
         // a choice jumps to another page, where a fresh entry would select the first button: it leaves its row's number for that page's pre (a button's number on a DVD is 1024 times its rank)
-        string KeepRow(string target, MenuButton b) => $"g4 = {1024 * (menus.First(m => m.Page.Id == target).Page.Buttons.FindIndex(x => x.Id == b.Id) + 1)}; g5 = 1; ";
+        List<ulong> KeepRow(string target, MenuButton b) => [Vm.Set(4, 1024 * (menus.First(m => m.Page.Id == target).Page.Buttons.FindIndex(x => x.Id == b.Id) + 1)), Vm.Set(5, 1)];
 
-        string Command(MenuPage page, MenuButton b)
+        List<ulong> Command(MenuPage page, MenuButton b)
         {
             var a = b.Action;
             var here = Regex.Match(page.Id, @"settings_(\d+)_(\d+)");
             switch (a.Kind)
             {
-                case "play": return (series ? $"g1 = {(play.PlayAll ? 1 : 0)}; " : "") + $"jump title {a.Playlist};"; // play all: any picked title goes on to the next ones
-                case "chapter": return $"jump title {a.Playlist} chapter {a.Mark + 1};";
-                case "playall": return $"g1 = 1; jump title {a.Playlist};";
+                case "play": return series ? [Vm.Set(1, play.PlayAll ? 1 : 0), Vm.JumpVtsTitle(a.Playlist)] : [Vm.JumpVtsTitle(a.Playlist)]; // play all: any picked title goes on to the next ones
+                case "chapter": return [Vm.JumpVtsChapter(a.Playlist, a.Mark + 1)];
+                case "playall": return [Vm.Set(1, 1), Vm.JumpVtsTitle(a.Playlist)];
                 case "audio": // stream numbers are 0-based on a DVD
                     var audioPage = here.Success ? SettingsId(a.Mark, int.Parse(here.Groups[2].Value)) : $"settings_audio_{a.Mark}";
-                    return $"{KeepRow(audioPage, b)}g2 = {a.Mark}; audio = {a.Mark - 1}; jump menu {MenuNumber(audioPage)};";
+                    return [.. KeepRow(audioPage, b), Vm.Set(2, a.Mark), Vm.Audio(a.Mark - 1, MenuNumber(audioPage))];
                 case "sub": // 62 = none; with the display bit (64) the stream number follows
                     var subPage = here.Success ? SettingsId(int.Parse(here.Groups[1].Value), a.Mark) : $"settings_sub_{a.Mark}";
-                    return $"{KeepRow(subPage, b)}g3 = {a.Mark}; subtitle = {(a.Mark == 0 ? 62 : 64 + a.Mark - 1)}; jump menu {MenuNumber(subPage)};";
+                    return [.. KeepRow(subPage, b), Vm.Set(3, a.Mark), Vm.Subtitle(a.Mark == 0 ? 62 : 64 + a.Mark - 1, MenuNumber(subPage))];
                 default:
                     return a.Page switch
                     {
                         "settings" => Enter(),
-                        "settings_audio" => EnterChoice(a.Page, "g2"),
-                        "settings_sub" => EnterChoice(a.Page, "g3"),
-                        _ => $"jump menu {MenuNumber(a.Page!)};",
+                        "settings_audio" => EnterChoice(a.Page, 2),
+                        "settings_sub" => EnterChoice(a.Page, 3),
+                        _ => [Vm.LinkPgc(MenuNumber(a.Page!))],
                     };
             }
         }
 
-        var first = movies[0];
-        XElement[] AudioEls() => first.Audio.Select(a => new XElement("audio", new XAttribute("format", "ac3"),
-            new XAttribute("channels", Math.Min(6, Math.Max(1, a.Channels))), new XAttribute("lang", Languages.Iso1(a.Lang)))).ToArray();
-        XElement[] SubEls() => first.Subtitles.Select(s => new XElement("subpicture", new XAttribute("lang", Languages.Iso1(s.Lang)))).ToArray();
-
-        var menuEl = new XElement("menus", Video(), new XElement("audio", new XAttribute("lang", "en")), new XElement("subpicture", new XAttribute("lang", "en")));
-        foreach (var (page, mpg) in menus)
+        int Index(MenuPage page, string? id) => id == null ? 0 : page.Buttons.FindIndex(x => x.Id == id) + 1;
+        var menuChains = menus.Select((m, n) =>
         {
-            var pgc = new XElement("pgc");
-            if (page.Id == "root") pgc.Add(new XAttribute("entry", "root"));
-            // a moving menu plays its clip and enters itself again; g4 / g5 carry the highlighted button over that restart, and over a choice on a settings page; any other entry starts on the first button, which dvdauthor only writes itself for a chain without a pre
-            if (loop || page.Id.StartsWith("settings_", StringComparison.Ordinal)) pgc.Add(new XElement("pre", "if (g5 == 1) { button = g4; g5 = 0; } else button = 1024;"));
-            pgc.Add(loop ? new XElement("vob", new XAttribute("file", mpg)) : new XElement("vob", new XAttribute("file", mpg), new XAttribute("pause", "inf")));
-            foreach (var b in page.Buttons) pgc.Add(new XElement("button", new XAttribute("name", b.Id), Command(page, b)));
-            if (loop) pgc.Add(new XElement("post", $"g4 = s8; g5 = 1; jump menu {MenuNumber(page.Id)};"));
-            menuEl.Add(pgc);
-        }
+            // a moving menu plays its clip and enters itself again; g4 / g5 carry the highlighted button over that restart, and over a choice on a settings page;
+            // any other entry starts on the first button
+            List<ulong> pre = loop || m.Page.Id.StartsWith("settings_", StringComparison.Ordinal)
+                ? [Vm.Goto(5, 5, Vm.Ne, 1), Vm.ButtonReg(4), Vm.Set(5, 0), Vm.Goto(6), Vm.Button(1024), Vm.Nop()]
+                : [Vm.Button(1024)];
+            List<ulong> post = loop ? [Vm.SetReg(4, Vm.Sprm | 8), Vm.Set(5, 1, n + 1)] : [];
+            var buttons = m.Page.Buttons.Select((b, k) =>
+            {
+                var cmds = Command(m.Page, b);
+                return new Button(m.Rects[k].X0, m.Rects[k].Y0, m.Rects[k].X1, m.Rects[k].Y1, Index(m.Page, b.Up), Index(m.Page, b.Down), Index(m.Page, b.Left), Index(m.Page, b.Right),
+                                  cmds.Count == 0 ? [Vm.Nop()] : cmds);
+            }).ToList();
+            // selected: codes 1 and 3 in the accent (CLUT 1); activated: codes 2 and 3 in white (CLUT 2); opaque
+            byte[] highlight = [0, 1, 0, 1, 0, 15, 0, 15, 0, 0, 2, 2, 0, 0, 15, 15];
+            return new Chain(m.Mpg, [], pre, post, Still: !loop, Buttons: buttons, Colors: m.Colors, Highlight: highlight);
+        }).ToList();
 
-        var titleset = new XElement("titleset");
-        if (menus.Count > 0) titleset.Add(menuEl);
-        var titles = new XElement("titles", Video(wide));
-        titles.Add(AudioEls());
-        titles.Add(SubEls());
+        var first = movies[0];
+        int[] subColors = [.. DvdSubtitles.Rgb];
+        var titles = new List<Chain>();
+        // after the last main title of "play all": the start again, or stop
+        var atEnd = !play.Rewind ? Vm.Exit() : play.StartAtFirstTitle ? Vm.JumpVtsTitle(1) : Vm.CallRootMenu();
         for (var i = 0; i < movies.Count; i++)
         {
-            var pgc = new XElement("pgc", new XElement("vob", new XAttribute("file", movies[i].Mpg), new XAttribute("chapters", Chapters(movies[i]))));
-            if (menus.Count == 0 && i == 0 && first.DefaultSubtitle > 0) pgc.AddFirst(new XElement("pre", $"subtitle = {63 + first.DefaultSubtitle};")); // no menu to start it: the first title does, once (stream numbers are 0-based, 64 = shown)
-            // after an episode of "play all": the next one, never a bonus; after the last one: the start again, or stop (a picked title alone goes back to the menu)
-            var atEnd = !play.Rewind ? "exit;" : play.StartAtFirstTitle ? "jump title 1;" : "call menu;";
-            if (menus.Count > 0)
-                pgc.Add(new XElement("post", (i < mainCount - 1 ? $"if (g1 == 1) jump title {i + 2}; " : i == mainCount - 1 && play.PlayAll ? $"if (g1 == 1) {atEnd} " : "") + "call menu;"));
-            titles.Add(pgc);
+            List<ulong> pre = menus.Count == 0 && i == 0 && first.DefaultSubtitle > 0 ? [Vm.Subtitle(63 + first.DefaultSubtitle)] : []; // no menu to start it: the first title does, once (stream numbers are 0-based, 64 = shown)
+            if (menus.Count == 0) { titles.Add(new Chain(movies[i].Mpg, movies[i].ChapterTimes, pre, [Vm.Exit()], Still: true, Colors: subColors)); continue; } // the last picture stays, then the disc stops
+            // after an episode of "play all" (g1 = 1): the next one, never a bonus; a picked title alone goes back to the menu
+            List<ulong> post = i < mainCount - 1 ? [Vm.Goto(3, 1, Vm.Ne, 1), Vm.JumpVtsTitle(i + 2), Vm.CallRootMenu()]
+                : i == mainCount - 1 && play.PlayAll ? [Vm.Goto(3, 1, Vm.Ne, 1), atEnd, Vm.CallRootMenu()]
+                : [Vm.CallRootMenu()];
+            titles.Add(new Chain(movies[i].Mpg, movies[i].ChapterTimes, pre, post, Colors: subColors));
         }
-        var setSubtitle = first.DefaultSubtitle > 0 ? $"subtitle = {63 + first.DefaultSubtitle}; " : "";
+        List<ulong> setSubtitle = first.DefaultSubtitle > 0 ? [Vm.Subtitle(63 + first.DefaultSubtitle)] : [];
         if (intro != null) // after the last title; the film's default subtitle is chosen when it is over, not while it plays
-            titles.Add(new XElement("pgc", new XElement("vob", new XAttribute("file", intro.Mpg)), new XElement("post", menus.Count > 0 && !play.StartAtFirstTitle ? setSubtitle + "call menu;" : setSubtitle + "jump title 1;")));
-        titleset.Add(titles);
+            titles.Add(new Chain(intro.Mpg, [], [], [.. setSubtitle, menus.Count > 0 && !play.StartAtFirstTitle ? Vm.CallRootMenu() : Vm.JumpVtsTitle(1)], Colors: subColors));
 
-        var vmgm = new XElement("vmgm");
-        var toIntro = $"jump title {movies.Count + 1};";
-        var start = play.StartAtFirstTitle ? "jump title 1;" : "jump titleset 1 menu;"; // "first title then all": g1 = 1 makes it go on
-        if (menus.Count > 0) vmgm.Add(new XElement("fpc", $"g1 = {(play.StartAtFirstTitle ? 1 : 0)}; g2 = 1; g3 = {first.DefaultSubtitle}; g4 = 1024; g5 = 0; " + (intro != null ? toIntro : setSubtitle + start)));
-        else if (intro != null) vmgm.Add(new XElement("fpc", toIntro));
-        return new XDocument(new XElement("dvdauthor", new XAttribute("dest", dest), vmgm, titleset));
+        var toIntro = Vm.JumpTitle(movies.Count + 1);
+        // "first title then all": g1 = 1 makes it go on
+        List<ulong> start = intro != null ? [toIntro] : [.. setSubtitle, play.StartAtFirstTitle ? Vm.JumpTitle(1) : Vm.JumpRootMenu()];
+        List<ulong> fp = menus.Count > 0 ? [Vm.Set(1, play.StartAtFirstTitle ? 1 : 0), Vm.Set(2, 1), Vm.Set(3, first.DefaultSubtitle), Vm.Set(4, 1024), Vm.Set(5, 0), .. start]
+            : [intro != null ? toIntro : Vm.JumpTitle(1)];
+        return new DvdDisc(pal, menuChains, titles, fp,
+            [.. first.Audio.Select(a => new AudioStream(Math.Min(6, Math.Max(1, a.Channels)), Languages.Iso1(a.Lang)))],
+            [.. first.Subtitles.Select(s => Languages.Iso1(s.Lang))], wide);
     }
 }

@@ -3,15 +3,15 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Xml.Linq;
+using BurnSmith.Core.DvdVideo;
 using BurnSmith.Core.Menu;
 using static BurnSmith.Core.Menu.IndexedPng;
 
 namespace BurnSmith.Core;
 
 /// <summary>
-/// The spumux build available here has no freetype, so it cannot draw text subtitles itself. Each SRT cue is drawn
-/// with WPF into a 4-colour bitmap instead, which spumux accepts as a subpicture (the same trick as the menu buttons).
+/// A DVD subpicture has four codes and no text: each SRT cue is drawn with WPF into a 4-colour picture of the frame
+/// (transparent, outline, text, edge), as is each PGS picture, brought down to those four.
 /// </summary>
 public static class DvdSubtitles
 {
@@ -44,63 +44,24 @@ public static class DvdSubtitles
     public static bool HasCues(string file) =>
         Path.GetExtension(file).Equals(".sup", StringComparison.OrdinalIgnoreCase) ? PgsSubtitles.Cues(File.ReadAllBytes(file), out _).Count > 0 : File.ReadAllText(file).Contains("-->");
 
-    /// <summary>One spumux &lt;stream&gt; for the cues of <paramref name="srt"/>; the bitmaps are written into <paramref name="dir"/>.</summary>
-    public static XElement Stream(string srt, string dir, string prefix, int w, int h, double sar)
+    /// <summary>The cues of <paramref name="srt"/> as subpictures of the frame.</summary>
+    public static List<Spu.Picture> Pictures(string srt, int w, int h, double sar)
     {
         var cues = ParseSrt(srt);
         var images = MenuRenderer.Sta(() => cues.Select(c => Draw(c.Text, w, h, sar)).ToList());
-        return Stream(cues.Select(c => (c.Start, c.End)).ToList(), images, dir, prefix);
+        return [.. cues.Select((c, i) => new Spu.Picture(c.Start, c.End, images[i].Pixels, w, h))];
     }
 
-    /// <summary>One spumux &lt;stream&gt; for a PGS file (.sup): each picture is scaled to the DVD frame and brought down to the four colours of a subpicture.</summary>
-    public static XElement PgsStream(string sup, string dir, string prefix, int w, int h, Action<string> log)
+    /// <summary>The pictures of a PGS file (.sup), each scaled to the DVD frame and brought down to the four colours of a subpicture.</summary>
+    public static List<Spu.Picture> PgsPictures(string sup, int w, int h, Action<string> log)
     {
         var cues = PgsSubtitles.Cues(File.ReadAllBytes(sup), out var skipped);
         if (skipped > 0) log($"warning: {skipped} picture(s) of {Path.GetFileName(sup)} could not be read and are left out");
-        return Stream(cues.Select(c => (c.Start, c.End)).ToList(), cues.Select(c => Redraw(c, w, h)).ToList(), dir, prefix);
-    }
-
-    static XElement Stream(List<(double Start, double End)> times, List<byte[]> images, string dir, string prefix)
-    {
-        static string T(double s) => TimeSpan.FromSeconds(s).ToString(@"hh\:mm\:ss\.ff", CultureInfo.InvariantCulture);
-        var stream = new XElement("stream");
-        for (var i = 0; i < times.Count; i++)
-        {
-            var name = $"{prefix}{i + 1:0000}.png";
-            File.WriteAllBytes(Path.Combine(dir, name), images[i]);
-            stream.Add(new XElement("spu", new XAttribute("start", T(times[i].Start)), new XAttribute("end", T(times[i].End)), new XAttribute("image", name)));
-        }
-        return stream;
-    }
-
-    /// <summary>
-    /// spumux here always writes subtitle stream 0x20. To get several streams, each later pass is made on a file whose
-    /// subtitle packets were moved up one id first: this raises every subtitle substream id (0x20..0x3E) by one, in place.
-    /// A DVD program stream is made of 2048-byte sectors: pack header, then PES packets.
-    /// </summary>
-    public static void ShiftStreams(string mpg)
-    {
-        using var f = new FileStream(mpg, FileMode.Open, FileAccess.ReadWrite, FileShare.None, 1 << 20, FileOptions.SequentialScan);
-        var s = new byte[2048];
-        for (var sectors = f.Length / 2048; sectors > 0; sectors--)
-        {
-            f.ReadExactly(s);
-            if (s[0] != 0 || s[1] != 0 || s[2] != 1 || s[3] != 0xBA) continue;
-            var changed = false;
-            for (var p = 14 + (s[13] & 7); p + 9 < 2048 && s[p] == 0 && s[p + 1] == 0 && s[p + 2] == 1; p += 6 + (s[p + 4] << 8 | s[p + 5]))
-            {
-                if (s[p + 3] != 0xBD) continue; // private stream 1: AC-3, subtitles...
-                var payload = p + 9 + s[p + 8];
-                if (payload < 2048 && s[payload] is >= 0x20 and < 0x3F) { s[payload]++; changed = true; }
-            }
-            if (!changed) continue;
-            f.Seek(-2048, SeekOrigin.Current);
-            f.Write(s);
-        }
+        return [.. cues.Select(c => new Spu.Picture(c.Start, c.End, Redraw(c, w, h).Pixels, w, h))];
     }
 
     /// <summary>Full-frame bitmap, text at the bottom. DVD pixels are wider than tall (<paramref name="sar"/>), so the text is squeezed to look right on a 16:9 screen.</summary>
-    static byte[] Draw(string text, int w, int h, double sar)
+    static Canvas Draw(string text, int w, int h, double sar)
     {
         var visual = new DrawingVisual();
         using (var dc = visual.RenderOpen())
@@ -127,17 +88,17 @@ public static class DvdSubtitles
             var luminance = (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / 3.0 * 255 / a; // premultiplied -> plain
             canvas.Pixels[i] = (byte)(luminance > 140 ? 2 : 1); // white text, black outline
         }
-        return Encode(canvas, Palette);
+        return canvas;
     }
 
-    /// <summary>Transparent, black (outline), white (text), grey (the edge between them).</summary>
-    static readonly Rgba[] Palette = [new(0, 0, 0, 0), new(16, 16, 16, 255), new(255, 255, 255, 255), new(128, 128, 128, 255)];
+    /// <summary>The colours of codes 0..3 (transparent, black outline, white text, grey edge), as the first entries of a title's 16 colours.</summary>
+    public static readonly int[] Rgb = [0x000000, 0x101010, 0xFFFFFF, 0x808080, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
     /// <summary>
     /// A PGS picture on the DVD frame (the whole 16:9 plane lands on the whole frame, whatever the plane's size): each DVD pixel averages the
     /// source pixels under it, kept when mostly opaque, then white, grey or black by brightness. Colours other than grey levels are lost.
     /// </summary>
-    static byte[] Redraw(PgsSubtitles.Cue cue, int w, int h)
+    static Canvas Redraw(PgsSubtitles.Cue cue, int w, int h)
     {
         double sx = (double)w / cue.PlaneWidth, sy = (double)h / cue.PlaneHeight;
         var canvas = new Canvas(w, h);
@@ -159,6 +120,6 @@ public static class DvdSubtitles
                 var luma = bright / opacity;
                 canvas.Pixels[dy * w + dx] = (byte)(luma >= 170 ? 2 : luma >= 85 ? 3 : 1);
             }
-        return Encode(canvas, Palette);
+        return canvas;
     }
 }

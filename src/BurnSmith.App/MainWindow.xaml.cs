@@ -107,7 +107,6 @@ public partial class MainWindow : Window
         RefreshDrives();
         Activated += (_, _) => RefreshDrives(); // a burner plugged in meanwhile shows up when the user comes back
         AfterTitlesChanged();
-        Loaded += async (_, _) => await OfferDvdIfPossible();
         Closed += (_, _) => Tools.TryDelete(frameDir);
         defaultDesign = LoadDefaultDesign();
     }
@@ -165,24 +164,6 @@ public partial class MainWindow : Window
     {
         Tools.KillAll(); // what runs without a Cancel button (a slideshow, a preview): before Closed removes its folder
         base.OnClosed(e);
-    }
-
-    /// <summary>The released exe carries neither dvdauthor nor spumux: DVD is on offer only when they were put in place. Off the UI thread: looking waits for the exe's tools to unpack.</summary>
-    async Task OfferDvdIfPossible()
-    {
-        var missing = await Task.Run(() =>
-        {
-            var absent = new List<string>();
-            foreach (var tool in new[] { "dvdauthor.exe", "spumux.exe" })
-                try { Tools.Find(tool); }
-                catch (FileNotFoundException) { absent.Add(tool); }
-                catch (Exception) { } // a tools folder that cannot be read must not stop the window at launch: the build itself will say what is wrong
-            return absent;
-        });
-        if (missing.Count == 0) return;
-        DvdItem.IsEnabled = false;
-        DvdItem.ToolTip = $"Indisponible : {string.Join(" et ", missing)} introuvable(s). BurnSmith ne les fournit pas : indiquez le dossier qui les contient dans la variable d'environnement BURNSMITH_TOOLS (ou ajoutez-le au PATH), puis relancez BurnSmith.";
-        if (kind == "dvd") SetKind("bd"); // chosen in the moment before the answer came
     }
 
     void FrenchLabels()

@@ -106,7 +106,7 @@
               <ContextMenu Placement="Bottom">
                 <MenuItem Header="Blu-ray" Tag="bd" Click="OnMode"/>
                 <MenuItem Header="Blu-ray 4K" Tag="uhd" Click="OnMode"/>
-                <MenuItem x:Name="DvdItem" Header="DVD" Tag="dvd" Click="OnMode" ToolTipService.ShowOnDisabled="True"/>
+                <MenuItem Header="DVD" Tag="dvd" Click="OnMode"/>
               </ContextMenu>
             </Button.ContextMenu>
             <TextBlock><Run x:Name="ModeText" Text="Blu-ray"/><Run Text="   ▾"/></TextBlock>

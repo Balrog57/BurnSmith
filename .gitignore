@@ -8,7 +8,7 @@ dist/
 # xlet compiler output (assets/bdj/menu.jar is the committed build)
 bdj/build/
 
-# external programs (ffmpeg, tsMuxeR, dvdauthor, spumux) live here but are not redistributed from this repo
+# external programs (ffmpeg, tsMuxeR) live here but are not redistributed from this repo
 tools/*
 !tools/vlctest.ps1
 
