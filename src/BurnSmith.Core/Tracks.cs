@@ -183,7 +183,39 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
                                int? ChapterMinutes = null, bool Intro = false, IReadOnlyDictionary<string, string>? TrackLanguage = null,
                                VideoEffects? Effects = null, IReadOnlyList<Clip>? Clips = null)
 {
-    public string DisplayName => Name ?? Path.GetFileNameWithoutExtension(Video);
+    public string DisplayName => Name ?? Readable(Video).Name;
+
+    /// <summary>
+    /// The default name of a video whose file has a release name: words split by dots or underscores, cut at the first release tag
+    /// ("Title.2019.1080p.BluRay.x264-GRP" → "Title 2019"); an episode (SxxEyy) is "Épisode N · its title", and <c>Series</c> names its season
+    /// ("Cobra Kai Saison 1"), null for anything else. A name with spaces was written by someone: kept as it is.
+    /// </summary>
+    public static (string Name, string? Series) Readable(string video)
+    {
+        var stem = Path.GetFileNameWithoutExtension(video);
+        var words = stem.Split(['.', '_'], StringSplitOptions.RemoveEmptyEntries);
+        if (stem.Contains(' ') || words.Length == 0) return (stem, null);
+        if (Array.FindIndex(words, IsReleaseTag) is > 0 and var end) words = words[..end]; // a name that starts with a tag keeps it, so it is never empty
+        var at = Array.FindIndex(words, w => Episode.IsMatch(w));
+        if (at < 0) return (string.Join(' ', words), null);
+        var episode = Episode.Match(words[at]);
+        var title = string.Join(' ', words[(at + 1)..]);
+        return ($"Épisode {int.Parse(episode.Groups[2].Value)}" + (title.Length > 0 ? " · " + title : ""),
+                $"{string.Join(' ', words[..at])} Saison {int.Parse(episode.Groups[1].Value)}".TrimStart());
+    }
+
+    static readonly System.Text.RegularExpressions.Regex Episode = new("^S([0-9]{1,3})E([0-9]{1,4})$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    // WEB-DL is caught by its WEB; WEB and FRENCH are plain words too ("Charlotte's.Web", "The.French.Connection"), so only their capitals count
+    static readonly HashSet<string> ReleaseTags = new(["WEBRip", "BluRay", "BDRip", "HDTV", "DVDRip", "MULTi", "VFF", "VFQ", "VOSTFR", "TRUEFRENCH", "x264", "x265", "H264", "H265", "HEVC"],
+                                                      StringComparer.OrdinalIgnoreCase);
+
+    static bool IsReleaseTag(string word)
+    {
+        var head = word.Split('-')[0]; // "x264-GRP": the group's name hangs on the last tag
+        return ReleaseTags.Contains(head) || head is "WEB" or "FRENCH"
+               || head.Length > 1 && head[^1] is 'p' or 'P' && int.TryParse(head[..^1], NumberStyles.None, CultureInfo.InvariantCulture, out var lines) && lines is >= 480 and <= 2160;
+    }
 
     /// <summary>Every file the title reads: the video, its subtitle files, and the effects' burnt subtitle and watermark.</summary>
     public IEnumerable<string?> Files => [Video, .. External?.Select(e => e.File) ?? [], Effects?.BurnSubtitle, Effects?.Watermark];
