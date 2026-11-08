@@ -12,7 +12,10 @@ param(
     # the folder of ffmpeg.exe and ffprobe.exe: tools\ffmpeg as CI fills it, else the one on the PATH (winget install Gyan.FFmpeg --version 8.1.1)
     [string]$Ffmpeg = $(if (Test-Path "$PSScriptRoot\tools\ffmpeg\ffmpeg.exe") { "$PSScriptRoot\tools\ffmpeg" } elseif (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) { Split-Path (Get-Command ffmpeg.exe).Source } else { "$PSScriptRoot\tools\ffmpeg" }),
     # from https://download.imgburn.com/SetupImgBurn_2.5.8.0.exe
-    [string]$ImgBurnSetup = "$PSScriptRoot\tools\imgburn-setup\SetupImgBurn_2.5.8.0.exe"
+    [string]$ImgBurnSetup = "$PSScriptRoot\tools\imgburn-setup\SetupImgBurn_2.5.8.0.exe",
+    # Dolby Vision / HDR10+ (MIT, github.com/quietvoid): dovi_tool 2.3.4 and hdr10plus_tool 1.7.2, x86_64-pc-windows-msvc
+    [string]$DoviTool = "$PSScriptRoot\tools\dovi_tool\dovi_tool.exe",
+    [string]$Hdr10PlusTool = "$PSScriptRoot\tools\hdr10plus_tool\hdr10plus_tool.exe"
 )
 $ErrorActionPreference = 'Stop' # a missing licence file must fail the build, not ship without it
 $root = $PSScriptRoot
@@ -22,6 +25,8 @@ $pins = @{
     "$Ffmpeg\ffmpeg.exe" = '09948D4CDD0650DA6FF5A87577469F2A218DC2615AE379F8F734D24C49DE0F73'
     "$Ffmpeg\ffprobe.exe" = 'A6618E99BB58869DED3C6F37B53AA1A8D701C3591DBB7B5B317D47369C112BE2'
     $ImgBurnSetup = '49AA06EAFFE431F05687109FEE25F66781ABBE1108F3F8CA78C79BDEC8753420'
+    $DoviTool = '8CD1262B4EDAC2DF219448D3450FF8E810C775E8025CDBE5E031D8F5EFD55DB8'
+    $Hdr10PlusTool = '04E4478208949EF89DDD90B4E6A8B2616ADD79E2EBD0379448329613970FCA1A'
 }
 foreach ($f in $pins.Keys) {
     if (-not (Test-Path -LiteralPath $f)) { throw "missing: $f" }
@@ -40,7 +45,9 @@ if ($LASTEXITCODE -ne 0) { if (Test-Path $tz) { [IO.File]::Delete($tz) }; throw 
 $zip = "$payload\tools.zip"
 if (Test-Path $zip) { [IO.File]::Delete($zip) }
 $z = [IO.Compression.ZipFile]::Open($zip, 'Create')
-foreach ($e in @(@($TsMuxer, 'tsMuxeR.exe'), @("$root\installer\tsMuxeR-LICENSE.txt", 'tsMuxeR-LICENSE.txt'))) {
+foreach ($e in @(@($TsMuxer, 'tsMuxeR.exe'), @("$root\installer\tsMuxeR-LICENSE.txt", 'tsMuxeR-LICENSE.txt'),
+                 @($DoviTool, 'dovi_tool.exe'), @("$root\installer\dovi_tool-LICENSE.txt", 'dovi_tool-LICENSE.txt'),
+                 @($Hdr10PlusTool, 'hdr10plus_tool.exe'), @("$root\installer\hdr10plus_tool-LICENSE.txt", 'hdr10plus_tool-LICENSE.txt'))) {
     [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, $e[0], $e[1], 'Optimal')
 }
 $z.Dispose()

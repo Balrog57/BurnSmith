@@ -214,6 +214,36 @@ static class BdCheck
             var s = Look(Stream(Bd("uhd", [new DiscTitle(F("uhd.mkv"))], new EncodeOptions(), uhd: true), 1));
             Check("a 4K disc still copies its 10-bit HEVC source", s.PixFmt == "yuv420p10le", s.PixFmt);
         });
+        Part("4K HDR10+ and Dolby Vision", () =>
+        {
+            // a raw HDR10 stream, then the same with HDR10+ (hdr10plus_tool) or a Dolby Vision profile 8.1 RPU (dovi_tool) put in, timed by a plain tsMuxeR TS
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=3840x2160:r=24:d=1", "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le",
+                               "-x265-params", "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:hdr10=1:repeat-headers=1", "-f", "hevc", F("base.hevc")]);
+            string Timed(string hevc)
+            {
+                File.WriteAllLines(F("timed.meta"), ["MUXOPT --vbr", $"V_MPEGH/ISO/HEVC, \"{hevc}\", fps=24"]);
+                Tools.Run(Tools.Find("tsMuxeR.exe"), [F("timed.meta"), Path.ChangeExtension(hevc, ".ts")]);
+                return Path.ChangeExtension(hevc, ".ts");
+            }
+            string FirstFrame(string file) => Tools.Run(ffprobe, ["-v", "error", "-of", "json", "-select_streams", "v:0", "-read_intervals", "%+#1", "-show_frames", file]);
+            var frames = string.Join(',', Enumerable.Range(0, 24).Select(i => $"{{\"LuminanceParameters\":{{\"AverageRGB\":1200,\"LuminanceDistributions\":{{\"DistributionIndex\":[1,5,10,25,50,75,90,95,99],\"DistributionValues\":[10,50,100,300,600,900,1500,2000,4000]}},\"MaxScl\":[5000,6000,4000]}},\"NumberOfWindows\":1,\"TargetedSystemDisplayMaximumLuminance\":0,\"SceneFrameIndex\":{i},\"SceneId\":0,\"SequenceFrameIndex\":{i}}}"));
+            File.WriteAllText(F("hdr10plus.json"), $"{{\"JSONInfo\":{{\"HDR10plusProfile\":\"A\",\"Version\":\"1.0\"}},\"SceneInfo\":[{frames}],\"SceneInfoSummary\":{{\"SceneFirstFrameIndex\":[0],\"SceneFrameNumbers\":[24]}},\"ToolInfo\":{{\"Tool\":\"check\",\"Version\":\"1\"}}}}");
+            Tools.Run(Tools.Find("hdr10plus_tool.exe"), ["inject", "-i", F("base.hevc"), "-j", F("hdr10plus.json"), "-o", F("plus.hevc")]);
+            var plus = Timed(F("plus.hevc"));
+            Check("an HDR10+ clip is seen as HDR10+", BluRay.Probe(plus).Hdr == "HDR10+", BluRay.Probe(plus).Hdr);
+            Check("a 4K disc keeps its HDR10+ metadata", FirstFrame(Stream(Bd("uhdplus", [new DiscTitle(plus)], new EncodeOptions(), uhd: true), 1)).Contains("SMPTE2094-40"));
+
+            File.WriteAllText(F("rpu.json"), "{\"cm_version\":\"V40\",\"profile\":\"8.1\",\"length\":24,\"level6\":{\"max_display_mastering_luminance\":1000,\"min_display_mastering_luminance\":1,\"max_content_light_level\":1000,\"max_frame_average_light_level\":400}}");
+            Tools.Run(Tools.Find("dovi_tool.exe"), ["generate", "-j", F("rpu.json"), "-o", F("rpu.bin")]);
+            Tools.Run(Tools.Find("dovi_tool.exe"), ["inject-rpu", "-i", F("base.hevc"), "--rpu-in", F("rpu.bin"), "-o", F("dv.hevc")]);
+            var dv = Timed(F("dv.hevc"));
+            var info = BluRay.Probe(dv);
+            Check("a Dolby Vision 8.1 clip is seen as single-layer Dolby Vision", info is { Hdr: "Dolby Vision", DualLayer: false }, $"{info.Hdr} {info.DualLayer}");
+            var m2ts = Stream(Bd("uhddv", [new DiscTitle(dv)], new EncodeOptions(), uhd: true), 1);
+            var pids = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=id", "-of", "csv=p=0", m2ts]).Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).Distinct().ToList();
+            // tsMuxeR puts a single-layer Dolby Vision track on the enhancement-layer PID (0x1015), with no base: no UHD player reads that disc
+            Check("single-layer Dolby Vision becomes the HDR10 base on PID 0x1011, without its RPU", pids is ["0x1011"] && !FirstFrame(m2ts).Contains("Dolby Vision RPU"), string.Join(' ', pids));
+        });
     }
 
     /// <summary>Finding 4: the rate the video is made at is the rate tsMuxeR is told. Long enough to show 0.1 %: 240 ms over 240 s, less a constant 80 ms (a rate change adds two frames at the end).</summary>

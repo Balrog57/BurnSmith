@@ -27,10 +27,12 @@ jobs:
           path: |
             tools/ffmpeg
             tools/tsmuxer
-          key: tools-ffmpeg-8.1.1-49b28c5f-tsmuxer-2.7.0-e3cf117d
+            tools/dovi_tool
+            tools/hdr10plus_tool
+          key: tools-ffmpeg-8.1.1-49b28c5f-tsmuxer-2.7.0-e3cf117d-dovi-2.3.4-hdr10plus-1.7.2
 
       # in tools\ the dev build finds them by its parent walk, before anything on the runner's PATH; a hash that differs stops the job
-      - name: Fetch ffmpeg, ffprobe and tsMuxeR
+      - name: Fetch ffmpeg, ffprobe and tsMuxeR, dovi_tool and hdr10plus_tool
         run: |
           $tar = "$env:SystemRoot\System32\tar.exe" # the runner's PATH may give Git's, which cannot read a zip
           function Fetch($url, $zip, $sha256) {
@@ -48,6 +50,15 @@ jobs:
             Fetch https://github.com/justdan96/tsMuxer/releases/download/2.7.0/tsMuxer-2.7.0-win64.zip tools\tsmuxer.zip E3CF117D2C6F01332188123641C63FE38AB9731AE7AA23645F6F9A261A7A301C
             & $tar -xf tools\tsmuxer.zip -C tools\tsmuxer\bin tsMuxeR.exe
             Remove-Item tools\tsmuxer.zip
+          }
+          foreach ($t in @(@('dovi_tool', 'https://github.com/quietvoid/dovi_tool/releases/download/2.3.4/dovi_tool-2.3.4-x86_64-pc-windows-msvc.zip', '0D9733D311DFE49F9DCA0C350F7E6D978182673D333C6F07F7365DAF9E6C81EB'),
+                           @('hdr10plus_tool', 'https://github.com/quietvoid/hdr10plus_tool/releases/download/1.7.2/hdr10plus_tool-1.7.2-x86_64-pc-windows-msvc.zip', '82B2D560073941B14C6511A431F429E33E134E5CAEFB60D7E8F6F6E6DA8E16BA'))) {
+            if (-not (Test-Path "tools\$($t[0])\$($t[0]).exe")) {
+              New-Item -ItemType Directory -Force "tools\$($t[0])" | Out-Null
+              Fetch $t[1] "tools\$($t[0]).zip" $t[2]
+              & $tar -xf "tools\$($t[0]).zip" -C "tools\$($t[0])" "$($t[0]).exe"
+              Remove-Item "tools\$($t[0]).zip"
+            }
           }
           $pins = @{ 'ffmpeg.exe' = '09948D4CDD0650DA6FF5A87577469F2A218DC2615AE379F8F734D24C49DE0F73'; 'ffprobe.exe' = 'A6618E99BB58869DED3C6F37B53AA1A8D701C3591DBB7B5B317D47369C112BE2' }
           foreach ($tool in $pins.Keys) {
