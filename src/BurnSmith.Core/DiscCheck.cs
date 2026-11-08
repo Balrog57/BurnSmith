@@ -10,23 +10,34 @@ namespace BurnSmith.Core;
 /// </summary>
 public static class DiscCheck
 {
-    /// <summary>The problems of a disc folder (a BDMV or a VIDEO_TS folder inside it).</summary>
-    public static List<string> Folder(string dir)
+    /// <summary>The problems of a disc folder (a BDMV or a VIDEO_TS folder inside it); with <paramref name="mediaGb"/> (the nominal size of the disc: 25 for a BD25) files that do not fit it.</summary>
+    public static List<string> Folder(string dir, double mediaGb = 0)
     {
         var problems = new List<string>();
         if (Directory.Exists(Path.Combine(dir, "BDMV"))) CheckBluRay(Path.Combine(dir, "BDMV"), problems);
         else if (Directory.Exists(Path.Combine(dir, "VIDEO_TS"))) CheckDvd(Path.Combine(dir, "VIDEO_TS"), problems);
         else problems.Add("ni BDMV ni VIDEO_TS dans le dossier");
+        if (mediaGb > 0 && Directory.Exists(dir)) Fits(new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(x => x.Length), "les fichiers du disque", mediaGb, problems);
         return problems;
     }
 
-    /// <summary>The problems of an image: whole sectors, a volume descriptor (ISO 9660 or UDF), and, when the folder it was made from is given, room for all its files.</summary>
-    public static List<string> Image(string file, string? folder = null)
+    /// <summary>
+    /// Bytes over what the disc holds. The nominal size is a floor of the real one (BD25 25.03 GB, DVD+R 4.70 GB, DVD-R DL 8.54 GB, BD50 50.05 GB), so what passes here fits
+    /// any disc of that name.
+    /// </summary>
+    static void Fits(long bytes, string what, double mediaGb, List<string> problems)
+    {
+        if (bytes > mediaGb * 1e9) problems.Add($"{what} ({bytes / 1e9:0.00} Go) dépassent la capacité du disque ({mediaGb:0.##} Go)");
+    }
+
+    /// <summary>The problems of an image: whole sectors, a volume descriptor (ISO 9660 or UDF), and, when the folder it was made from is given, room for all its files; with <paramref name="mediaGb"/> an image the disc cannot hold.</summary>
+    public static List<string> Image(string file, string? folder = null, double mediaGb = 0)
     {
         var problems = new List<string>();
         if (!File.Exists(file)) return ["l'image ISO n'existe pas"];
         using var f = File.OpenRead(file);
         if (f.Length % 2048 != 0) problems.Add("la taille de l'image n'est pas un nombre entier de secteurs de 2048 octets");
+        if (mediaGb > 0) Fits(f.Length, "l'image ISO", mediaGb, problems);
         var head = new byte[8];
         f.Position = 16 * 2048 + 1;
         if (f.Length < 17 * 2048 || f.Read(head) < 5 || Encoding.ASCII.GetString(head, 0, 5) is not ("CD001" or "BEA01")) problems.Add("pas de descripteur de volume (ISO 9660 ou UDF) au secteur 16");
@@ -86,6 +97,16 @@ public static class DiscCheck
         }
         if (Directory.Exists(Path.Combine(bdmv, "JAR")) && Directory.GetFiles(Path.Combine(bdmv, "JAR")).Length > 0 && !(Directory.Exists(Path.Combine(bdmv, "BDJO")) && Directory.GetFiles(Path.Combine(bdmv, "BDJO"), "*.bdjo").Length > 0))
             problems.Add("le menu BD-J (JAR) n'a pas de fichier BDJO");
+
+        // a player starts a signed BD-J application only with the disc's certificates and a signature they vouch for
+        var jars = Directory.Exists(Path.Combine(bdmv, "JAR")) ? Directory.GetFiles(Path.Combine(bdmv, "JAR"), "*.jar") : [];
+        var cert = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(bdmv))!, "CERTIFICATE");
+        if (jars.Length == 0) return;
+        foreach (var name in new[] { "app.discroot.crt", "bu.discroot.crt", "id.bdmv" })
+            if (!File.Exists(Path.Combine(cert, name))) problems.Add($"CERTIFICATE\\{name} manque : une platine refusera le menu BD-J");
+            else Same(Path.Combine(cert, name), Path.Combine(cert, "BACKUP", name), "CERTIFICATE\\BACKUP\\" + name, problems);
+        if (File.Exists(Path.Combine(cert, "app.discroot.crt")) && File.Exists(Path.Combine(cert, "id.bdmv")))
+            foreach (var jar in jars) problems.AddRange(BdjSign.Verify(jar, File.ReadAllBytes(Path.Combine(cert, "app.discroot.crt")), File.ReadAllBytes(Path.Combine(cert, "id.bdmv"))));
     }
 
     /// <summary>A transport stream is a run of whole packets (192 bytes with the time stamp), each starting with the sync byte 0x47.</summary>

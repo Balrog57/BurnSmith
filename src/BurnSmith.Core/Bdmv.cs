@@ -110,7 +110,7 @@ public static class Bdmv
     /// One-application BDJO: the jar <paramref name="jar"/> (BDMV/JAR/&lt;jar&gt;.jar) is cached and started with
     /// <paramref name="initialClass"/>. Field values mirror a BD-J disc known to play on standalone players.
     /// </summary>
-    public static byte[] Bdjo(string initialClass, int haviConfig, string jar = "00000", uint orgId = 0x42535430, ushort appId = 0x4000)
+    public static byte[] Bdjo(string initialClass, int haviConfig, string jar = "00000", uint orgId = BdjSign.OrgId, ushort appId = 0x4000)
     {
         var terminal = new BinaryWriterBE();
         terminal.U32(10); terminal.Str("00000", 5);       // default font name (no font file needed: we draw images only)

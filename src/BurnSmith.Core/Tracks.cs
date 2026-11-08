@@ -2,8 +2,8 @@ using System.Globalization;
 
 namespace BurnSmith.Core;
 
-/// <summary><see cref="Index"/> counts audio streams of the source file only (ffmpeg's 0:a:N), not all streams. <see cref="SampleRate"/>: 0 when the file does not say.</summary>
-public sealed record AudioTrack(int Index, string Codec, int Channels, string Lang, string Title, int SampleRate = 48000)
+/// <summary><see cref="Index"/> counts audio streams of the source file only (ffmpeg's 0:a:N), not all streams. <see cref="SampleRate"/>, <see cref="Kbps"/> (average bit rate): 0 when the file does not say.</summary>
+public sealed record AudioTrack(int Index, string Codec, int Channels, string Lang, string Title, int SampleRate = 48000, int Kbps = 0)
 {
     public string Name => $"{Languages.Display(Lang, Title)} {Languages.ChannelLayout(Channels)}".Trim();
 }
@@ -22,7 +22,7 @@ public sealed record SubtitleTrack(int Index, string Codec, string Lang, string 
     public bool IsPicture => IsPgs || IsVobSub;
     /// <summary>PGS is copied on a Blu-ray and redrawn on a DVD (a VobSub is made into PGS first); other image subtitles (DVB, Teletext) would need OCR: not carried.</summary>
     public bool Supported => IsPicture || IsText;
-    public string Name => Languages.Display(Lang, Title) + (Forced ? " (forcés)" : "");
+    public string Name => Languages.Display(Lang, Title) + (Forced || Title.EndsWith("(forced)", StringComparison.OrdinalIgnoreCase) ? " (forcés)" : "");
 }
 
 /// <summary>
@@ -371,7 +371,10 @@ public static class Languages
         {
             var n = CultureInfo.GetCultureInfo(two).NativeName;
             var name = n.Split(' ')[0];
-            return char.ToUpper(name[0], CultureInfo.InvariantCulture) + name[1..];
+            // the title's bracketed detail tells two tracks of one language apart ("French (Audio-Description)" was a second "Français 5.1"); a subtitle says "forced" itself
+            var detail = title.EndsWith(')') && title.LastIndexOf('(') is >= 0 and var open ? title[open..] : "";
+            if (detail.Length <= 2 || detail.Equals("(forced)", StringComparison.OrdinalIgnoreCase)) detail = "";
+            return char.ToUpper(name[0], CultureInfo.InvariantCulture) + name[1..] + (detail.Length > 0 ? " " + detail : "");
         }
         return title.Length > 0 ? title : lang is "" or "und" ? "?" : lang;
     }

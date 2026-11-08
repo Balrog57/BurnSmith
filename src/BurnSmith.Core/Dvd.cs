@@ -56,6 +56,9 @@ public static class Dvd
         var pal = job.Encode?.DvdPal ?? (Math.Abs(sources[0].Fps - 25) < 0.5 || Math.Abs(sources[0].Fps - 50) < 0.5); // chosen, else the disc follows its first video
         var work = job.OutDir + "_work";
         var videoBps = job.Encode is { DvdKbps: > 0 } manual ? Math.Clamp(manual.DvdKbps, 1500, 9000) * 1000 : VideoBitrate(items, job.CapacityGB); // by hand, else what fills the disc
+        // the fitted rate stops at 1 Mb/s: past that (a season with three languages on a DVD-5) the disc is too small, as the Blu-ray build says too
+        if (EstimateGB(items, job.CapacityGB, job.Encode?.DvdKbps ?? 0) is var gb && gb > job.CapacityGB)
+            log($"warning: about {gb:0.0} GB, more than the {job.CapacityGB:0.#} GB of the disc: keep fewer audio tracks or take a bigger disc");
         // before the earlier disc is emptied and anything is encoded: a job that cannot finish is told at once
         CheckRoom(job.OutDir, NeededBytes(job, items, videoBps));
         Tools.FreshFolder(work); // first: a locked file there must not cost the earlier disc

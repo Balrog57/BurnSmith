@@ -800,6 +800,10 @@ if (a.Count >= 1 && a[0] == "check-edit")
     Check("--sub with numbers no track has: told, with the numbers and the counts, and left out",
           SubsToKeep([0, 1, 2, 3], 0, 0, "film", told.Add).Count == 0 && told.Count == 1 && told[0].Contains("--sub 0,1,2,3") && told[0].Contains("0 of its own") && SubsToKeep([0, 5], 1, 1, "film", told.Add).SequenceEqual([0, 1]) && told.Count == 2 && told[1].Contains("--sub 5:"));
     Check("the disc reads the new language: kept tracks and their names", relabel.KeptAudio(relabelled)[0].Name.StartsWith("Français") && relabel.KeptSubtitles(relabelled)[0].Name == "English" && new DiscTitle("x").KeptAudio(tracked)[0].Lang == "und");
+    Check("two tracks of one language keep the detail of their title apart, forced said once",
+          new AudioTrack(2, "eac3", 6, "fre", "French (Audio-Description)").Name == "Français (Audio-Description) 5.1" && new AudioTrack(0, "eac3", 6, "fre", "French").Name == "Français 5.1"
+          && new SubtitleTrack(0, "subrip", "fre", "French (Forced)", true).Name == "Français (forcés)" && new SubtitleTrack(1, "subrip", "fre", "French (Forced)", false).Name == "Français (forcés)"
+          && new SubtitleTrack(2, "subrip", "eng", "English (SDH)", false).Name == "English (SDH)");
     Check("no language set: the source is returned as it is", new DiscTitle("x", TrackLanguage: new Dictionary<string, string>()).Cut(tracked) == tracked);
     Check("one video's own interval replaces the disc's; a list wins over it", Show(new DiscTitle("x", ChapterMinutes: 2).ChapterList(600, 5)) == "0,120,240,360,480" && Show(new DiscTitle("x", ChapterAt: [30], ChapterMinutes: 2).ChapterList(600, 5)) == "0,30" && Show(new DiscTitle("x").ChapterList(600, 5)) == "0,300");
     // the output folder: only what is nothing but an earlier disc is emptied; one foreign file and the whole folder is left alone
@@ -1436,11 +1440,11 @@ var titles = videos.Select((v, k) =>
                           clipList);
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
-// bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (fit = "Adapter au disque"; up to 60000 with --uhd, where --reencode = "Conversion"),
+// bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (default fit = "Adapter au disque"; up to 60000 with --uhd, where --reencode = "Conversion"),
 //     --capacity GB (usable size, instead of the profile's), --play-mode 0|1|2 (menu then all titles | first title then all | back to the menu) [--no-rewind] (DVD too)
 // dvd: --pal | --ntsc (default: as the first video), --4x3 (4:3 titles, the menu stays 16:9)
 var profile = BdProfile.Find(Opt("--profile") ?? "BD25");
-var quality = Opt("--quality") ?? "source";
+var quality = Opt("--quality") ?? "fit"; // as the app: "Adapter au disque"
 var rate = int.TryParse(quality, out var q) ? (q < 1000 ? q * 1000 : q) : 0; // "15" = 15 Mb/s
 var encode = new EncodeOptions(a.Contains("--reencode"), int.TryParse(Opt("--crf"), out var crf) ? crf : 17, Opt("--preset") ?? "medium", int.TryParse(Opt("--dvd-kbps"), out var kbps) ? kbps : 0,
                                rate, quality == "fit", profile.Hd720);
@@ -1452,6 +1456,6 @@ if (a[0] == "bd")
 else
     Dvd.Build(new DvdJob(titles, Path.GetFullPath(outDir), design, chapters, Encode: encode with { DvdPal = a.Contains("--pal") ? true : a.Contains("--ntsc") ? false : null, DvdWide = !a.Contains("--4x3") },
                          Playback: playback), Console.WriteLine);
-var problems = DiscCheck.Folder(Path.GetFullPath(outDir));
+var problems = DiscCheck.Folder(Path.GetFullPath(outDir), a[0] == "bd" ? profile.Gb : 4.7);
 Console.WriteLine(problems.Count == 0 ? "disc structure checked: no problem" : "disc structure: " + string.Join(" ; ", problems));
 return problems.Count == 0 ? 0 : 1;

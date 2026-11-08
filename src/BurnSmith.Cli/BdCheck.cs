@@ -143,6 +143,7 @@ static class BdCheck
             Video();
             Sync();
             FitDisc();
+            Signature();
             Damaged();
             WorkFolder();
             DvdRefusals();
@@ -298,6 +299,34 @@ static class BdCheck
             }
             var (alone, with) = (Kbps("fitalone", [new DiscTitle(F("film.mkv"))]), Kbps("fitwith", [new DiscTitle(F("film.mkv")), new DiscTitle(F("fitintro.mkv"), Intro: true)]));
             Check("twice the seconds to share the disc: an intro as long as the film halves the fitted bit rate", alone > 0 && with > alone * 0.4 && with < alone * 0.6, $"{alone} kb/s alone, {with} kb/s with the intro");
+        });
+    }
+
+    /// <summary>The menu's signature: a signed jar passes what a player checks; one changed after signing, or signed under another disc root, does not.</summary>
+    static void Signature()
+    {
+        Part("BD-J signature", () =>
+        {
+            (string, byte[])[] files = [("org/burnsmith/menu/Menu.class", [0xCA, 0xFE, 0xBA, 0xBE]), ("menu.txt", "x"u8.ToArray()),
+                                        ("hl_" + new string('é', 40) + "_a_name_longer_than_one_72_byte_manifest_line.png", [1, 2, 3])]; // the manifest's continued lines
+            string Signed(string name)
+            {
+                Directory.CreateDirectory(F(name));
+                BdjSign.Write(Path.Combine(F(name), "00000.jar"), files, F(name));
+                return Path.Combine(F(name), "00000.jar");
+            }
+            var (jar, other) = (Signed("signed"), Signed("other"));
+            byte[] Cert(string file) => File.ReadAllBytes(Path.Combine(F("signed"), "CERTIFICATE", file));
+            var found = BdjSign.Verify(jar, Cert("app.discroot.crt"), Cert("id.bdmv"));
+            Check("signed menu: what a player checks holds", found.Count == 0, string.Join(" ; ", found));
+            Check("a menu signed under another disc root: refused", BdjSign.Verify(other, Cert("app.discroot.crt"), Cert("id.bdmv")).Count > 0);
+            using (var z = System.IO.Compression.ZipFile.Open(jar, System.IO.Compression.ZipArchiveMode.Update))
+            {
+                z.GetEntry("menu.txt")!.Delete();
+                using var s = z.CreateEntry("menu.txt").Open();
+                s.Write("y"u8);
+            }
+            Check("a file changed after signing: refused", BdjSign.Verify(jar, Cert("app.discroot.crt"), Cert("id.bdmv")).Count > 0);
         });
     }
 

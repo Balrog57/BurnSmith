@@ -16,5 +16,6 @@ Présentation courte : [README](../README.md).
 |---|---|
 | [PLAN-PRODUCTION.md](PLAN-PRODUCTION.md) | Où en est le projet, branche par branche, et dans quel ordre livrer |
 | [RAPPORT-SESSION-2026-11-05.md](RAPPORT-SESSION-2026-11-05.md) | Revue de code et d'interface d'une session de travail, avec ce qui a été corrigé |
+| [RAPPORT-VERIFICATION-2026-11-08.md](RAPPORT-VERIFICATION-2026-11-08.md) | Chaque fonction comparée à DVDFab, Leawo et Yuhan, vérifiée sur de vrais disques et leurs ISO (film, saison entière, DVD) ; signature du menu BD-J ajoutée |
 
 Les captures du [README](../README.md) sont dans [`images/`](images/) ; la façon de les refaire est décrite dans [COMPILER-ET-LIGNE-DE-COMMANDE.md](COMPILER-ET-LIGNE-DE-COMMANDE.md).

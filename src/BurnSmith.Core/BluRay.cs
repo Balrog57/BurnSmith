@@ -84,13 +84,16 @@ public static class BluRay
         List<JsonElement> Of(string type) => streams.Where(s => s.GetProperty("codec_type").GetString() == type).ToList();
         static string Tag(JsonElement s, string name) => s.TryGetProperty("tags", out var t) && t.TryGetProperty(name, out var v) ? v.GetString() ?? "" : "";
         static bool Flag(JsonElement s, string name) => s.TryGetProperty("disposition", out var d) && d.TryGetProperty(name, out var v) && v.GetInt32() == 1;
+        // what a track weighs: mkvmerge's average (BPS, the HD part of DTS-HD / TrueHD included), else ffprobe's (for DTS-HD often the core alone)
+        static int Kbps(JsonElement s) => (int)((long.TryParse(Tag(s, "BPS") is { Length: > 0 } b ? b : Tag(s, "BPS-eng"), out var bps) ? bps
+                                                 : s.TryGetProperty("bit_rate", out var br) && long.TryParse(br.GetString(), out var bits) ? bits : 0) / 1000);
 
         // cover art is a video stream too
         var v = Of("video").FirstOrDefault(s => !Flag(s, "attached_pic"));
         if (v.ValueKind == JsonValueKind.Undefined) throw new InvalidDataException("no video stream in " + file);
         var audio = Of("audio").Select((s, i) => new AudioTrack(i, s.GetProperty("codec_name").GetString()!,
             s.TryGetProperty("channels", out var c) ? c.GetInt32() : 0, Tag(s, "language"), Tag(s, "title"),
-            s.TryGetProperty("sample_rate", out var rate) && int.TryParse(rate.GetString(), out var hz) ? hz : 0)).ToList();
+            s.TryGetProperty("sample_rate", out var rate) && int.TryParse(rate.GetString(), out var hz) ? hz : 0, Kbps(s))).ToList();
         var subs = Of("subtitle").Select((s, i) => new SubtitleTrack(i, s.GetProperty("codec_name").GetString() ?? "", Tag(s, "language"), Tag(s, "title"), Flag(s, "forced"))).ToList();
         if (!doc.RootElement.GetProperty("format").TryGetProperty("duration", out var duration)) // a picture has a video stream but no length
             throw new InvalidDataException("no duration: not a video file");
@@ -308,7 +311,7 @@ public static class BluRay
 
     /// <summary>Rough kb/s of what an audio track weighs on the disc (copied as it is, or re-encoded as AC-3 at 448 / 640).</summary>
     static int AudioKbps(AudioTrack a, DiscTitle t, bool uhd) => !CopiesAudio(a, t, uhd) ? (a.Channels > 2 ? 640 : 448) // re-encoded as AC-3 (volume change, later start)
-        : a.Codec switch { "truehd" => 3500, "dts" => 1536, _ => a.Channels > 2 ? 640 : 448 };
+        : a.Kbps > 0 ? a.Kbps : a.Codec switch { "truehd" => 3500, "dts" => 1536, _ => a.Channels > 2 ? 640 : 448 }; // copied: what the file says it weighs
 
     static double AudioAndMenuBytes(BluRayJob job, IReadOnlyList<SourceInfo> sources) =>
         job.Titles.Select((t, i) => t.KeptAudio(sources[i]).Sum(a => AudioKbps(a, t, job.Uhd) * 125.0 * sources[i].Duration)).Sum()
@@ -393,8 +396,9 @@ public static class BluRay
         var (w, h) = VideoSize(job);
         var lines = new List<string>
         {
-            $"MUXOPT {(job.Uhd ? "--blu-ray-v3" : "--blu-ray")} --label={job.Label} --vbr --custom-chapters={chapters} --mplsOffset={playlist} --m2tsOffset={playlist}",
-            $"{(job.Uhd ? "V_MPEGH/ISO/HEVC" : "V_MPEG4/ISO/AVC")}, \"{prepared}\", fps={fps}, track=256",
+            // PCR on its own PID, and for a copied H.264 the SEI / SPS a player needs added where missing: what Leawo's and Yuhan's tsMuxeR lines also ask
+            $"MUXOPT {(job.Uhd ? "--blu-ray-v3" : "--blu-ray")} --label={job.Label} --vbr --no-pcr-on-video-pid --custom-chapters={chapters} --mplsOffset={playlist} --m2tsOffset={playlist}",
+            $"{(job.Uhd ? "V_MPEGH/ISO/HEVC" : "V_MPEG4/ISO/AVC")}, \"{prepared}\", {(job.Uhd ? "" : "insertSEI, contSPS, ")}fps={fps}, track=256",
         };
         for (var j = 0; j < audio.Count; j++)
             lines.Add($"{AudioTag(BdAudio(audio[j], title, job.Uhd))}, \"{prepared}\", track={257 + j}, lang={Languages.Iso2(audio[j].Lang)}");
@@ -496,7 +500,7 @@ public static class BluRay
         var meta = Path.Combine(work, "loop.meta");
         var lines = new List<string>
         {
-            $"MUXOPT --blu-ray --label={job.Label} --vbr --mplsOffset={LoopPlaylist} --m2tsOffset={LoopPlaylist}",
+            $"MUXOPT --blu-ray --label={job.Label} --vbr --no-pcr-on-video-pid --mplsOffset={LoopPlaylist} --m2tsOffset={LoopPlaylist}",
             $"V_MPEG4/ISO/AVC, \"{ts}\", fps={declared}, track=256",
         };
         if (hasAudio) lines.Add($"A_AC3, \"{ts}\", track=257");
@@ -690,20 +694,18 @@ public static class BluRay
         var bdmv = Path.Combine(job.OutDir, "BDMV");
         foreach (var d in new[] { "JAR", "BDJO", "AUXDATA", @"BACKUP\BDJO" }) Directory.CreateDirectory(Path.Combine(bdmv, d));
 
-        // fresh archive: ZipArchiveMode.Update corrupted entries of the prebuilt jar
-        var jar = Path.Combine(bdmv, "JAR", "00000.jar");
+        // fresh archive: ZipArchiveMode.Update corrupted entries of the prebuilt jar; its manifest gives way to the signed one
+        var entries = new List<(string, byte[])>();
         using (var baseJar = ZipFile.OpenRead(Assets.Find(@"bdj\menu.jar")))
-        using (var z = ZipFile.Open(jar, ZipArchiveMode.Create))
-        {
-            foreach (var e in baseJar.Entries.Where(e => e.Length > 0))
+            foreach (var e in baseJar.Entries.Where(e => e.Length > 0 && !e.FullName.StartsWith("META-INF/", StringComparison.Ordinal)))
             {
                 using var from = e.Open();
-                using var to = z.CreateEntry(e.FullName, CompressionLevel.Optimal).Open();
-                from.CopyTo(to);
+                using var bytes = new MemoryStream();
+                from.CopyTo(bytes);
+                entries.Add((e.FullName, bytes.ToArray()));
             }
-            foreach (var f in Directory.EnumerateFiles(menuDir))
-                z.CreateEntryFromFile(f, Path.GetFileName(f));
-        }
+        foreach (var f in Directory.EnumerateFiles(menuDir)) entries.Add((Path.GetFileName(f), File.ReadAllBytes(f)));
+        BdjSign.Write(Path.Combine(bdmv, "JAR", "00000.jar"), entries, job.OutDir);
 
         var bdjo = Bdmv.Bdjo("org.burnsmith.menu.Menu", job.Uhd ? Bdmv.HaviUhd1080 : job.Encode?.Hd720 == true ? Bdmv.HaviHd720 : Bdmv.HaviHd1080);
         File.WriteAllBytes(Path.Combine(bdmv, "BDJO", "00000.bdjo"), bdjo);

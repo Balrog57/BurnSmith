@@ -1065,14 +1065,14 @@ public partial class MainWindow : Window
             else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes, enc, cap.Usable, play), log, token);
             var iso = IsoFile(outDir);
             File.Delete(iso); // an image of an earlier build must never be burnt by mistake
-            var problems = DiscCheck.Folder(outDir);
+            var problems = DiscCheck.Folder(outDir, cap.Gb);
             log(problems.Count == 0 ? "Vérification de la structure du disque : aucune anomalie." : "Vérification de la structure du disque : " + string.Join(" ; ", problems));
             if (burn && problems.Count > 0) throw new InvalidOperationException("Le disque n'est pas gravé, sa structure a des anomalies : " + string.Join(" ; ", problems));
             if (!withIso && !burn) return;
             token.ThrowIfCancellationRequested();
             log("Création de l'image ISO…");
             Iso.Build(outDir, iso, label, dvd, log, progress, token);
-            var imageProblems = DiscCheck.Image(iso, outDir);
+            var imageProblems = DiscCheck.Image(iso, outDir, cap.Gb);
             log(imageProblems.Count == 0 ? "Vérification de l'image ISO : aucune anomalie." : "Vérification de l'image ISO : " + string.Join(" ; ", imageProblems));
             if (burn && imageProblems.Count > 0) throw new InvalidOperationException("Le disque n'est pas gravé, l'image ISO a des anomalies : " + string.Join(" ; ", imageProblems));
             if (burn)
