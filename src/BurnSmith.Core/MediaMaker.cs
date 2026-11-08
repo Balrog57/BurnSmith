@@ -30,23 +30,41 @@ public static class MediaMaker
     /// <summary>
     /// Photos shown <paramref name="secondsEach"/> seconds each, in the order given, fitted to 1920x1080 on black. Under the pictures: the <paramref name="music"/> files one
     /// after the other, started again when the photos last longer, faded out at the end (silence when there is none). Returns <paramref name="output"/>.
+    /// <paramref name="transition"/> is an ffmpeg xfade name (see <see cref="TransitionOf"/>, "mix" = a few in turn) played between two photos, null for none.
     /// shortcut: a phone photo's EXIF rotation is not applied, upgrade with an explicit -vf transpose when it matters.
     /// </summary>
-    public static string Slideshow(IReadOnlyList<string> photos, double secondsEach, IReadOnlyList<string> music, string output, Action<string>? log = null)
+    public static string Slideshow(IReadOnlyList<string> photos, double secondsEach, IReadOnlyList<string> music, string output, Action<string>? log = null, string? transition = null)
     {
         if (photos.Count == 0) throw new ArgumentException("no photo for the slideshow");
         secondsEach = Math.Clamp(secondsEach, 1, 600);
         var total = photos.Count * secondsEach;
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
+        output = Path.GetFullPath(output);
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         // each photo is first fitted to 1080p on its own (a concat list cannot mix a png and a jpg), then the numbered pictures are shown secondsEach seconds each
         var work = output + ".photos";
         var songs = output + ".music.txt";
+        var graph = output + ".graph.txt";
+        // shortcut: one input per photo, so past 600 photos the slideshow has no transition (command line length), upgrade with a slideshow made in parts
+        var fade = transition == null || photos.Count < 2 || photos.Count > 600 ? 0 : Math.Min(1, secondsEach / 3);
+        if (transition != null && photos.Count > 600) log?.Invoke("Diaporama : plus de 600 photos, sans transition");
         Directory.CreateDirectory(work);
         try
         {
             for (var k = 0; k < photos.Count; k++)
                 Tools.Run(Ffmpeg, ["-y", "-v", "error", "-i", photos[k], "-vf", FitPicture, "-frames:v", "1", "-q:v", "2", Path.Combine(work, $"{k + 1:0000}.jpg")]);
-            var args = new List<string> { "-y", "-v", "warning", "-framerate", $"1000/{Math.Round(secondsEach * 1000)}", "-i", Path.Combine(work, "%04d.jpg") };
+            var args = new List<string> { "-y", "-v", "warning" };
+            if (fade == 0) args.AddRange(["-framerate", $"1000/{Math.Round(secondsEach * 1000)}", "-i", Path.Combine(work, "%04d.jpg")]);
+            else
+            {
+                // every photo but the last lasts one fade longer; joining photo k at k × secondsEach then keeps the whole at photos × secondsEach (inputs named from the work folder: short command line)
+                for (var k = 0; k < photos.Count; k++)
+                    args.AddRange(["-loop", "1", "-framerate", "25", "-t", (secondsEach + (k < photos.Count - 1 ? fade : 0)).ToString(Inv), "-i", $"{k + 1:0000}.jpg"]);
+                var joins = new StringBuilder();
+                for (var k = 1; k < photos.Count; k++)
+                    joins.Append($"{(k == 1 ? "[0:v]" : $"[x{k - 1}]")}[{k}:v]xfade=transition={(transition == "mix" ? Mix[(k - 1) % Mix.Length] : transition)}:duration={fade.ToString(Inv)}:offset={(k * secondsEach).ToString(Inv)}[x{k}];\n");
+                File.WriteAllText(graph, joins + $"[x{photos.Count - 1}]format=yuv420p[v]\n", new UTF8Encoding(false));
+            }
+            var audio = fade == 0 ? 1 : photos.Count;
             if (music.Count > 0)
             {
                 // each song is first made a WAV of one format (a concat list cannot mix an mp3 and a flac, and ffmpeg 9 stops at the second of a list of FLACs, with exit 0), then listed again and again until they cover the photos (a concat input cannot be looped)
@@ -61,17 +79,35 @@ public static class MediaMaker
                 args.AddRange(["-f", "concat", "-safe", "0", "-i", songs]);
             }
             else args.AddRange(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]);
-            args.AddRange(["-map", "0:v", "-map", "1:a", "-vf", "format=yuv420p", "-r", "25"]); // -r repeats each picture to 25 fps; the fps filter would drop the first photos here
+            if (fade == 0) args.AddRange(["-map", "0:v", "-map", "1:a", "-vf", "format=yuv420p"]);
+            else args.AddRange(["-/filter_complex", graph, "-map", "[v]", "-map", $"{audio}:a"]); // the graph from a file: one join per photo would not fit a command line
+            args.AddRange(["-r", "25"]); // -r repeats each picture to 25 fps; the fps filter would drop the first photos here
             args.AddRange(Video);
             args.AddRange(["-c:a", "ac3", "-b:a", "192k", "-ac", "2", "-ar", "48000"]);
             if (music.Count > 0) args.AddRange(["-af", $"afade=t=out:st={Math.Max(0, total - 2).ToString(Inv)}:d=2"]);
             args.AddRange(["-t", total.ToString(Inv), output]);
-            log?.Invoke($"Diaporama : {photos.Count} photos, {secondsEach:0.#} s chacune{(music.Count > 0 ? ", avec de la musique" : "")}");
-            Tools.Run(Ffmpeg, args);
+            log?.Invoke($"Diaporama : {photos.Count} photos, {secondsEach:0.#} s chacune{(fade > 0 ? $", transition {transition}" : "")}{(music.Count > 0 ? ", avec de la musique" : "")}");
+            Tools.Run(Ffmpeg, args, workDir: work);
         }
-        finally { Tools.TryDelete(work); File.Delete(songs); }
+        finally { Tools.TryDelete(work); File.Delete(songs); File.Delete(graph); }
         return output;
     }
+
+    static readonly string[] Mix = ["fade", "slideleft", "wipeleft", "circleopen", "dissolve"];
+
+    /// <summary>
+    /// The xfade name of a transition asked in French (fondu, glissement, volet, cercle, mélange) or by its ffmpeg name; "aucune" / "none" = null; anything else = fondu.
+    /// </summary>
+    public static string? TransitionOf(string? word) => word?.Trim().ToLowerInvariant() switch
+    {
+        "aucune" or "aucun" or "none" or "non" => null,
+        "glissement" or "slideleft" => "slideleft",
+        "volet" or "wipeleft" => "wipeleft",
+        "cercle" or "circleopen" => "circleopen",
+        "mélange" or "melange" or "mix" => "mix",
+        "dissolve" => "dissolve",
+        _ => "fade",
+    };
 
     /// <summary>Whether two videos can be put end to end without re-encoding: same picture (codec, profile and level, size, rate, HDR) and the same audio and subtitle streams in the same order.</summary>
     public static bool SameLayout(SourceInfo a, SourceInfo b) =>

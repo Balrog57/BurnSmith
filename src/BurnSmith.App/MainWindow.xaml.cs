@@ -420,11 +420,13 @@ public partial class MainWindow : Window
                 var answer = Prompt.Ask(this, photos.Count == 1 ? "Diaporama d'une photo : secondes" : $"Diaporama de {photos.Count} photos : secondes par photo", "5");
                 if (answer != null && double.TryParse(answer.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var each) && each > 0)
                 {
+                    var transition = photos.Count < 2 ? null
+                        : MediaMaker.TransitionOf(Prompt.Ask(this, "Transition entre les photos : fondu, glissement, volet, cercle, mélange ou aucune", "fondu") ?? "aucune");
                     var file = NextMade("Diaporama" + (madeNames.Values.Count(n => n.StartsWith("Diaporama")) is var k and > 0 ? $" {k + 1}" : ""));
                     var music = songs.ToList();
                     songs.Clear(); // the songs of a slideshow are its music, not titles
                     StatusText.Text = "Préparation du diaporama…";
-                    await Task.Run(() => MediaMaker.Slideshow(photos, each, music, file, Say));
+                    await Task.Run(() => MediaMaker.Slideshow(photos, each, music, file, Say, transition));
                     videos.Add(file);
                 }
                 else

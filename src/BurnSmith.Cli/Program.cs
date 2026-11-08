@@ -76,8 +76,9 @@ if (a.Count >= 3 && a[0] is "slideshow" or "song" or "join")
     var music = OptAll("--music").Select(Path.GetFullPath).ToList();
     if (a[0] == "slideshow")
     {
-        var pictures = a.Skip(2).Where((x, i) => !x.StartsWith("--") && !(i > 0 && a[i + 1] is "--seconds" or "--music")).ToList();
-        MediaMaker.Slideshow(pictures.Select(Path.GetFullPath).ToList(), double.TryParse(Opt("--seconds"), System.Globalization.CultureInfo.InvariantCulture, out var each) ? each : 5, music, made, Console.WriteLine);
+        var pictures = a.Skip(2).Where((x, i) => !x.StartsWith("--") && !(i > 0 && a[i + 1] is "--seconds" or "--music" or "--transition")).ToList();
+        MediaMaker.Slideshow(pictures.Select(Path.GetFullPath).ToList(), double.TryParse(Opt("--seconds"), System.Globalization.CultureInfo.InvariantCulture, out var each) ? each : 5, music, made, Console.WriteLine,
+                             Opt("--transition") is { } tr ? MediaMaker.TransitionOf(tr) : null); // --transition fondu|glissement|volet|cercle|mélange|aucune
     }
     else if (a[0] == "join") MediaMaker.Join(a.Skip(2).Select(Path.GetFullPath).ToList(), made, Console.WriteLine);
     else MediaMaker.Song(Path.GetFullPath(a[2]), Opt("--cover") is { } c ? Path.GetFullPath(c) : MediaMaker.CoverOf(a[2], Path.GetDirectoryName(made)!), made, Console.WriteLine);
@@ -928,6 +929,15 @@ if (a.Count >= 1 && a[0] == "check-edit")
         MediaMaker.Slideshow([F("a.png"), F("b.jpg")], 2.5, [F("s.mp3"), F("t.flac")], F("mixed.mkv"));
         var lastSound = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-select_streams", "a", "-show_entries", "packet=pts_time", "-of", "csv=p=0", F("mixed.mkv")]).Trim().Split('\n').Last().Trim().TrimEnd(','); // ffmpeg 9 ends the last packet's line with a comma
         Check("a slideshow's music of two formats (mp3 then flac) plays until the end of the 5 s of photos", double.Parse(lastSound, System.Globalization.CultureInfo.InvariantCulture) > 4.9);
+        MediaMaker.Slideshow([F("a.png"), F("b.jpg"), F("a.png")], 2, [], F("faded.mkv"), transition: "mix");
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", "2.33", "-i", F("faded.mkv"), "-frames:v", "1", "-vf", "scale=1:1", "-f", "rawvideo", "-pix_fmt", "gray", F("mid.raw")]);
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", "1.0", "-i", F("faded.mkv"), "-frames:v", "1", "-vf", "scale=1:1", "-f", "rawvideo", "-pix_fmt", "gray", F("first.raw")]);
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", "3.0", "-i", F("faded.mkv"), "-frames:v", "1", "-vf", "scale=1:1", "-f", "rawvideo", "-pix_fmt", "gray", F("second.raw")]);
+        int Grey(string f) => File.ReadAllBytes(F(f))[0];
+        Check("slideshow transitions: 3 photos of 2 s keep 6 s (150 frames); a frame within the first join is neither photo; French names map to xfade, aucune to none",
+              Frames(F("faded.mkv")) == 150 && Grey("mid.raw") != Grey("first.raw") && Grey("mid.raw") != Grey("second.raw")
+              && MediaMaker.TransitionOf("Volet") == "wipeleft" && MediaMaker.TransitionOf("aucune") == null && MediaMaker.TransitionOf("n'importe") == "fade"
+              && !File.Exists(F("faded.mkv.graph.txt")));
         MediaMaker.Join([F("show.mkv"), F("show.mkv")], F("twice.mkv"));
         Check("two videos with the same streams join into one of the sum of both; a different size or track list does not match",
               Frames(F("twice.mkv")) == 200 && Math.Abs(BluRay.Probe(F("twice.mkv")).Duration - 8) < 0.2 && MediaMaker.SameLayout(show, show)
