@@ -154,47 +154,38 @@ public static class TemplateCatalog
     }
 
     /// <summary>
-    /// Zips the template folders named in <see cref="FoldersFile"/> into <paramref name="zip"/>: pictures and layout files only (no fonts, no programs),
-    /// as "Blu-ray|DVD|Thèmes/[shape/]name/...". publish.ps1 embeds it in the exe. Returns the number of templates written; none is an error, so that a
-    /// release never ships without them unnoticed.
-    /// <paramref name="roots"/> replaces the configured folders (for a check).
+    /// Converts the template folders named in <see cref="FoldersFile"/> to the single pack format (<see cref="TemplatePack"/>: template.json + PNG
+    /// pictures, no fonts, no programs) and zips the packs into <paramref name="zip"/>, as "category/name/...". publish.ps1 embeds it in the exe, so a
+    /// release carries every template already converted. Returns the number of templates written; none is an error, so that a release never ships
+    /// without them unnoticed. <paramref name="roots"/> replaces the configured folders (for a check).
     /// </summary>
     public static int Pack(string zip, Action<string>? log = null, IEnumerable<string>? roots = null)
     {
-        string[] keep = [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".xml"];
-        if (File.Exists(zip)) File.Delete(zip);
-        using var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create);
-        var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var dir in (roots ?? UserRoots()).SelectMany(r => TemplateFolders(r)).Distinct(StringComparer.OrdinalIgnoreCase))
+        var work = Path.Combine(Path.GetTempPath(), "burnsmith-pack-" + Guid.NewGuid().ToString("N"));
+        try
         {
-            // a pack BurnSmith made from a template is not a source: the library can be named as a whole, its converted folder included
-            if (TemplatePack.TryRead(dir) is not null) continue;
-            if (InstalledTemplate.Load(dir) is not { Unsupported: null } pack) continue;
-            var name = Path.GetFileName(dir);
-            var prefix = pack.Kind switch
+            var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var dir in (roots ?? UserRoots()).SelectMany(r => TemplateFolders(r)).Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                TemplateKind.BluRay => $"Blu-ray/{name}",
-                TemplateKind.Dvd => $"DVD/{name}",
-                TemplateKind.Pictures => $"Thèmes/{Path.GetFileName(Path.GetDirectoryName(dir))}/{name}",
-                TemplateKind.Theme => $"Thèmes/{name}",
-                TemplateKind.Library => $"Libres/{name}",
-                _ => name,
-            };
-            if (!done.Add(prefix)) continue;
-            var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Where(f => keep.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase)).ToList();
-            if (pack.Kind == TemplateKind.Theme) // the 1920x1080 pictures, the gallery thumbnail and the layout in clear text
-            {
-                files = files.Where(f => Path.GetRelativePath(dir, f).StartsWith("1920x1080") || Path.GetFileName(f) == "thumb_169.jpg").ToList();
-                if (ThemeSkin.ReadConfig(dir) is { } layout)
-                    using (var w = new StreamWriter(archive.CreateEntry($"{prefix}/config.xml").Open())) w.Write(layout);
+                // a pack BurnSmith made from a template is not a source: the library can be named as a whole, its converted folder included
+                if (TemplatePack.TryRead(dir) is not null) continue;
+                if (InstalledTemplate.Load(dir) is not { Unsupported: null } source) continue;
+                var design = Design(dir, source);
+                if (!done.Add($"{design.Category}|{design.Name}")) continue;
+                var target = TemplatePack.PackDir(work, design.Category, design.Name);
+                Directory.CreateDirectory(target);
+                var pack = TemplatePack.ConvertOne(design.Name, design.Category, dir, design, target);
+                pack.Source = ""; // the publishing PC's path means nothing elsewhere
+                pack.Save(target);
+                log?.Invoke($"{design.Category}/{design.Name}: {pack.Backgrounds} fonds, {pack.Buttons} boutons");
             }
-            foreach (var f in files)
-                System.IO.Compression.ZipFileExtensions.CreateEntryFromFile(archive, f, $"{prefix}/{Path.GetRelativePath(dir, f).Replace('\\', '/')}", System.IO.Compression.CompressionLevel.Optimal);
-            log?.Invoke($"{prefix}: {files.Count} fichiers");
+            if (done.Count == 0) throw new InvalidOperationException("aucun modèle de menu trouvé : ajoutez un dossier dans template-folders.txt, une version publiée doit les porter");
+            File.WriteAllText(Path.Combine(work, "NOTICE.txt"),
+                "Pictures of menu templates, converted to BurnSmith's template format; the pictures belong to their authors and are not part of BurnSmith's own code, which is MIT-licensed (LICENSE).\nNo program, font or interface of these products is included.\n");
+            if (File.Exists(zip)) File.Delete(zip);
+            System.IO.Compression.ZipFile.CreateFromDirectory(work, zip, System.IO.Compression.CompressionLevel.Optimal, false);
+            return done.Count;
         }
-        if (done.Count == 0) throw new InvalidOperationException("aucun modèle de menu trouvé : ajoutez un dossier dans template-folders.txt, une version publiée doit les porter");
-        using (var w = new StreamWriter(archive.CreateEntry("NOTICE.txt").Open()))
-            w.Write("Images and layout files of menu templates, kept as published by their owners.\nThey belong to their authors and are not part of BurnSmith's own code, which is MIT-licensed (LICENSE).\nNo program, font or interface of these products is included.\n");
-        return done.Count;
+        finally { Tools.TryDelete(work); }
     }
 }

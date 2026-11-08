@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="180" height="180" viewBox="0 0 180 180">
+  <defs>
+    <clipPath id="clip-path-1">
+      <path d="M-1.565 -4.725 L181.565 -4.725 L181.565 169.366 L-1.565 169.366 Z"/>
+    </clipPath>
+    <filter id="filter-1" filterUnits="userSpaceOnUse" x="-25.935" y="-30.27" width="231.869" height="223.508" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceGraphic" stdDeviation="9.783" color-interpolation-filters="linearRGB"/></filter>
+  </defs>
+  <title>star-frame.svg</title>
+  <g id="whole">
+    <g clip-path="url(#clip-path-1)">
+      <g filter="url(#filter-1)">
+        <g id="shadow">
+          <polygon points="90,9.783 118.174,51.261 166.304,65.25 135.587,104.772 137.152,154.859 90,137.935 42.848,154.859 44.413,104.772 13.696,65.25 61.826,51.261" fill="none" stroke="#ffff00" stroke-width="9.783"/>
+        </g>
+      </g>
+    </g>
+    <g id="base">
+      <polygon points="90,9.783 118.174,51.261 166.304,65.25 135.587,104.772 137.152,154.859 90,137.935 42.848,154.859 44.413,104.772 13.696,65.25 61.826,51.261" fill="none" stroke="#ffe000" stroke-width="9.783"/>
+      <g id="frame_fill">
+        <polygon points="90,9.783 118.174,51.261 166.304,65.25 135.587,104.772 137.152,154.859 90,137.935 42.848,154.859 44.413,104.772 13.696,65.25 61.826,51.261" fill="#101010"/>
+      </g>
+      <g id="frame_stroke">
+        <polygon points="90,9.783 118.174,51.261 166.304,65.25 135.587,104.772 137.152,154.859 90,137.935 42.848,154.859 44.413,104.772 13.696,65.25 61.826,51.261" fill="none" stroke="#ffe000" stroke-opacity="0.376" stroke-width="9.783"/>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="160" height="160" viewBox="0 0 160 160">
+  <title>ellipse45.sub.svg</title>
+  <g id="rotation">
+    <g id="main">
+      <path id="ellipse" d="M136.569 23.431 C160 46.863 153.668 91.184 122.426 122.426 C91.184 153.668 46.863 160 23.431 136.569 C0 113.137 6.332 68.816 37.574 37.574 C68.816 6.332 113.137 0 136.569 23.431 Z" fill="none" stroke="#0000ff" stroke-width="5"/>
+    </g>
+  </g>
+</svg>

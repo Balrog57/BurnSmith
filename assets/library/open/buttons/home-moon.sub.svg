@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="50" height="50" viewBox="0 0 50 50">
+  <title>home-moon.sub.svg</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <circle id="moon" cx="42" cy="8" r="4" fill="#f0d090"/>
+    <g id="home1">
+      <path id="home2" d="M10.5 18 L10.5 10 L10 9.5 L10 7.5 L16 7.5 L16 9.5 L15.5 10 L15.5 13 Z M9.5 24 L24 9.5 C24.265 9.235 24.625 9.086 25 9.086 C25.375 9.086 25.735 9.235 26 9.5 L40.5 24 L40.5 47 L35 47 L34 46 L16 46 L15 47 L9.5 47 Z M6.5 27 C5.5 28 3 25.5 4 24.5 L21.5 7 C23.433 5.067 26.567 5.067 28.5 7 L46 24.5 C47 25.5 44.5 28 43.5 27 L26 9.5 C25.735 9.235 25.375 9.086 25 9.086 C24.625 9.086 24.265 9.235 24 9.5 Z" fill="#0080c0" stroke="#004060" stroke-width="1.5" stroke-linejoin="round"/>
+    </g>
+    <g id="window">
+      <rect x="14.5" y="25" width="9.5" height="7.5" fill="#ffff00"/>
+      <rect x="26" y="25" width="9.5" height="7.5" fill="#ffff00"/>
+      <rect x="14.5" y="34.5" width="9.5" height="7.5" fill="#ffff00"/>
+      <rect x="26" y="34.5" width="9.5" height="7.5" fill="#ffff00"/>
+    </g>
+  </g>
+</svg>

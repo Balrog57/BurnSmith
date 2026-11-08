@@ -50,9 +50,49 @@ public static class MenuRenderer
         return ms.ToArray();
     }
 
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, BitmapImage> Images = new(); // frozen, so shared by every render thread
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, ImageSource> Images = new(); // frozen, so shared by every render thread
 
-    static BitmapImage Load(string path) => Images.GetOrAdd(path, p =>
+    public static bool IsSvg(string path) => path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A picture file, ready to draw. An SVG is kept as vectors and laid out at the size it will be drawn at (<paramref name="size"/>), as DVDStyler
+    /// does: a button in percentages stretches to its box, one with a viewBox keeps its proportions, and both stay sharp at any size.
+    /// </summary>
+    static ImageSource Load(string path, Rect? size = null) => !IsSvg(path) ? Bitmap(path)
+        : Images.GetOrAdd($"{path}|{size?.Width:0}x{size?.Height:0}", _ => Svg(path, size));
+
+    /// <summary>An SVG file as a frozen vector picture at its own size (for the editor's lists).</summary>
+    public static ImageSource SvgPicture(string path) => Load(path);
+
+    static ImageSource Svg(string path, Rect? size)
+    {
+        try
+        {
+            var doc = System.Xml.Linq.XDocument.Load(path);
+            var root = doc.Root!;
+            if (size is { } s) { root.SetAttributeValue("width", Math.Round(s.Width)); root.SetAttributeValue("height", Math.Round(s.Height)); }
+            double Dim(string name) => double.TryParse(((string?)root.Attribute(name))?.TrimEnd('p', 'x'), System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 100;
+            var (w, h) = (Dim("width"), Dim("height"));
+            using var ms = new MemoryStream();
+            doc.Save(ms);
+            ms.Position = 0;
+            var settings = new SharpVectors.Renderers.Wpf.WpfDrawingSettings { IncludeRuntime = false, TextAsGeometry = true };
+            var drawing = new SharpVectors.Converters.FileSvgReader(settings).Read(ms);
+            // the drawing's own bounds are its ink: framed in its page (w x h) so it lands where the SVG puts it inside the box
+            var page = new DrawingGroup { ClipGeometry = new RectangleGeometry(new Rect(0, 0, w, h)) };
+            page.Children.Add(new GeometryDrawing(Brushes.Transparent, null, new RectangleGeometry(new Rect(0, 0, w, h))));
+            page.Children.Add(drawing);
+            var image = new DrawingImage(page);
+            image.Freeze();
+            return image;
+        }
+        catch (Exception e) when (e is System.Xml.XmlException or IOException or NotSupportedException or InvalidOperationException or ArgumentException)
+        {
+            throw new InvalidDataException($"Image illisible : {path}", e);
+        }
+    }
+
+    static ImageSource Bitmap(string path) => Images.GetOrAdd(path, p =>
     {
         try
         {
@@ -96,7 +136,7 @@ public static class MenuRenderer
             if (b.FocusImage != null)
             {
                 var at = b.FocusSlot is { } s ? new Rect(s.X - box.X, s.Y - box.Y, s.W, s.H) : new Rect(m, m, b.Rect.W, b.Rect.H);
-                dc.DrawImage(Load(b.FocusImage), at);
+                dc.DrawImage(Load(b.FocusImage, at), at);
                 return;
             }
             switch (style)
@@ -124,9 +164,11 @@ public static class MenuRenderer
     {
         try
         {
+            if (IsSvg(image)) return Load(image) is { Width: > 0, Height: > 0 } svg ? ((int)Math.Round(svg.Width), (int)Math.Round(svg.Height)) : null;
             var frame = BitmapDecoder.Create(new Uri(image), BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).Frames[0];
             return (frame.PixelWidth, frame.PixelHeight);
         }
+        catch (InvalidDataException) { return null; }
         catch (Exception e) when (e is NotSupportedException or FileFormatException or IOException or ArgumentException) { return null; }
     }
 
@@ -143,7 +185,7 @@ public static class MenuRenderer
         {
             var rect = new Rect(0, 0, w, h);
             if (mask != null) dc.PushOpacityMask(new ImageBrush(Load(mask)) { Stretch = Stretch.Fill });
-            dc.DrawImage(Load(image), rect);
+            dc.DrawImage(Load(image, rect), rect);
             if (mask != null) dc.Pop();
         }
         var bmp = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
@@ -186,7 +228,7 @@ public static class MenuRenderer
                 case Image im:
                     if ((overlay || own != null) && im.Backdrop) break; // a template's background picture: the page has its own, or the video is behind
                     if (im.Cover) dc.DrawRectangle(new ImageBrush(Load(im.Path)) { Stretch = Stretch.UniformToFill }, null, R(im.Rect));
-                    else dc.DrawImage(Load(im.Path), R(im.Rect));
+                    else dc.DrawImage(Load(im.Path, R(im.Rect)), R(im.Rect));
                     break;
                 case Text t:
                     DrawText(dc, t);
@@ -214,13 +256,13 @@ public static class MenuRenderer
     static void DrawFramed(DrawingContext dc, Framed f)
     {
         var rect = R(f.Rect);
-        BitmapImage? mask = null;
+        ImageSource? mask = null;
         try { mask = f.Mask == null ? null : Load(f.Mask); }
         catch (InvalidDataException) { /* a mask WPF cannot decode (Holiday's): the picture is shown unmasked */ }
         if (mask != null) dc.PushOpacityMask(new ImageBrush(mask) { Stretch = Stretch.Fill, ViewportUnits = BrushMappingMode.Absolute, Viewport = rect });
         dc.DrawRectangle(f.Picture != null ? new ImageBrush(Load(f.Picture)) { Stretch = Stretch.UniformToFill } : new SolidColorBrush(Col("#000000", 0.45)), null, rect);
         if (mask != null) dc.Pop();
-        if (f.Frame != null) dc.DrawImage(Load(f.Frame), rect);
+        if (f.Frame != null) dc.DrawImage(Load(f.Frame, rect), rect);
     }
 
     static void DrawText(DrawingContext dc, Text t)

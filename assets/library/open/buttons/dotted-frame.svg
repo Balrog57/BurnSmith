@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="192" height="108">
+		<defs>
+			<clipPath id="cp">
+				<rect id="def_frame" x="7%" y="7%" width="86%" height="86%" rx="500" />
+			</clipPath>
+			<filter id="shadowFilter">
+				<feGaussianBlur stdDeviation="3" />
+			</filter>
+		</defs>
+		<use id="frame_fill" xlink:href="#def_frame" style="fill:#101010;stroke:none;" />
+		<use id="shadow" xlink:href="#frame_stroke" x="2" y="2" style="fill:none;filter:url(#shadowFilter);stroke:#404040;stroke-opacity:1;visibility:hidden;" />
+		<g id="body_frame" style="fill:none;stroke:#00c030;">
+			<use id="frame_stroke" xlink:href="#def_frame" style="stroke-width:10;" />
+		</g>
+		<use id="line" xlink:href="#def_frame" style="fill:none;stroke:#00ff40;stroke-width:6;" />
+		<use id="dotted_line" xlink:href="#def_frame" style="fill:none;stroke:#ffff00;stroke-width:4;stroke-linecap:round;stroke-dasharray:0 7;" />
+	</svg>
+	

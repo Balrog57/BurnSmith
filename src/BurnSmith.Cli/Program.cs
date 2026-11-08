@@ -236,7 +236,49 @@ if (a.Count >= 1 && a[0] == "check-highlights")
     return hlFailed == 0 ? 0 : 1;
 }
 
-// burnsmith check-elements : the free elements of the menu (reading a command-line element, which pages it goes on, what it draws) without a video or a window
+// burnsmith svg-sheet <dir> <out.png> : every SVG of a folder drawn wide (300x90) and square (120x120), normal then selected, one row each — to look at
+if (a.Count >= 3 && a[0] == "svg-sheet")
+{
+    var files = Directory.EnumerateFiles(a[1], "*.svg").Where(f => !f.EndsWith(".sub.svg", StringComparison.OrdinalIgnoreCase)).Order().ToList();
+    var png = MenuRenderer.Sta(() =>
+    {
+        var visual = new System.Windows.Media.DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawRectangle(new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(70, 70, 80)), null, new System.Windows.Rect(0, 0, 1000, files.Count * 130));
+            for (var i = 0; i < files.Count; i++)
+            {
+                var sub = Path.ChangeExtension(files[i], ".sub.svg");
+                var x = 10.0;
+                foreach (var (file, w, h) in new[] { (files[i], 300, 90), (files[i], 120, 120), (sub, 300, 90), (sub, 120, 120) })
+                {
+                    if (File.Exists(file))
+                    {
+                        var r = MenuRenderer.Raster(file, null, w, h);
+                        var bmp = System.Windows.Media.Imaging.BitmapSource.Create(w, h, 96, 96, System.Windows.Media.PixelFormats.Pbgra32, null, r.Px, w * 4);
+                        dc.DrawRectangle(null, new System.Windows.Media.Pen(System.Windows.Media.Brushes.Gray, 1), new System.Windows.Rect(x, i * 130 + 5, w, h));
+                        dc.DrawImage(bmp, new System.Windows.Rect(x, i * 130 + 5, w, h));
+                    }
+                    x += w + 15;
+                }
+                dc.DrawText(new System.Windows.Media.FormattedText(Path.GetFileNameWithoutExtension(files[i]), System.Globalization.CultureInfo.InvariantCulture, System.Windows.FlowDirection.LeftToRight,
+                    new System.Windows.Media.Typeface("Segoe UI"), 13, System.Windows.Media.Brushes.White, 1), new System.Windows.Point(10, i * 130 + 108));
+            }
+        }
+        var target = new System.Windows.Media.Imaging.RenderTargetBitmap(1000, files.Count * 130, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        target.Render(visual);
+        var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(target));
+        using var ms = new MemoryStream();
+        enc.Save(ms);
+        return ms.ToArray();
+    });
+    File.WriteAllBytes(a[2], png);
+    Console.WriteLine($"{files.Count} SVG -> {a[2]}");
+    return 0;
+}
+
+// burnsmith check-elements :the free elements of the menu (reading a command-line element, which pages it goes on, what it draws) without a video or a window
 if (a.Count >= 1 && a[0] == "check-elements")
 {
     var elFailed = 0;
@@ -416,6 +458,25 @@ if (a.Count >= 1 && a[0] == "check-elements")
     Check("une référence « carried: » se range sous le dossier des images des modèles, ou ne mène à rien quand l'exe n'en porte pas",
           Tools.TemplatesDir() is { } carriedRoot ? ElementLibrary.Resolve("carried:x/y.png") == Path.Combine(carriedRoot, "x", "y.png") : ElementLibrary.Resolve("carried:x/y.png") == null);
     Check("un chemin ordinaire reste tel quel", ElementLibrary.Resolve(@"C:\a\b.png") == @"C:\a\b.png" && ElementLibrary.Resolve(null) == null);
+
+    // DVDStyler's SVG buttons: each is drawn at two sizes (wide and square), shows something, and its selected state differs
+    var svgButtons = ElementLibrary.Buttons().Where(b => b.Source == ElementLibrary.DvdStyler).ToList();
+    var svgBad = MenuRenderer.Sta(() => svgButtons.Where(b =>
+    {
+        static bool Inked((byte[] Px, int W, int H) r) => Enumerable.Range(0, r.W * r.H).Any(i => r.Px[i * 4 + 3] > 0);
+        try
+        {
+            var wide = MenuRenderer.Raster(b.Normal!, null, 300, 90);
+            var square = MenuRenderer.Raster(b.Normal!, null, 120, 120);
+            var focus = b.Focus == null ? null : MenuRenderer.Raster(b.Focus, null, 300, 90).Px;
+            // a text button (text-circle…) is only its label until chosen: then its mark must show
+            var shows = Inked(wide) && Inked(square) || focus != null && Inked((focus, 300, 90));
+            return !shows || (focus != null && focus.SequenceEqual(wide.Px));
+        }
+        catch (InvalidDataException) { return true; }
+    }).Select(b => b.Name).ToList());
+    Check($"les {svgButtons.Count} boutons SVG de DVDStyler se dessinent à toute taille, avec leur état choisi{(svgBad.Count > 0 ? " — en défaut : " + string.Join(", ", svgBad) : "")}",
+          svgButtons.Count >= 50 && svgBad.Count == 0);
     SettingsCheck.Model(Check);
     Console.WriteLine(elFailed == 0 ? "all ok" : $"{elFailed} failed");
     return elFailed == 0 ? 0 : 1;

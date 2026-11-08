@@ -186,22 +186,17 @@ public partial class MenuEditorWindow : Window
         BuiltInList.ItemsSource = TemplateCatalog.Scan().Usable;
     }
 
-    void OnAddFolder(object s, RoutedEventArgs e)
+    /// <summary>
+    /// Adds a folder of templates and converts them at once to the single pack format (template.json + PNG pictures in
+    /// Documents\BurnSmith\Templates\converted); the exe already carries its own templates converted. A pack that already
+    /// exists is kept, so the user's own edits are never overwritten.
+    /// </summary>
+    async void OnAddFolder(object s, RoutedEventArgs e)
     {
         var dlg = new OpenFolderDialog { Title = "Dossier contenant des modèles de menu" };
         if (dlg.ShowDialog(this) != true) return;
         TemplateCatalog.AddFolder(dlg.FolderName);
-        LoadCatalog();
-    }
-
-    /// <summary>
-    /// Converts every template installed on this PC to the single pack format (template.json + PNG pictures in
-    /// Documents\BurnSmith\Templates\converted), then refreshes the gallery and the Fonds / Boutons lists.
-    /// A pack that already exists is kept, so the user's own edits are never overwritten.
-    /// </summary>
-    async void OnConvertAll(object s, RoutedEventArgs e)
-    {
-        ConvertBtn.IsEnabled = false;
+        ((Button)s).IsEnabled = false;
         ConvertNote.Text = "Conversion des modèles…";
         var progress = new Progress<string>(line => ConvertNote.Text = line);
         try
@@ -218,7 +213,7 @@ public partial class MenuEditorWindow : Window
             ConvertNote.Text = "";
             MessageBox.Show(this, ex.Message, "BurnSmith");
         }
-        finally { ConvertBtn.IsEnabled = true; }
+        finally { ((Button)s).IsEnabled = true; }
     }
 
     static BitmapImage Decode(byte[] bytes, int width = 0)
@@ -504,7 +499,7 @@ public partial class MenuEditorWindow : Window
         var pick = new MenuItem { Header = "Choisir une image…" };
         pick.Click += (_, _) =>
         {
-            var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*", Title = "Image du menu" };
+            var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*", Title = "Image du menu" };
             if (dlg.ShowDialog(this) != true) return;
             try
             {
@@ -744,7 +739,7 @@ public partial class MenuEditorWindow : Window
     void OnElemImage(object s, RoutedEventArgs e)
     {
         if (sel is not { } el) return;
-        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*", Title = "Image de l'élément" };
+        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*", Title = "Image de l'élément" };
         if (dlg.ShowDialog(this) != true) return;
         try
         {
@@ -762,7 +757,7 @@ public partial class MenuEditorWindow : Window
     void OnElemFocus(object s, RoutedEventArgs e)
     {
         if (sel is not { } el) return;
-        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*", Title = "Image du bouton sélectionné" };
+        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*", Title = "Image du bouton sélectionné" };
         if (dlg.ShowDialog(this) != true) return;
         el.Focus = dlg.FileName;
         ShowElem();
@@ -888,7 +883,7 @@ public partial class MenuEditorWindow : Window
     /// <summary>Adds a button picture to your library: the picture, then (it may be left out) the one it shows when selected.</summary>
     void OnBtnImport(object s, RoutedEventArgs e)
     {
-        var filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*";
+        var filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*";
         var normal = new OpenFileDialog { Filter = filter, Title = "Image du bouton" };
         if (normal.ShowDialog(this) != true) return;
         var focus = new OpenFileDialog { Filter = filter, Title = "Image du bouton sélectionné (Annuler = aucune : le cadre du thème)" };
@@ -1090,7 +1085,7 @@ public partial class MenuEditorWindow : Window
     /// <summary>Adds pictures to your library (a copy is kept in %APPDATA%\BurnSmith\library) and uses the last one.</summary>
     void OnBg(object s, RoutedEventArgs e)
     {
-        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*", Multiselect = true, Title = "Images à ajouter à la bibliothèque" };
+        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*", Multiselect = true, Title = "Images à ajouter à la bibliothèque" };
         if (dlg.ShowDialog(this) != true) return;
         try
         {
@@ -1139,7 +1134,7 @@ public partial class MenuEditorWindow : Window
     void OnPageBg(object s, RoutedEventArgs e)
     {
         if (current == null) return;
-        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|Tous les fichiers|*.*", Title = $"Fond de la page « {PageName(current.Id)} »" };
+        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*", Title = $"Fond de la page « {PageName(current.Id)} »" };
         if (dlg.ShowDialog(this) != true) return;
         try
         {
@@ -1229,16 +1224,17 @@ sealed class ThumbConverter : System.Windows.Data.IValueConverter
         if (value is not string file || !File.Exists(file)) return null;
         try
         {
+            if (MenuRenderer.IsSvg(file)) return MenuRenderer.SvgPicture(file); // vectors: no decoding, sharp at any tile size
             var img = new BitmapImage();
             img.BeginInit();
             img.UriSource = new Uri(file);
-            img.DecodePixelWidth = 192;
+            img.DecodePixelWidth = 320; // the tile grows with the library column
             img.CacheOption = BitmapCacheOption.OnLoad; // does not keep the file open: "Retirer" can delete it
             img.EndInit();
             img.Freeze();
             return img;
         }
-        catch (Exception e) when (e is NotSupportedException or IOException or InvalidOperationException) { return null; }
+        catch (Exception e) when (e is NotSupportedException or IOException or InvalidOperationException) { return null; } // InvalidDataException is an IOException
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();

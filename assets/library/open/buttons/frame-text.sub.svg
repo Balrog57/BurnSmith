@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="188" height="132">
+		<defs>
+			<clipPath id="cp">
+				<rect id="def_frame" x="5%" y="5%" width="90%" height="72%" rx="20" />
+			</clipPath>
+			<filter id="frameshadowFilter">
+				<feGaussianBlur stdDeviation="3" />
+			</filter>
+			<filter id="textshadowFilter">
+				<feGaussianBlur stdDeviation="2" />
+			</filter>
+		</defs>
+		<use xlink:href="#def_frame" style="fill:#101010;stroke:none;" />
+		<use id="frameshadow" xlink:href="#rect" x="2" y="2" style="fill:none;filter:url(#frameshadowFilter);stroke:#404040;stroke-opacity:1;visibility:hidden;" />
+		<g id="body_rect" style="fill:none;stroke:#FF0000;">
+			<use id="rect" xlink:href="#def_frame" style="stroke-width:5;" />
+		</g>
+		<use id="textshadow" xlink:href="#text" x="2" y="2" style="fill:#202020;fill-opacity:1;filter:url(#textshadowFilter);visibility:hidden;" />
+		<g id="body_text" style="fill:#ffffff;fill-opacity:1;stroke:none;">
+			<text id="text" transform="translate(0,0)" x="50%" y="83%" xml:space="preserve" style="dominant-baseline:text-after-edge;text-anchor:middle;font-size:20;" />
+		</g>
+	</svg>
+	

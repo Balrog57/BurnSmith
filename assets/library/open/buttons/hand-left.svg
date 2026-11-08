@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="58" height="32" viewBox="0 0 58 32">
+  <title>hand-left.svg</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <rect id="shirt1" x="48.5" y="9.5" width="9" height="21.5" fill="#00afef"/>
+    <rect id="shirt2" x="46.5" y="10.5" width="2" height="19" fill="#fff212"/>
+    <path id="hand" d="M46.5 27 C42.5 29 36.5 31 33.5 31 L20 31 C15 31 15.5 26 19.5 26 L25 26 L17.5 26 C12.5 26 12.5 20.5 17.5 20.5 L23.5 20.5 L15 20.5 C10.5 20.5 10.5 15.5 15 15.5 L22.5 15.5 L5 15.5 C0 15.5 0 10 5 10 L28 10 L23 7 C20 5 22 -1 27.5 2 C34 5.5 40 10.5 46.5 12 Z" fill="#f7adaf"/>
+  </g>
+</svg>

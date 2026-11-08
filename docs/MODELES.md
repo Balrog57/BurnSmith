@@ -13,15 +13,15 @@ Toute la bibliothèque tient dans un dossier visible, **`Documents\BurnSmith\Tem
 | Sous-dossier | Contenu | Quand il change |
 |---|---|---|
 | `open\` | modèles libres | refait quand son contenu change |
-| `carried\` | images et mises en page portées par l'exe publié | refait quand son contenu change |
+| `carried\` | les modèles portés par l'exe publié, déjà convertis au format unique | refait quand son contenu change |
 | `mine\` | « Mes modèles » (JSON) | **jamais effacé**, même à la désinstallation |
 | `images\` | « Mes images » | **jamais effacé**, même à la désinstallation |
 | `buttons\` | « Mes boutons » (`nom.png`, et `nom.sub.png` pour l'état choisi) | **jamais effacé**, même à la désinstallation |
-| `converted\` | tous les modèles réunis dans le format unique (`template.json` + images PNG) | créé par « Convertir tous les modèles… » ; un pack existant n'est jamais écrasé |
+| `converted\` | les modèles des dossiers ajoutés à la main, convertis au format unique (`template.json` + images) | rempli par « Ajouter un dossier… » ; un pack existant n'est jamais écrasé et passe avant celui de l'exe |
 
 N'ajoutez donc pas vos propres fichiers dans `open\` ni `carried\`. Si Documents n'est pas inscriptible, la bibliothèque est créée sous le dossier de données de BurnSmith. Les anciens emplacements (`BurnSmith-data\open`, `BurnSmith-data\templates`, `%APPDATA%\BurnSmith\templates`, `%APPDATA%\BurnSmith\library\backgrounds` et `%APPDATA%\BurnSmith\library\buttons`) ne servent plus ; le contenu des trois derniers est copié une fois. Le fichier `%APPDATA%\BurnSmith\template-folders.txt` (dossiers de modèles ajoutés à la main) n'a pas bougé.
 
-La **bibliothèque** de l'éditeur catalogue les fonds (les fonds libres, les fonds des modèles portés, **tous les fonds des packs convertis**, vos images, avec *Importer…*), les boutons (les 5 styles de BurnSmith : capsules, texte seul, cartes, cadre classique, verre néon ; les images de boutons des modèles et **celles des packs convertis, avec leur état sélectionné** ; « Mes boutons »), la grille des scènes (1-5 colonnes x 1-4 lignes, avec ou sans images, coins carrés), la police (celles de Windows) et les couleurs. Le bouton **« Convertir tous les modèles… »** de l'onglet *Modèles* fait la conversion en une fois ; le catalogue et les listes *Fonds* / *Boutons* se rafraîchissent ensuite. « Composer à partir de ce fond » sort d'un modèle en gardant son fond (par son chemin, sans copie). Les **éléments libres** (texte, image, cadre, bouton) se posent sur n'importe quelle page, se déplacent et se redimensionnent à la souris sur l'aperçu et se règlent aux curseurs (position, taille, police, couleurs, bordure, opacité) ; un bouton reçoit son action (« Mène à »). Pas encore dans cet éditeur : annuler / rétablir, et l'alignement magnétique.
+La **bibliothèque** de l'éditeur catalogue les fonds (les fonds libres, les fonds des modèles portés, **tous les fonds des packs convertis**, vos images, avec *Importer…*), les boutons (les 5 styles de BurnSmith : capsules, texte seul, cartes, cadre classique, verre néon ; les 51 boutons de DVDStyler en SVG, redessinés nets à toute taille avec leur état choisi (`assets/library/open/buttons`, faits par `tools/dvdstyler-buttons.py`) ; vos propres SVG s'importent aussi ; les images de boutons des modèles et **celles des packs convertis, avec leur état sélectionné** ; « Mes boutons »), la grille des scènes (1-5 colonnes x 1-4 lignes, avec ou sans images, coins carrés), la police (celles de Windows) et les couleurs. Il n'y a rien à convertir à la main : l'exe porte ses modèles déjà convertis, et « Ajouter un dossier… » convertit aussitôt les modèles du dossier choisi ; le catalogue et les listes *Fonds* / *Boutons* se rafraîchissent ensuite. « Composer à partir de ce fond » sort d'un modèle en gardant son fond (par son chemin, sans copie). Les **éléments libres** (texte, image, cadre, bouton) se posent sur n'importe quelle page, se déplacent et se redimensionnent à la souris sur l'aperçu et se règlent aux curseurs (position, taille, police, couleurs, bordure, opacité) ; un bouton reçoit son action (« Mène à »). Pas encore dans cet éditeur : annuler / rétablir, et l'alignement magnétique.
 
 État des modèles (144 utilisables, aucun refusé, même sans modèle tiers installé) :
 
@@ -34,19 +34,19 @@ La **bibliothèque** de l'éditeur catalogue les fonds (les fonds libres, les fo
 
 ## Un seul format : `template.json` + images
 
-« Convertir tous les modèles… » (onglet *Modèles* de l'éditeur) réunit chaque modèle installé — Blu-ray, DVD, thème `config.xml`, `.dvdt`, modèle libre ou porté — dans un dossier de `Documents\BurnSmith\Templates\converted\` :
+Tous les modèles — Blu-ray, DVD, thème `config.xml`, `.dvdt`, modèle libre ou porté — sont dans un même format. `publish.ps1` convertit les modèles du PC de publication et l'exe les porte ainsi (dépaquetés dans `carried\`) ; « Ajouter un dossier… » convertit ceux d'un dossier ajouté dans `Documents\BurnSmith\Templates\converted\` :
 
 ```
 converted\
   Blu-ray\Birthday1\
     template.json      le nom, la catégorie, le genre, l'arbre de mise en page et la liste des images
-    ...png             les fonds, aux chemins du modèle d'origine, convertis en PNG
+    ...png / ...jpg    les fonds, aux chemins du modèle d'origine (un JPEG reste JPEG, le reste passe en PNG)
     play\0.normal.png  les boutons, et 0.sub.png pour l'état sélectionné
     scenes\0.normal.png
     thumbnail.png      la vignette de la galerie
 ```
 
-`template.json` est du JSON lisible, avec les mêmes informations que les fichiers d'origine du modèle une fois normalisées : `name`, `category`, `kind`, `width` / `height`, `design` (couleurs, police, grille, surbrillance), `assets` (une entrée par image, avec son `role` — `background`, `button`, `image` ou `thumbnail` —, son chemin, l'image de l'état sélectionné `focus`, la page `page` et sa taille), et `tree`, l'arbre de mise en page (nœud, attributs, texte, enfants). Chaque image citée par l'arbre est copiée en PNG et l'arbre est réécrit vers son nouveau chemin : le pack ne dépend plus du dossier d'origine.
+`template.json` est du JSON lisible, avec les mêmes informations que les fichiers d'origine du modèle une fois normalisées : `name`, `category`, `kind`, `width` / `height`, `design` (couleurs, police, grille, surbrillance), `assets` (une entrée par image, avec son `role` — `background`, `button`, `image` ou `thumbnail` —, son chemin, l'image de l'état sélectionné `focus`, la page `page` et sa taille), et `tree`, l'arbre de mise en page (nœud, attributs, texte, enfants). Chaque image citée par l'arbre est copiée (en PNG, sauf un JPEG gardé tel quel) et l'arbre est réécrit vers son nouveau chemin : le pack ne dépend plus du dossier d'origine.
 
 Les images restent **séparées par rôle** : un fond reste un fond, un bouton garde son image normale et son image sélectionnée, les cadres et vignettes restent des images. Rien n'est aplati dans une seule photo, donc chaque élément se remplace ou se retouche individuellement.
 

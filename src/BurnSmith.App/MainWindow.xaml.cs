@@ -579,19 +579,12 @@ public partial class MainWindow : Window
         AfterTitlesChanged();
     }
 
-    /// <summary>The "..." button: move the title up or down (the order is the order of the episodes in the menu).</summary>
+    /// <summary>The "..." button: bonus, start video.</summary>
     void OnRowMore(object s, RoutedEventArgs e)
     {
         var entry = Row(s);
         // FontFamily: a menu inherits the font of its target, which here is the icon button (the text would show as empty boxes)
         var menu = new ContextMenu { PlacementTarget = (UIElement)s, Placement = PlacementMode.Bottom, FontFamily = FontFamily };
-        var up = new MenuItem { Header = "Monter", IsEnabled = titles.IndexOf(entry!) > 0 };
-        var down = new MenuItem { Header = "Descendre", IsEnabled = titles.IndexOf(entry!) < titles.Count - 1 };
-        up.Click += (_, _) => Move(entry, -1);
-        down.Click += (_, _) => Move(entry, 1);
-        menu.Items.Add(up);
-        menu.Items.Add(down);
-        menu.Items.Add(new Separator());
         // a disc keeps at least one video that is not a bonus
         var bonus = new MenuItem
         {
@@ -607,14 +600,7 @@ public partial class MainWindow : Window
         };
         intro.Click += (_, _) => SetIntro(entry, intro.IsChecked);
         menu.Items.Add(intro);
-        menu.Items.Add(new Separator());
-        var split = new MenuItem { Header = "Couper en deux titres…" };
-        var join = new MenuItem { Header = "Fusionner avec la vidéo suivante", IsEnabled = titles.IndexOf(entry) < titles.Count - 1 };
-        split.IsEnabled = !entry.Intro;
-        split.Click += (_, _) => SplitEntry(entry);
-        join.Click += (_, _) => _ = JoinWithNext(entry);
-        menu.Items.Add(split);
-        menu.Items.Add(join);
+        // SplitEntry / JoinWithNext are kept but out of the menu for now (Marc, 2026-11-07)
         menu.IsOpen = true;
     }
 
@@ -698,12 +684,20 @@ public partial class MainWindow : Window
         _ = RefreshPreview(); // the menu's picture is a frame of the first video that is not a bonus
     }
 
-    void Move(Entry? entry, int step)
+    /// <summary>Dragging a row by its name reorders the titles (the order is the order of the episodes in the menu).</summary>
+    void OnRowNameMove(object s, MouseEventArgs e)
     {
-        if (entry == null) return;
-        var i = titles.IndexOf(entry);
-        if (i + step < 0 || i + step >= titles.Count) return;
-        titles.Move(i, i + step);
+        if (e.LeftButton == MouseButtonState.Pressed && Row(s) is { } entry)
+            DragDrop.DoDragDrop((DependencyObject)s, entry, DragDropEffects.Move);
+    }
+
+    void OnRowDrop(object s, DragEventArgs e)
+    {
+        if (e.Data.GetData(typeof(Entry)) is not Entry moved || Row(s) is not { } target) return; // files dropped here go on to the window
+        e.Handled = true;
+        var (from, to) = (titles.IndexOf(moved), titles.IndexOf(target));
+        if (from < 0 || to < 0 || from == to) return;
+        titles.Move(from, to);
         RefreshThumb(); // episode order changes the menu
     }
 

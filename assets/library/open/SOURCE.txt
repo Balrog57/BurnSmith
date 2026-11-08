@@ -1,3 +1,7 @@
 Menu templates (.dvdt), their preview pictures and background pictures of DVDStyler.
 Source: https://github.com/ntxalex/DVDStyler (mirror of DVDStyler, https://www.dvdstyler.org), commit a7966f5e02484af43d36956669c1c25ebbdfeccd, folders templates/ and backgrounds/, unchanged.
+buttons/: DVDStyler's buttons (buttons/*.xml of DVDStyler 3.x as installed), converted by tools/dvdstyler-buttons.py into plain SVG:
+name.svg = the default look with its label emptied, name.sub.svg = the "highlighted" colours; picture slots removed; <use> of a <symbol>
+inlined as a nested <svg>; buttons with a viewBox flattened by VectorCraft. text-v3 and settings (its path is broken upstream) are left out.
+Some button files name their makers in a comment (Gustavo Rezende, Ricardo Maia, jphandrigan...).
 Licence: GNU GPL (see COPYING). Author of DVDStyler: Alex Thuering. The upstream project does not list who made each picture.

@@ -51,7 +51,7 @@
     </Style>
     <!-- same proportions as the header of the list: the name and the two track columns share what is left, the others are fixed -->
     <DataTemplate x:Key="FileRow">
-      <Grid Height="42">
+      <Grid Height="42" Background="Transparent" AllowDrop="True" Drop="OnRowDrop">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="2*" MinWidth="90"/>
           <ColumnDefinition Width="64"/>
@@ -60,7 +60,8 @@
           <ColumnDefinition Width="1.2*" MinWidth="100"/>
           <ColumnDefinition Width="154"/>
         </Grid.ColumnDefinitions>
-        <TextBlock Text="{Binding Shown}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <TextBlock Text="{Binding Shown}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,10,0"
+                   Background="Transparent" Cursor="SizeAll" MouseMove="OnRowNameMove"/>
         <TextBlock Grid.Column="1" Text="{Binding DurationText}" ToolTip="{Binding DurationTip}" VerticalAlignment="Center"/>
         <TextBlock Grid.Column="2" Text="{Binding Hdr}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         <Button Grid.Column="3" Style="{StaticResource Drop}" Content="{Binding AudioText}" ToolTip="Pistes audio gardées" Click="OnAudioMenu"/>
@@ -70,7 +71,7 @@
           <!-- the pencil: the whole video edit; the scissors: cutting on the video itself -->
           <Button Style="{StaticResource IconBtn}" Content="&#xE70F;" ToolTip="Montage vidéo : nom dans le menu, découpe, volume, chapitres" Click="OnRowEdit"/>
           <Button Style="{StaticResource IconBtn}" Content="&#xE8C6;" ToolTip="Coupe : garder seulement une partie de la vidéo" Click="OnRowCut"/>          <Button Style="{StaticResource IconBtn}" Content="&#xE74D;" ToolTip="Supprimer le titre de la liste" Click="OnRowRemove"/>
-          <Button Style="{StaticResource IconBtn}" Content="&#xE712;" ToolTip="Plus : ordre, bonus, vidéo de début, couper en deux titres, fusionner" Click="OnRowMore"/>
+          <Button Style="{StaticResource IconBtn}" Content="&#xE712;" ToolTip="Plus : bonus, vidéo de début" Click="OnRowMore"/>
         </StackPanel>
       </Grid>
     </DataTemplate>

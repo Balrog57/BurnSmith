@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="50" height="50" viewBox="0 0 50 50">
+  <title>arrow-double.svg</title>
+  <g id="main">
+    <polygon id="arrow1" points="0,0 25,25 0,50 10,25" fill="#00a859"/>
+    <polygon id="arrow2" points="25,0 50,25 25,50 35,25" fill="#00a859"/>
+  </g>
+</svg>

@@ -27,19 +27,35 @@
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="270"/>
-      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="*" MinWidth="270"/>
+      <ColumnDefinition Width="3*"/>
       <ColumnDefinition Width="330"/>
     </Grid.ColumnDefinitions>
 
     <!-- the library: templates, then backgrounds and buttons apart -->
     <TabControl x:Name="Library">
+      <TabControl.Resources>
+        <!-- 4 fixed squares on one row: 4 × (62 + 4) fits the 270 px column -->
+        <Style TargetType="TabItem" BasedOn="{StaticResource {x:Type TabItem}}">
+          <Setter Property="Width" Value="62"/>
+          <Setter Property="Height" Value="62"/>
+          <Setter Property="Margin" Value="0,0,4,0"/>
+          <Setter Property="Padding" Value="2"/>
+          <Setter Property="HorizontalContentAlignment" Value="Center"/>
+          <Setter Property="VerticalContentAlignment" Value="Center"/>
+          <Setter Property="HeaderTemplate">
+            <Setter.Value>
+              <DataTemplate>
+                <TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Center"/>
+              </DataTemplate>
+            </Setter.Value>
+          </Setter>
+        </Style>
+      </TabControl.Resources>
       <TabItem Header="Modèles">
         <DockPanel>
           <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
             <Button Content="Ajouter un dossier…" HorizontalAlignment="Stretch" Click="OnAddFolder"/>
-            <Button x:Name="ConvertBtn" Content="Convertir tous les modèles…" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnConvertAll"
-                    ToolTip="Réunit chaque modèle installé dans un dossier modifiable — template.json + images PNG — sous Documents\BurnSmith\Templates\converted. Un dossier déjà converti est gardé : vos modifications ne sont pas écrasées."/>
             <TextBlock x:Name="ConvertNote" Margin="0,4,0,0" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
           </StackPanel>
           <ListBox x:Name="BuiltInList" SelectionChanged="OnPick" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -66,7 +82,7 @@
             <Button Content="Importer…" Click="OnBg"/>
           </DockPanel>
           <TextBlock DockPanel.Dock="Top" Text="Glissez un fond sur la page, ou double-cliquez." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
-          <ListBox x:Name="BgList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="OnBgPick"
+          <ListBox x:Name="BgList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" SelectionChanged="OnBgPick"
                    PreviewMouseLeftButtonDown="OnLibraryDown" PreviewMouseMove="OnLibraryMove" MouseDoubleClick="OnBgDouble">
             <ListBox.GroupStyle>
               <GroupStyle>
@@ -77,12 +93,15 @@
                 </GroupStyle.HeaderTemplate>
               </GroupStyle>
             </ListBox.GroupStyle>
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top"/></ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
             <ListBox.ItemTemplate>
               <DataTemplate>
-                <DockPanel Margin="0,2">
-                  <Image Source="{Binding Path, Converter={StaticResource Thumb}}" Width="96" Height="54" Stretch="UniformToFill" DockPanel.Dock="Left"/>
-                  <TextBlock Text="{Binding Name}" Margin="8,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                </DockPanel>
+                <!-- always 2 per row: the Viewbox grows the 16:9 tile with the column -->
+                <Viewbox Stretch="Uniform" ToolTip="{Binding Name}">
+                  <Image Source="{Binding Path, Converter={StaticResource Thumb}}" Width="108" Height="61" Stretch="UniformToFill"/>
+                </Viewbox>
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>
@@ -95,7 +114,7 @@
             <Button Content="Importer…" Click="OnBtnImport" ToolTip="Une image de bouton, puis (au choix) celle qu'il montre quand il est sélectionné"/>
           </DockPanel>
           <TextBlock DockPanel.Dock="Top" Text="Glissez un bouton sur la page, ou double-cliquez." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
-          <ListBox x:Name="BtnList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="OnBtnPick"
+          <ListBox x:Name="BtnList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" SelectionChanged="OnBtnPick"
                    PreviewMouseLeftButtonDown="OnLibraryDown" PreviewMouseMove="OnLibraryMove" MouseDoubleClick="OnBtnDouble">
             <ListBox.GroupStyle>
               <GroupStyle>
@@ -106,14 +125,16 @@
                 </GroupStyle.HeaderTemplate>
               </GroupStyle>
             </ListBox.GroupStyle>
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top"/></ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
             <ListBox.ItemTemplate>
               <DataTemplate>
-                <DockPanel Margin="0,2">
-                  <Border DockPanel.Dock="Left" Width="96" Height="54" Background="#22000000" CornerRadius="4">
-                    <Image Source="{Binding Sample}" Stretch="Uniform" Margin="2"/>
+                <Viewbox Stretch="Uniform" ToolTip="{Binding Name}">
+                  <Border Width="108" Height="61" Background="#22000000" CornerRadius="4">
+                    <Image Source="{Binding Sample}" Stretch="Uniform" Margin="3"/>
                   </Border>
-                  <TextBlock Text="{Binding Name}" Margin="8,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                </DockPanel>
+                </Viewbox>
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>

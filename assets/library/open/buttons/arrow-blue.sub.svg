@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="40" height="40" viewBox="0 0 40 40">
+  <defs>
+    <radialGradient id="radial-gradient-1" cx="20" cy="12.593" r="18.519" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.5"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-1" x1="20" y1="3.704" x2="20" y2="36.296" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#000000" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.8"/>
+    </linearGradient>
+  </defs>
+  <title>arrow-blue.sub.svg</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <circle id="circle1" cx="20" cy="20" r="17.037" fill="#00afef" stroke="#ffffff" stroke-width="1.481"/>
+    <circle id="circle2" cx="20" cy="20" r="17.037" fill="url(#radial-gradient-1)"/>
+    <polygon id="arrow" points="8.148,17.037 22.222,17.037 16.296,8.148 23.704,8.148 31.852,20 23.704,31.852 16.296,31.852 22.222,22.963 8.148,22.963" fill="#fff212" stroke="url(#linear-gradient-1)" stroke-width="0.741"/>
+  </g>
+</svg>

@@ -96,15 +96,26 @@ public sealed class TemplatePack
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { return null; }
     }
 
-    /// <summary>Every converted pack on this PC, in category then name order.</summary>
+    /// <summary>
+    /// Every converted pack on this PC, in category then name order: the user's (Documents\BurnSmith\Templates\converted) first, so an
+    /// edited copy wins, then the ones the exe carries already converted.
+    /// </summary>
     public static List<TemplatePack> Scan()
     {
-        if (!Directory.Exists(Root)) return [];
         var packs = new List<TemplatePack>();
-        foreach (var file in Directory.EnumerateFiles(Root, FileName, SearchOption.AllDirectories))
-            if (TryRead(Path.GetDirectoryName(file)!) is { } pack) packs.Add(pack);
+        // test aid (as in TemplateCatalog): an unpacked templates.zip is all the PC has
+        string?[] roots = Environment.GetEnvironmentVariable("BURNSMITH_CARRIED_ONLY") is { Length: > 0 } only ? [only] : [Root, Tools.TemplatesDir()];
+        foreach (var root in roots)
+        {
+            if (root == null || !Directory.Exists(root)) continue;
+            foreach (var file in Directory.EnumerateFiles(root, FileName, SearchOption.AllDirectories))
+                if (TryRead(Path.GetDirectoryName(file)!) is { } pack) packs.Add(pack);
+        }
         return packs.OrderBy(p => p.Category).ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
+
+    /// <summary>Writes <see cref="FileName"/> into <paramref name="dir"/>.</summary>
+    public void Save(string dir) => File.WriteAllText(Path.Combine(dir, FileName), JsonSerializer.Serialize(this, Json), new UTF8Encoding(false));
 
     /// <summary>The normalized tree as the renderer reads it, or null for a design-only pack (BurnSmith's own design).</summary>
     internal XNode? ToTree() => Tree is null ? null : Node(Tree);
@@ -165,7 +176,7 @@ public sealed class TemplatePack
                 if (Directory.Exists(target) && File.Exists(Path.Combine(target, FileName)) && !force) { kept++; log?.Invoke($"garde  {key}"); continue; }
                 Directory.CreateDirectory(target);
                 var pack = ConvertOne(source.Name, source.Category, dir, source.Design, target);
-                File.WriteAllText(Path.Combine(target, FileName), JsonSerializer.Serialize(pack, Json), new UTF8Encoding(false));
+                pack.Save(target);
                 done++;
                 log?.Invoke($"convertis {key} -> {Path.GetRelativePath(outputRoot, target)} ({pack.Backgrounds} fonds, {pack.Buttons} boutons)");
             }
@@ -219,7 +230,7 @@ public sealed class TemplatePack
         return pack;
     }
 
-    /// <summary>Copies every picture the normalized tree names, converts it to PNG, and fills <see cref="Assets"/>.</summary>
+    /// <summary>Copies every picture the normalized tree names (a JPEG as it is, any other to PNG), and fills <see cref="Assets"/>.</summary>
     static Dictionary<string, string> CopyAssets(TemplatePack pack, string sourceDir, PackNode tree, string targetDir, string? thumbnail)
     {
         var mapping = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -323,7 +334,7 @@ public sealed class TemplatePack
     {
         var ext = Path.GetExtension(relative);
         var stem = ext.Length > 0 ? relative[..^ext.Length] : relative;
-        var target = (role == "thumbnail" ? "thumbnail" : stem) + ".png";
+        var target = (role == "thumbnail" ? "thumbnail" : stem) + (IsJpeg(relative) ? ".jpg" : ".png");
         return UniqueTarget(target, taken);
     }
 
@@ -335,15 +346,19 @@ public sealed class TemplatePack
         var stem = Path.GetFileNameWithoutExtension(target);
         for (var n = 2; ; n++)
         {
-            var candidate = (dir.Length > 0 ? dir + "/" : "") + $"{stem}-{n}.png";
+            var candidate = (dir.Length > 0 ? dir + "/" : "") + $"{stem}-{n}{Path.GetExtension(target)}";
             if (!set.Contains(candidate)) return candidate;
         }
     }
 
+    /// <summary>A JPEG is kept as it is: it has no transparency to lose, and as PNG the theme pictures weigh three times more in the exe.</summary>
+    static bool IsJpeg(string file) => Path.GetExtension(file).ToLowerInvariant() is ".jpg" or ".jpeg";
+
     static void CopyImage(string source, string target)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        if (Path.GetExtension(source).Equals(".png", StringComparison.OrdinalIgnoreCase))
+        if (Path.GetExtension(source).Equals(Path.GetExtension(target), StringComparison.OrdinalIgnoreCase)
+            || IsJpeg(source) && IsJpeg(target))
         {
             File.Copy(source, target, true);
             return;
@@ -421,7 +436,7 @@ public sealed class TemplatePack
         return Path.GetFullPath(path).StartsWith(r, StringComparison.OrdinalIgnoreCase);
     }
 
-    static string PackDir(string root, string category, string name)
+    internal static string PackDir(string root, string category, string name)
     {
         static string Safe(string s) => string.Concat(s.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)).Trim().TrimEnd('.');
         var cat = Safe(category.Length == 0 ? "Autres" : category);

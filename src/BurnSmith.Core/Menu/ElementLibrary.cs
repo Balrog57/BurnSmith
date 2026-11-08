@@ -14,7 +14,7 @@ public sealed record Element(string Name, string Source, string Path, bool Remov
 public static class ElementLibrary
 {
     public const string Open = TemplateLabel.Open, Mine = "Mes images";
-    static readonly string[] Extensions = [".jpg", ".jpeg", ".png", ".bmp"];
+    static readonly string[] Extensions = [".jpg", ".jpeg", ".png", ".bmp", ".svg"];
 
     /// <summary>The user's own pictures: Documents\BurnSmith\Templates\images (earlier versions: %APPDATA%\BurnSmith\library\backgrounds, copied over once).</summary>
     public static string UserDir { get; } = AppFiles.UserFolder("images", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BurnSmith", "library", "backgrounds"));
@@ -136,7 +136,7 @@ public static class ElementLibrary
     /// </summary>
     public sealed record ButtonItem(string Name, string Source, string? Normal = null, string? Focus = null, string? Style = null, bool Removable = false);
 
-    public const string Styles = "Styles BurnSmith", MyButtons = "Mes boutons";
+    public const string Styles = "Styles BurnSmith", MyButtons = "Mes boutons", DvdStyler = "DVDStyler (vectoriels)";
 
     /// <summary>The user's own buttons: Documents\BurnSmith\Templates\buttons, "name.png" and, for its selected state, "name.sub.png".</summary>
     public static string UserButtonsDir { get; } = AppFiles.UserFolder("buttons", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BurnSmith", "library", "buttons"));
@@ -171,6 +171,11 @@ public static class ElementLibrary
         if (Directory.Exists(UserButtonsDir))
             list.AddRange(Directory.EnumerateFiles(UserButtonsDir).Where(f => IsPicture(f) && !IsSub(f)).Order()
                 .Select(f => new ButtonItem(System.IO.Path.GetFileNameWithoutExtension(f), MyButtons, f, SubOf(f), Removable: true)));
+
+        // DVDStyler's buttons, as SVG: redrawn sharp at any size (tools/dvdstyler-buttons.py made them)
+        if (OpenLibrary.Dir() is { } lib && System.IO.Path.Combine(lib, "open", "buttons") is var svgDir && Directory.Exists(svgDir))
+            list.AddRange(Directory.EnumerateFiles(svgDir, "*.svg").Where(f => !IsSub(f)).Order()
+                .Select(f => new ButtonItem(Pretty(System.IO.Path.GetFileNameWithoutExtension(f)).Replace('-', ' '), DvdStyler, f, SubOf(f))));
 
         var seen = new HashSet<string>();
         foreach (var found in (scan ?? TemplateCatalog.Scan()).Usable)

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="60" height="60" viewBox="0 0 60 60">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="30" y1="0" x2="30" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#000000"/>
+    </linearGradient>
+    <clipPath id="clip-path-1">
+      <path d="M9.724 11.034 L47.014 11.034 L47.014 49.012 L9.724 49.012 Z"/>
+    </clipPath>
+    <filter id="filter-1" filterUnits="userSpaceOnUse" x="2.953" y="4.118" width="51.156" height="51.805" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceGraphic" stdDeviation="2" color-interpolation-filters="linearRGB"/></filter>
+    <linearGradient id="linear-gradient-2" x1="30" y1="50" x2="30" y2="10" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#000000"/>
+    </linearGradient>
+  </defs>
+  <title>glow_arrow.sub.svg</title>
+  <g id="group">
+    <polygon id="big" points="0.77,0.77 59.231,30.07 0.77,59.231 10.376,30.042" fill="#333333" stroke="url(#linear-gradient-1)" stroke-width="1.5" stroke-linejoin="round"/>
+    <g clip-path="url(#clip-path-1)">
+      <g filter="url(#filter-1)">
+        <polygon id="glow" points="12.832,14.198 43.906,30.042 12.875,45.847 18.971,30.042" fill="none" stroke="#ff0000" stroke-opacity="0.8" stroke-width="2"/>
+      </g>
+    </g>
+    <polygon id="small" points="10.52,11.52 46.842,30.042 10.576,48.436 17.52,30.042" fill="none" stroke="url(#linear-gradient-2)" stroke-opacity="0.7" stroke-width="1.5" stroke-linejoin="round"/>
+  </g>
+</svg>

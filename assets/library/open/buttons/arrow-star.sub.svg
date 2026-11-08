@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="50" height="50" viewBox="0 0 50 50">
+  <title>arrow-star.sub.svg</title>
+  <g id="main">
+    <polygon id="star" points="47.513,24.833 32.639,32.208 30.282,48.642 18.672,36.775 2.314,39.611 10.013,24.902 2.26,10.222 18.628,12.998 30.194,1.089 32.612,17.514" fill="#ffff00" fill-rule="evenodd" stroke="#000000"/>
+    <polygon points="47.679,24.833 40.12,28.641 32.561,32.448 32.547,24.861 32.533,17.274 40.106,21.054" fill="none" stroke="#000000"/>
+    <polygon id="triangle" points="46.696,24.82 39.873,28.257 33.05,31.694 33.037,24.846 33.025,17.997 39.86,21.409" fill="#ff0000" fill-rule="evenodd"/>
+  </g>
+</svg>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="30" height="30" viewBox="0 0 30 30">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="15" y1="1.364" x2="15" y2="28.636" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="15" y1="2.455" x2="15" y2="18.03" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.7"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="16.091" y1="7.909" x2="16.091" y2="21.545" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#000000" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.5"/>
+    </linearGradient>
+  </defs>
+  <title>arrow-red.svg</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <circle id="button" cx="15" cy="15" r="13.636" fill="#ff0000" stroke="#b20000" stroke-width="0.545"/>
+    <circle id="light" cx="15" cy="15" r="13.636" fill="url(#linear-gradient-1)"/>
+    <path id="reflex" d="M15 2.455 C21.818 2.455 27.545 8.182 27.545 15 C27.545 21.818 21.818 15 15 15 C8.182 15 2.455 21.818 2.455 15 C2.455 8.182 8.182 2.727 15 2.455 Z" fill="url(#linear-gradient-2)"/>
+    <polygon id="arrow" points="9.273,7.909 22.909,14.727 9.273,21.545" fill="#000000" stroke="url(#linear-gradient-3)" stroke-opacity="0.8" stroke-width="0.273"/>
+  </g>
+</svg>

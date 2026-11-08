@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="30" height="30" viewBox="0 0 30 30">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="0" y1="0" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffdd21"/>
+      <stop offset="1" stop-color="#978526"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="4.5" y1="4.5" x2="18.5" y2="18.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#978526"/>
+      <stop offset="1" stop-color="#ffdd21"/>
+    </linearGradient>
+  </defs>
+  <title>arrow-gold.svg</title>
+  <g id="main">
+    <polygon id="arrow1" points="0,0 30,15 0,30 7.5,15" fill="url(#linear-gradient-1)"/>
+    <polygon id="arrow2" points="5,5 25.5,15 5,25 10,15" fill="url(#linear-gradient-2)"/>
+  </g>
+</svg>

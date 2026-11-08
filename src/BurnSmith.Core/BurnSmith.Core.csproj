@@ -19,4 +19,8 @@
     <Using Include="System.Threading" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="SharpVectors.Wpf" Version="1.8.6" />
+  </ItemGroup>
+
 </Project>

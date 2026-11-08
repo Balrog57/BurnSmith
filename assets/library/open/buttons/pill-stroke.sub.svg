@@ -1,0 +1,20 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="220" height="60">
+		<defs>
+			<linearGradient id="lg" x1="0.5" y1="0" x2="0.5" y2="1">
+				<stop id="st1" offset="0%" style="stop-color:#909090;stop-opacity:0.3;" />
+				<stop id="st2" offset="30%" style="stop-color:#f0f0f0;stop-opacity:0.3;" />
+				<stop id="st3" offset="100%" style="stop-color:#101010;stop-opacity:0.6;" />
+			</linearGradient>
+			<rect id="def_box" x="8%" y="8%" rx="18" width="84%" height="84%" />
+			<text id="text" x="50%" y="50%" style="text-anchor:middle;dominant-baseline:middle;stroke-linejoin:round;" />
+		</defs>
+		<use xlink:href="#def_box" id="box1" style="fill:#0080ff;stroke:#202020;stroke-width:2;" />
+		<use xlink:href="#def_box" fill="url(#lg)" />
+		<use xlink:href="#def_box" id="box3" style="fill:none;stroke:#ff0000;stroke-width:4;" />
+		<g id="text_whole" transform="translate(1,0)" style="stroke-width:4;">
+			<use xlink:href="#text" id="text_stroke" style="fill:none;stroke:#000000;stroke-opacity:0.5" />
+			<use xlink:href="#text" id="text_fill" style="fill:#ffffff;stroke:none;" />
+		</g>
+	</svg>
+	

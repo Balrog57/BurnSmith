@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="220" height="60">
+		<defs>
+			<linearGradient id="lg" x1=".5" y1="0" x2=".5" y2="1">
+				<stop id="st1" offset="0%" stop-color="#000000" stop-opacity=".5" />
+				<stop id="st2" offset="30%" stop-color="#ffffff" stop-opacity=".5" />
+				<stop id="st3" offset="100%" stop-color="#000000" stop-opacity=".5" />
+			</linearGradient>
+			<rect id="def_box" x="1%" y="1%" width="98%" height="98%" rx="10" />
+			<text id="text" transform="translate(0,0)" x="50%" y="50%" style="text-anchor:middle;dominant-baseline:middle;stroke-width:1;stroke-linejoin:round;" />
+		</defs>
+		<use xlink:href="#def_box" id="box" style="fill:#ff8000;stroke:#000000;stroke-width:2;" />
+		<use xlink:href="#def_box" style="fill:url(#lg);" />
+		<use xlink:href="#def_box" id="sel" style="fill:none;stroke:none;" />
+		<use xlink:href="#text" id="text_stroke" style="fill:none;stroke:#00000080;" />
+		<use xlink:href="#text" id="text_fill" style="fill:#000000;stroke:none;" />
+	</svg>
+	

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="30" height="30" viewBox="0 0 30 30">
+  <title>cancel2.sub.svg</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <rect id="box" x="1.2" y="1.2" width="27.6" height="27.6" fill="none" stroke="#ff8080" stroke-width="2.4"/>
+    <polygon id="x" points="4.8,4.8 9.6,4.8 14.4,12 20.4,4.8 25.2,4.8 18,15.6 24,25.2 19.2,25.2 14.4,18 9.6,25.2 4.8,25.2 10.8,15.6" fill="#ff0000"/>
+  </g>
+</svg>

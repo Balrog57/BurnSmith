@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="200" height="200" viewBox="0 0 200 200">
+  <title>frame45.svg</title>
+  <g id="rotation">
+    <g id="main">
+      <path id="rect" d="M5.955 109.192 L109.192 5.955 C111.145 4.002 114.311 4.002 116.263 5.955 L194.045 83.737 C195.998 85.689 195.998 88.855 194.045 90.808 L90.808 194.045 C88.855 195.998 85.689 195.998 83.737 194.045 L5.955 116.263 C4.002 114.311 4.002 111.145 5.955 109.192 Z" fill="none" stroke="#ffffff" stroke-width="5"/>
+    </g>
+  </g>
+</svg>

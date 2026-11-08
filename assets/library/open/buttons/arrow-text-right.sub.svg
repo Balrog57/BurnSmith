@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="120" height="40" viewBox="0 0 120 40">
+  <title>arrow-text-right.sub.svg</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <polygon id="arrow" points="1.263,10.526 88.421,10.526 88.421,5.474 118.737,20 88.421,34.526 88.421,29.474 1.263,29.474" fill="#ffffff"/>
+    <polygon id="arrow2" points="1.263,10.526 88.421,10.526 88.421,5.474 118.737,20 88.421,34.526 88.421,29.474 1.263,29.474" fill="none" stroke="#ff8000" stroke-width="1.263"/>
+  </g>
+</svg>

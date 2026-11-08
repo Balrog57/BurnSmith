@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="40" height="40" viewBox="0 0 40 40">
+  <defs>
+    <radialGradient id="radial-gradient-1" cx="14.38" cy="12.956" r="25.137" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#bbdddd"/>
+      <stop offset="0.3" stop-color="#7ea6b9"/>
+      <stop offset="1" stop-color="#506b8b"/>
+    </radialGradient>
+  </defs>
+  <title>arrow2.sub.svg</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g>
+      <circle id="circle" cx="19.975" cy="20.224" r="17.304" fill="url(#radial-gradient-1)" stroke="#a4c9ee" stroke-width="1.173"/>
+      <g id="rotation">
+        <path id="arrow" d="M13.464 25.022 C13.464 25.022 17.806 24.946 19.878 24.909 C19.91 26.739 19.964 29.781 19.964 29.781 C19.971 30.221 20.156 30.63 20.461 30.924 C20.612 31.07 20.793 31.188 20.995 31.268 C21.608 31.509 22.306 31.357 22.764 30.883 L31.459 21.877 C32.084 21.23 32.066 20.199 31.419 19.574 L22.412 10.878 C21.938 10.421 21.235 10.294 20.631 10.556 C20.027 10.819 19.641 11.42 19.653 12.079 C19.653 12.079 19.706 15.121 19.738 16.95 C17.667 16.987 13.324 17.063 13.324 17.063 C12.892 17.07 12.481 17.249 12.181 17.56 C11.881 17.871 11.716 18.288 11.724 18.72 L11.806 23.422 C11.814 23.854 11.993 24.266 12.304 24.566 C12.614 24.866 13.032 25.03 13.464 25.022 Z" fill="#2660a3" stroke="#1c6772" stroke-width="0.391"/>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48">
+  <title>ok.svg</title>
+  <g id="button">
+    <path d="M6.161 17.037 C9.127 20.045 10.446 21.346 14.636 26.052 C18.603 30.501 19.001 31.774 22.946 38.01 L20.416 40.027 C16.49 34.789 16.613 34.47 12.81 30.023 L3.198 19.376 Z" fill="#539c3b" stroke="#0c482b" stroke-width="1.343"/>
+    <path d="M43.746 14.182 C35.352 21.516 29.782 29.988 21.804 39.871 L18.967 37.706 C26.918 25.974 31.314 19.801 43.585 9.877 Z" fill="#539c3b" stroke="#0c482b" stroke-width="1.175"/>
+  </g>
+</svg>

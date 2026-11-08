@@ -11,6 +11,7 @@ bdj/build/
 # external programs (ffmpeg, tsMuxeR) live here but are not redistributed from this repo
 tools/*
 !tools/vlctest.ps1
+!tools/dvdstyler-buttons.py
 
 # scratch
 vlc-help.txt

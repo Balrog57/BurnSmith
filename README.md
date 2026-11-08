@@ -29,7 +29,7 @@ Avant de graver, BurnSmith **contrôle le disque qu'il vient de construire** (fi
 
 Des menus **prêts à l'emploi** pour un film, une série (page d'épisodes) ou un disque de bonus : 54 modèles libres et 90 modèles portés par l'exe publié, avec leurs pages de menu, de scènes et de réglages. L'exe publié les embarque tous ; le dépôt ne contient que les modèles libres. Un modèle déjà installé sur votre PC est lu sur place et remplace la copie portée.
 
-Tous ces modèles se réunissent en **un seul format modifiable** avec « Convertir tous les modèles… » (éditeur, onglet *Modèles*) : un dossier par modèle dans `Documents\BurnSmith\Templates\converted`, avec un `template.json` lisible et les images PNG séparées par rôle — fonds, boutons (image normale et état sélectionné), cadres et vignette. La bibliothèque de l'éditeur reprend chaque fond et chaque bouton de ces packs, et un pack existant n'est jamais écrasé par une nouvelle conversion ([détails](docs/MODELES.md#un-seul-format--templatejson--images)).
+Tous ces modèles sont déjà dans **un seul format modifiable**, portés par l'exe (et convertis aussitôt quand vous ajoutez un dossier, dans `Documents\BurnSmith\Templates\converted`) : un dossier par modèle, avec un `template.json` lisible et les images séparées par rôle — fonds, boutons (image normale et état sélectionné), cadres et vignette. La bibliothèque de l'éditeur reprend chaque fond et chaque bouton de ces packs, et un pack existant n'est jamais écrasé par une nouvelle conversion ([détails](docs/MODELES.md#un-seul-format--templatejson--images)).
 
 ### Des menus à votre image
 
@@ -78,4 +78,4 @@ Tout est dans [`docs/`](docs/README.md) :
 
 MIT ([`LICENSE`](LICENSE)).
 
-Les modèles livrés dans `assets/library/open` gardent leurs propres fichiers de licence ; les programmes que BurnSmith lance restent sous la leur. L'exe publié embarque aussi des images et des mises en page de modèles recueillis sur le PC de publication : elles appartiennent à leurs auteurs et ne sont pas dans le dépôt. Aucun code, interface, police ni programme n'est repris, et BurnSmith n'est affilié à aucun de leurs auteurs.
+Les modèles et boutons livrés dans `assets/library/open` gardent leurs propres fichiers de licence ; la lecture des boutons SVG utilise SharpVectors (BSD-3-Clause, Elinam LLC) ; les programmes que BurnSmith lance restent sous la leur. L'exe publié embarque aussi des images et des mises en page de modèles recueillis sur le PC de publication : elles appartiennent à leurs auteurs et ne sont pas dans le dépôt. Aucun code, interface, police ni programme n'est repris, et BurnSmith n'est affilié à aucun de leurs auteurs.
