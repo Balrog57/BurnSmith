@@ -144,6 +144,7 @@ static class BdCheck
             Sync();
             FitDisc();
             Signature();
+            Popup();
             Damaged();
             WorkFolder();
             DvdRefusals();
@@ -327,6 +328,46 @@ static class BdCheck
                 s.Write("y"u8);
             }
             Check("a file changed after signing: refused", BdjSign.Verify(jar, Cert("app.discroot.crt"), Cert("id.bdmv")).Count > 0);
+        });
+    }
+
+    /// <summary>
+    /// The pop-up menu: with the option, the menu file has a "pop" page per title (resume, chapters, settings, main menu), its chapter pages and the
+    /// shared settings page, drawn as transparent overlays; without it, nothing of the pop-up is on the disc.
+    /// </summary>
+    static void Popup()
+    {
+        Part("pop-up menu", () =>
+        {
+            var film = Clip("popfilm.mkv", "testsrc2=s=1280x720:r=24000/1001:d=6", 48000, Fine, Ac3At48);
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", film, "-map", "0", "-map", "0:a", "-c", "copy", F("pop2audio.mkv")]); // two audio tracks: the settings page exists
+            List<DiscTitle> titles = [new DiscTitle(F("pop2audio.mkv"), Audio: [0, 1], ChapterAt: [0, 2, 4]), new DiscTitle(film, Bonus: true)];
+            Dictionary<string, byte[]> Jar(string disc)
+            {
+                using var z = System.IO.Compression.ZipFile.OpenRead(Path.Combine(disc, "BDMV", "JAR", "00000.jar"));
+                return z.Entries.ToDictionary(e => e.FullName, e => { using var s = e.Open(); using var m = new MemoryStream(); s.CopyTo(m); return m.ToArray(); });
+            }
+            var with = Jar(Bd("popup", titles, menu: new MenuDesign { Popup = true, MainMenuLabel = "Main" }));
+            var txt = System.Text.Encoding.UTF8.GetString(with["menu.txt"]).Split('\n');
+            bool Has(string start) => txt.Any(l => l.StartsWith(start, StringComparison.Ordinal));
+            Check("pop-up: a bar per title, the film's with resume, chapters, settings and main menu",
+                Has("page pop1 bg_pop1.png") && Has("page pop2 bg_pop2.png") && Has("button pop1 resume ") && Has("button pop1 chapters ") && Has("button pop1 settings ") && Has("button pop1 main "),
+                string.Join(" | ", txt.Where(l => l.StartsWith("page pop", StringComparison.Ordinal))));
+            Check("pop-up: the bonus (one chapter) has no chapters button", !Has("button pop2 chapters "));
+            Check("pop-up: the film's 3 chapters seek in its own playlist", Has("button popc1_1 c3 ") && txt.Any(l => l.StartsWith("button popc1_1 c3 ", StringComparison.Ordinal) && l.EndsWith(" chapter 1 2", StringComparison.Ordinal)));
+            Check("pop-up: settings page with its own marker offset, back leads to the bar",
+                txt.Any(l => System.Text.RegularExpressions.Regex.IsMatch(l, @"^page popset bg_popset\.png -?\d+$")) && txt.Any(l => l.StartsWith("button popset back ", StringComparison.Ordinal) && l.EndsWith(" popup", StringComparison.Ordinal)));
+            Check("pop-up: main menu and resume actions", txt.Any(l => l.StartsWith("button pop1 main ", StringComparison.Ordinal) && l.EndsWith(" menu", StringComparison.Ordinal))
+                && txt.Any(l => l.StartsWith("button pop1 resume ", StringComparison.Ordinal) && l.EndsWith(" resume", StringComparison.Ordinal)));
+            // the film shows through: the top left corner of the bar's picture is fully transparent, its bottom is not
+            var bar = System.Windows.Media.Imaging.BitmapDecoder.Create(new MemoryStream(with["bg_pop1.png"]), System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0];
+            var bgra = new System.Windows.Media.Imaging.FormatConvertedBitmap(bar, System.Windows.Media.PixelFormats.Bgra32, null, 0);
+            byte Alpha(int x, int y) { var px = new byte[4]; bgra.CopyPixels(new System.Windows.Int32Rect(x, y, 1, 1), px, 4, 0); return px[3]; }
+            Check("pop-up: transparent over the film, solid on the bar", Alpha(0, 0) == 0 && Alpha(5, bgra.PixelHeight - 5) > 100, $"alpha {Alpha(0, 0)} / {Alpha(5, bgra.PixelHeight - 5)}");
+            var bars = MenuBuilder.Popup(new MenuDesign { MainMenuLabel = "Main" }, new MenuContent(1, null, []), [(1, 1)]);
+            Check("pop-up: the main menu button says what the design sets", bars[0].Ops.OfType<Label>().Any(l => l.Value == "Main"));
+            var without = Jar(Bd("nopopup", titles, menu: new MenuDesign()));
+            Check("no pop-up option: no pop-up page, the menu file as before", !without.Keys.Any(k => k.Contains("pop")) && !System.Text.Encoding.UTF8.GetString(without["menu.txt"]).Contains(" pop"));
         });
     }
 

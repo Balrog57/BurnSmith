@@ -48,7 +48,7 @@ import org.havi.ui.event.HRcEvent;
  *
  * menu.txt, one directive per line, "-" means none, '#' starts a comment:
  *   size W H
- *   page ID BACKGROUND_IMAGE
+ *   page ID BACKGROUND_IMAGE [MARKER_DX]   (MARKER_DX: this page's own marker offset, else the marker line's)
  *   button PAGE ID X Y W H FOCUS_IMAGE LEFT RIGHT UP DOWN ACTION [ARG1 [ARG2]]
  *   marker IMAGE W H DX
  *   loop PLAYLIST
@@ -59,6 +59,10 @@ import org.havi.ui.event.HRcEvent;
  * first and the first button of a page has the initial focus. The marker image is drawn DX pixels from the left
  * edge of the "audio"/"sub" button that matches the current choice. Audio and subtitle choices are applied to the
  * player each time a playlist starts.
+ * Pop-up menu: pages called "pop" + playlist number. While that playlist plays, the Pop-up key shows its page over the film, which keeps playing;
+ * the key again or a "resume" button hides it. Actions there: "popup" (back to that page), "menu" (stop the title, main menu), and the usual
+ * "chapter", "page", "audio" and "sub" (a track choice applies at once). A disc without such pages ignores the key, as before.
+ *   popupkey CODE   (the key that opens and closes the pop-up instead of Pop-up, 461: BurnSmith never writes it; the VLC test does, VLC 3 has no Pop-up key)
  * With "loop", a short playlist plays behind the menu and starts again when it ends; the page images are then transparent overlays
  * (the graphics plane is cleared before each paint, or moved focus frames would stay on screen).
  */
@@ -74,6 +78,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private static class Page {
         String id, bgName;
         Image bg;
+        int markerDx = Integer.MIN_VALUE; // MIN_VALUE: the marker line's offset
         Vector buttons = new Vector();
     }
 
@@ -81,7 +86,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         public void paint(Graphics g) {
             Page p = page;
             Button b = focus;
-            if (loopPlaylist > 0) clear(g);
+            if (loopPlaylist > 0 || popupOpen) clear(g);
             if (p == null) return;
             if (p.bg != null) g.drawImage(p.bg, 0, 0, this);
             if (b != null && b.focus != null) g.drawImage(b.focus, b.x, b.y, this);
@@ -89,7 +94,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             for (int i = 0; i < p.buttons.size(); i++) {
                 Button m = (Button) p.buttons.elementAt(i);
                 boolean on = (m.action.equals("audio") && m.n1 == audio) || (m.action.equals("sub") && m.n1 == sub);
-                if (on) g.drawImage(marker, m.x + markerDx, m.y + (m.h - markerH) / 2, this);
+                if (on) g.drawImage(marker, m.x + (p.markerDx != Integer.MIN_VALUE ? p.markerDx : markerDx), m.y + (m.h - markerH) / 2, this);
             }
         }
     }
@@ -114,6 +119,9 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     // "playback" line: where the disc starts and what happens when a title ends (see finished())
     private boolean startFirst, chain, rewind = true; // start on the first title / titles follow each other / back to the start afterwards
     private int titleFirst, titleCount; // the titles of the disc: playlists [first, first + count)
+    private boolean hasPopup, popupOpen; // the disc has "pop" pages / one of them is shown over the film
+    private int playing; // playlist of the running player
+    private int popupKey = org.bluray.ui.event.HRcEvent.VK_POPUP_MENU;
 
     public void initXlet(XletContext c) throws XletStateChangeException {
         ctx = c;
@@ -211,6 +219,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     }
 
     private void showMenu() {
+        popupOpen = false;
         startLoop();
         show(firstPage);
         scene.setVisible(true);
@@ -260,6 +269,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         keys.addKey(HRcEvent.VK_UP);
         keys.addKey(HRcEvent.VK_DOWN);
         keys.addKey(HRcEvent.VK_ENTER);
+        if (hasPopup) keys.addKey(popupKey);
         EventManager.getInstance().addUserEventListener(this, keys);
         listening = true;
     }
@@ -271,8 +281,16 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     }
 
     public void userEventReceived(UserEvent e) {
-        if (e.getType() != KeyEvent.KEY_PRESSED || focus == null) return;
-        switch (e.getCode()) {
+        if (e.getType() != KeyEvent.KEY_PRESSED) return;
+        int code = e.getCode();
+        if (code == popupKey) {
+            if (popupOpen) closePopup();
+            else if (player != null) openPopup("pop" + playing);
+            return;
+        }
+        if (player != null && !popupOpen) return; // the film plays: the hidden menu page takes no key
+        if (focus == null) return;
+        switch (code) {
             case HRcEvent.VK_LEFT:  move(focus.left);  break;
             case HRcEvent.VK_RIGHT: move(focus.right); break;
             case HRcEvent.VK_UP:    move(focus.up);    break;
@@ -313,12 +331,40 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         } else if (b.action.equals("audio")) {
             audio = b.n1;
             log("audio choice " + audio);
+            if (player != null) applyTracks(player); // chosen in the pop-up: the film changes at once
             view.repaint();
         } else if (b.action.equals("sub")) {
             sub = b.n1;
             log("subtitle choice " + sub);
+            if (player != null) applyTracks(player);
             view.repaint();
+        } else if (b.action.equals("resume")) {
+            closePopup();
+        } else if (b.action.equals("popup")) {
+            openPopup("pop" + playing);
+        } else if (b.action.equals("menu")) {
+            log("pop-up: main menu");
+            nextPlaylist = endPlaylist = 0;
+            closePlayer();
+            showMenu();
         }
+    }
+
+    private void openPopup(String id) {
+        Page p = (Page) pages.get(id);
+        if (p == null) return;
+        log("pop-up open");
+        popupOpen = true;
+        show(p);
+        scene.setVisible(true);
+        scene.requestFocus();
+    }
+
+    private void closePopup() {
+        log("pop-up closed");
+        popupOpen = false;
+        scene.setVisible(false);
+        view.repaint();
     }
 
     /** Remembers where the viewer started from, so the menu reopens on that button (GPR108). */
@@ -377,9 +423,13 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             BDLocator loc = mark < 0
                 ? new BDLocator(null, -1, playlist)
                 : new BDLocator(null, -1, playlist, 0, mark, null);
+            closePlayer(); // a chapter picked in the pop-up replaces the title that plays
+            popupOpen = false;
             scene.setVisible(false);
-            stopListening();
+            if (hasPopup) startListening(); // the Pop-up key must reach the xlet while the film plays
+            else stopListening();
             stopLoop();
+            playing = playlist;
             player = Manager.createPlayer(new MediaLocator(loc.toExternalForm()));
             player.addControllerListener(this);
             player.start();
@@ -507,12 +557,16 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             } else if (cmd.equals("defaults")) {
                 audio = Integer.parseInt(t.nextToken());
                 sub = Integer.parseInt(t.nextToken());
+            } else if (cmd.equals("popupkey")) {
+                popupKey = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("loop")) {
                 loopPlaylist = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("page")) {
                 Page p = new Page();
                 p.id = t.nextToken();
                 p.bgName = dash(t.nextToken());
+                if (t.hasMoreTokens()) p.markerDx = Integer.parseInt(t.nextToken());
+                if (p.id.startsWith("pop")) hasPopup = true;
                 pages.put(p.id, p);
                 if (firstPage == null) firstPage = p;
             } else if (cmd.equals("button")) {

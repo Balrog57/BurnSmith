@@ -30,6 +30,14 @@ public sealed class MenuDesign
     public string CreditsLabel { get; set; } = "Credits";
     /// <summary>Button and heading of the page that lists the extras (videos marked Bonus).</summary>
     public string BonusLabel { get; set; } = "Bonus";
+    /// <summary>
+    /// Blu-ray pop-up menu: the remote's Pop-up key opens a menu over the title that plays, without stopping it (resume, chapters of that title,
+    /// audio and subtitles, back to the main menu). A DVD has none.
+    /// </summary>
+    public bool Popup { get; set; }
+    public string ResumeLabel { get; set; } = "Resume";
+    /// <summary>The pop-up's button that stops the title and opens the disc's main menu.</summary>
+    public string MainMenuLabel { get; set; } = "Main menu";
     /// <summary>Free text of the credits page (cast, thanks, production), one row per line; empty = no credits page and no button for it.</summary>
     public string Credits { get; set; } = "";
     /// <summary>Disc title per language for the player's disc information (BDMV\META\DL), one "xxx: title" per line, xxx = 3-letter language code (fra, eng, deu...).</summary>
