@@ -424,6 +424,73 @@ public static class MenuBuilder
     }
 
     /// <summary>
+    /// The design the pop-up pages are drawn with: BurnSmith's own layout in the design's font, colours and button style, never a template's
+    /// artwork nor the page veil (the pages are transparent overlays on the film).
+    /// </summary>
+    public static MenuDesign PopupDesign(MenuDesign d)
+    {
+        var g = d.Clone();
+        g.TemplateDir = null;
+        g.Dim = 0;
+        g.Elements = [];
+        g.PageBackgrounds = [];
+        g.Cols = 4;
+        g.Rows = 3;
+        g.Thumbnails = false;
+        g.MarginX = 0;
+        g.HomeLabel = d.BackLabel; // the chapter pages' middle button goes back to the bar
+        return g;
+    }
+
+    /// <summary>
+    /// The Blu-ray pop-up menu: per title (playlist, chapter count) a bar "pop{playlist}" over the bottom of the film (resume, chapters, settings,
+    /// main menu), its chapter pages "popc{playlist}_N", and one "popset" page for the audio / subtitle choice. The xlet opens "pop" + the playlist that
+    /// plays; the action "popup" goes back to that bar.
+    /// </summary>
+    public static List<MenuPage> Popup(MenuDesign d, MenuContent c, IReadOnlyList<(int Playlist, int Chapters)> titles)
+    {
+        var g = PopupDesign(d);
+        var veil = new Fill(new Box(0, 0, W, H), "#000000", 0.6, 0);
+        // the pages the pop-up reuses lead back to the bar, not to the disc's root page
+        MenuPage Popped(MenuPage p, string id) => p with
+        {
+            Id = id,
+            Ops = [veil, .. p.Ops],
+            Buttons = p.Buttons.Select(b => b.Action is { Kind: "page", Page: "root" } ? b with { Action = new MenuAction("popup") } : b).ToList(),
+        };
+        var pages = new List<MenuPage>();
+        foreach (var (playlist, chapters) in titles)
+        {
+            var entries = new List<(string Id, string Text, MenuAction Action)> { ("resume", d.ResumeLabel, new MenuAction("resume")) };
+            if (chapters > 1) entries.Add(("chapters", d.ScenesLabel, new MenuAction("page", $"popc{playlist}_1")));
+            if (c.HasSettings) entries.Add(("settings", d.SettingsLabel, new MenuAction("page", "popset")));
+            entries.Add(("main", d.MainMenuLabel, new MenuAction("menu")));
+            const int bw = 380, gap = 50;
+            var n = entries.Count;
+            var x0 = (W - (n * bw + (n - 1) * gap)) / 2;
+            var ops = new List<Op> { new Fill(new Box(0, 820, W, H - 820), "#000000", 0.65, 0) };
+            var buttons = new List<MenuButton>();
+            for (var k = 0; k < n; k++)
+            {
+                var box = new Box(x0 + k * (bw + gap), 890, bw, 100);
+                ops.AddRange(Button(g, box, entries[k].Text, 46));
+                buttons.Add(new MenuButton(entries[k].Id, box, entries[k].Action)
+                {
+                    Left = n > 1 ? entries[(k + n - 1) % n].Id : null,
+                    Right = n > 1 ? entries[(k + 1) % n].Id : null,
+                });
+            }
+            pages.Add(new MenuPage($"pop{playlist}", ops, buttons));
+            if (chapters <= 1) continue;
+            var cells = Enumerable.Range(0, chapters).Select(i => new Cell($"c{i + 1}", $"{d.ChapterLabel} {i + 1}", null, new MenuAction("chapter", Playlist: playlist, Mark: i))).ToList();
+            var total = PageCount(cells.Count, PerPage(g));
+            for (var i = 1; i <= total; i++) pages.Add(Popped(Grid(g, c, cells, i, total, $"popc{playlist}_", d.ScenesLabel), $"popc{playlist}_{i}"));
+        }
+        if (c.HasSettings) pages.Add(Popped(Settings(g, c, null, null), "popset"));
+        return pages;
+    }
+
+    /// <summary>
     /// Audio and subtitle choice, one column each. With <paramref name="activeAudio"/> / <paramref name="activeSub"/> null no
     /// marker is drawn (the BD-J menu draws it live); a DVD has no live drawing, so it uses one page per choice.
     /// </summary>

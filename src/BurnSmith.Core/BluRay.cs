@@ -220,7 +220,9 @@ public static class BluRay
             else if (moving || job.Menu.ExistingMusic() != null) { MuxLoop(job, work, log); loop = LoopPlaylist; }
             var menuPages = MenuBuilder.Build(job.Menu, content);
             if (MenuBuilder.TracksLeftOut(menuPages, content) is { } leftOut) log(leftOut);
-            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle); // the xlet chains only the main titles
+            var popup = job.Menu.Popup ? MenuBuilder.Popup(job.Menu, content, muxed.Select((m, i) => (MoviePlaylist + i, m.ChapterTimes.Count)).ToList()) : null;
+            if (popup != null) log($"menu: pop-up menu on {job.Titles.Count} title(s)");
+            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle, popup: popup); // the xlet chains only the main titles
             AddMenu(job, menuDir, log);
             if (intro != null) StartWithIntro(job.OutDir, job.Playback?.StartAtFirstTitle == true);
         }

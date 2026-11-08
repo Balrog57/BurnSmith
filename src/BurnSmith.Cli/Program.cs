@@ -1387,7 +1387,7 @@ if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, ne
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || Opt("--out") is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--bonus] [--credits 'A|B'] [bd: --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--bonus] [--credits 'A|B'] [bd: --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
     return 2;
 }
 
@@ -1397,6 +1397,9 @@ if (design != null && Opt("--title") is { } title) design.Title = title;
 if (design != null && Opt("--highlight") is { } hlStyle) design.HighlightStyle = hlStyle; // box | underline | textcolor
 if (design != null && a.Contains("--list")) design.SceneList = true; // page de scènes en liste (modèles qui la décrivent)
 if (design != null && a.Contains("--animated-thumbs")) design.AnimatedThumbs = true; // vignettes animées (DVD : un extrait par case)
+if (design != null && a.Contains("--popup")) design.Popup = true; // menu pop-up Blu-ray (sans effet sur un DVD)
+if (design != null && Opt("--popup-main") is { } popupMain) design.MainMenuLabel = popupMain; // son bouton « menu principal »
+if (design != null && Opt("--popup-resume") is { } popupResume) design.ResumeLabel = popupResume;
 if (design != null && Opt("--credits") is { } credits) design.Credits = credits.Replace('|', '\n'); // --credits "Directed by A|Music by B"
 // --page-bg KIND=PICTURE (repeatable; KIND = root | scenes | settings | credits | bonus): that kind of page gets its own background picture
 foreach (var spec in OptAll("--page-bg"))
