@@ -13,7 +13,8 @@ public static class Updater
 {
     public const string LatestUrl = "https://api.github.com/repos/Balrog57/BurnSmith/releases/latest";
 
-    public sealed record Release(Version Version, string Url, string? Sha256);
+    /// <summary><paramref name="Urls"/>: addresses of the same installer, tried in turn.</summary>
+    public sealed record Release(Version Version, IReadOnlyList<string> Urls, string? Sha256);
 
     static FileStream? held;
 
@@ -42,7 +43,8 @@ public static class Updater
                 if (asset.GetProperty("name").GetString() is { } name && name.StartsWith("BurnSmith-Setup", StringComparison.OrdinalIgnoreCase) && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                 {
                     var digest = asset.TryGetProperty("digest", out var d) ? d.GetString() : null; // "sha256:<hex>", given by GitHub for the files it stores
-                    return new Release(FromTag(t)!, asset.GetProperty("browser_download_url").GetString()!, digest?.StartsWith("sha256:") == true ? digest[7..] : null);
+                    // the API's address first: on 2026-11-08 github.com/…/releases/download answered 504 for every repository from one edge, for hours, while it served the file
+                    return new Release(FromTag(t)!, [asset.GetProperty("url").GetString()!, asset.GetProperty("browser_download_url").GetString()!], digest?.StartsWith("sha256:") == true ? digest[7..] : null);
                 }
         return null;
     }
@@ -59,21 +61,15 @@ public static class Updater
             try { File.Delete(old); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // still running or being scanned: the next update removes it
         var path = Path.Combine(dir, $"BurnSmith-Setup-{release.Version}-{Environment.ProcessId}.exe"); // the process id: a locked older download of this version cannot stop this one
-        using (var response = await Http.GetAsync(release.Url, HttpCompletionOption.ResponseHeadersRead, ct))
+        Exception? failed = new IOException("aucune adresse");
+        for (var round = 0; round < 3 && failed != null; round++)
         {
-            response.EnsureSuccessStatusCode();
-            var total = response.Content.Headers.ContentLength ?? 0;
-            await using var from = await response.Content.ReadAsStreamAsync(ct);
-            await using var to = File.Create(path);
-            var buffer = new byte[1 << 20];
-            long done = 0;
-            for (int n; (n = await from.ReadAsync(buffer, ct)) > 0;)
-            {
-                await to.WriteAsync(buffer.AsMemory(0, n), ct);
-                done += n;
-                if (total > 0) progress?.Report((double)done / total);
-            }
+            if (round > 0) await Task.Delay(TimeSpan.FromSeconds(3 * round), ct);
+            foreach (var url in release.Urls)
+                try { await FetchAsync(url, path, progress, ct); failed = null; break; }
+                catch (Exception e) when (e is HttpRequestException or IOException || e is TaskCanceledException && !ct.IsCancellationRequested) { failed = e; }
         }
+        if (failed != null) throw new IOException($"GitHub n'a pas envoyé l'installateur ({failed.Message})", failed);
         // kept open, sharing only reads, until this process ends: %TEMP% is the user's, and nothing may swap the checked file before it runs as administrator
         var check = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         if (!Convert.ToHexString(await SHA256.HashDataAsync(check, ct)).Equals(release.Sha256, StringComparison.OrdinalIgnoreCase))
@@ -84,6 +80,26 @@ public static class Updater
         }
         held = check;
         return path;
+    }
+
+    /// <summary>One address into <paramref name="path"/>, replacing what a failed try left there.</summary>
+    static async Task FetchAsync(string url, string path, IProgress<double>? progress, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Accept.ParseAdd("application/octet-stream"); // without it, the API's address answers with the asset's description, not the file
+        using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+        var total = response.Content.Headers.ContentLength ?? 0;
+        await using var from = await response.Content.ReadAsStreamAsync(ct);
+        await using var to = File.Create(path);
+        var buffer = new byte[1 << 20];
+        long done = 0;
+        for (int n; (n = await from.ReadAsync(buffer, ct)) > 0;)
+        {
+            await to.WriteAsync(buffer.AsMemory(0, n), ct);
+            done += n;
+            if (total > 0) progress?.Report((double)done / total);
+        }
     }
 
     /// <summary>

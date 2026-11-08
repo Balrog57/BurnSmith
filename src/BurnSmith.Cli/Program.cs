@@ -559,8 +559,28 @@ if (a.Count >= 1 && a[0] == "check-update")
     if (a.Contains("--live"))
     {
         var r = await Updater.LatestAsync(new Version(0, 0, 0));
-        Console.WriteLine(r != null ? $"newest release: {r.Version} {r.Url} sha256={r.Sha256 ?? "(none given)"}" : "no release with a BurnSmith-Setup asset yet");
+        Console.WriteLine(r != null ? $"newest release: {r.Version} {string.Join(" | ", r.Urls)} sha256={r.Sha256 ?? "(none given)"}" : "no release with a BurnSmith-Setup asset yet");
         Up("the newest release carries a digest, so it will not be refused", r?.Sha256 != null);
+        if (r != null)
+            foreach (var address in r.Urls) // each address on its own: the update needs only one, but a failing one is worth knowing
+            {
+                using var http = new System.Net.Http.HttpClient();
+                using var ask = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, address);
+                ask.Headers.Accept.ParseAdd("application/octet-stream");
+                ask.Headers.UserAgent.ParseAdd("BurnSmith-check");
+                ask.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 1);
+                string answer;
+                try
+                {
+                    using var got = await http.SendAsync(ask, System.Net.Http.HttpCompletionOption.ResponseHeadersRead); // 2 bytes read, even from a server that ignores the range
+                    var head = new byte[2];
+                    if (got.IsSuccessStatusCode) await (await got.Content.ReadAsStreamAsync()).ReadExactlyAsync(head);
+                    answer = got.IsSuccessStatusCode ? System.Text.Encoding.ASCII.GetString(head) : $"{(int)got.StatusCode}";
+                }
+                catch (System.Net.Http.HttpRequestException e) { answer = e.Message; }
+                Console.WriteLine($"  {address}: {(answer == "MZ" ? "the installer's first bytes" : answer)}");
+                if (address == r.Urls[0]) Up("the first address the update tries serves the installer", answer == "MZ");
+            }
     }
 
     var work = Path.Combine(Path.GetTempPath(), $"burnsmith-check-update-{Environment.ProcessId}");
@@ -584,18 +604,23 @@ if (a.Count >= 1 && a[0] == "check-update")
         var body = System.Text.Encoding.UTF8.GetBytes("not an installer");
         var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(body));
         var requests = 0;
+        var gatewayErrors = 0;
         _ = Task.Run(async () =>
         {
             while (server.IsListening)
             {
                 var call = await server.GetContextAsync();
                 Interlocked.Increment(ref requests);
-                await call.Response.OutputStream.WriteAsync(body);
+                var path = call.Request.Url!.AbsolutePath;
+                if (path == "/down") { Interlocked.Increment(ref gatewayErrors); call.Response.StatusCode = 504; } // what github.com/…/releases/download answered on 2026-11-08
+                else if (path == "/api" && !(call.Request.Headers["Accept"] ?? "").Contains("application/octet-stream"))
+                    await call.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes("{\"name\":\"BurnSmith-Setup.exe\"}")); // the API describes the asset unless asked for the file
+                else await call.Response.OutputStream.WriteAsync(body);
                 call.Response.Close();
             }
         });
         var v = new Version(9, 9, 9, 9);
-        async Task<Exception?> Download(string? sha) { try { await Updater.DownloadAsync(new Updater.Release(v, url, sha)); return null; } catch (Exception e) { return e; } }
+        async Task<Exception?> Download(string? sha, params string[] urls) { try { await Updater.DownloadAsync(new Updater.Release(v, urls.Length > 0 ? urls : [url], sha)); return null; } catch (Exception e) { return e; } }
         Directory.CreateDirectory(updates);
         var older = Path.Combine(updates, "BurnSmith-Setup-0.0.1.exe");
         File.WriteAllText(older, "old");
@@ -619,6 +644,13 @@ if (a.Count >= 1 && a[0] == "check-update")
         Up("the checked download cannot be changed before it runs as administrator", Directory.GetFiles(updates, $"BurnSmith-Setup-{v}-*.exe").Single() is var checkedSetup
             && Refused(() => File.OpenWrite(checkedSetup).Dispose()) && Refused(() => File.Delete(checkedSetup)));
         Up("wrong digest: refused, the download does not stay", await Download(new string('0', 64)) is IOException && Directory.GetFiles(updates, $"BurnSmith-Setup-{v}-*.exe").Length == 0);
+        Up("the API's address gives the file: it is asked for the file, not its description", await Download(digest, url + "api") == null);
+        var failure504 = await Download(digest, url + "down", url);
+        Up("the first address answers 504: the next one gives the file", failure504 == null && gatewayErrors == 1);
+        var start504 = System.Diagnostics.Stopwatch.StartNew();
+        var allDown = await Download(digest, url + "down", url + "down");
+        Up("every address fails: three rounds of both, then a refusal that says what GitHub answered", allDown is IOException && gatewayErrors == 7 && allDown.Message.Contains("504")
+            && start504.Elapsed < TimeSpan.FromSeconds(30));
         server.Stop();
         Environment.SetEnvironmentVariable("TMP", realTmp);
 
