@@ -25,7 +25,7 @@ public partial class MainWindow : Window
 
         public string Path { get; } = path;
         public SourceInfo Info { get; } = info;
-        public string Name { get; set; } = System.IO.Path.GetFileNameWithoutExtension(path);
+        public string Name { get; set; } = DiscTitle.Readable(path).Name;
         public List<int> Audio { get; set; } = info.Audio.Take(1).Select(a => a.Index).ToList();
         public List<int> Subs { get; set; } = [];
         /// <summary>Subtitle files beside the video (found by name or added by hand): more tracks, numbered after the video's own.</summary>
@@ -521,7 +521,7 @@ public partial class MainWindow : Window
                 titles[0].Refresh();
                 Warn($"« {titles[0].Name} » redevient le film principal : un disque a besoin d'au moins une vidéo qui ne soit ni un bonus ni la vidéo de début.");
             }
-            var name = MainEntry!.Name;
+            var name = DiscTitle.Readable(MainEntry!.Path).Series ?? MainEntry.Name; // a season is named after its series, not after its first episode
             if (!labelEdited) volume = Regex.Replace(name.ToUpperInvariant(), "[^A-Z0-9_]+", "_").Trim('_') is { Length: > 0 } l ? l[..Math.Min(32, l.Length)] : "MON_DISQUE";
             if (design.Title == new MenuDesign().Title) design.Title = name;
         }

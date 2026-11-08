@@ -788,6 +788,11 @@ if (a.Count >= 1 && a[0] == "check-edit")
           && twoClips.OnDisc(150) == null && twoClips.OnDisc(250) == 150 && twoClips.GapFilter(true) == "aselect='not(gte(t,100)*lt(t,200))',asetpts=N/SR/TB"
           && Throws(() => new DiscTitle("x", Start: 100, End: 400, Clips: [new(100, 300), new(250, 400)]).Cut(src)));
     Check("custom times are shifted by the start, 0 added, outside dropped", Show(new DiscTitle("x", Start: 100, End: 400, ChapterAt: [50, 100, 160, 250.4, 399.5, 500]).ChapterList(300, 5)) == "0,60,150");
+    Check("a release file name gets a readable default name: cut at the first tag, an episode named by its number and title, its series for the season; a name with spaces kept",
+          new DiscTitle("Title.2019.1080p.BluRay.x264-GRP.mkv").DisplayName == "Title 2019" && DiscTitle.Readable("Title.2019.1080p.BluRay.x264-GRP.mkv") == ("Title 2019", null)
+          && DiscTitle.Readable("Cobra.Kai.S01E01.Le.roi.des.tares.MULTi.AD.1080p.NF.WEB.DDP.H265-THESYNDiCATE.mkv") == ("Épisode 1 · Le roi des tares", "Cobra Kai Saison 1")
+          && DiscTitle.Readable("The_French_Village_S01E02_x264-GRP.mkv") == ("Épisode 2", "The French Village Saison 1")
+          && DiscTitle.Readable("Mon film 1080p.mkv") == ("Mon film 1080p", null) && new DiscTitle("x.mkv", "Mine").DisplayName == "Mine");
     var tracked = new SourceInfo("h264", 1920, 1080, 24, "ac3", 6, 600, [new(0, "dts", 6, "und", ""), new(1, "ac3", 2, "eng", "")], [new(0, "subrip", "und", "", false), new(1, "hdmv_pgs_subtitle", "fre", "", false)]);
     var relabel = new DiscTitle("x", Audio: [0, 1], Subtitles: [0, 1], External: [new ExternalSubtitle("s.srt", "ger")], TrackLanguage: new Dictionary<string, string> { ["a0"] = "fre", ["s0"] = "eng", ["s2"] = "spa" });
     var relabelled = relabel.Cut(tracked);
