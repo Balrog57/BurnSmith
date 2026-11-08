@@ -97,12 +97,13 @@ public static class Dvd
     {
         log($"movie: {(pal ? "PAL" : "NTSC")} {videoBps / 1000} kb/s");
         var movies = new List<Movie>();
-        for (var i = 0; i < job.Titles.Count; i++) movies.Add(EncodeTitle(job, i + 1, sources[i], job.Titles[i], pal, videoBps, work, log));
-        if (movies.Any(m => m.Audio.Count != movies[0].Audio.Count || m.Subtitles.Count != movies[0].Subtitles.Count))
-            log("warning: the videos do not have the same number of audio/subtitle tracks; the menu follows the first one");
+        var lined = job.Titles.Count > 1 ? DiscTitle.LineUpSubtitles(job.Titles, sources) : null;
+        for (var i = 0; i < job.Titles.Count; i++) movies.Add(EncodeTitle(job, i + 1, sources[i], job.Titles[i], lined?[i], pal, videoBps, work, log));
+        if (movies.Any(m => m.Audio.Count != movies[0].Audio.Count)) // the subtitles are lined up (LineUpSubtitles): only a title's extra ones come after the menu's
+            log("warning: the videos do not have the same number of audio tracks; the menu follows the first one");
         Movie? introMovie = null;
         if (intro != null) // one audio track and no subtitles: nothing to choose while it plays, and no subtitle pass
-            introMovie = EncodeTitle(job, movies.Count + 1, introSource!, intro with { Audio = [.. intro.KeptAudio(introSource!).Take(1).Select(a => a.Index)], Subtitles = null, External = null, DefaultAudio = null, DefaultSubtitle = null }, pal, videoBps, work, log);
+            introMovie = EncodeTitle(job, movies.Count + 1, introSource!, intro with { Audio = [.. intro.KeptAudio(introSource!).Take(1).Select(a => a.Index)], Subtitles = null, External = null, DefaultAudio = null, DefaultSubtitle = null }, null, pal, videoBps, work, log);
 
         var menuPages = new List<MenuOut>();
         // a menu that plays on its own (moving clip or music) starts again when it ends: each page is its own PGC, so the sound restarts when another page opens
@@ -121,7 +122,8 @@ public static class Dvd
         Directory.CreateDirectory(Path.Combine(job.OutDir, "AUDIO_TS")); // empty, but players and tools expect it
     }
 
-    static Movie EncodeTitle(DvdJob job, int number, SourceInfo src, DiscTitle title, bool pal, int videoBps, string work, Action<string> log)
+    /// <summary><paramref name="lined"/>: this title's subtitles lined up with the other titles' (<see cref="DiscTitle.LineUpSubtitles"/>), null when it is alone.</summary>
+    static Movie EncodeTitle(DvdJob job, int number, SourceInfo src, DiscTitle title, IReadOnlyList<SubtitleTrack>? lined, bool pal, int videoBps, string work, Action<string> log)
     {
         var (w, h) = pal ? (720, 576) : (720, 480);
         var wide = job.Encode?.DvdWide ?? true;
@@ -156,25 +158,15 @@ public static class Dvd
         args.AddRange(["-sn", "-dn", movie]);
 
         // text subtitles are drawn by DvdSubtitles, PGS pictures redrawn; other bitmap formats would need OCR
-        var subs = new List<(SubtitleTrack Track, string File)>();
-        foreach (var s in title.KeptSubtitles(src))
-        {
-            if (!s.Supported) { log($"subtitle '{s.Name}' skipped: {s.Codec} is an image format that needs OCR"); continue; }
-            subs.Add((s, Path.Combine(work, $"sub{number}_{subs.Count + 1}.{(s.IsPicture ? "sup" : "srt")}")));
-        }
+        var subs = BluRay.Subtitles(title, src, lined, n => Path.Combine(work, $"sub{number}_{n}"), log);
+        var real = subs.Where(x => x.Track.Index >= 0).ToList();
         log($"encode {number}: {title.DisplayName} (audio {audio.Count}, subtitles {subs.Count})");
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
-        BluRay.WriteOwnSubtitles(title, subs.Where(x => x.Track.File == null && !x.Track.IsVobSub).ToList(), span, log); // a VobSub or a subtitle file is converted apart, below
-        foreach (var (s, file) in subs.Where(x => x.Track.File == null && x.Track.IsVobSub)) BluRay.WriteEmbeddedVobSub(title, s, span, file, (720, 480), log);
-        foreach (var (s, file) in subs.Where(x => x.Track.File != null)) BluRay.WriteExternalSubtitle(title, s, span, file, (720, 480), log); // a VobSub becomes PGS on a 720x480 plane, which PgsStream maps onto the frame whatever its height
-        foreach (var (_, file) in subs) title.CloseGaps(file, span);
-        // a track with nothing to show in the part kept is left out: it would be a choice that shows nothing
-        subs.RemoveAll(x =>
-        {
-            var empty = !DvdSubtitles.HasCues(x.File);
-            if (empty) log($"subtitle '{x.Track.Name}' skipped: no cue in the part kept");
-            return empty;
-        });
+        BluRay.WriteOwnSubtitles(title, real.Where(x => x.Track.File == null && !x.Track.IsVobSub).ToList(), span, log); // a VobSub or a subtitle file is converted apart, below
+        foreach (var (s, file) in real.Where(x => x.Track.File == null && x.Track.IsVobSub)) BluRay.WriteEmbeddedVobSub(title, s, span, file, (720, 480), log);
+        foreach (var (s, file) in real.Where(x => x.Track.File != null)) BluRay.WriteExternalSubtitle(title, s, span, file, (720, 480), log); // a VobSub becomes PGS on a 720x480 plane, which PgsStream maps onto the frame whatever its height
+        foreach (var (_, file) in real) title.CloseGaps(file, span);
+        BluRay.Blanks(subs, lined != null, file => !DvdSubtitles.HasCues(file), (720, 480), log);
         // a DVD title has 32 subtitle streams (0x20-0x3F): a 33rd would overwrite the chain's next fields, then fail the build after the encode
         if (subs.Count > 32)
         {

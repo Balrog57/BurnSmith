@@ -116,6 +116,14 @@ public static class PgsSubtitles
         }
     }
 
+    /// <summary>A stream that shows nothing (one transparent 8 x 8 picture for a frame at the start), for a track kept only for its number.</summary>
+    public static byte[] Blank(int planeWidth, int planeHeight)
+    {
+        var writer = new Writer(planeWidth, planeHeight);
+        writer.Add(0, 0.04, 0, 0, 8, 8, new byte[64], [(0, 0, 0, 0)]);
+        return writer.Finish();
+    }
+
     static List<Set> Read(byte[] sup)
     {
         var sets = new List<Set>();

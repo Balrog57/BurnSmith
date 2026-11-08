@@ -323,6 +323,31 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
 
     public IReadOnlyList<SubtitleTrack> KeptSubtitles(SourceInfo s) =>
         Subtitles == null ? [] : Subtitles.Select(i => s.Subtitles.FirstOrDefault(t => t.Index == i)).OfType<SubtitleTrack>().ToList();
+
+    /// <summary>
+    /// The subtitles each title carries on a disc of several: the menu and the remote select a subtitle by its number, the same for every title, so number k
+    /// is the first title's track k everywhere (a season by track number put "English (SDH)" one place up in the episodes without "English (Forced)").
+    /// Each place takes the title's track of the same name, as the menu shows it, among its kept ones first, then among the rest of its tracks; a place
+    /// the title lacks is the first title's track with <see cref="SubtitleTrack.Index"/> -1 (an invisible track keeps the number). Its other kept ones come after.
+    /// </summary>
+    public static List<List<SubtitleTrack>> LineUpSubtitles(IReadOnlyList<DiscTitle> titles, IReadOnlyList<SourceInfo> sources)
+    {
+        var places = titles[0].KeptSubtitles(sources[0]).Where(t => t.Supported).ToList();
+        return [.. titles.Select((title, i) =>
+        {
+            var kept = title.KeptSubtitles(sources[i]).Where(t => t.Supported).ToList();
+            var free = kept.Concat(sources[i].Subtitles.Where(t => t.Supported && !kept.Contains(t))).ToList();
+            var line = new List<SubtitleTrack>();
+            foreach (var place in places)
+            {
+                var same = free.FirstOrDefault(t => t.Name == place.Name);
+                if (same != null) free.Remove(same);
+                line.Add(same ?? place with { Index = -1 });
+            }
+            line.AddRange(kept.Where(free.Contains));
+            return line;
+        })];
+    }
 }
 
 public static class Languages

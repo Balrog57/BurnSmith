@@ -149,19 +149,20 @@ public static class BluRay
     {
         var kbps = intro == null ? TargetKbps(job, sources, log) : TargetKbps(job with { Titles = [.. job.Titles, intro] }, [.. sources, introSource!], log); // the intro takes room on the disc too
         var muxed = new List<Muxed>();
+        var lined = job.Titles.Count > 1 ? DiscTitle.LineUpSubtitles(job.Titles, sources) : null;
         for (var i = 0; i < job.Titles.Count; i++)
         {
             var playlist = MoviePlaylist + i;
             // later titles are muxed on their own (playlist/clip numbers offset), then merged into the first disc folder
             var dest = i == 0 ? job.OutDir : Path.Combine(work, "mux" + playlist);
             if (i > 0 && Directory.Exists(dest)) Directory.Delete(dest, true);
-            muxed.Add(MuxTitle(job, job.Titles[i], sources[i], playlist, dest, work, kbps, log));
+            muxed.Add(MuxTitle(job, job.Titles[i], sources[i], lined?[i], playlist, dest, work, kbps, log));
             if (i > 0) Merge(dest, job.OutDir);
         }
         if (intro != null)
         {
             var introDest = Path.Combine(work, "mux" + IntroPlaylist);
-            MuxTitle(job, intro, introSource!, IntroPlaylist, introDest, work, kbps, log);
+            MuxTitle(job, intro, introSource!, null, IntroPlaylist, introDest, work, kbps, log);
             Merge(introDest, job.OutDir);
         }
 
@@ -359,7 +360,8 @@ public static class BluRay
         return kbps;
     }
 
-    static Muxed MuxTitle(BluRayJob job, DiscTitle title, SourceInfo src, int playlist, string dest, string work, int kbps, Action<string> log)
+    /// <summary><paramref name="lined"/>: this title's subtitles lined up with the other titles' (<see cref="DiscTitle.LineUpSubtitles"/>), null when it is alone.</summary>
+    static Muxed MuxTitle(BluRayJob job, DiscTitle title, SourceInfo src, IReadOnlyList<SubtitleTrack>? lined, int playlist, string dest, string work, int kbps, Action<string> log)
     {
         var audio = title.KeptAudio(src);
         // MPEG-TS, not Matroska: from an mkv tsMuxeR finds no SPS/PPS before the keyframes and writes ONE entry point in the clip info,
@@ -367,21 +369,11 @@ public static class BluRay
         var prepared = Path.Combine(work, $"prepared{playlist}.ts");
 
         // subtitles the disc can carry: PGS is copied, text becomes SRT (tsMuxeR renders it); other image formats would need OCR
-        var subs = new List<(SubtitleTrack Track, string File)>();
-        foreach (var s in title.KeptSubtitles(src))
-        {
-            if (!s.Supported) { log($"subtitle '{s.Name}' skipped: {s.Codec} is an image format that needs OCR"); continue; }
-            subs.Add((s, Path.Combine(work, $"sub{playlist}_{subs.Count + 1}.{(s.IsPicture ? "sup" : "srt")}")));
-        }
+        var subs = Subtitles(title, src, lined, n => Path.Combine(work, $"sub{playlist}_{n}"), log);
         log($"prepare {playlist}: {src.VideoCodec} {src.Width}x{src.Height} {src.Fps:0.###}fps, audio {(audio.Count == 0 ? "none" : string.Join('+', audio.Select(a => a.Codec)))}, subtitles {subs.Count}");
-        Prepare(job, title, src, audio, subs, prepared, kbps, log);
+        Prepare(job, title, src, audio, [.. subs.Where(x => x.Track.Index >= 0)], prepared, kbps, log);
         // a subtitle with nothing to show in the part kept is an empty file, which tsMuxeR cannot take
-        subs.RemoveAll(x =>
-        {
-            var empty = new FileInfo(x.File).Length == 0;
-            if (empty) log($"subtitle '{x.Track.Name}' skipped: nothing to show in the part kept");
-            return empty;
-        });
+        Blanks(subs, lined != null, file => new FileInfo(file).Length == 0, job.Uhd ? (1920, 1080) : VideoSize(job), log);
         foreach (var (s, file) in subs.Where(x => x.Track.IsPgs && x.Track.File != null))
         {
             // the pictures of a PGS file are placed on a plane of its own size: 1920x1080 on a Blu-ray, also on a 4K one
@@ -411,6 +403,35 @@ public static class BluRay
         log($"mux {playlist}: tsMuxeR");
         Tools.Run(Tools.Find("tsMuxeR.exe"), [meta, dest], log);
         return new Muxed(prepared, audio.Select(a => a.Name).ToList(), subs.Select(s => s.Track.Name).ToList(), chapterTimes, title.DefaultSubtitleNumber(subs.Select(s => s.Track).ToList()));
+    }
+
+    /// <summary>
+    /// The subtitles a title carries, <paramref name="lined"/> when given, else its supported kept ones, each with the file it is written to (<paramref name="file"/>
+    /// of its number, then .sup for pictures, .srt for text). Another image format (DVB, Teletext) would need OCR: left out.
+    /// </summary>
+    internal static List<(SubtitleTrack Track, string File)> Subtitles(DiscTitle title, SourceInfo src, IReadOnlyList<SubtitleTrack>? lined, Func<int, string> file, Action<string> log)
+    {
+        foreach (var s in title.KeptSubtitles(src).Where(t => !t.Supported)) log($"subtitle '{s.Name}' skipped: {s.Codec} is an image format that needs OCR");
+        return [.. (lined ?? [.. title.KeptSubtitles(src).Where(t => t.Supported)]).Select((s, k) => (Track: s, File: $"{file(k + 1)}.{(s.IsPicture ? "sup" : "srt")}"))];
+    }
+
+    /// <summary>
+    /// The subtitles that show nothing (<paramref name="empty"/> once written, or a track the title lacks: <see cref="SubtitleTrack.Index"/> -1). A title on its own
+    /// leaves them out, a choice that would show nothing; one lined up with others (<paramref name="lined"/>) carries an invisible PGS track there instead,
+    /// since the menu and the remote select a subtitle by its number, the same for every title.
+    /// </summary>
+    internal static void Blanks(List<(SubtitleTrack Track, string File)> subs, bool lined, Func<string, bool> empty, (int Width, int Height) plane, Action<string> log)
+    {
+        for (var k = 0; k < subs.Count; k++)
+        {
+            var (s, file) = subs[k];
+            if (s.Index >= 0 && !empty(file)) continue;
+            if (!lined) { log($"subtitle '{s.Name}' skipped: nothing to show in the part kept"); subs.RemoveAt(k--); continue; }
+            log($"subtitle {k + 1} '{s.Name}': {(s.Index < 0 ? "not in this video" : "nothing to show in the part kept")}, an invisible track keeps its number");
+            file = Path.ChangeExtension(file, ".sup");
+            File.WriteAllBytes(file, PgsSubtitles.Blank(plane.Width, plane.Height));
+            subs[k] = (s with { Codec = "hdmv_pgs_subtitle", File = null }, file);
+        }
     }
 
     /// <summary>

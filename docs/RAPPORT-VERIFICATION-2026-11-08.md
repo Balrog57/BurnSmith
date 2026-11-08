@@ -13,10 +13,11 @@ Conventions : **[FAIT]** mesuré ou observé ce jour, **[DÉDUCTION]** tiré de 
 - Deux garde-fous ont été ajoutés :
   - le « Test avant gravure » vérifie la signature du menu comme le ferait un lecteur ;
   - il refuse un dossier ou une ISO plus grand que le support choisi (la gravure n'a alors pas lieu).
-- Les essais ont montré trois défauts de menu ou d'adaptation. Ils sont corrigés :
+- Les essais ont montré quatre défauts de menu ou d'adaptation. Ils sont corrigés :
   - **Titre coupé** : un titre trop long pour sa zone devient plus petit, puis passe sur deux lignes, au lieu d'être coupé (« Cobra... »).
   - **Pistes indiscernables** : deux pistes d'une même langue gardent le détail de leur titre. La saison affichait deux boutons « Français 5.1 », dont l'un était l'audiodescription.
   - **DVD trop petit** : le DVD annonce dès le départ que le disque est trop petit quand même le débit plancher ne suffit pas. Le Blu-ray le faisait déjà.
+  - **Sous-titre d'une série sur une autre piste** : le menu choisit un sous-titre par son numéro, le même pour tous les épisodes, et une piste vide ou absente dans un épisode décalait les suivantes. Dans l'épisode 2, « Français (forcés) » affichait les paroles anglaises. Chaque épisode porte maintenant les sous-titres du premier, dans le même ordre, avec une piste invisible à la place d'une piste vide ou absente (§ 3.8).
 - **Testé ce jour** : une saison complète (10 épisodes) sur BD25, un film copié tel quel sur BD25, le même film réduit pour tenir sur un BD5, et un DVD court. Chaque disque a été construit, mis en ISO et contrôlé : structure, UDF, signature (jarsigner et openssl), en-têtes H.264 et tampon vidéo. Les menus ont été parcourus dans VLC/libbluray.
 - **Pas testé** : aucune gravure, aucun lecteur de salon, ni PS3/PS5. VLC ne vérifie pas les signatures BD-J. Leur validité est prouvée par jarsigner et openssl, et leur profil est celui de DVDFab, mais l'acceptation par une vraie platine reste à voir.
 
@@ -152,7 +153,7 @@ Même source, même menu, profil BD5 (adaptation au disque par défaut).
   - Le HEVC ne va pas sur un Blu-ray 1080p : il est refait en H.264.
   - L'E-AC-3 est refait en AC-3 5.1 à 640 kb/s, le format que toute platine décode.
 - **Construction** : 1 h, sans erreur.
-  - Avertissement attendu : « --sub 5 » n'existe pas dans cinq épisodes ; ceux-là n'ont que le français.
+  - Avertissement attendu : « --sub 5 » n'existe pas dans cinq épisodes ; ceux-là n'ont que le français. Corrigé depuis (§ 3.8) : leur « English (SDH) », qui est leur piste 4, est pris par son nom.
 - **ISO** : 22 270 312 448 octets, soit 89,1 % de 25 Go. Épisodes de 1,76 à 2,74 Go. Faite en 12 s.
 - **Signature** : 36/36 avec jarsigner, openssl OK.
 - **Les dix épisodes** :
@@ -213,6 +214,42 @@ Deux extraits de 1 min 30, trois pistes audio et un sous-titre.
 - un fichier modifié après signature refusé ;
 - un nom de fichier accentué plus long qu'une ligne de manifeste (72 octets).
 
+### 3.8 Sous-titres d'une série : défaut prouvé, puis corrigé
+
+Deux extraits de 1 min 30 (épisodes 1 et 2), trois pistes audio, `--sub 0,1,4`, modèle « Streaming ».
+
+**Cause**
+- La page Réglages et la télécommande choisissent un sous-titre par son numéro, le même pour tous les épisodes.
+- Ce numéro ne désignait pas la même piste d'un épisode à l'autre, pour deux raisons :
+  - une piste vide dans la partie gardée était retirée de cet épisode, car tsMuxeR refuse un fichier vide ;
+  - les épisodes n'ont pas tous les mêmes pistes. Les épisodes 2, 5, 6, 7 et 9 n'ont pas « English (Forced) » : leur « English (SDH) » est la piste 4, pas la 5. Or le choix des pistes est recopié d'un épisode à l'autre par numéro.
+
+**[FAIT] Avant**, disque fait avec le binaire du commit 507fa7a :
+- Pistes PGS des playlists : `fre fre` pour l'épisode 1, `eng` seule pour l'épisode 2. Ses pistes forcée et française, vides dans la partie gardée, avaient été retirées.
+- Dans VLC, « Français (forcés) » choisi dans Réglages, puis l'épisode 2 : `subtitle stream 1 selected`, et les paroles anglaises s'affichent (« ♪ How lucky can one guy be? ♪ »).
+
+**Correction**
+- Sur un disque de plusieurs vidéos, chacune porte les sous-titres de la première, dans le même ordre. Chaque place prend la piste qui a le même nom dans le menu, même à un autre numéro du fichier, et même si elle n'est pas cochée dans cette vidéo.
+- Une piste absente, ou vide dans la partie gardée, devient une piste PGS invisible qui garde la place : une image transparente de 8 × 8 pixels.
+- Les autres sous-titres cochés de la vidéo viennent après, hors du menu.
+- Un disque d'une seule vidéo laisse toujours de côté une piste vide.
+
+**[FAIT] Après**, mêmes extraits :
+- **Blu-ray** :
+  - playlists : `fre fre eng` pour l'épisode 1 (la 3e invisible) ; `fre fre eng eng` pour l'épisode 2 (trois invisibles, puis son English SDH) ;
+  - page Réglages : « Off », « Français (forcés) », « Français », « English (forcés) » ;
+  - même parcours dans VLC : `subtitle stream 1 selected`, et aucun texte aux mêmes instants. C'est juste, car l'épisode 2 n'a pas de sous-titre forcé dans cette minute et demie.
+- **DVD**, compté dans le VOB titre par titre :
+  - épisode 1 : 0x20 (2 images), 0x21 (22), 0x22 invisible ;
+  - épisode 2 : 0x20, 0x21 et 0x22 invisibles, 0x23 English SDH (21 images).
+- **Cas de la saison** (`--sub 1,5`, sans piste 5 dans l'épisode 2) : l'« English (SDH) » de l'épisode 2 est pris à sa piste 4. Il a 168 paquets PGS, au même numéro que dans l'épisode 1.
+- **Contrôles** : `check-edit` 94/94, dont l'alignement et la piste invisible ; `check-bd` complet (Blu-ray et DVD) 68/68 ; `check-elements` 85/85.
+
+**Limites**
+- Les pistes audio ne sont pas réalignées ainsi. Ici, tous les épisodes ont les mêmes.
+- Sur DVD, un sous-titre en plus dans un épisode (au-delà de ceux du premier) est sur le disque mais n'est pas déclaré : il reste inaccessible.
+- Un sous-titre décoché exprès dans un seul épisode revient, si le premier épisode l'a et que cet épisode l'a aussi.
+
 ## 4. Ce qui reste non prouvé
 
 - **Gravure et platine.** Aucun disque n'a été gravé ni lu sur un lecteur de salon ou une console. C'est le seul test qui dira si une platine lance le menu signé.
@@ -222,10 +259,7 @@ Deux extraits de 1 min 30, trois pistes audio et un sous-titre.
 - **Débit des pistes sans perte.** Pour l'audio copié, la taille vient désormais du débit moyen que mkvmerge inscrit (`BPS`). Faute de ce débit, BurnSmith garde une estimation fixe (DTS 1536 kb/s, TrueHD 3500 kb/s), qui peut sous-estimer un DTS-HD MA. Le contrôle de taille empêche alors la gravure au lieu de rater le disque, mais ne relance pas l'encodage plus bas.
 - **Noms des épisodes.** Le menu reprend le nom du fichier (« Cobra.Kai.S01E01.Le.roi… »), comme le titre du menu et l'étiquette du disque proposés par défaut. Il se corrige dans l'éditeur de menu (« Nom de la vidéo N »). Rien ne nettoie encore automatiquement un nom de fichier de ce genre.
 - **Textes du modèle en anglais.** « Play all », « Settings », « Episodes », « Back », « Off » viennent du modèle et se changent dans l'éditeur. Les noms de langues, eux, sont dans la langue elle-même (« Français », « English »).
-- **Sous-titres d'une série. [DÉDUCTION]** La page Réglages choisit une piste par son numéro, le même pour tous les épisodes.
-  - Une piste de sous-titres vide dans la partie gardée d'un épisode est retirée de cet épisode, car tsMuxeR refuse un fichier vide.
-  - Les pistes suivantes changent alors de numéro pour cet épisode seulement : le choix du menu peut y tomber sur une autre piste.
-  - Vu sur des extraits de 1 min 30, pas sur la saison entière, où les pistes gardées avaient toutes du texte.
+- **Pistes audio d'une série.** Elles ne sont pas réalignées comme les sous-titres (§ 3.8) : des épisodes aux pistes audio différentes peuvent encore faire tomber le choix du menu sur une autre piste.
 - **Saison sur DVD-5.** Avec trois pistes audio, même 1 Mb/s de vidéo ne suffit pas (5,4 Go pour 4,2). BurnSmith ne réduit pas l'audio de lui-même : il faut garder moins de pistes, ou prendre un DVD-9 ou un Blu-ray.
 - **Non essayés aujourd'hui** : le Blu-ray 4K (UHD), le diaporama, la gravure en elle-même (ImgBurn et IMAPI2) et le DVD complet en VLC au-delà du menu et du premier titre.
 

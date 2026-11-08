@@ -1072,6 +1072,17 @@ if (a.Count >= 1 && a[0] == "check-edit")
     var two = new SourceInfo("h264", 1920, 1080, 24, "ac3", 6, 600, [], [new(0, "subrip", "eng", "", false), new(1, "hdmv_pgs_subtitle", "fre", "", false)]);
     var withFiles = new DiscTitle("x", Start: 100, External: [new("a.fr.srt", "fre"), new("b.ass")]).Cut(two);
     Check("subtitle files come after the video's tracks, numbered on, the cut keeps them", withFiles.Subtitles.Select(t => $"{t.Index}{(t.File != null ? t.Codec : "")}").SequenceEqual(["0", "1", "2subrip", "3ass"]) && withFiles.Duration == 500);
+    // a season whose episodes have not all the same tracks (Cobra Kai: some lack "English (Forced)"): the menu selects a subtitle by number, for every episode
+    var e1 = two with { Subtitles = [new(0, "subrip", "fre", "French", false), new(1, "subrip", "eng", "English (Forced)", false), new(2, "subrip", "eng", "English (SDH)", false)] };
+    var e2 = two with { Subtitles = [new(0, "subrip", "fre", "French", false), new(1, "subrip", "eng", "English (SDH)", false)] };
+    static string Line(IEnumerable<SubtitleTrack> line) => string.Join(",", line.Select(t => t.Index));
+    var byNumber = DiscTitle.LineUpSubtitles([new DiscTitle("e1", Subtitles: [0, 2]), new DiscTitle("e2", Subtitles: [0])], [e1, e2]); // copied by number: e2 has no track 2
+    var shifted = DiscTitle.LineUpSubtitles([new DiscTitle("e1", Subtitles: [0, 1]), new DiscTitle("e2", Subtitles: [0, 1])], [e1, e2]); // e2's track 1 is the SDH one
+    Check("a season's subtitles line up on the first episode by name: found at another number, a missing one keeps its place (as the first's), an extra comes after",
+          Line(byNumber[0]) == "0,2" && Line(byNumber[1]) == "0,1" && Line(shifted[0]) == "0,1" && Line(shifted[1]) == "0,-1,1" && shifted[1][1].Name == "English (forcés)");
+    var blankSup = PgsSubtitles.Blank(1920, 1080);
+    Check("the invisible track that keeps a place: one picture on the disc's plane, nothing opaque, so a DVD makes a subpicture of it too",
+          PgsSubtitles.Cues(blankSup, out var blankBad) is [{ } blank] && blankBad == 0 && blank.Alpha.All(a => a == 0) && PgsSubtitles.PlaneSize(blankSup) == (1920, 1080));
     var cues = "1\r\n00:00:01,000 --> 00:00:03,000\r\nbefore\r\n\r\n2\r\n00:00:05,000 --> 00:00:08,500\r\nstraddles\r\nthe start\r\n\r\n3\r\n00:00:12,000 --> 00:00:14,000\r\nkept\r\n\r\n4\r\n00:00:17,000 --> 00:00:19,000\r\nafter\r\n\r\n";
     Check("cut cues: before dropped, straddling cue shortened and moved, later ones dropped, renumbered",
           ExternalSubtitle.Cut(cues, 6, 8) == "1\n00:00:00,000 --> 00:00:02,500\nstraddles\nthe start\n\n2\n00:00:06,000 --> 00:00:08,000\nkept\n\n" && ExternalSubtitle.Cut(cues, 9, 2) == "" && ExternalSubtitle.Cut(cues, 0, 100).Contains("4\n00:00:17,000 --> 00:00:19,000\nafter"));
