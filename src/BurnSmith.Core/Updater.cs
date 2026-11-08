@@ -15,6 +15,8 @@ public static class Updater
 
     public sealed record Release(Version Version, string Url, string? Sha256);
 
+    static FileStream? held;
+
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(30), DefaultRequestHeaders = { { "User-Agent", "BurnSmith-updater" } } };
 
     /// <summary>"0.1.0" and "0.1.0.0" are the same version (<see cref="Version"/> would call the first one older).</summary>
@@ -51,6 +53,8 @@ public static class Updater
         if (string.IsNullOrEmpty(release.Sha256)) throw new IOException("GitHub ne donne pas de hash sha256 pour cet installateur : il n'a pas été téléchargé");
         var dir = Path.Combine(Path.GetTempPath(), "BurnSmith-update");
         Directory.CreateDirectory(dir);
+        held?.Dispose(); // a new download replaces the one checked before
+        held = null;
         foreach (var old in Directory.EnumerateFiles(dir, "BurnSmith-Setup-*.exe"))
             try { File.Delete(old); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // still running or being scanned: the next update removes it
@@ -70,14 +74,15 @@ public static class Updater
                 if (total > 0) progress?.Report((double)done / total);
             }
         }
-        bool same;
-        await using (var check = File.OpenRead(path))
-            same = Convert.ToHexString(await SHA256.HashDataAsync(check, ct)).Equals(release.Sha256, StringComparison.OrdinalIgnoreCase);
-        if (!same)
+        // kept open, sharing only reads, until this process ends: %TEMP% is the user's, and nothing may swap the checked file before it runs as administrator
+        var check = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (!Convert.ToHexString(await SHA256.HashDataAsync(check, ct)).Equals(release.Sha256, StringComparison.OrdinalIgnoreCase))
         {
+            check.Dispose();
             File.Delete(path);
             throw new IOException("the downloaded installer does not match the hash GitHub gave: it was not run");
         }
+        held = check;
         return path;
     }
 

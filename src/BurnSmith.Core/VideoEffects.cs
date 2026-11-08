@@ -124,8 +124,10 @@ public sealed record VideoEffects(
     static string Bgr(string rgb) => rgb.Length == 6 ? rgb[4..6] + rgb[2..4] + rgb[..2] : "FFFFFF";
 
     /// <summary>
-    /// A file path as a filter option: quoted for the graph, with the drive's colon escaped for the option (C\:/dir/file).
-    /// shortcut: a path holding an apostrophe is not escaped, copy such a file to a plain name first if it ever matters.
+    /// A file path as a filter option, escaped twice as ffmpeg reads it: once for the option value (\ ' :), then for the graph (\ ' [ ] , ;),
+    /// so "D:\Vidéos d'été, [1]\film.srt" survives (an apostrophe is common in French names).
     /// </summary>
-    static string Quote(string path) => "'" + path.Replace('\\', '/').Replace(":", "\\:") + "'";
+    static string Quote(string path) => Escape(Escape(path.Replace('\\', '/'), @"\':"), @"\'[],;");
+
+    static string Escape(string s, string special) => string.Concat(s.Select(c => special.Contains(c) ? "\\" + c : c.ToString()));
 }

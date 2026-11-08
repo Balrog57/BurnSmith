@@ -551,6 +551,9 @@ if (a.Count >= 1 && a[0] == "check-update")
             Up("a locked one is left alone", File.Exists(lockedOlder) && File.Exists(sameVersion));
         }
         Up("the download is what the server sent", Directory.GetFiles(updates, $"BurnSmith-Setup-{v}-*.exe").SingleOrDefault() is { } got && File.ReadAllBytes(got).SequenceEqual(body));
+        static bool Refused(Action act) { try { act(); return false; } catch (IOException) { return true; } }
+        Up("the checked download cannot be changed before it runs as administrator", Directory.GetFiles(updates, $"BurnSmith-Setup-{v}-*.exe").Single() is var checkedSetup
+            && Refused(() => File.OpenWrite(checkedSetup).Dispose()) && Refused(() => File.Delete(checkedSetup)));
         Up("wrong digest: refused, the download does not stay", await Download(new string('0', 64)) is IOException && Directory.GetFiles(updates, $"BurnSmith-Setup-{v}-*.exe").Length == 0);
         server.Stop();
         Environment.SetEnvironmentVariable("TMP", realTmp);
@@ -820,11 +823,12 @@ if (a.Count >= 1 && a[0] == "check-edit")
             Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=s=640x360:d=1", "-pix_fmt", "yuv420p", "-c:v", "libx264", .. settings, F(name)]);
         Check("two clips of one size and codec but another H.264 profile or reordering are not joined; the same clip is",
               !MediaMaker.SameLayout(BluRay.Probe(F("x.mkv")), BluRay.Probe(F("y.mkv"))) && MediaMaker.SameLayout(BluRay.Probe(F("x.mkv")), BluRay.Probe(F("x.mkv"))));
-        // the video editor's effects as one ffmpeg graph: turned, cropped, coloured, a watermark and a burnt subtitle read from a folder with a space in its name
-        Directory.CreateDirectory(F("a b"));
-        File.WriteAllText(F("a b/s.srt"), "1\r\n00:00:00,000 --> 00:00:10,000\r\nBonjour\r\n");
+        // the video editor's effects as one ffmpeg graph: turned, cropped, coloured, a watermark and a burnt subtitle from names with a space, an apostrophe, a comma, brackets and a semicolon (each special to ffmpeg's filter graph)
+        File.Copy(F("b.jpg"), F("l'b.jpg"), true);
+        Directory.CreateDirectory(F("d'été, [1]; b"));
+        File.WriteAllText(F("d'été, [1]; b/s.srt"), "1\r\n00:00:00,000 --> 00:00:10,000\r\nBonjour\r\n");
         var fx = new VideoEffects(Rotate: 90, CropLeft: 40, CropRight: 60, CropTop: 10, Brightness: 20, WhiteBalance: 30, Look: "Sépia",
-                                  Watermark: F("b.jpg"), WatermarkWidth: 0.25, WatermarkOpacity: 50, BurnSubtitle: F("a b/s.srt"), BurnDelay: 2);
+                                  Watermark: F("l'b.jpg"), WatermarkWidth: 0.25, WatermarkOpacity: 50, BurnSubtitle: F("d'été, [1]; b/s.srt"), BurnDelay: 2);
         Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", F("a.png"), "-vf", fx.Vf(800, 600, 3, "null"), F("fx.png")]);
         var fxOut = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", F("fx.png")]).Trim();
         Check("video effects: rotation, crop, colour, watermark and a burnt subtitle make one graph ffmpeg runs; the picture is 600x800 less the crop",
