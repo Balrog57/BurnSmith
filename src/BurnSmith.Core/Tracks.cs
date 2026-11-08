@@ -172,6 +172,7 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// <see cref="Effects"/>: rotation, crop, colour, watermark and burnt subtitle drawn into the picture (null = none).
 /// <see cref="Clips"/>: the parts kept when there are several (DVDFab's "output clips"), in order and in seconds of the source; <see cref="Start"/> and
 /// <see cref="End"/> are then the first one's start and the last one's end, and what lies between two clips (<see cref="Gaps"/>) is left out of the disc.
+/// <see cref="ThumbAt"/>: the moment of the video on the disc (seconds after its start) its menu thumbnail is taken from, null = a tenth of the way in; <see cref="ThumbImage"/>: a picture file used instead.
 /// <see cref="TrackLanguage"/>: languages set by hand on the video's own tracks (key <see cref="LanguageKey"/>, value an ISO 639-2 code), for a track the file leaves "und" or mislabels.
 /// </summary>
 /// <summary>One part of a video kept on the disc, from <see cref="From"/> to <see cref="To"/> seconds of the source.</summary>
@@ -181,7 +182,7 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
                                double Start = 0, double? End = null, int Volume = 100, IReadOnlyList<double>? ChapterAt = null,
                                IReadOnlyList<ExternalSubtitle>? External = null, bool Bonus = false, int? DefaultAudio = null, int? DefaultSubtitle = null,
                                int? ChapterMinutes = null, bool Intro = false, IReadOnlyDictionary<string, string>? TrackLanguage = null,
-                               VideoEffects? Effects = null, IReadOnlyList<Clip>? Clips = null)
+                               VideoEffects? Effects = null, IReadOnlyList<Clip>? Clips = null, double? ThumbAt = null, string? ThumbImage = null)
 {
     public string DisplayName => Name ?? Readable(Video).Name;
 
@@ -218,7 +219,7 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
     }
 
     /// <summary>Every file the title reads: the video, its subtitle files, and the effects' burnt subtitle and watermark.</summary>
-    public IEnumerable<string?> Files => [Video, .. External?.Select(e => e.File) ?? [], Effects?.BurnSubtitle, Effects?.Watermark];
+    public IEnumerable<string?> Files => [Video, .. External?.Select(e => e.File) ?? [], Effects?.BurnSubtitle, Effects?.Watermark, ThumbImage];
 
     /// <summary>The files a build reads (titles and menu), which its output and work folders must not hold: see <see cref="Tools.KeepInputs"/>.</summary>
     public static IEnumerable<string?> Inputs(IEnumerable<DiscTitle> titles, Menu.MenuDesign? menu) =>

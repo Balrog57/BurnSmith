@@ -112,6 +112,12 @@ public sealed class MenuDesign
     /// A template that describes such a list places the lines itself; the others fall back to the grid.
     /// </summary>
     public bool SceneList { get; set; }
+    /// <summary>No main page: the first scene (or episode) page is the menu, with play, bonus and settings under its grid. Nothing changes when there is no grid.</summary>
+    public bool ScenesOnly { get; set; }
+    /// <summary>A disc of several videos leaves its first one out of the episode pages; « Tout lire » still plays it first.</summary>
+    public bool SkipFirstScene { get; set; }
+    /// <summary>The Bonus page as text buttons, without thumbnails (a template's list when it describes one).</summary>
+    public bool BonusText { get; set; }
     /// <summary>Square corners instead of rounded ones.</summary>
     public bool Square { get; set; }
     public string CardFill { get; set; } = "#111827";

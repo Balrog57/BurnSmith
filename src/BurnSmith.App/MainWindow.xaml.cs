@@ -67,13 +67,17 @@ public partial class MainWindow : Window
         public string SubText => Summary(Subs.OrderBy(i => i == DefaultSub ? 0 : 1).Select(i => (Tracks.Subtitles.FirstOrDefault(t => t.Index == i)?.Name ?? "?") + (i == DefaultSub ? " (défaut)" : "")).ToList());
 
         static string Summary(List<string> names) => names.Count == 0 ? "Aucun" : names.Count == 1 ? names[0] : $"{names[0]} +{names.Count - 1}";
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects, Clips);
+        /// <summary>The menu thumbnail: a moment of the video on the disc, or a picture (see <see cref="DiscTitle.ThumbAt"/>); both null = automatic.</summary>
+        public double? ThumbAt { get; set; }
+        public string? ThumbImage { get; set; }
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects, Clips, ThumbAt, ThumbImage);
 
         /// <summary>Another row for the same video with the same settings (a title cut in two).</summary>
         public Entry Clone() => new(Path, Info)
         {
             Name = Name, Audio = [.. Audio], Subs = [.. Subs], Extra = [.. Extra], Start = Start, End = End, Volume = Volume, ChapterAt = ChapterAt,
             ChapterMinutes = ChapterMinutes, Bonus = Bonus, Intro = Intro, DefaultAudio = DefaultAudio, DefaultSub = DefaultSub, TrackLanguage = new(TrackLanguage), Effects = Effects, Clips = Clips,
+            ThumbAt = ThumbAt, ThumbImage = ThumbImage,
         };
     }
 
@@ -605,6 +609,33 @@ public partial class MainWindow : Window
         };
         intro.Click += (_, _) => SetIntro(entry, intro.IsChecked);
         menu.Items.Add(intro);
+        // the picture of this video in the menu: a moment of it, or an image file
+        var thumbAt = new MenuItem { Header = entry.ThumbAt is { } at ? $"Vignette du menu : à {Timecode.Format(at)}…" : "Vignette du menu : choisir le moment…" };
+        thumbAt.Click += (_, _) =>
+        {
+            var length = (entry.End ?? entry.Info.Duration) - entry.Start;
+            if (Prompt.Ask(this, "Vignette du menu : moment de la vidéo (h:mm:ss, depuis son début sur le disque)", Timecode.Format(entry.ThumbAt ?? Math.Floor(length * 0.1))) is not { } text) return;
+            if (Timecode.Parse(text.Trim()) is not { } t || t < 0 || t > length)
+            {
+                MessageBox.Show(this, $"Entrez un moment entre 0:00:00 et {Timecode.Format(length)}.", "Vignette du menu", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            (entry.ThumbAt, entry.ThumbImage) = (t, null);
+        };
+        menu.Items.Add(thumbAt);
+        var thumbImage = new MenuItem { Header = entry.ThumbImage is { } img ? $"Vignette du menu : {System.IO.Path.GetFileName(img)}…" : "Vignette du menu : choisir une image…" };
+        thumbImage.Click += (_, _) =>
+        {
+            var dlg = new OpenFileDialog { Title = "Image de la vignette", Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.webp|Tous les fichiers|*.*" };
+            if (dlg.ShowDialog(this) == true) (entry.ThumbImage, entry.ThumbAt) = (dlg.FileName, null);
+        };
+        menu.Items.Add(thumbImage);
+        if (entry.ThumbAt != null || entry.ThumbImage != null)
+        {
+            var auto = new MenuItem { Header = "Vignette du menu : automatique" };
+            auto.Click += (_, _) => (entry.ThumbAt, entry.ThumbImage) = (null, null);
+            menu.Items.Add(auto);
+        }
         // SplitEntry / JoinWithNext are kept but out of the menu for now (Marc, 2026-11-07)
         menu.IsOpen = true;
     }

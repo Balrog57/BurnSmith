@@ -283,7 +283,16 @@ public static class Dvd
         }
         var mainCount = job.Titles.Count(t => !t.Bonus);
         var series = mainCount > 1; // the extras do not make a series of a film
-        TitleEntry Entry(int i, string name) => new(job.Titles[i].DisplayName, i + 1, Thumb(name, i, sources[i].Duration * 0.1, 480, 270));
+        // a picture chosen for the title (see DiscTitle.ThumbImage), fitted like a frame; unreadable = the frame of the video
+        string? Cover(string name, string image, int tw, int th)
+        {
+            var file = Path.Combine(thumbs, name + ".jpg");
+            try { Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", image, "-frames:v", "1", "-q:v", "2", "-vf", $"scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}", file]); }
+            catch (InvalidOperationException) { log($"warning: {Path.GetFileName(image)} is not a picture ffmpeg can read: the thumbnail comes from the video"); return null; }
+            return file;
+        }
+        TitleEntry Entry(int i, string name) => new(job.Titles[i].DisplayName, i + 1, (job.Titles[i].ThumbImage is { } img ? Cover(name, img, 480, 270) : null)
+            ?? Thumb(name, i, job.Titles[i].ThumbAt ?? sources[i].Duration * 0.1, 480, 270));
         var content = new MenuContent(1, Thumb("preview", 0, sources[0].Duration * 0.1, 800, 450),
             series ? [] : movies[0].ChapterTimes.Select((t, i) => Thumb($"c{i + 1}", 0, t + 3, 480, 270)).ToList(),
             series ? Enumerable.Range(0, mainCount).Select(i => Entry(i, $"t{i + 1}")).ToList() : null,

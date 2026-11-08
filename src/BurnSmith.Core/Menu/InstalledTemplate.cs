@@ -568,13 +568,18 @@ public sealed class InstalledTemplate
         var perPage = listItems.Count > 0 ? listItems.Count : scene.Child("videoes")!.Children("video").Count();
         var total = cells.Count > 1 ? (cells.Count + perPage - 1) / perPage : 0;
         // a template with no menu of its own: its first page of thumbnails, with the poster and the title, is the menu
-        var pages = new List<MenuPage> { IsAllInOne && total > 0 ? Scenes(d, cells, 1, total, perPage, d.Title, c.PreviewPicture, c) : Root(d, c, cells.Count > 1) };
-        for (var i = IsAllInOne && total > 0 ? 2 : 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, c.Series ? d.EpisodesLabel : d.ScenesLabel, c.PreviewPicture));
+        var pages = new List<MenuPage> { (IsAllInOne || d.ScenesOnly) && total > 0 ? Scenes(d, cells, 1, total, perPage, d.Title, c.PreviewPicture, c) : Root(d, c, cells.Count > 1) };
+        for (var i = (IsAllInOne || d.ScenesOnly) && total > 0 ? 2 : 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, c.Series ? d.EpisodesLabel : d.ScenesLabel, c.PreviewPicture));
         if (c.HasBonus) // the template has no Bonus page: its scene page layout lists the extras
         {
             var bonus = MenuBuilder.BonusCells(c);
-            var bonusPages = MenuBuilder.PageCount(bonus.Count, perPage);
-            for (var i = 1; i <= bonusPages; i++) pages.Add(Scenes(d, bonus, i, bonusPages, perPage, d.BonusLabel, c.PreviewPicture, prefix: "bonus"));
+            // text Bonus page: the template's list of lines when it has one, else its thumbnail grid as before
+            var bonusList = d.BonusText ? scene.Child("list")?.Children("item").Count() ?? 0 : 0;
+            var look = d;
+            if (bonusList > 0) { look = d.Clone(); look.SceneList = true; }
+            var bonusPerPage = bonusList > 0 ? bonusList : perPage;
+            var bonusPages = MenuBuilder.PageCount(bonus.Count, bonusPerPage);
+            for (var i = 1; i <= bonusPages; i++) pages.Add(Scenes(look, bonus, i, bonusPages, bonusPerPage, d.BonusLabel, c.PreviewPicture, prefix: "bonus"));
         }
         if (c.HasSettings) pages.AddRange(SettingsIds(c).Select(id => MenuBuilder.Settings(d, c, null, null, id))); // BurnSmith's own rows when the template has none
         if (d.CreditLines().Count > 0) pages.Add(MenuBuilder.Credits(d, SetupBackdrop(c.PreviewPicture))); // the template has no such page: its background under a veil
@@ -584,7 +589,7 @@ public sealed class InstalledTemplate
     bool IsAllInOne => template.Child("rootmenu")?.Attr("allinone") == "1";
 
     /// <summary>The page id of page <paramref name="number"/> of a list (scenes, bonus): the first scene page is the root when the template has no menu of its own.</summary>
-    string PageId(string prefix, int number) => number == 1 && IsAllInOne && prefix == "scenes" ? "root" : $"{prefix}{number}";
+    string PageId(MenuDesign d, string prefix, int number) => number == 1 && (IsAllInOne || d.ScenesOnly) && prefix == "scenes" ? "root" : $"{prefix}{number}";
 
     /// <summary>Capsules for the buttons the template has no picture for, in one row from <paramref name="x0"/>: the caller says where the row goes.</summary>
     static void Capsules(List<Op> ops, List<MenuButton> buttons, MenuDesign d, List<(string Id, string Label, MenuAction Action)> pills, int x0, int y, int w, int h, int gap, int size)
@@ -785,15 +790,15 @@ public sealed class InstalledTemplate
             ops.Add(new Image(file, box));
             buttons.Add(Dvd(new MenuButton(id, box, action) { FocusImage = Selected(file) }));
         }
-        if (number > 1) Nav("prev", "left", "leftbuttontimage", "<", new MenuAction("page", PageId(prefix, number - 1)));
+        if (number > 1) Nav("prev", "left", "leftbuttontimage", "<", new MenuAction("page", PageId(d, prefix, number - 1)));
         if (root == null) Nav("home", "home", "homebuttontimage", "⌂", new MenuAction("page", "root"));
-        if (number < total) Nav("next", "right", "rightbuttontimage", ">", new MenuAction("page", PageId(prefix, number + 1)));
+        if (number < total) Nav("next", "right", "rightbuttontimage", ">", new MenuAction("page", PageId(d, prefix, number + 1)));
         // whatever the template drew, a scene page must lead back to the menu and on to its neighbours: BurnSmith adds the missing buttons at the bottom
         bool Has(string id) => buttons.Any(b => b.Id == id);
         if (root == null && !Has("home")) Glyph("home", new Box(MenuBuilder.W / 2 - 55, MenuBuilder.H - 110, 110, 70), "⌂", new MenuAction("page", "root"));
-        if (number > 1 && !Has("prev")) Glyph("prev", new Box(MenuBuilder.W / 2 - 195, MenuBuilder.H - 110, 110, 70), "<", new MenuAction("page", PageId(prefix, number - 1)));
-        if (number < total && !Has("next")) Glyph("next", new Box(MenuBuilder.W / 2 + 85, MenuBuilder.H - 110, 110, 70), ">", new MenuAction("page", PageId(prefix, number + 1)));
-        return new MenuPage(PageId(prefix, number), ops, Link(buttons)) { Zones = zones };
+        if (number > 1 && !Has("prev")) Glyph("prev", new Box(MenuBuilder.W / 2 - 195, MenuBuilder.H - 110, 110, 70), "<", new MenuAction("page", PageId(d, prefix, number - 1)));
+        if (number < total && !Has("next")) Glyph("next", new Box(MenuBuilder.W / 2 + 85, MenuBuilder.H - 110, 110, 70), ">", new MenuAction("page", PageId(d, prefix, number + 1)));
+        return new MenuPage(PageId(d, prefix, number), ops, Link(buttons)) { Zones = zones };
     }
 
     /// <summary>Row width of the audio list: the BD-J menu draws its "active" dot a fixed distance from each row's left edge.</summary>

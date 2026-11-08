@@ -99,7 +99,7 @@ public static class MenuBuilder
     internal sealed record Cell(string Id, string Label, string? Picture, MenuAction Action);
 
     internal static List<Cell> Cells(MenuDesign d, MenuContent c) => c.Series
-        ? c.Titles!.Select((t, i) => new Cell($"e{i + 1}", t.Name, t.Picture, new MenuAction("play", Playlist: t.Playlist))).ToList()
+        ? c.Titles!.Select((t, i) => new Cell($"e{i + 1}", t.Name, t.Picture, new MenuAction("play", Playlist: t.Playlist))).Skip(d.SkipFirstScene ? 1 : 0).ToList()
         : c.ChapterPictures.Select((p, i) => new Cell($"c{i + 1}", $"{d.ChapterLabel} {i + 1}", p, new MenuAction("chapter", Playlist: c.Playlist, Mark: i))).ToList();
 
     /// <summary>The Bonus page's buttons: each plays its video on its own and the disc then comes back to the menu.</summary>
@@ -222,14 +222,16 @@ public static class MenuBuilder
     {
         if (Pack(d) is { } pack) return pack.Pages(d, c);
         var cells = Cells(d, c);
-        var pages = new List<MenuPage> { Root(d, c, cells.Count > 1) };
+        List<MenuPage> pages = d.ScenesOnly && cells.Count > 1 ? [] : [Root(d, c, cells.Count > 1)]; // scenes only: the first scene page is the menu
         var gridPages = cells.Count > 1 ? (cells.Count + PerPage(d) - 1) / PerPage(d) : 0;
         for (var i = 1; i <= gridPages; i++) pages.Add(Grid(d, c, cells, i, gridPages));
         if (c.HasBonus)
         {
             var bonus = BonusCells(c);
             var bonusPages = PageCount(bonus.Count, PerPage(d));
-            for (var i = 1; i <= bonusPages; i++) pages.Add(Grid(d, c, bonus, i, bonusPages, "bonus", d.BonusLabel));
+            var look = d.BonusText ? d.Clone() : d;
+            look.Thumbnails = !d.BonusText && d.Thumbnails;
+            for (var i = 1; i <= bonusPages; i++) pages.Add(Grid(look, c, bonus, i, bonusPages, "bonus", d.BonusLabel));
         }
         if (c.HasSettings) pages.Add(Settings(d, c, null, null));
         if (d.CreditLines().Count > 0) pages.Add(Credits(d, null));
@@ -276,16 +278,7 @@ public static class MenuBuilder
             zones.Add(new("poster", new Box(560, 250, 800, 450)));
         }
 
-        var entries = new List<(string Id, string Text, MenuAction Action)>
-        {
-            c.Series
-                ? ("play", d.PlayAllLabel, new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count))
-                : ("play", d.PlayLabel, new MenuAction("play", Playlist: c.Playlist)),
-        };
-        if (withGrid) entries.Add(("scenes", c.Series ? d.EpisodesLabel : d.ScenesLabel, new MenuAction("page", "scenes1")));
-        if (c.HasBonus) entries.Add(("bonus", d.BonusLabel, new MenuAction("page", "bonus1")));
-        if (c.HasSettings) entries.Add(("settings", d.SettingsLabel, new MenuAction("page", "settings")));
-        if (d.CreditLines().Count > 0) entries.Add(("credits", d.CreditsLabel, new MenuAction("page", "credits")));
+        var entries = RootEntries(d, c, withGrid);
 
         var n = entries.Count;
         // up to 4 buttons keep BurnSmith's 400 px; 5 (Play, Scenes, Bonus, Settings, Credits) would not fit the 1920 px screen, so they narrow
@@ -323,6 +316,25 @@ public static class MenuBuilder
         ops.AddRange(Button(d, back, d.BackLabel, 46));
         return new MenuPage("credits", ops, [new MenuButton("back", back, new MenuAction("page", "root"))]);
     }
+
+    /// <summary>The main menu's buttons: play (all), the scene grid, bonus, settings, credits; the grid one only when it is <paramref name="withGrid"/>.</summary>
+    internal static List<(string Id, string Text, MenuAction Action)> RootEntries(MenuDesign d, MenuContent c, bool withGrid)
+    {
+        var entries = new List<(string Id, string Text, MenuAction Action)>
+        {
+            c.Series
+                ? ("play", d.PlayAllLabel, new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count))
+                : ("play", d.PlayLabel, new MenuAction("play", Playlist: c.Playlist)),
+        };
+        if (withGrid) entries.Add(("scenes", c.Series ? d.EpisodesLabel : d.ScenesLabel, new MenuAction("page", "scenes1")));
+        if (c.HasBonus) entries.Add(("bonus", d.BonusLabel, new MenuAction("page", "bonus1")));
+        if (c.HasSettings) entries.Add(("settings", d.SettingsLabel, new MenuAction("page", "settings")));
+        if (d.CreditLines().Count > 0) entries.Add(("credits", d.CreditsLabel, new MenuAction("page", "credits")));
+        return entries;
+    }
+
+    /// <summary>The id of scene page <paramref name="number"/>: with <see cref="MenuDesign.ScenesOnly"/> the first one is the menu itself.</summary>
+    static string GridId(MenuDesign d, string prefix, int number) => number == 1 && prefix == "scenes" && d.ScenesOnly ? "root" : $"{prefix}{number}";
 
     /// <summary>Cell rectangles of a scene page: BurnSmith's original 3x2 geometry, or the ratio geometry (margins, gap, header, footer) of the design.</summary>
     static (List<Box> Cells, int HeaderY, int HeaderH, int NavY, int NavH, bool Original) GridGeometry(MenuDesign d)
@@ -365,8 +377,13 @@ public static class MenuBuilder
         var nav = new List<(string Id, Box Rect, MenuAction Action, string Text)>();
         var x0 = slots[0].X;
         var navW = Math.Min(240, slots[0].W);
-        if (number > 1) nav.Add(("prev", new Box(x0, navY, navW, navH), new MenuAction("page", $"{prefix}{number - 1}"), "<"));
-        nav.Add(("home", new Box((W - 300) / 2, navY, 300, navH), new MenuAction("page", "root"), d.HomeLabel));
+        if (number > 1) nav.Add(("prev", new Box(x0, navY, navW, navH), new MenuAction("page", GridId(d, prefix, number - 1)), "<"));
+        // the page that is the menu (scenes only) carries the menu's own buttons between the arrows, the others a way back to it
+        var center = GridId(d, prefix, number) == "root" ? RootEntries(d, c, false) : [("home", d.HomeLabel, new MenuAction("page", "root"))];
+        var between = W - 2 * (x0 + navW + 20);
+        var centerW = Math.Min(300, (between - 20 * (center.Count - 1)) / center.Count);
+        var centerX = (W - (centerW * center.Count + 20 * (center.Count - 1))) / 2;
+        for (var k = 0; k < center.Count; k++) nav.Add((center[k].Id, new Box(centerX + k * (centerW + 20), navY, centerW, navH), center[k].Action, center[k].Text));
         if (number < total) nav.Add(("next", new Box(W - x0 - navW, navY, navW, navH), new MenuAction("page", $"{prefix}{number + 1}"), ">"));
 
         var zones = new List<MenuZone>();
@@ -376,7 +393,7 @@ public static class MenuBuilder
             var r = slots[i];
             var cell = cells[first + i];
             void Named(Box at) { if (cell.Action.Kind == "play") zones.Add(new($"name:{cell.Action.Playlist}", at)); }
-            if (original)
+            if (original && d.Thumbnails)
             {
                 if (cell.Picture is { } pic) ops.Add(new Picture(pic, r, 12, 0));
                 else ops.Add(new Fill(r, "#000000", 0.4, 12));
@@ -406,7 +423,7 @@ public static class MenuBuilder
                 Left = i % cols > 0 ? Id(i - 1) : null,
                 Right = i % cols < cols - 1 ? Id(i + 1) : null,
                 Up = row > 0 ? Id(i - cols) : null,
-                Down = row < rows - 1 && i + cols < count ? Id(i + cols) : "home",
+                Down = row < rows - 1 && i + cols < count ? Id(i + cols) : center[0].Id,
             });
         }
         foreach (var (id, rect, action, text) in nav)
@@ -420,7 +437,7 @@ public static class MenuBuilder
                 Up = cells[first + count - 1].Id, // back to the last thumbnail
             });
         }
-        return new MenuPage($"{prefix}{number}", ops, buttons) { Zones = zones };
+        return new MenuPage(GridId(d, prefix, number), ops, buttons) { Zones = zones };
     }
 
     /// <summary>

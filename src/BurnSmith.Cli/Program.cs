@@ -39,6 +39,8 @@ if (a.Count >= 3 && a[0] == "preview")
         int.TryParse(Opt("--bonus"), out var extras) && extras > 0 ? Enumerable.Range(0, extras).Select(i => new TitleEntry($"Bonus {i + 1}", Math.Max(episodes, 1) + 1 + i, pic)).ToList() : null);
     chosen.Title = "My Blu-ray";
     if (a.Contains("--list")) chosen.SceneList = true; // la page de scènes en liste, quand le modèle la décrit
+    if (a.Contains("--scenes-only")) chosen.ScenesOnly = true;
+    if (a.Contains("--bonus-text")) chosen.BonusText = true;
     if (Opt("--credits") is { } sampleCredits) chosen.Credits = sampleCredits.Replace('|', '\n');
     foreach (var spec in OptAll("--element")) chosen.Elements.Add(MenuElement.Parse(spec));
     var files = MenuRenderer.Sta(() => MenuBuilder.Build(chosen, sample).Select(page => (page.Id, Jpeg: MenuRenderer.Background(chosen, page))).ToList());
@@ -183,6 +185,23 @@ if (a.Count >= 1 && a[0] == "check-highlights")
     var hlPlain = TemplateCatalog.Find("Nuit d'encre") ?? new MenuDesign();
     Check("un modèle sans artwork garde le cadre à quatre couleurs (aucune image de surbrillance nommée)",
           hlPlain.TemplateDir == null && MenuBuilder.Build(hlPlain, hlContent).All(p => p.Buttons.All(b => b.DvdHighlightImage == null)));
+
+    // scene and Bonus page options, on a design of BurnSmith and on a template: scenes only, first video left out, text Bonus page
+    var season = new MenuContent(1, null, [], [.. Enumerable.Range(1, 4).Select(i => new TitleEntry($"Épisode {i}", i, null))], null, null,
+                                 [new TitleEntry("Making-of", 5, null), new TitleEntry("Bande-annonce", 6, null)]);
+    foreach (var model in new[] { hlPlain, TemplateCatalog.Default() })
+    {
+        MenuDesign With(Action<MenuDesign> set) { var m = model.Clone(); set(m); return m; }
+        var only = MenuBuilder.Build(With(m => m.ScenesOnly = true), season);
+        var skip = MenuBuilder.Build(With(m => m.SkipFirstScene = true), season);
+        Check($"{model.Name} : menu limité aux scènes (la page de scènes est le menu, avec Lecture), sans la 1re vidéo (pas de case e1, « Tout lire » reste)",
+              only[0].Id == "root" && only[0].Buttons.Any(b => b.Id == "e1") && only[0].Buttons.Any(b => b.Action.Kind == "playall") && only.All(p => p.Id != "scenes1")
+              && skip.SelectMany(p => p.Buttons).All(b => b.Id != "e1") && skip.SelectMany(p => p.Buttons).Any(b => b.Id == "e2")
+              && skip.First(p => p.Id == "root").Buttons.Any(b => b.Action.Kind == "playall"));
+    }
+    var textBonus = MenuBuilder.Build(With2(hlPlain, m => m.BonusText = true), season).First(p => p.Id == "bonus1");
+    Check("page Bonus en texte : pas d'image sur la page, ses deux boutons y sont", textBonus.Ops.All(o => o is not Picture) && textBonus.Buttons.Count(b => b.Id.StartsWith('b')) == 2);
+    static MenuDesign With2(MenuDesign model, Action<MenuDesign> set) { var m = model.Clone(); set(m); return m; }
 
     // the three highlight styles: a box, an underline, or the label in colour
     var hlPageRoot = MenuBuilder.Build(hlPlain, hlContent).First(q => q.Id == "root");
@@ -1408,6 +1427,9 @@ if (design != null && Opt("--highlight") is { } hlStyle) design.HighlightStyle =
 if (design != null && a.Contains("--list")) design.SceneList = true; // page de scènes en liste (modèles qui la décrivent)
 if (design != null && a.Contains("--animated-thumbs")) design.AnimatedThumbs = true; // vignettes animées (DVD : un extrait par case)
 if (design != null && a.Contains("--popup")) design.Popup = true; // menu pop-up Blu-ray (sans effet sur un DVD)
+if (design != null && a.Contains("--scenes-only")) design.ScenesOnly = true; // la première page de scènes est le menu
+if (design != null && a.Contains("--skip-first-scene")) design.SkipFirstScene = true; // série : pas de case pour la première vidéo
+if (design != null && a.Contains("--bonus-text")) design.BonusText = true; // page Bonus en texte
 if (design != null && Opt("--popup-main") is { } popupMain) design.MainMenuLabel = popupMain; // son bouton « menu principal »
 if (design != null && Opt("--popup-resume") is { } popupResume) design.ResumeLabel = popupResume;
 if (design != null && Opt("--credits") is { } credits) design.Credits = credits.Replace('|', '\n'); // --credits "Directed by A|Music by B"
@@ -1470,7 +1492,8 @@ var titles = videos.Select((v, k) =>
     }
     return new DiscTitle(v, null, Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes, own.Contains("--intro"), trackLanguage,
                           Own("--effects") is { } fx ? System.Text.Json.JsonSerializer.Deserialize<VideoEffects>(File.ReadAllText(fx)) : null, // --effects FILE.json: the video editor's settings (VideoEffects, by property name)
-                          clipList);
+                          clipList,
+                          Own("--thumb-at") is { } thumbAt ? Time(thumbAt) : null, Own("--thumb") is { } thumb ? Path.GetFullPath(thumb) : null); // the menu thumbnail: a moment of the video, or a picture
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
 // bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (default fit = "Adapter au disque"; up to 60000 with --uhd, where --reencode = "Conversion"),

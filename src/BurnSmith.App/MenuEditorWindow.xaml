@@ -311,6 +311,9 @@
             <TextBlock Text="Titre du disque par langue, Blu-ray (une ligne par langue, ex. fra: Mon disque)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
             <TextBox Text="{Binding TitlesByLanguage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" VerticalScrollBarVisibility="Auto"/>
             <CheckBox Content="Afficher l'aperçu du film" IsChecked="{Binding ShowPreview}" Margin="0,16,0,12"/>
+            <CheckBox Content="Menu limité aux scènes : la première page de scènes ou d'épisodes est le menu" IsChecked="{Binding ScenesOnly}" Margin="0,0,0,4"/>
+            <CheckBox Content="Série : la première vidéo n'a pas sa case dans les épisodes (« Tout lire » la joue)" IsChecked="{Binding SkipFirstScene}" Margin="0,0,0,4"/>
+            <CheckBox Content="Page Bonus en texte, sans vignettes" IsChecked="{Binding BonusText}" Margin="0,0,0,12"/>
             <CheckBox x:Name="PopupBox" Content="Menu pop-up (Blu-ray) : la touche Pop-up ouvre un menu par-dessus le film" IsChecked="{Binding Popup}" Margin="0,0,0,4"/>
             <TextBlock Text="Pop-up : bouton reprendre" Style="{StaticResource Caption}"/>
             <TextBox Text="{Binding ResumeLabel, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsChecked, ElementName=PopupBox}"/>
