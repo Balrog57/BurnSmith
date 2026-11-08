@@ -92,6 +92,24 @@ static class ReliabilityCheck
                 Check("cancelled before it starts: nothing is run or made", what == "cancelled" && !Directory.Exists(F("late") + "_work") && !Directory.Exists(F("late")));
             });
 
+            Part("app ended by force", () =>
+            {
+                // the app alone is killed, as a crash or the Task Manager ends it: KillAll never runs. The control leaves its tool out of the job
+                foreach (var free in new[] { true, false })
+                {
+                    var args = new List<string> { "hold-tool", F("hold.txt") };
+                    if (free) args.Add("--free");
+                    using var app = Process.Start(new ProcessStartInfo(Environment.ProcessPath!, args) { UseShellExecute = false, CreateNoWindow = true })!;
+                    var seen = SpinWait.SpinUntil(() => Alive() == 1, 20000);
+                    app.Kill();
+                    app.WaitForExit();
+                    Thread.Sleep(1000);
+                    var left = Alive(kill: true);
+                    Check(free ? "control: a tool left out of the app's job outlives an app ended by force" : "a tool ends with an app ended by force (crash, Task Manager)",
+                          seen && left == (free ? 1 : 0), $"seen {seen}, still running {left}");
+                }
+            });
+
             Part("process tree", () =>
             {
                 // ffmpeg under cmd holds the pipes after cmd goes, and floods them: a kill of cmd alone, or a read that blocks, would hang here

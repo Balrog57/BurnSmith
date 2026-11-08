@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Xml.Linq;
 
 namespace BurnSmith.Core.Menu;
 
@@ -8,7 +10,7 @@ namespace BurnSmith.Core.Menu;
 /// Draws menu pages with WPF. The editor preview and the disc builders call this same code, so what the user
 /// edits is what ends up on the disc.
 /// </summary>
-public static class MenuRenderer
+public static partial class MenuRenderer
 {
     /// <summary>Runs on an STA thread: WPF drawing needs one, and callers (CLI, background workers) may not have it.</summary>
     public static T Sta<T>(Func<T> work)
@@ -75,18 +77,18 @@ public static class MenuRenderer
         {
             var doc = System.Xml.Linq.XDocument.Load(path);
             var root = doc.Root!;
-            // an imported SVG draws itself only: SharpVectors would follow <image href="file://server/share/x.png"> (Windows then sends the login hash), so links leave the document
+            // an imported SVG draws itself only: a renderer that followed <image href="file://server/share/x.png"> would open it (Windows then sends the login hash), so links leave the document
             doc.DocumentType?.Remove();
             foreach (var link in root.DescendantsAndSelf().SelectMany(e => e.Attributes()).Where(a => a.Name.LocalName == "href" && !a.Value.StartsWith('#') && !a.Value.StartsWith("data:", StringComparison.OrdinalIgnoreCase)).ToList())
                 link.Remove();
             if (size is { } s) { root.SetAttributeValue("width", Math.Round(s.Width)); root.SetAttributeValue("height", Math.Round(s.Height)); }
             double Dim(string name) => double.TryParse(((string?)root.Attribute(name))?.TrimEnd('p', 'x'), System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 100;
             var (w, h) = (Dim("width"), Dim("height"));
+            Simplify(root, w, h);
             using var ms = new MemoryStream();
             doc.Save(ms);
             ms.Position = 0;
-            var settings = new SharpVectors.Renderers.Wpf.WpfDrawingSettings { IncludeRuntime = false, TextAsGeometry = true };
-            var drawing = new SharpVectors.Converters.FileSvgReader(settings).Read(ms);
+            var drawing = Fitted(RoundDashes(new SVGImage.SVG.SVGRender(new NoFiles()).LoadDrawing(ms)), root, w, h);
             // the drawing's own bounds are its ink: framed in its page (w x h) so it lands where the SVG puts it inside the box
             var page = new DrawingGroup { ClipGeometry = new RectangleGeometry(new Rect(0, 0, w, h)) };
             page.Children.Add(new GeometryDrawing(Brushes.Transparent, null, new RectangleGeometry(new Rect(0, 0, w, h))));
@@ -99,6 +101,242 @@ public static class MenuRenderer
         {
             throw new InvalidDataException($"Image illisible : {path}", e);
         }
+    }
+
+    /// <summary>
+    /// The drawing, in the SVG's own units (its viewBox), placed in its width x height as the SVG standard says: scaled to fit and centred unless
+    /// preserveAspectRatio says otherwise ("none" stretches, "slice" fills, xMin / xMax / YMin / YMax align). Without a viewBox the units are the pixels.
+    /// </summary>
+    static Drawing Fitted(Drawing drawing, System.Xml.Linq.XElement root, double w, double h)
+    {
+        if (Placement(root, w, h) is not { } m) return drawing;
+        var placed = new DrawingGroup { Transform = new MatrixTransform(m) };
+        placed.Children.Add(drawing);
+        return placed;
+    }
+
+    /// <summary>Where an element's viewBox lands in a w x h box (see <see cref="Fitted"/>), or null without a viewBox.</summary>
+    static Matrix? Placement(System.Xml.Linq.XElement e, double w, double h)
+    {
+        if (ViewBox(e) is not [var x, var y, var bw, var bh] || !(bw > 0 && bh > 0)) return null;
+        var aspect = ((string?)e.Attribute("preserveAspectRatio") ?? "xMidYMid meet").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var align = aspect.FirstOrDefault() ?? "xMidYMid";
+        double sx = w / bw, sy = h / bh;
+        if (align != "none") sx = sy = aspect.Contains("slice") ? Math.Max(sx, sy) : Math.Min(sx, sy);
+        double fx = align.Contains("xMid") ? 0.5 : align.Contains("xMax") ? 1 : 0, fy = align.Contains("YMid") ? 0.5 : align.Contains("YMax") ? 1 : 0;
+        return new Matrix(sx, 0, 0, sy, (w - bw * sx) * fx - x * sx, (h - bh * sy) * fy - y * sy);
+    }
+
+    static double[]? ViewBox(System.Xml.Linq.XElement e) => ((string?)e.Attribute("viewBox"))?.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries)
+        .Select(v => Number(v) ?? double.NaN).ToArray();
+
+    static double? Number(string s) => double.TryParse(s.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : null;
+
+    /// <summary>A length in units: "50%" of <paramref name="of"/>, "12px" or "12"; null when absent or in another unit.</summary>
+    static double? Length(string? v, double of) => v is null ? null : v.EndsWith('%') ? Number(v[..^1]) * of / 100 : Number(v.EndsWith("px") ? v[..^2] : v);
+
+    static readonly string[] StrokeProperties = ["stroke", "stroke-width", "stroke-opacity", "stroke-dasharray", "stroke-dashoffset", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit"];
+    static readonly string[] FillProperties = ["fill", "fill-opacity", "fill-rule"];
+
+    /// <summary>
+    /// The SVG rewritten in the plainer form SVGImage draws as a browser does. A &lt;use&gt; becomes the copy it stands for and a nested &lt;svg&gt;
+    /// a group placed by its viewBox; #RRGGBBAA becomes a colour and an opacity (SVGImage drops the alpha); hidden parts and &lt;symbol&gt;s (SVGImage
+    /// draws them) are left out, blurred ones (it cannot blur) faded; stroke widths in % become units; an element
+    /// that changes one stroke or fill property gets the others it inherits written on it (SVGImage starts them over, in black); and the
+    /// opacities SVGImage leaves out, a group's and any on a gradient, go down to the children and into faded copies of the gradients.
+    /// </summary>
+    static void Simplify(XElement root, double w, double h)
+    {
+        var (vw, vh) = ViewBox(root) is [_, _, var bw, var bh] && bw > 0 && bh > 0 ? (bw, bh) : (w, h);
+        var ns = root.Name.Namespace;
+        Dictionary<string, XElement> Ids() => root.Descendants().Where(e => e.Attribute("id") is not null).GroupBy(e => (string)e.Attribute("id")!).ToDictionary(g => g.Key, g => g.First());
+        var ids = Ids();
+
+        var budget = 50_000; // elements copied in all: ten <use> of ten <use> of ... would otherwise fill the memory
+        // one in <defs> or a <symbol> waits until a copy brings it out where it is drawn
+        static bool Drawn(XElement use) => use.Name.LocalName == "use" && !use.Ancestors().Any(a => a.Name.LocalName is "defs" or "symbol" or "clipPath" or "mask" or "pattern" or "marker");
+        for (var depth = 0; root.Descendants().Where(Drawn).ToList() is { Count: > 0 } uses; depth++)
+            foreach (var use in uses)
+            {
+                if (depth > 8 || use.Attributes().FirstOrDefault(a => a.Name.LocalName == "href")?.Value is not ['#', .. var id] || !ids.TryGetValue(id, out var target)
+                    || (budget -= target.DescendantsAndSelf().Count()) < 0)
+                {
+                    use.Remove(); // a loop, a missing shape or a bomb of copies draws nothing
+                    continue;
+                }
+                var copy = new XElement(target);
+                copy.Attribute("id")?.Remove();
+                if (copy.Name.LocalName is "symbol" or "svg")
+                {
+                    foreach (var name in (string[])["width", "height"])
+                        copy.SetAttributeValue(name, (string?)use.Attribute(name) ?? (copy.Name.LocalName == "svg" ? (string?)copy.Attribute(name) : null) ?? "100%");
+                    copy.SetAttributeValue("x", null);
+                    copy.SetAttributeValue("y", null);
+                    copy.Name = ns + "svg";
+                }
+                double x = Length((string?)use.Attribute("x"), vw) ?? 0, y = Length((string?)use.Attribute("y"), vh) ?? 0;
+                var group = new XElement(ns + "g", use.Attributes().Where(a => a.Name.LocalName is not ("href" or "x" or "y" or "width" or "height")), copy);
+                group.SetAttributeValue("transform", ((string?)use.Attribute("transform") + $" translate({Css(x)} {Css(y)})").Trim());
+                use.ReplaceWith(group);
+            }
+
+        var viewports = new Dictionary<XElement, (double W, double H)> { [root] = (vw, vh) };
+        foreach (var svg in root.Descendants().Where(e => e.Name.LocalName == "svg").ToList())
+        {
+            var (pw, ph) = viewports[svg.Ancestors().First(viewports.ContainsKey)];
+            double x = Length((string?)svg.Attribute("x"), pw) ?? 0, y = Length((string?)svg.Attribute("y"), ph) ?? 0;
+            double sw = Length((string?)svg.Attribute("width"), pw) ?? pw, sh = Length((string?)svg.Attribute("height"), ph) ?? ph;
+            var m = Placement(svg, sw, sh) ?? Matrix.Identity;
+            m.Translate(x, y);
+            viewports[svg] = ViewBox(svg) is [_, _, var bw2, var bh2] && bw2 > 0 && bh2 > 0 ? (bw2, bh2) : (sw, sh);
+            foreach (var name in (string[])["x", "y", "width", "height", "viewBox", "preserveAspectRatio"]) svg.Attribute(name)?.Remove();
+            // shortcut: the nested box does not clip what overflows it; DVDStyler's buttons stay inside theirs
+            svg.SetAttributeValue("transform", ((string?)svg.Attribute("transform") + $" matrix({Css(m.M11)} {Css(m.M12)} {Css(m.M21)} {Css(m.M22)} {Css(m.OffsetX)} {Css(m.OffsetY)})").Trim());
+            svg.Name = ns + "g";
+        }
+
+        var own = root.DescendantsAndSelf().ToDictionary(e => e, Declared);
+        foreach (var e in root.Descendants().ToList())
+        {
+            if (!e.Ancestors().Contains(root)) continue; // inside a part already left out
+            var p = own[e];
+            var blur = p.GetValueOrDefault("filter") is { } f && UrlRef().Match(f) is { Success: true } u && ids.TryGetValue(u.Groups[1].Value, out var filter)
+                ? filter.Descendants().Where(d => d.Name.LocalName == "feGaussianBlur").SelectMany(d => ((string?)d.Attribute("stdDeviation") ?? "").Split([' ', ','], StringSplitOptions.RemoveEmptyEntries))
+                    .Select(v => Number(v) ?? 0).DefaultIfEmpty(0).Max()
+                : 0;
+            if (e.Name.LocalName == "symbol"
+                || (p.GetValueOrDefault("visibility") == "hidden" || p.GetValueOrDefault("display") == "none") && !e.Descendants().Any(d => own[d].GetValueOrDefault("visibility") == "visible"))
+            {
+                e.Remove();
+                continue;
+            }
+            // shortcut: SVGImage cannot blur, so a blur of a unit or more (a shadow, a glow) is drawn sharp at half its opacity, its ink being spread thinner
+            if (blur >= 1) Declare(e, p, "opacity", Css((Number(p.GetValueOrDefault("opacity") ?? "1") ?? 1) / 2));
+            foreach (var (paint, opacity) in (ReadOnlySpan<(string, string)>)[("fill", "fill-opacity"), ("stroke", "stroke-opacity"), ("stop-color", "stop-opacity")])
+                if (p.GetValueOrDefault(paint) is { } colour && Rgba().Match(colour) is { Success: true } rgba)
+                {
+                    Declare(e, p, paint, "#" + rgba.Groups[1].Value);
+                    Declare(e, p, opacity, Css((Number(p.GetValueOrDefault(opacity) ?? "1") ?? 1) * Convert.ToInt32(rgba.Groups[2].Value, 16) / 255));
+                }
+            if (p.GetValueOrDefault("stroke-width") is { } width && width.EndsWith('%') && Length(width, Math.Sqrt((vw * vw + vh * vh) / 2)) is { } units)
+                Declare(e, p, "stroke-width", Css(units));
+            if (e.Name.LocalName is "rect" or "circle" or "ellipse" or "line" or "image" or "text") // SVGImage takes an rx="45%" of the height, not the width
+            {
+                var (pw, ph) = viewports[e.Ancestors().First(viewports.ContainsKey)];
+                foreach (var a in e.Attributes().Where(a => a.Value.EndsWith('%')).ToList())
+                    if (Length(a.Value, a.Name.LocalName switch
+                        {
+                            "x" or "cx" or "rx" or "x1" or "x2" or "width" => pw,
+                            "y" or "cy" or "ry" or "y1" or "y2" or "height" => ph,
+                            "r" => Math.Sqrt((pw * pw + ph * ph) / 2),
+                            _ => double.NaN,
+                        }) is { } at && !double.IsNaN(at))
+                        a.Value = Css(at);
+            }
+            if ((string?)e.Attribute("gradientUnits") == "userSpaceOnUse") // its % are of the picture, which SVGImage does not know
+                foreach (var a in e.Attributes().Where(a => a.Value.EndsWith('%')).ToList())
+                    if (Length(a.Value, a.Name.LocalName is "x1" or "x2" or "cx" or "fx" ? vw : a.Name.LocalName is "y1" or "y2" or "cy" or "fy" ? vh : Math.Sqrt((vw * vw + vh * vh) / 2)) is { } at)
+                        a.Value = Css(at);
+        }
+
+        // shortcut: a group's opacity goes to its children and a shape's to its fill and stroke, so parts that overlap show through each other where the standard fades them as one
+        foreach (var e in root.Descendants().ToList())
+        {
+            var p = own[e];
+            if ((Number(p.GetValueOrDefault("opacity") ?? "1") ?? 1) is var opacity && opacity >= 1) continue;
+            if (e.Name.LocalName == "g")
+                foreach (var child in e.Elements())
+                    Declare(child, own[child], "opacity", Css(opacity * (Number(own[child].GetValueOrDefault("opacity") ?? "1") ?? 1)));
+            else if (e.Name.LocalName is "rect" or "circle" or "ellipse" or "line" or "polyline" or "polygon" or "path" or "text")
+                foreach (var fade in (string[])["fill-opacity", "stroke-opacity"])
+                    Declare(e, p, fade, Css(opacity * (Number(e.AncestorsAndSelf().Select(a => own[a].GetValueOrDefault(fade)).FirstOrDefault(v => v is not null) ?? "1") ?? 1)));
+            else continue;
+            Declare(e, p, "opacity", "1");
+        }
+
+        foreach (var e in root.Descendants())
+        {
+            foreach (var group in (string[][])[StrokeProperties, FillProperties])
+                if (group.Any(own[e].ContainsKey))
+                    foreach (var name in group.Where(n => !own[e].ContainsKey(n)).ToList())
+                        if (e.Ancestors().Select(a => own[a].GetValueOrDefault(name)).FirstOrDefault(v => v is not null) is { } inherited)
+                            Declare(e, own[e], name, inherited);
+            if (StrokeProperties.Any(own[e].ContainsKey) && !own[e].ContainsKey("stroke"))
+                Declare(e, own[e], "stroke", "none"); // the standard's default, where SVGImage strokes in black
+        }
+
+        ids = Ids();
+        foreach (var e in root.Descendants().ToList())
+            foreach (var (paint, fade) in (ReadOnlySpan<(string, string)>)[("fill", "fill-opacity"), ("stroke", "stroke-opacity")])
+                if (own[e].GetValueOrDefault(paint) is { } v && UrlRef().Match(v) is { Success: true } u && ids.TryGetValue(u.Groups[1].Value, out var gradient)
+                    && gradient.Name.LocalName.EndsWith("Gradient") && (Number(own[e].GetValueOrDefault(fade) ?? "1") ?? 1) is var alpha && alpha < 1)
+                {
+                    Declare(e, own[e], paint, $"url(#{Faded(gradient, alpha)})");
+                    Declare(e, own[e], fade, "1");
+                }
+
+        string Faded(XElement gradient, double alpha)
+        {
+            var id = $"{(string?)gradient.Attribute("id")}-faded-{Css(Math.Round(alpha, 3))}";
+            if (ids.ContainsKey(id)) return id;
+            var copy = new XElement(gradient);
+            copy.SetAttributeValue("id", id);
+            if (!copy.Elements().Any(s => s.Name.LocalName == "stop") && gradient.Attributes().FirstOrDefault(a => a.Name.LocalName == "href")?.Value is ['#', .. var from]
+                && ids.TryGetValue(from, out var source))
+                copy.Add(source.Elements().Where(s => s.Name.LocalName == "stop").Select(s => new XElement(s)));
+            foreach (var stop in copy.Elements().Where(s => s.Name.LocalName == "stop"))
+            {
+                var sp = Declared(stop);
+                Declare(stop, sp, "stop-opacity", Css((Number(sp.GetValueOrDefault("stop-opacity") ?? "1") ?? 1) * alpha));
+            }
+            gradient.AddAfterSelf(copy);
+            ids[id] = copy;
+            return id;
+        }
+    }
+
+    static string Css(double v) => v.ToString(CultureInfo.InvariantCulture);
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"url\(\s*#([^)\s]+)\s*\)")]
+    private static partial System.Text.RegularExpressions.Regex UrlRef();
+
+    /// <summary>An element's own presentation properties, its style winning over its attributes as in CSS.</summary>
+    static Dictionary<string, string> Declared(System.Xml.Linq.XElement e)
+    {
+        var p = e.Attributes().Where(a => a.Name.Namespace == System.Xml.Linq.XNamespace.None).ToDictionary(a => a.Name.LocalName, a => a.Value.Trim());
+        foreach (var d in ((string?)e.Attribute("style") ?? "").Split(';'))
+            if (d.Split(':', 2) is [var k, var v]) p[k.Trim()] = v.Trim();
+        return p;
+    }
+
+    static void Declare(System.Xml.Linq.XElement e, Dictionary<string, string> own, string name, string value)
+    {
+        own[name] = value;
+        e.Attribute(name)?.Remove(); // one value, whichever of style and attribute a renderer reads last
+        e.SetAttributeValue("style", ((string?)e.Attribute("style") is { Length: > 0 } s ? s.TrimEnd(' ', ';') + ";" : "") + $"{name}:{value}");
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("^#([0-9a-fA-F]{6})([0-9a-fA-F]{2})$")]
+    private static partial System.Text.RegularExpressions.Regex Rgba();
+
+    /// <summary>Dashes end as the stroke does (WPF has a separate setting for them): "0 7" with round caps is a row of dots, as in a browser.</summary>
+    static Drawing RoundDashes(Drawing drawing)
+    {
+        if (drawing is DrawingGroup g)
+            foreach (var child in g.Children) RoundDashes(child);
+        else if (drawing is GeometryDrawing { IsFrozen: false, Pen: { DashStyle.Dashes.Count: > 0 } pen } shape && pen.DashCap != pen.StartLineCap)
+        {
+            var rounded = pen.Clone();
+            rounded.DashCap = pen.StartLineCap;
+            shape.Pen = rounded;
+        }
+        return drawing;
+    }
+
+    /// <summary>What an SVG may open besides itself: nothing (its links are taken out before, this is in case one is missed).</summary>
+    sealed class NoFiles : SVGImage.SVG.FileLoaders.IExternalFileLoader
+    {
+        public Stream LoadFile(string hRef, string svgFilename) => throw new InvalidDataException($"lien externe refusé : {hRef}");
     }
 
     static ImageSource Bitmap(string path) => Images.GetOrAdd(path, p =>

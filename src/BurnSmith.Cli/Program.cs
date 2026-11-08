@@ -477,6 +477,49 @@ if (a.Count >= 1 && a[0] == "check-elements")
     }).Select(b => b.Name).ToList());
     Check($"les {svgButtons.Count} boutons SVG de DVDStyler se dessinent à toute taille, avec leur état choisi{(svgBad.Count > 0 ? " — en défaut : " + string.Join(", ", svgBad) : "")}",
           svgButtons.Count >= 50 && svgBad.Count == 0);
+    {
+        // an SVG's links out of the document are not followed, and what SVGImage misses on its own is drawn as a browser does
+        var svgDir = Path.Combine(Path.GetTempPath(), "burnsmith-svg-check");
+        Directory.CreateDirectory(svgDir);
+        var red = Path.Combine(svgDir, "red.png");
+        MenuRenderer.Sta(() =>
+        {
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(System.Windows.Media.Imaging.BitmapSource.Create(8, 8, 96, 96,
+                System.Windows.Media.PixelFormats.Bgra32, null, Enumerable.Repeat<byte[]>([0, 0, 255, 255], 64).SelectMany(p => p).ToArray(), 8 * 4)));
+            using var png = File.Create(red);
+            encoder.Save(png);
+            return 0;
+        });
+        (byte B, byte G, byte R, byte A) Pixel(string body, int x, int y, int width = 100, int height = 100)
+        {
+            var file = Path.Combine(svgDir, $"{Guid.NewGuid():N}.svg");
+            File.WriteAllText(file, $"<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"{width}\" height=\"{height}\">{body}</svg>");
+            var (px, w, _) = MenuRenderer.Sta(() => MenuRenderer.Raster(file, null, width, height));
+            var i = (y * w + x) * 4;
+            return (px[i], px[i + 1], px[i + 2], px[i + 3]);
+        }
+        Check("a picture an SVG links to is not opened (a share would get the login hash), the SVG's own shapes still draw",
+              Pixel($"<image href=\"{new Uri(red).AbsoluteUri}\" width=\"100\" height=\"100\"/><image xlink:href=\"{red}\" width=\"100\" height=\"100\"/>", 50, 50).A == 0
+              && Pixel("<defs><rect id=\"r\" width=\"100\" height=\"100\" fill=\"#0000ff\"/></defs><use xlink:href=\"#r\"/>", 50, 50) is { B: > 200, A: > 200 });
+        Check("a nested <svg> is placed by its viewBox",
+              Pixel("<svg width=\"100%\" height=\"100%\" viewBox=\"0 0 200 200\" preserveAspectRatio=\"none\"><rect x=\"100\" y=\"100\" width=\"100\" height=\"100\" fill=\"#ff0000\"/></svg>", 75, 75) is { R: > 200, A: > 200 }
+              && Pixel("<svg width=\"100%\" height=\"100%\" viewBox=\"0 0 200 200\" preserveAspectRatio=\"none\"><rect x=\"100\" y=\"100\" width=\"100\" height=\"100\" fill=\"#ff0000\"/></svg>", 25, 25).A == 0);
+        Check("a length in % is of the width across and of the height down (a wide button's ellipse)",
+              Pixel("<ellipse cx=\"50%\" cy=\"50%\" rx=\"45%\" ry=\"45%\" fill=\"#ff0000\"/>", 20, 25, 200, 50) is { R: > 200, A: > 200 });
+        Check("#RRGGBBAA is a colour and its opacity", Pixel("<rect width=\"100\" height=\"100\" fill=\"#ff000080\"/>", 50, 50) is { R: > 100 and < 160, A: > 100 and < 160, B: < 20 });
+        Check("a shape that sets only its stroke's width keeps the colour its group gives",
+              Pixel("<g stroke=\"#00ff00\" fill=\"none\"><rect x=\"10\" y=\"10\" width=\"80\" height=\"80\" stroke-width=\"10\"/></g>", 10, 50) is { G: > 200, R: < 50 });
+        Check("hidden parts and unused symbols draw nothing, a group's opacity fades it",
+              Pixel("<defs><rect id=\"r\" width=\"100\" height=\"100\"/></defs><use xlink:href=\"#r\" style=\"fill:#00ff00;visibility:hidden\"/>", 50, 50).A == 0
+              && Pixel("<symbol id=\"s\"><rect width=\"100\" height=\"100\" fill=\"#00ff00\"/></symbol>", 50, 50).A == 0
+              && Pixel("<g opacity=\"0.5\"><rect width=\"100\" height=\"100\" fill=\"#0000ff\"/></g>", 50, 50) is { A: > 100 and < 160 });
+        var bomb = "<rect id=\"a0\" width=\"100\" height=\"100\" fill=\"#0000ff\"/>" + string.Concat(Enumerable.Range(1, 9).Select(i => $"<g id=\"a{i}\">{string.Concat(Enumerable.Repeat($"<use xlink:href=\"#a{i - 1}\"/>", 10))}</g>"));
+        var bombClock = System.Diagnostics.Stopwatch.StartNew();
+        Pixel($"<defs>{bomb}</defs><use xlink:href=\"#a9\"/>", 50, 50);
+        Check("an SVG whose <use> copy each other a billion times is done with in a moment, not with all the memory", bombClock.Elapsed < TimeSpan.FromSeconds(10));
+        Directory.Delete(svgDir, true);
+    }
     SettingsCheck.Model(Check);
     {
         // a downloaded pack names files outside its folder (a network share sends the login hash, a private picture would be copied): none is followed
@@ -1277,6 +1320,12 @@ if (a.Count >= 1 && a[0] == "drives")
     return 0;
 }
 if (a.Count >= 3 && a[0] == "verify") { Imapi.Verify(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  "))); return 0; }
+// burnsmith hold-tool FILE [--free] : ffmpeg for a minute, its progress in FILE; check-reliability ends this process by force and looks for that ffmpeg
+if (a.Count >= 2 && a[0] == "hold-tool")
+{
+    Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-re", "-f", "lavfi", "-i", "testsrc=s=64x64:r=10:d=60", "-progress", a[1], "-f", "null", "-"], outlivesApp: a.Contains("--free"));
+    return 0;
+}
 if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BURNSMITH", a.Contains("--dvd"), Console.WriteLine); return 0; }
 if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  "))); return 0; }
 

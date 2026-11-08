@@ -78,4 +78,4 @@ Tout est dans [`docs/`](docs/README.md) :
 
 MIT ([`LICENSE`](LICENSE)).
 
-Les modèles et boutons livrés dans `assets/library/open` gardent leurs propres fichiers de licence ; la lecture des boutons SVG utilise SharpVectors (BSD-3-Clause, Elinam LLC) ; les programmes que BurnSmith lance restent sous la leur. L'exe publié embarque aussi des images et des mises en page de modèles recueillis sur le PC de publication : elles appartiennent à leurs auteurs et ne sont pas dans le dépôt. Aucun code, interface, police ni programme n'est repris, et BurnSmith n'est affilié à aucun de leurs auteurs.
+Les modèles et boutons livrés dans `assets/library/open` gardent leurs propres fichiers de licence ; la lecture des boutons SVG utilise DotNetProjects.SVGImage (MIT, PropertyTools and DotNetProjects contributors) ; les programmes que BurnSmith lance restent sous la leur. L'exe publié embarque aussi des images et des mises en page de modèles recueillis sur le PC de publication : elles appartiennent à leurs auteurs et ne sont pas dans le dépôt. Aucun code, interface, police ni programme n'est repris, et BurnSmith n'est affilié à aucun de leurs auteurs.

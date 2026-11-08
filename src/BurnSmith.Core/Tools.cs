@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace BurnSmith.Core;
@@ -67,10 +68,6 @@ public static class Tools
     }
 
     /// <summary>
-    /// Empties <paramref name="dir"/> before a build, but only when it is missing, empty, or holds nothing but an earlier disc
-    /// (BDMV, CERTIFICATE, VIDEO_TS, AUDIO_TS). Anything else is refused so a wrongly picked folder is never wiped.
-    /// </summary>
-    /// <summary>
     /// Refuses a build that reads a file from a folder it is about to empty: a DVD backup (…\Film\VIDEO_TS\VTS_01_1.VOB) built into …\Film would lose its source for good,
     /// Directory.Delete skipping the Recycle Bin. Called first, before anything is probed or deleted.
     /// </summary>
@@ -82,6 +79,10 @@ public static class Tools
                     throw new IOException($"« {file} » est dans le dossier « {dir} », que la création vide : choisissez un autre dossier de sortie.");
     }
 
+    /// <summary>
+    /// Empties <paramref name="dir"/> before a build, but only when it is missing, empty, or holds nothing but an earlier disc
+    /// (BDMV, CERTIFICATE, VIDEO_TS, AUDIO_TS). Anything else is refused so a wrongly picked folder is never wiped.
+    /// </summary>
     public static void PrepareOutput(string dir)
     {
         if (!Directory.Exists(dir)) return;
@@ -127,6 +128,40 @@ public static class Tools
         finally { ambient.Value = before; }
     }
 
+    /// <summary>
+    /// Puts a started process in the app's job: Windows ends it when the app's last handle on the job closes, which <see cref="KillAll"/> cannot do when the app
+    /// crashes or is ended from the Task Manager (an ffmpeg would go on encoding, hidden, its files locked).
+    /// </summary>
+    public static void TieToApp(Process p)
+    {
+        if (AppJob.Value != IntPtr.Zero) AssignProcessToJobObject(AppJob.Value, p.Handle); // false when it already ended: nothing left to tie
+    }
+
+    static readonly Lazy<IntPtr> AppJob = new(() =>
+    {
+        var job = CreateJobObject(IntPtr.Zero, null);
+        if (job == IntPtr.Zero) return IntPtr.Zero;
+        var limits = new ExtendedLimits { Basic = new BasicLimits { Flags = 0x2000 } }; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        var size = Marshal.SizeOf<ExtendedLimits>();
+        var ptr = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.StructureToPtr(limits, ptr, false);
+            return SetInformationJobObject(job, 9, ptr, (uint)size) ? job : IntPtr.Zero; // 9 = JobObjectExtendedLimitInformation
+        }
+        finally { Marshal.FreeHGlobal(ptr); }
+    });
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct BasicLimits { public long PerProcessUserTime, PerJobUserTime; public uint Flags; public UIntPtr MinWorkingSet, MaxWorkingSet; public uint ActiveProcesses; public UIntPtr Affinity; public uint PriorityClass, SchedulingClass; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct ExtendedLimits { public BasicLimits Basic; public ulong ReadOps, WriteOps, OtherOps, ReadBytes, WriteBytes, OtherBytes; public UIntPtr ProcessMemory, JobMemory, PeakProcessMemory, PeakJobMemory; }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateJobObject(IntPtr attributes, string? name);
+    [DllImport("kernel32.dll")] static extern bool SetInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length);
+    [DllImport("kernel32.dll")] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
     static void Kill(Process p)
     {
         try { p.Kill(true); }
@@ -148,9 +183,12 @@ public static class Tools
         }
     }
 
-    /// <summary>Runs a tool and returns its stdout; throws with the output tail when the exit code is not 0, <see cref="OperationCanceledException"/> when cancelled (see <see cref="WithCancel"/>).</summary>
+    /// <summary>
+    /// Runs a tool and returns its stdout; throws with the output tail when the exit code is not 0, <see cref="OperationCanceledException"/> when cancelled (see <see cref="WithCancel"/>).
+    /// The tool ends with the app, even one that crashes or is ended by force (<see cref="TieToApp"/>), unless <paramref name="outlivesApp"/>.
+    /// </summary>
     public static string Run(string exe, IEnumerable<string> args, Action<string>? onLine = null, string? workDir = null,
-                             IReadOnlyDictionary<string, string>? env = null)
+                             IReadOnlyDictionary<string, string>? env = null, bool outlivesApp = false)
     {
         var cancel = ambient.Value;
         cancel.ThrowIfCancellationRequested();
@@ -183,6 +221,7 @@ public static class Tools
             if (killedAll) throw new OperationCanceledException();
             p.Start();
             running.Add(p);
+            if (!outlivesApp) TieToApp(p);
         }
         try
         {

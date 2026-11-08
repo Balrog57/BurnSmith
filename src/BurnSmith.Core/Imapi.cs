@@ -100,7 +100,8 @@ public static class Imapi
     }
 
     /// <summary>
-    /// Builds a UDF image of <paramref name="folder"/>'s contents: UDF 2.50 for Blu-ray, 1.02 for DVD-Video (IMAPI2FS, in Windows).
+    /// Builds a UDF image of <paramref name="folder"/>'s contents: UDF 2.50 for Blu-ray (IMAPI2FS, in Windows); for DVD-Video, UDF 1.02 with an ISO 9660 bridge,
+    /// files in the standard's order (<see cref="Disc.UdfImage"/>).
     /// </summary>
     public static void BuildImage(string folder, string isoFile, string label, bool dvd, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default)
     {
@@ -111,10 +112,15 @@ public static class Imapi
         if (label.Length == 0) label = "BURNSMITH";
         if (label.Length > 32) label = label[..32];
 
-        log?.Invoke("iso: IMAPI2FS (UDF " + (dvd ? "1.02" : "2.50") + ")");
+        log?.Invoke(dvd ? "iso: UDF 1.02 + ISO 9660, files in DVD-Video order" : "iso: IMAPI2FS (UDF 2.50)");
         // written beside it, then renamed once whole and checked: half an image (cancelled, disk full, FAT32's 4 GB) never bears the name that gets burnt, and an older one stays until then
         var part = isoFile + ".part";
-        try { WriteImage(folder, part, label, dvd, progress, cancel); }
+        try
+        {
+            if (!dvd) WriteImage(folder, part, label, false, progress, cancel);
+            // IMAPI2 sorts files by size (each .BUP before its .IFO): the sectors the IFOs give would point elsewhere on a living-room player
+            else foreach (var problem in Disc.UdfImage.Write(folder, part, label, progress, cancel)) log?.Invoke("warning: " + problem + " (a player that follows the IFOs may not find it)");
+        }
         catch (Exception) { File.Delete(part); throw; }
         if (UdfRevision(part) is not { } rev) { File.Delete(part); throw new IOException("The image written by Windows has no UDF volume."); }
         File.Move(part, isoFile, true);

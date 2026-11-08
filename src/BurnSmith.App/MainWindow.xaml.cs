@@ -205,6 +205,8 @@ public partial class MainWindow : Window
             BurnButton.IsEnabled = EraseButton.IsEnabled = BurnCheck.IsEnabled = drives.Count > 0;
             if (drives.Count == 0) BurnCheck.IsChecked = false;
         }
+        // logged, not shown: this runs at every activation of the window, and a box would bring it back as soon as it is closed
+        catch (Exception e) when (e is not OutOfMemoryException) { AppFiles.LogError("Lecteurs de disque", e); }
         finally { refreshingDrives = false; }
     }
 

@@ -48,7 +48,7 @@ public static class Iso
         // DVDFab's switches (DVDFab64.exe): no question asked, it waits for a disc, closes on success and stays open on an error so the user can read it.
         // shortcut: untested on real media, and no progress reaches the app (ImgBurn's window shows it)
         Tools.WithCancel(cancel, () => Tools.Run(exe, ["/MODE", "ISOWRITE", "/WAITFORMEDIA", "/START", "/CLOSESUCCESS", "/IGNORELOCKVOLUME", "/NOIMAGEDETAILS",
-            "/VERIFY", "YES", "/DEST", drive[..1].ToUpperInvariant(), "/SPEED", "MAX", "/SRC", iso]));
+            "/VERIFY", "YES", "/DEST", drive[..1].ToUpperInvariant(), "/SPEED", "MAX", "/SRC", iso], outlivesApp: true)); // a crash of the app must not spoil the disc being written
         log?.Invoke("done: disc written");
     }
 }

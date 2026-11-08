@@ -83,13 +83,42 @@ static class BdCheck
     }
 
     /// <summary>Whether the stream's H.264 is flagged as fields (frame_mbs_only_flag 0): how a Blu-ray carries 1080 at 25 or 29.97.</summary>
-    static bool Fields(string m2ts)
+    static bool Fields(string m2ts) => BluRay.FlaggedAsFields(m2ts);
+
+    /// <summary>Where each file of an image's <paramref name="folder"/> starts (sector) and its size, read through the image's ISO 9660 side.</summary>
+    static Dictionary<string, (uint At, uint Size)> IsoFiles(string iso, string folder)
     {
-        var flagged = false;
-        Tools.Run(ffmpeg, ["-hide_banner", "-i", m2ts, "-map", "0:v:0", "-c", "copy", "-bsf:v", "trace_headers", "-frames:v", "1", "-f", "null", "-"],
-                  l => flagged |= Regex.IsMatch(l, @"frame_mbs_only_flag\s+0 = 0"));
-        return flagged;
+        using var file = File.OpenRead(iso);
+        byte[] Read(long sector, long bytes) { var b = new byte[bytes]; file.Position = sector * 2048; file.ReadExactly(b); return b; }
+        Dictionary<string, (uint, uint)> List(uint at, uint size)
+        {
+            var d = Read(at, size);
+            var found = new Dictionary<string, (uint, uint)>();
+            for (var o = 0; o < d.Length;)
+            {
+                if (d[o] == 0) { o = (o / 2048 + 1) * 2048; continue; } // records never cross a sector's end
+                found[System.Text.Encoding.ASCII.GetString(d, o + 33, d[o + 32]).Split(';')[0]] = (BitConverter.ToUInt32(d, o + 2), BitConverter.ToUInt32(d, o + 10));
+                o += d[o];
+            }
+            return found;
+        }
+        var pvd = Read(16, 2048);
+        var (at, size) = List(BitConverter.ToUInt32(pvd, 158), BitConverter.ToUInt32(pvd, 166))[folder];
+        return List(at, size);
     }
+
+    /// <summary>The colour at the centre of a stream's first picture, decoded with <paramref name="matrix"/> (bt709 for a Blu-ray, bt601 for a DVD), as a player does.</summary>
+    static (int R, int G, int B) Centre(string video, string matrix)
+    {
+        var raw = F("centre.rgb");
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", video, "-vf", $"crop=8:8:iw/2:ih/2,scale=in_color_matrix={matrix},format=rgb24", "-frames:v", "1", "-f", "rawvideo", raw]);
+        var px = File.ReadAllBytes(raw);
+        return (px[0], px[1], px[2]);
+    }
+
+    /// <summary>A flat red clip whose colours are written with <paramref name="matrix"/>, and said to be.</summary>
+    static string Red(string name, string size, string matrix) => Clip(name, $"color=c=red:s={size}:r=25:d=2", 48000,
+        ["-vf", $"format=rgb24,scale=out_color_matrix={matrix}:out_range=tv,format=yuv420p", "-colorspace", matrix == "bt709" ? "bt709" : "smpte170m", .. Fine], Ac3At48);
 
     static EncodeOptions Small(string preset = "veryfast", bool reencode = false, bool fit = false) => new(reencode, Preset: preset, FitDisc: fit, Hd720: true);
 
@@ -217,6 +246,29 @@ static class BdCheck
             var hd = Look(Stream(Bd("fps2997hd", [new DiscTitle(clip)], Small("ultrafast")), 1));
             Check("a 720p disc has no 25 nor 29.97: each picture is shown twice, 50 and 59.94", pal.Rate == "50/1" && hd.Rate == "60000/1001", $"{pal.Rate}, {hd.Rate}");
         });
+        Part("1080 at 25 fps", () =>
+        {
+            var progressive = Clip("p25.mkv", "testsrc2=s=1920x1080:r=25:d=2", 48000, Fine, Ac3At48);
+            var made = Stream(Bd("p25", [new DiscTitle(progressive)], new EncodeOptions(Preset: "ultrafast")), 1);
+            Check("a progressive 1080p25 H.264 a player could take is made again, flagged as fields, not copied as it is", Look(made).Reorder > 0 && Fields(made), $"has_b_frames {Look(made).Reorder}");
+            var psf = Clip("psf25.mkv", "testsrc2=s=1920x1080:r=25:d=2", 48000, [.. Fine, "-x264-params", "fake-interlaced=1:pic-struct=1"], Ac3At48);
+            var kept = Stream(Bd("psf25", [new DiscTitle(psf)], new EncodeOptions(Preset: "ultrafast")), 1);
+            Check("the same flagged as fields (PsF, or a real 1080i) is copied", Look(kept).Reorder == 0 && Fields(kept), $"has_b_frames {Look(kept).Reorder}");
+            var hd = Look(Stream(Bd("p25hd", [new DiscTitle(Clip("p25hd.mkv", "testsrc2=s=1280x720:r=25:d=2", 48000, Fine, Ac3At48))], Small("ultrafast")), 1));
+            Check("a 720p25 H.264 a player could take is still made again, at 50 (720p has no 25)", hd.Rate == "50/1", hd.Rate);
+        });
+        Part("colours of a standard-definition source", () =>
+        {
+            var m2ts = Stream(Bd("sd601", [new DiscTitle(Red("sd601.mkv", "720x576", "bt601"))], new EncodeOptions(Preset: "ultrafast")), 1);
+            var c = Centre(m2ts, "bt709");
+            Check("a BT.601 red stays red on a Blu-ray, decoded as BT.709 (not turned orange)", c.R > 245 && c.G < 12, $"rgb {c}");
+        });
+        DvdPart("colours of an HD source on a DVD", () =>
+        {
+            Dvd.Build(new DvdJob([new DiscTitle(Red("hd709.mkv", "1280x720", "bt709"))], F("hd709")));
+            var c = Centre(Path.Combine(F("hd709"), "VIDEO_TS", "VTS_01_1.VOB"), "bt601");
+            Check("a BT.709 red stays red on a DVD, decoded as BT.601", c.R > 245 && c.G < 12, $"rgb {c}");
+        });
         Part("HDR on a 1080 disc", () =>
         {
             Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=24000/1001:d=1", "-f", "lavfi", "-i", "sine=f=440:d=1", "-map", "0:v", "-map", "1:a",
@@ -225,6 +277,7 @@ static class BdCheck
             var m2ts = Stream(Bd("hdr1080", [new DiscTitle(F("hdr10.mkv"))], new EncodeOptions(Preset: "ultrafast")), 1);
             var colours = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=color_transfer,color_primaries", "-of", "csv=p=0", m2ts]).Trim().Split('\n')[0].Trim(); // an m2ts lists its stream twice (program, stream)
             Check("its PQ picture is made SDR BT.709 (copied as it is, a player shows it grey)", colours == "bt709,bt709", colours);
+            Check("a 4K HDR film is made 1080 wide before it is converted (a quarter of the pixels to convert)", BluRay.ToSdr("HDR10", 3840, 2160, 1920).StartsWith("scale=1920:1080,zscale="), BluRay.ToSdr("HDR10", 3840, 2160, 1920)[..30]);
         });
     }
 
@@ -308,6 +361,26 @@ static class BdCheck
             Dvd.Build(new DvdJob([new DiscTitle(clip)], F("filmdvd")));
             var shown = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=field_order,r_frame_rate", "-of", "csv=p=0", Path.Combine(F("filmdvd"), "VIDEO_TS", "VTS_01_1.VOB")]).Trim();
             Check("a 24 fps film becomes 3:2 pulldown at 29.97, top field first", shown.StartsWith("tt,30000/1001"), shown);
+
+            var log = new List<string>();
+            Imapi.BuildImage(F("filmdvd"), F("film.iso"), "Film", dvd: true, log.Add);
+            var placed = IsoFiles(F("film.iso"), "VIDEO_TS");
+            var vmg = File.ReadAllBytes(Path.Combine(F("filmdvd"), "VIDEO_TS", "VIDEO_TS.IFO"));
+            var srpt = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(vmg.AsSpan(0xC4)) * 2048;
+            var announced = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(vmg.AsSpan(srpt + 16)); // title 1's title set, in sectors from VIDEO_TS.IFO
+            var real = placed["VTS_01_0.IFO"].At - placed["VIDEO_TS.IFO"].At;
+            Check("in the DVD image the title set is where VIDEO_TS.IFO says (a player goes by sectors, not by names)", real == announced, $"announced {announced}, placed {real}");
+            Check("each title set in the standard's order: IFO, menus, film, then BUP", placed["VIDEO_TS.IFO"].At < placed["VIDEO_TS.BUP"].At
+                  && placed["VTS_01_0.IFO"].At < placed["VTS_01_1.VOB"].At && placed["VTS_01_1.VOB"].At < placed["VTS_01_0.BUP"].At,
+                  string.Join(", ", placed.Where(p => p.Key.Contains('.')).OrderBy(p => p.Value.At).Select(p => $"{p.Key} {p.Value.At}")));
+            Check("the image's own check finds nothing out of place", !log.Any(l => l.StartsWith("warning")), string.Join(" ; ", log));
+            using (var image = File.OpenRead(F("film.iso")))
+            {
+                var anchor = new byte[2048];
+                image.Position = 256 * 2048;
+                image.ReadExactly(anchor);
+                Check("UDF 1.02 with its anchor at sector 256", anchor[0] == 2 && Imapi.UdfRevision(F("film.iso")) == (1, 2), $"tag {anchor[0]}");
+            }
         });
     }
 

@@ -268,10 +268,40 @@ public static class BluRay
 
     /// <summary>
     /// An HDR picture (PQ or HLG, BT.2020) made SDR BT.709 for a disc that cannot show HDR (a 1080p Blu-ray, a DVD): copied as it is, a player shows it grey and flat.
-    /// The input is named, not read from the file; Hable keeps detail in the highlights. Empty for an SDR source.
+    /// The input is named, not read from the file; Hable keeps detail in the highlights. Empty for an SDR source. A picture wider than <paramref name="maxWidth"/>
+    /// (a 4K film for a 1080p disc) is made smaller first: the conversion, in floating point, then has a quarter of the pixels.
     /// </summary>
-    public static string ToSdr(string hdr) => hdr == "SDR" ? ""
-        : $"zscale=tin={(hdr == "HLG" ? "arib-std-b67" : "smpte2084")}:min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p";
+    public static string ToSdr(string hdr, int width = 0, int height = 0, int maxWidth = 0) => hdr == "SDR" ? ""
+        : (maxWidth > 0 && width > maxWidth ? $"scale={maxWidth}:{(int)Math.Round(height * (double)maxWidth / width / 2) * 2}," : "") + $"zscale=tin={(hdr == "HLG" ? "arib-std-b67" : "smpte2084")}:min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p";
+
+    /// <summary>A standard-definition picture (BT.601 colours) put on an HD disc, which a player decodes as BT.709: the colours are converted, else reds turn orange.</summary>
+    static string HdMatrix(SourceInfo s) => s.Height < 720 && s.Hdr == "SDR" ? ",scale=in_color_matrix=bt601:out_color_matrix=bt709" : "";
+
+    /// <summary>
+    /// Whether a video's H.264 says its pictures are fields (frame_mbs_only_flag 0: interlaced, or progressive flagged as PsF), read from its first picture.
+    /// Kept per file (path, size, date): the window's size estimate asks again at every change. False when it cannot be read: the video is then made again.
+    /// </summary>
+    public static bool FlaggedAsFields(string video)
+    {
+        var file = new FileInfo(video);
+        if (!file.Exists) return false;
+        return FieldsSeen.GetOrAdd((file.FullName, file.Length, file.LastWriteTimeUtc), _ =>
+        {
+            var flagged = false;
+            try
+            {
+                Tools.Run(Tools.Find("ffmpeg.exe"), ["-hide_banner", "-i", video, "-map", "0:v:0", "-c", "copy", "-bsf:v", "trace_headers", "-frames:v", "1", "-f", "null", "-"],
+                          l => flagged |= l.Contains("frame_mbs_only_flag") && l.TrimEnd().EndsWith(" 0 = 0"));
+            }
+            catch (Exception e) when (e is InvalidOperationException or FileNotFoundException or System.ComponentModel.Win32Exception) { return false; } // not H.264, or no ffmpeg
+            return flagged;
+        });
+    }
+
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, long, DateTime), bool> FieldsSeen = new();
+
+    /// <summary>A rate as ffmpeg writes it ("24000/1001", "25") as pictures a second.</summary>
+    static double Value(string rate) => rate.Split('/') is [var n, var d] ? double.Parse(n, Inv) / double.Parse(d, Inv) : double.Parse(rate, Inv);
 
     /// <summary>Picture size of the disc: 3840x2160 (4K), 1280x720 (a 720p profile) or 1920x1080.</summary>
     static (int W, int H) VideoSize(BluRayJob job) => job.Uhd ? (3840, 2160) : job.Encode?.Hd720 == true ? (1280, 720) : (1920, 1080);
@@ -441,7 +471,7 @@ public static class BluRay
             var (file, probe, start) = LoopSource(menu, job.Titles[0], seconds);
             src = probe;
             (fps, declared) = DiscRate(src.Fps, h);
-            tone = ToSdr(src.Hdr) is { Length: > 0 } sdr ? sdr + "," : ""; // a moving menu taken from an HDR film
+            tone = ToSdr(src.Hdr, src.Width, src.Height, w) is { Length: > 0 } sdr ? sdr + "," : ""; // a moving menu taken from an HDR film
             log($"menu: moving background, {seconds}s from {Path.GetFileName(file)} at {start}s{(music != null ? " + music" : "")}");
             args.AddRange(["-ss", start.ToString(Inv), "-t", seconds.ToString(Inv), "-i", file]);
         }
@@ -456,7 +486,7 @@ public static class BluRay
         else if (src is { Audio.Count: > 0 }) args.AddRange(["-map", "0:a:0"]);
         var hasAudio = music != null || src is { Audio.Count: > 0 };
         args.AddRange(["-t", seconds.ToString(Inv),
-            "-vf", tone + Fit(w, h), "-r", fps,
+            "-vf", tone + Fit(w, h) + (src is { } loop ? HdMatrix(loop) : ""), "-r", fps,
             "-c:v", "libx264", "-preset", "fast", "-crf", "19", "-pix_fmt", "yuv420p",
             "-x264-params", "bluray-compat=1:level=41:vbv-maxrate=20000:vbv-bufsize=20000:keyint=24:slices=4:bframes=3:b-pyramid=strict:open-gop=0" + Fields(fps, h)]);
         if (hasAudio) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2", "-ar", "48000"]); // the first title's own sound can be anything
@@ -507,16 +537,18 @@ public static class BluRay
     /// <summary>Whether the title's video goes on the disc as it is (stream copy) instead of being re-encoded; <see cref="TargetKbps"/> and <see cref="Prepare"/> must agree on it.</summary>
     static bool CopiesVideo(BluRayJob job, DiscTitle title, SourceInfo s, int kbps)
     {
-        // 4K also takes 29.97, 50 and 59.94 as they are; a 1080 copy keeps the rates it always copied
-        var fpsOk = new[] { 24000 / 1001.0, 24, 25 }.Concat(job.Uhd ? [30000 / 1001.0, 50, 60000 / 1001.0] : []).Any(r => Math.Abs(s.Fps - r) < 0.01);
         var (w, h) = VideoSize(job);
+        var rate = DiscRate(s.Fps, h).Ffmpeg;
+        var fpsOk = Math.Abs(s.Fps - Value(rate)) < 0.01; // the disc keeps the source's rate as it is (720p has no 25: such a source is made again at 50)
         var enc = job.Encode ?? new EncodeOptions();
         // a cut that starts later must be re-encoded to begin on the exact frame (a copy starts on the keyframe before it); a 4K passthrough copies it anyway
         var copyCut = title.Start == 0 || (job.Uhd && !enc.ForceReencode && kbps == 0);
         // a 4K source is 10-bit HEVC at its own levels: only the H.264 of a Blu-ray has a player's limits to check
         return !enc.ForceReencode && kbps == 0 && copyCut && (job.Uhd ? s.VideoCodec == "hevc" : s.PlayerReadyH264 && s.Hdr == "SDR") && s.Width == w && s.Height == h && fpsOk
                && title.Effects is null or { IsEmpty: true } // effects are drawn into the picture, so it is made again
-               && title.Gaps.Count == 0; // several clips are joined frame by frame
+               && title.Gaps.Count == 0 // several clips are joined frame by frame
+               // 1080 at 25 or 29.97 exists on a Blu-ray only as fields: a progressive stream is made again with the flags (last: it reads the file)
+               && (Fields(rate, h).Length == 0 || FlaggedAsFields(title.Video));
     }
 
     /// <summary>
@@ -538,9 +570,10 @@ public static class BluRay
         args.AddRange(["-i", title.Video, "-map", "0:v:0"]);
         foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
         if (videoOk) args.AddRange(["-c:v", "copy"]);
-        var tone = job.Uhd ? "" : ToSdr(s.Hdr);
+        // effects are placed in the source's pixels: with some, the picture keeps its size until they are drawn
+        var tone = job.Uhd ? "" : title.Effects is null or { IsEmpty: true } ? ToSdr(s.Hdr, s.Width, s.Height, w) : ToSdr(s.Hdr);
         var rate = DiscRate(s.Fps, h).Ffmpeg;
-        if (!videoOk) args.AddRange(["-vf", (title.Effects ?? new()).Vf(s.Width, s.Height, title.Start, Fit(w, h), tone) + (title.Gaps.Count > 0 ? "," + title.GapFilter(false) : ""),
+        if (!videoOk) args.AddRange(["-vf", (title.Effects ?? new()).Vf(s.Width, s.Height, title.Start, Fit(w, h) + HdMatrix(s), tone) + (title.Gaps.Count > 0 ? "," + title.GapFilter(false) : ""),
                             "-r", rate,
                             "-c:v", job.Uhd ? "libx265" : "libx264", "-preset", enc.Preset, "-pix_fmt", job.Uhd ? "yuv420p10le" : "yuv420p"]);
         if (!videoOk && job.Uhd)

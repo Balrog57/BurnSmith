@@ -280,12 +280,14 @@ public partial class VideoEditWindow : Window
         ShowCrop();
         var from = SeekSlider.Value >= until - 0.5 ? 0 : SeekSlider.Value;
         var psi = new System.Diagnostics.ProcessStartInfo(Ffmpeg) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
-        foreach (var a in new[] { "-v", "error", "-re", "-ss", N(from), "-i", video, "-an", "-sn", "-vf", $"{Sdr}fps={Fps},scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1" })
+        // an HDR source is made SDR once small: in time for the playback
+        foreach (var a in new[] { "-v", "error", "-re", "-ss", N(from), "-i", video, "-an", "-sn", "-vf", $"fps={Fps},scale={w}:{h}" + (BluRay.ToSdr(info.Hdr) is { Length: > 0 } sdr ? "," + sdr : ""), "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1" })
             psi.ArgumentList.Add(a);
         System.Diagnostics.Process? ffmpeg = null;
         try
         {
             ffmpeg = System.Diagnostics.Process.Start(psi)!;
+            Tools.TieToApp(ffmpeg);
             var bmp = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgr24, null);
             SourceImage.Source = bmp;
             var picture = new byte[w * h * 3];
