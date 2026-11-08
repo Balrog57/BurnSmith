@@ -18,6 +18,7 @@ Conventions : **[FAIT]** mesuré ou observé ce jour, **[DÉDUCTION]** tiré de 
   - **Pistes indiscernables** : deux pistes d'une même langue gardent le détail de leur titre. La saison affichait deux boutons « Français 5.1 », dont l'un était l'audiodescription.
   - **DVD trop petit** : le DVD annonce dès le départ que le disque est trop petit quand même le débit plancher ne suffit pas. Le Blu-ray le faisait déjà.
   - **Sous-titre d'une série sur une autre piste** : le menu choisit un sous-titre par son numéro, le même pour tous les épisodes, et une piste vide ou absente dans un épisode décalait les suivantes. Dans l'épisode 2, « Français (forcés) » affichait les paroles anglaises. Chaque épisode porte maintenant les sous-titres du premier, dans le même ordre, avec une piste invisible à la place d'une piste vide ou absente (§ 3.8).
+- **Face à DVDFab et Yuhan** (§ 3.9) : tous deux choisissent aussi l'audio et le sous-titre par leur numéro, le même pour tous les titres. DVDFab ne réaligne rien : ses trois saisons de Cobra Kai ont le décalage corrigé ici.
 - **Testé ce jour** : une saison complète (10 épisodes) sur BD25, un film copié tel quel sur BD25, le même film réduit pour tenir sur un BD5, et un DVD court. Chaque disque a été construit, mis en ISO et contrôlé : structure, UDF, signature (jarsigner et openssl), en-têtes H.264 et tampon vidéo. Les menus ont été parcourus dans VLC/libbluray.
 - **Pas testé** : aucune gravure, aucun lecteur de salon, ni PS3/PS5. VLC ne vérifie pas les signatures BD-J. Leur validité est prouvée par jarsigner et openssl, et leur profil est celui de DVDFab, mais l'acceptation par une vraie platine reste à voir.
 
@@ -250,6 +251,39 @@ Deux extraits de 1 min 30 (épisodes 1 et 2), trois pistes audio, `--sub 0,1,4`,
 - Sur DVD, un sous-titre en plus dans un épisode (au-delà de ceux du premier) est sur le disque mais n'est pas déclaré : il reste inaccessible.
 - Un sous-titre décoché exprès dans un seul épisode revient, si le premier épisode l'a et que cet épisode l'a aussi.
 
+### 3.9 Pistes d'une série : DVDFab et Yuhan
+
+Les limites de § 3.8, vérifiées chez DVDFab et Yuhan.
+
+**[FAIT] DVDFab** : les trois saisons de Cobra Kai faites avec lui (BD25, 10 épisodes chacune, menu « Streaming »), lues dans leurs playlists, et le jar de son menu décompilé.
+- Il recopie les pistes de chaque épisode telles quelles, sans rien réaligner :
+  - saison 1 : 6 sous-titres dans les épisodes 1, 3, 4, 8 et 10 ; 5 dans les épisodes 2, 5, 6, 7 et 9, dont le 5e est « English (SDH) » au lieu de « English (Forced) » ;
+  - saison 2 : l'épisode 7 n'en a que 4, car sa source n'a pas « French (Forced) ». Son sous-titre 1 est donc « French » complet ;
+  - saison 3 : 6 dans les épisodes 1 et 5, 5 dans les autres.
+- Audio : les trois mêmes pistes partout, comme dans les sources.
+- Ces disques n'ont pas de page Réglages : leur `AuthorData.xml` ne contient que la liste des épisodes.
+- Quand un modèle en a une, le menu lit une seule liste `<audios>` et une seule `<subtitles>` pour tout le disque, chaque entrée avec un numéro de piste fixe (`id`). Le choix est gardé dans les GPR 16 et 17, puis appliqué à chaque titre avec ce même numéro (`AudioControl.selectStreamNumber`, `SubtitlingControl.selectStreamNumber`).
+
+**[FAIT] Yuhan** : code de `BlurayCreator.dll` et `DVDCreator.dll` décompilé ; aucun disque fait avec Yuhan sur ce PC.
+- Chaque titre commence par `SET_STREAM` audio = GPR 102 et sous-titre = GPR 103 (coupés si GPR 103 vaut 0), puis lance sa playlist. Les boutons de la page Réglages écrivent un numéro fixe dans ces registres : le même numéro vaut pour tous les titres.
+- DVD : tous les titres sont dans le `titleset 1` de dvdauthor (« jump titleset 1 title … »), donc dans un seul VTS, comme BurnSmith.
+- Non vérifié : s'il réaligne les pistes des épisodes avant le multiplexage.
+
+**[FAIT] BurnSmith, saisons 1 et 2 entières en extraits** : 10 épisodes de 1 min 30 par saison, trois pistes audio, `--sub 0,1,2,3,4,5`. Dossiers BDMV construits en 237 et 234 s, structure contrôlée, pas mis en ISO.
+- Les 20 playlists ont les mêmes pistes : audio `fre eng fre`, sous-titres `fre fre fre fre eng eng`.
+- Saison 1 : la place 5, « English (forcés) », est invisible dans les épisodes 2, 5, 6, 7 et 9, ceux dont la source ne l'a pas. Leur « English (SDH) » reste à la place 6 (168 paquets dans l'épisode 2).
+- Saison 2, épisode 7 : les places 1 et 5 sont invisibles, car sa source n'a ni « French (Forced) » ni « English (Forced) ». « French », « CC » et « SDH » sont aux places 2, 3 et 4 (152, 168 et 224 paquets), « English (SDH) » à la 6 (184). Chez DVDFab, ce même épisode met « French » à la place 1.
+- Les autres places invisibles sont des pistes vides dans la minute et demie gardée.
+
+**Les quatre limites, comparées**
+
+| Limite de BurnSmith | DVDFab | Yuhan |
+|---|---|---|
+| Audio pas réaligné | Pas réaligné non plus **[FAIT]** | Un numéro pour tous les titres **[FAIT]** ; réalignement pas vérifié |
+| Sous-titre en plus inaccessible sur DVD | Pas vérifié : aucun DVD fait avec DVDFab ici | Un seul VTS aussi **[FAIT]** ; ce qu'il déclare pour un sous-titre en plus, pas vérifié |
+| Décochage par épisode qui revient | Chaque épisode garde ses pistes **[FAIT]** : un décochage y resterait, mais le numéro du menu changerait alors de piste **[DÉDUCTION]** | Pas vérifié |
+| Saison complète, gravure, platine | Saisons complètes faites ; ni gravure ni platine ici | Aucun disque |
+
 ## 4. Ce qui reste non prouvé
 
 - **Gravure et platine.** Aucun disque n'a été gravé ni lu sur un lecteur de salon ou une console. C'est le seul test qui dira si une platine lance le menu signé.
@@ -259,7 +293,7 @@ Deux extraits de 1 min 30 (épisodes 1 et 2), trois pistes audio, `--sub 0,1,4`,
 - **Débit des pistes sans perte.** Pour l'audio copié, la taille vient désormais du débit moyen que mkvmerge inscrit (`BPS`). Faute de ce débit, BurnSmith garde une estimation fixe (DTS 1536 kb/s, TrueHD 3500 kb/s), qui peut sous-estimer un DTS-HD MA. Le contrôle de taille empêche alors la gravure au lieu de rater le disque, mais ne relance pas l'encodage plus bas.
 - **Noms des épisodes.** Le menu reprend le nom du fichier (« Cobra.Kai.S01E01.Le.roi… »), comme le titre du menu et l'étiquette du disque proposés par défaut. Il se corrige dans l'éditeur de menu (« Nom de la vidéo N »). Rien ne nettoie encore automatiquement un nom de fichier de ce genre.
 - **Textes du modèle en anglais.** « Play all », « Settings », « Episodes », « Back », « Off » viennent du modèle et se changent dans l'éditeur. Les noms de langues, eux, sont dans la langue elle-même (« Français », « English »).
-- **Pistes audio d'une série.** Elles ne sont pas réalignées comme les sous-titres (§ 3.8) : des épisodes aux pistes audio différentes peuvent encore faire tomber le choix du menu sur une autre piste.
+- **Pistes audio d'une série.** Elles ne sont pas réalignées comme les sous-titres (§ 3.8) : des épisodes aux pistes audio différentes peuvent encore faire tomber le choix du menu sur une autre piste. DVDFab ne les réaligne pas non plus (§ 3.9).
 - **Saison sur DVD-5.** Avec trois pistes audio, même 1 Mb/s de vidéo ne suffit pas (5,4 Go pour 4,2). BurnSmith ne réduit pas l'audio de lui-même : il faut garder moins de pistes, ou prendre un DVD-9 ou un Blu-ray.
 - **Non essayés aujourd'hui** : le Blu-ray 4K (UHD), le diaporama, la gravure en elle-même (ImgBurn et IMAPI2) et le DVD complet en VLC au-delà du menu et du premier titre.
 
