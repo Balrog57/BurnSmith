@@ -102,6 +102,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        VersionRun.Text = " " + typeof(App).Assembly.GetName().Version?.ToString(3);
         FrenchLabels();
         MenuName.Text = "Chargement…";
         TitleList.ItemsSource = titles;

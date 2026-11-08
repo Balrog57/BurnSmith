@@ -118,7 +118,7 @@
           <TextBlock Text="&#xE7C3;" FontFamily="{StaticResource Icons}" FontSize="20" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Border>
         <StackPanel Margin="12,0,12,0" VerticalAlignment="Center">
-          <TextBlock Text="BurnSmith" FontSize="24" FontWeight="SemiBold"/>
+          <TextBlock FontSize="24" FontWeight="SemiBold"><Run Text="BurnSmith"/><Run x:Name="VersionRun" FontSize="11" FontWeight="Normal" Foreground="Gray"/></TextBlock>
           <TextBlock Text="Créateur de disques Blu-ray, Blu-ray 4K et DVD" Opacity="0.6" TextTrimming="CharacterEllipsis"/>
         </StackPanel>
       </DockPanel>
