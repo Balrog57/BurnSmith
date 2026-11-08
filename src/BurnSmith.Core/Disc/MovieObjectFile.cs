@@ -9,8 +9,8 @@ public static class MovieObjectFile
     /// <summary>Header length: "MOBJ0200", the extension start, the reserved block, the body length and the body's own reserved word.</summary>
     const int BodyStart = 48;
 
-    /// <summary>A MovieObject.bdmv holding <paramref name="objects"/>, each a run of 12-byte commands (see <see cref="Nav"/>).</summary>
-    public static byte[] Write(IReadOnlyList<IReadOnlyList<byte[]>> objects)
+    /// <summary>A MovieObject.bdmv holding <paramref name="objects"/>, each a run of 12-byte commands (see <see cref="Nav"/>); <paramref name="version"/> "0300" on a 4K disc.</summary>
+    public static byte[] Write(IReadOnlyList<IReadOnlyList<byte[]>> objects, string version = "0200")
     {
         var body = new BinaryWriterBE();
         body.U32(0);                                  // reserved
@@ -24,7 +24,7 @@ public static class MovieObjectFile
         var written = body.ToArray();
 
         var file = new BinaryWriterBE();
-        file.Str("MOBJ0200", 8);
+        file.Str("MOBJ" + version, 8);
         file.U32(0);                                  // no extension data
         file.Zero(BodyStart - 8 - 4 - 4 - 4);         // reserved, up to the body's own length word
         file.U32(written.Length);

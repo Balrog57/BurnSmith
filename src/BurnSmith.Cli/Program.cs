@@ -478,6 +478,27 @@ if (a.Count >= 1 && a[0] == "check-elements")
     Check($"les {svgButtons.Count} boutons SVG de DVDStyler se dessinent à toute taille, avec leur état choisi{(svgBad.Count > 0 ? " — en défaut : " + string.Join(", ", svgBad) : "")}",
           svgButtons.Count >= 50 && svgBad.Count == 0);
     SettingsCheck.Model(Check);
+    {
+        // a downloaded pack names files outside its folder (a network share sends the login hash, a private picture would be copied): none is followed
+        var hostile = Path.Combine(Path.GetTempPath(), "burnsmith-hostile-pack");
+        Directory.CreateDirectory(hostile);
+        File.WriteAllBytes(Path.Combine(hostile, "thumb.png"), [0x89, 0x50, 0x4E, 0x47]);
+        var bad = new TemplatePack { Name = "x", Assets = [new() { Role = "thumbnail", Path = @"..\outside.png" }] };
+        bad.Design.BackgroundImage = @"\\attacker.invalid\s\bg.png";
+        bad.Design.Poster = @"C:\Users\Public\x.jpg";
+        bad.Design.PageBackgrounds["root"] = "lib:open/backgrounds/a.jpg";
+        bad.Design.PageBackgrounds["scenes"] = @"\\attacker.invalid\s\p.png";
+        bad.Save(hostile);
+        File.WriteAllBytes(Path.Combine(Path.GetTempPath(), "outside.png"), [0x89, 0x50, 0x4E, 0x47]);
+        var read = TemplatePack.TryRead(hostile);
+        Check("a pack's paths outside its folder are dropped (share, drive, ..), library ones kept",
+              read is { Design.BackgroundImage: null, Design.Poster: null } && read.ThumbnailFile(hostile) == null
+              && read.Design.PageBackgrounds.Count == 1 && read.Design.PageBackgrounds["root"] == "lib:open/backgrounds/a.jpg");
+        File.WriteAllText(Path.Combine(hostile, TemplatePack.FileName), File.ReadAllText(Path.Combine(hostile, TemplatePack.FileName)).Replace("\"design\": {", "\"design\": null, \"x\": {"));
+        Check("a pack with \"design\": null is unreadable, not a crash", TemplatePack.TryRead(hostile) == null);
+        Directory.Delete(hostile, true);
+        File.Delete(Path.Combine(Path.GetTempPath(), "outside.png"));
+    }
     Console.WriteLine(elFailed == 0 ? "all ok" : $"{elFailed} failed");
     return elFailed == 0 ? 0 : 1;
 }
@@ -732,6 +753,12 @@ if (a.Count >= 1 && a[0] == "check-edit")
         var oldDvd = OutFolder("olddvd", "VIDEO_TS/VIDEO_TS.IFO", "AUDIO_TS/");
         var oldBd = OutFolder("oldbd", "BDMV/index.bdmv", "CERTIFICATE/id.bdmv");
         Check("a real earlier DVD or Blu-ray folder is still emptied for the new build", !Refused(oldDvd) && !Refused(oldBd) && !Directory.Exists(oldDvd) && !Directory.Exists(oldBd));
+        // a DVD backup used as the source of a disc built into its own folder: refused before anything is read or deleted, the backup intact
+        var backup = OutFolder("backup", "VIDEO_TS/VTS_01_1.VOB");
+        var vob = Path.Combine(backup, "VIDEO_TS", "VTS_01_1.VOB");
+        static bool RefusedBuild(Action build) { try { build(); return false; } catch (IOException) { return true; } }
+        Check("a source inside the output folder (a VIDEO_TS backup) is refused by both builds, before its folder is emptied",
+              RefusedBuild(() => Dvd.Build(new DvdJob([new DiscTitle(vob)], backup))) && RefusedBuild(() => BluRay.Build(new BluRayJob([new DiscTitle(vob)], backup))) && File.Exists(vob));
         var noDisc = OutFolder("nodisc", "precieux.txt");
         var empty = OutFolder("empty");
         Check("a folder without any disc is refused; an empty or missing one is fine", Refused(noDisc) &&File.Exists(Path.Combine(noDisc, "precieux.txt")));
@@ -1133,6 +1160,16 @@ if (a.Count >= 1 && a[0] == "check-edit")
     Check("a command put first in the film's movie object: object 0 gains it before its own, the others stay, the file stays valid",
           movieObjects.Length == BurnSmith.Core.Disc.MovieObjectFile.Write([[cmdC, cmdA, cmdB], [cmdC]]).Length && movieObjects.SequenceEqual(BurnSmith.Core.Disc.MovieObjectFile.Write([[cmdC, cmdA, cmdB], [cmdC]]))
           && new Func<bool>(() => { try { Bdmv.PrependToFilm([1, 2, 3], cmdA); return false; } catch (InvalidDataException) { return true; } })());
+    {
+        // "Adapter au disque": small source files only fit as they are when they are copied; an HEVC film is re-encoded, so it gets a bit rate (else CRF 17 has no size bound)
+        BluRayJob fit = new([new DiscTitle("not-there.mkv")], "", null, false, "X", 5, new EncodeOptions(FitDisc: true), 23.3);
+        SourceInfo hevc = new("hevc", 1920, 1080, 23.976, "", 0, 3600, [], []), ready = hevc with { VideoCodec = "h264", PixFmt = "yuv420p", Profile = "High", Level = 41 };
+        Check("fit disc: an HEVC source that fits is still given a bit rate, a Blu-ray-ready H.264 one is copied",
+              BluRay.EstimateGB(fit, [hevc]) > 1 && BluRay.EstimateGB(fit, [ready]) == 0);
+    }
+    Check("a 4K disc's MovieObject.bdmv (MOBJ0300, tsMuxeR --blu-ray-v3) takes a command and an object, and keeps its version",
+          Bdmv.PrependToFilm(BurnSmith.Core.Disc.MovieObjectFile.Write([[cmdA]], "0300"), cmdC).SequenceEqual(BurnSmith.Core.Disc.MovieObjectFile.Write([[cmdC, cmdA]], "0300"))
+          && Bdmv.AppendObject(BurnSmith.Core.Disc.MovieObjectFile.Write([[cmdA]], "0300"), out _, cmdB).AsSpan(0, 8).SequenceEqual("MOBJ0300"u8));
     var order = DiscTitle.MainFirst([new("b1.mkv", Bonus: true), new("m1.mkv"), new("b2.mkv", Bonus: true), new("m2.mkv")]);
     Check("disc order: the feature first, then the bonus, each group in its own order", string.Join(',', order.Select(t => t.Video)) == "m1.mkv,m2.mkv,b1.mkv,b2.mkv");
     Check("a disc of bonus only is refused", Throws(() => DiscTitle.MainFirst([new("b.mkv", Bonus: true)])) && DiscTitle.MainFirst([]).Count == 0);

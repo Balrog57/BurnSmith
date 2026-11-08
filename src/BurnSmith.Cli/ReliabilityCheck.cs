@@ -127,9 +127,12 @@ static class ReliabilityCheck
                 var what = "";
                 try { Iso.Build(disc, iso, "CHECK", false, null, new Now(_ => cancel.Cancel()), cancel.Token); }
                 catch (OperationCanceledException) { what = "cancelled"; }
-                Check("an image cancelled half way stops, and is not kept", what == "cancelled" && !File.Exists(iso), what);
+                Check("an image cancelled half way stops, and is not kept", what == "cancelled" && !File.Exists(iso) && !File.Exists(iso + ".part"), what);
                 Iso.Build(disc, iso, "CHECK", false);
-                Check("uncancelled, the same image is made", new FileInfo(iso).Length > 16 << 20);
+                Check("uncancelled, the same image is made", new FileInfo(iso).Length > 16 << 20 && !File.Exists(iso + ".part"));
+                var before = File.GetLastWriteTimeUtc(iso);
+                try { Iso.Build(disc, iso, "CHECK", false, null, new Now(_ => cancel.Cancel()), cancel.Token); } catch (OperationCanceledException) { }
+                Check("a cancelled new image leaves the older one of that name whole", File.GetLastWriteTimeUtc(iso) == before && new FileInfo(iso).Length > 16 << 20);
             });
 
             Part("a source that went away", () =>

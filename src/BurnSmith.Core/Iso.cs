@@ -8,8 +8,7 @@ public static class Iso
 {
     public static void Build(string discFolder, string isoFile, string label, bool dvd, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default)
     {
-        try { Imapi.BuildImage(discFolder, Path.GetFullPath(isoFile), label, dvd, log, progress, cancel); }
-        catch (OperationCanceledException) { File.Delete(isoFile); throw; } // half an image must never be burnt by mistake
+        Imapi.BuildImage(discFolder, Path.GetFullPath(isoFile), label, dvd, log, progress, cancel);
     }
 
     /// <summary>ImgBurn.exe: in a tools folder or on the PATH (<see cref="Tools.Find"/>), else where its own setup puts it; null when absent.</summary>

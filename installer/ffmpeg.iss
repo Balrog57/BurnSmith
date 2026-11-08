@@ -5,8 +5,6 @@
 #ifndef MachinePathRoot
   #define MachinePathRoot "HKLM"
   #define MachinePathKey "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
-  #define UserPathRoot "HKCU"
-  #define UserPathKey "Environment"
 #endif
 #ifndef FfmpegZipUrl
   #define FfmpegZipUrl "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
@@ -134,23 +132,6 @@ begin
   Result := CompareText(RemoveBackslashUnlessRoot(ExpandVariables(RemoveQuotes(Trim(Entry)))), RemoveBackslashUnlessRoot(Folder)) = 0;
 end;
 
-function UsableOnPath(const Root: Integer; const Key: String): Boolean;
-var
-  Value: String;
-  Entries: TStringList;
-  I: Integer;
-begin
-  Result := False;
-  if not RegQueryStringValue(Root, Key, 'Path', Value) then exit;
-  Entries := PathEntries(Value);
-  try
-    for I := 0 to Entries.Count - 1 do
-      if (Trim(Entries[I]) <> '') and FfmpegUsable(ExpandVariables(RemoveQuotes(Trim(Entries[I])))) then begin Result := True; exit; end;
-  finally
-    Entries.Free;
-  end;
-end;
-
 // Not setx: it cuts a long PATH and turns %VAR% into its value. A value that cannot be read is left alone, never replaced by this one entry.
 procedure AddToMachinePath(const Folder: String);
 var
@@ -227,7 +208,8 @@ begin
 end;
 
 // An update leaves {app}\tools alone, so a good copy is kept without a download. A broken one goes first: Tools.Find would take it before anything on the PATH.
-// shortcut: HKCU is the elevated account's and only that one user's. When elevation changed account, or for any other account on the PC, a copy on that user PATH stops the download although this user cannot reach it: BurnSmith then says "introuvable". Upgrade by trusting only the machine PATH, at the cost of a download for everyone whose ffmpeg is on their user PATH.
+// An ffmpeg on the PATH is never run here: this setup is elevated, and a user-writable PATH folder would let any program of the user's run as administrator.
+// Its own copy is downloaded instead (hash checked, under Program Files), which Tools.Find prefers anyway.
 // Never fails the install: nothing here may raise past this procedure. Run at every install, so a failed download is tried again at the next update.
 procedure SetUpFfmpeg;
 var
@@ -243,7 +225,6 @@ begin
       DelTree(Dest, True, True, True);
       RemoveFromMachinePath(Dest);
     end;
-    if UsableOnPath({#MachinePathRoot}, '{#MachinePathKey}') or UsableOnPath({#UserPathRoot}, '{#UserPathKey}') then exit;
     Log('no usable ffmpeg: downloading');
     DownloadFfmpeg(Dest);
     AddToMachinePath(Dest);

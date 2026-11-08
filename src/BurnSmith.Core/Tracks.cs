@@ -185,6 +185,13 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
 {
     public string DisplayName => Name ?? Path.GetFileNameWithoutExtension(Video);
 
+    /// <summary>Every file the title reads: the video, its subtitle files, and the effects' burnt subtitle and watermark.</summary>
+    public IEnumerable<string?> Files => [Video, .. External?.Select(e => e.File) ?? [], Effects?.BurnSubtitle, Effects?.Watermark];
+
+    /// <summary>The files a build reads (titles and menu), which its output and work folders must not hold: see <see cref="Tools.KeepInputs"/>.</summary>
+    public static IEnumerable<string?> Inputs(IEnumerable<DiscTitle> titles, Menu.MenuDesign? menu) =>
+        [.. titles.SelectMany(t => t.Files), menu?.LoopFile, menu?.Music];
+
     public bool Trimmed => Start > 0 || End != null || Gaps.Count > 0;
 
     /// <summary>

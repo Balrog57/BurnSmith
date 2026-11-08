@@ -174,11 +174,13 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
 
     /**
      * The player's Top Menu key restarts this same xlet: the disc only starts on the first title the first time (title number register
-     * PSR4 is 0xFFFF in First Playback and 0 once the Top Menu is called), so the menu stays reachable.
+     * PSR4 is 0xFFFF in First Playback and 0 once the Top Menu is called), so the menu stays reachable. 1: an intro played first, then jumped to title 1
+     * (this same xlet) because the disc starts on the first title; nothing else jumps there.
      */
     private boolean firstPlayback() {
         try {
-            return RegisterAccess.getInstance().getPSR(4) == 0xFFFF;
+            int title = RegisterAccess.getInstance().getPSR(4);
+            return title == 0xFFFF || title == 1;
         } catch (Throwable t) {
             log("title number register unreadable: " + t);
             return true;

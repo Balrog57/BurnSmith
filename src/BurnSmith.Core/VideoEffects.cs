@@ -51,10 +51,12 @@ public sealed record VideoEffects(
     /// <summary>
     /// The -vf graph: these effects on a source of <paramref name="width"/> x <paramref name="height"/>, then <paramref name="rest"/> (the disc's scaling).
     /// <paramref name="start"/>: the source second the first frame shows (the cut's start, or the frame a preview reads), so a burnt subtitle lines up.
+    /// <paramref name="first"/>: filters on the source before the effects (an HDR picture made SDR, so a burnt subtitle or a watermark is not toned down with it).
     /// </summary>
-    public string Vf(int width, int height, double start, string rest)
+    public string Vf(int width, int height, double start, string rest, string first = "")
     {
         var f = new List<string>();
+        if (first.Length > 0) f.Add(first);
         if (Rotate % 360 == 90) f.Add("transpose=1");
         else if (Rotate % 360 == 180) f.Add("hflip,vflip");
         else if (Rotate % 360 == 270) f.Add("transpose=2");

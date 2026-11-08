@@ -21,13 +21,16 @@ public static class Bdmv
         var objects = ReadObjects(movieObject);
         if (objects.Count == 0) throw new InvalidDataException("MovieObject.bdmv has no object");
         objects[0] = [.. commands, .. objects[0]];
-        return Disc.MovieObjectFile.Write(objects);
+        return Disc.MovieObjectFile.Write(objects, Version(movieObject));
     }
+
+    /// <summary>"0200", or "0300" on a 4K disc (tsMuxeR --blu-ray-v3): the same layout, and the file must keep the disc's version.</summary>
+    static string Version(byte[] movieObject) => movieObject.Length >= 8 && movieObject.AsSpan(0, 4).SequenceEqual("MOBJ"u8) ? Encoding.ASCII.GetString(movieObject, 4, 4) : "";
 
     static List<IReadOnlyList<byte[]>> ReadObjects(byte[] movieObject)
     {
         const int first = 8 + 4 + 28 + 4 + 4 + 2; // "MOBJ0200", extension start, reserved, body length, reserved, number of objects
-        if (movieObject.Length < first || !movieObject.AsSpan(0, 8).SequenceEqual("MOBJ0200"u8)) throw new InvalidDataException("not a MovieObject.bdmv");
+        if (movieObject.Length < first || Version(movieObject) is not ("0200" or "0300")) throw new InvalidDataException("not a MovieObject.bdmv");
         var count = BinaryPrimitives.ReadUInt16BigEndian(movieObject.AsSpan(first - 2));
         var objects = new List<IReadOnlyList<byte[]>>();
         for (int at = first, i = 0; i < count; i++)
@@ -45,7 +48,7 @@ public static class Bdmv
         var objects = ReadObjects(movieObject);
         index = objects.Count;
         objects.Add(commands);
-        return Disc.MovieObjectFile.Write(objects);
+        return Disc.MovieObjectFile.Write(objects, Version(movieObject));
     }
 
     /// <summary>

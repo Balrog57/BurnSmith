@@ -70,6 +70,18 @@ public static class Tools
     /// Empties <paramref name="dir"/> before a build, but only when it is missing, empty, or holds nothing but an earlier disc
     /// (BDMV, CERTIFICATE, VIDEO_TS, AUDIO_TS). Anything else is refused so a wrongly picked folder is never wiped.
     /// </summary>
+    /// <summary>
+    /// Refuses a build that reads a file from a folder it is about to empty: a DVD backup (…\Film\VIDEO_TS\VTS_01_1.VOB) built into …\Film would lose its source for good,
+    /// Directory.Delete skipping the Recycle Bin. Called first, before anything is probed or deleted.
+    /// </summary>
+    public static void KeepInputs(IEnumerable<string?> inputs, params string[] dirs)
+    {
+        foreach (var file in inputs.OfType<string>().Where(f => f.Length > 0))
+            foreach (var dir in dirs)
+                if (Path.GetFullPath(file).StartsWith(Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    throw new IOException($"« {file} » est dans le dossier « {dir} », que la création vide : choisissez un autre dossier de sortie.");
+    }
+
     public static void PrepareOutput(string dir)
     {
         if (!Directory.Exists(dir)) return;

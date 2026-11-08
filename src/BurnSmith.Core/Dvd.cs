@@ -41,6 +41,7 @@ public static class Dvd
     public static void Build(DvdJob job, Action<string>? log = null)
     {
         log ??= _ => { };
+        Tools.KeepInputs(DiscTitle.Inputs(job.Titles, job.Menu), job.OutDir, job.OutDir + "_work");
         var intro = job.Titles.FirstOrDefault(t => t.Intro);
         if (job.Titles.Count(t => t.Intro) > 1) throw new ArgumentException("une seule vidéo de début est possible");
         job = job with { Titles = [.. job.Titles.Where(t => !t.Intro)] }; // the start video is no title of the menu: it is the title the first-play jump goes to
@@ -135,7 +136,7 @@ public static class Dvd
         args.AddRange(["-i", title.Video, "-map", "0:v:0"]);
         foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
         var fit = $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={(wide ? 1024 : 768)}:576:force_original_aspect_ratio=decrease,pad={(wide ? 1024 : 768)}:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h},setsar={sar},{rate}";
-        var vf = title.Effects is { IsEmpty: false } fx ? fx.Vf(src.Width, src.Height, title.Start, fit) : fit;
+        var vf = (title.Effects ?? new()).Vf(src.Width, src.Height, title.Start, fit, BluRay.ToSdr(src.Hdr)); // a DVD has no HDR
         if (title.GapFilter(false) is { Length: > 0 } dropV) vf += "," + dropV;
         var af = string.Join(",", new[] { title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "" }.Where(f => f.Length > 0));
         args.AddRange(["-vf", vf,
@@ -170,6 +171,12 @@ public static class Dvd
             if (empty) log($"subtitle '{x.Track.Name}' skipped: no cue in the part kept");
             return empty;
         });
+        // a DVD title has 32 subtitle streams (0x20-0x3F): a 33rd would overwrite the chain's next fields, then fail the build after the encode
+        if (subs.Count > 32)
+        {
+            log($"warning: {subs.Count} subtitles kept, a DVD carries 32: the last {subs.Count - 32} are left out");
+            subs.RemoveRange(32, subs.Count - 32);
+        }
 
         var carried = new List<SubtitleTrack>();
         if (subs.Count > 0)
@@ -186,7 +193,13 @@ public static class Dvd
                 log("subtitles dropped: " + e.Message.Split('\n')[0]);
             }
         }
-        return new Movie(movie, audio, carried, title.ChapterList(src.Duration, job.ChapterMinutes), title.DefaultSubtitleNumber(carried));
+        var chapters = title.ChapterList(src.Duration, job.ChapterMinutes);
+        if (chapters.Count > 99) // a DVD title takes 99 chapters (one-byte counts wrap at 256): spread over the whole film, the menu's scenes follow
+        {
+            log($"warning: {title.DisplayName}: {chapters.Count} chapters, a DVD title takes 99: 99 kept, spread over the whole video");
+            chapters = [.. Enumerable.Range(0, 99).Select(i => chapters[i * chapters.Count / 99])];
+        }
+        return new Movie(movie, audio, carried, chapters, title.DefaultSubtitleNumber(carried));
     }
 
     /// <summary>
@@ -421,7 +434,7 @@ public static class Dvd
                     hl.Frame(x0, y0, x1, y1, 3, 1);
                     sel.Frame(x0, y0, x1, y1, 4, 2);
                 }
-                rects.Add((x0, y0, Math.Min(w - 1, x1), Math.Min(h - 1, y1)));
+                rects.Add((Math.Max(0, x0), Math.Max(0, y0), Math.Min(w - 1, x1), Math.Min(h - 1, y1))); // a button at the left or top edge: its focus margin starts off screen, and -2 would fill the colour bits
             }
             // one subpicture for both states: code 1 = shown when selected, 2 = when activated, 3 = both; hidden until a button is lit
             var codes = new byte[w * h];

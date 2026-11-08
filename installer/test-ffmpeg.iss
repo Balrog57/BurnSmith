@@ -1,8 +1,6 @@
 ; A setup with no administrator rights around ffmpeg.iss, for test-ffmpeg.ps1: test registry keys instead of the real PATHs, and the URLs it passes with /D. Never released.
 #define MachinePathRoot "HKCU"
 #define MachinePathKey "Software\BurnSmithFfmpegTest\Machine"
-#define UserPathRoot "HKCU"
-#define UserPathKey "Software\BurnSmithFfmpegTest\User"
 #ifndef OutName
   #define OutName "test-ffmpeg"
 #endif

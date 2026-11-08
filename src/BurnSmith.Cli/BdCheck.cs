@@ -82,6 +82,15 @@ static class BdCheck
         return last;
     }
 
+    /// <summary>Whether the stream's H.264 is flagged as fields (frame_mbs_only_flag 0): how a Blu-ray carries 1080 at 25 or 29.97.</summary>
+    static bool Fields(string m2ts)
+    {
+        var flagged = false;
+        Tools.Run(ffmpeg, ["-hide_banner", "-i", m2ts, "-map", "0:v:0", "-c", "copy", "-bsf:v", "trace_headers", "-frames:v", "1", "-f", "null", "-"],
+                  l => flagged |= Regex.IsMatch(l, @"frame_mbs_only_flag\s+0 = 0"));
+        return flagged;
+    }
+
     static EncodeOptions Small(string preset = "veryfast", bool reencode = false, bool fit = false) => new(reencode, Preset: preset, FitDisc: fit, Hd720: true);
 
     static string Bd(string name, IReadOnlyList<DiscTitle> titles, EncodeOptions? encode = null, MenuDesign? menu = null, double capacity = 23.3, Action<string>? log = null, bool uhd = false)
@@ -190,9 +199,32 @@ static class BdCheck
         Part("50 fps", () =>
         {
             var clip = Clip("fps50.mkv", "testsrc=s=320x180:r=50:d=3", 48000, ["-pix_fmt", "yuv420p"], Aac);
-            var m2ts = Stream(Bd("fps50", [new DiscTitle(clip)], Small("ultrafast")), 1);
+            var m2ts = Stream(Bd("fps50", [new DiscTitle(clip)], new EncodeOptions(Preset: "ultrafast")), 1);
             var (video, sound) = (End(m2ts, "v"), End(m2ts, "a"));
-            Check("a 50 fps source becomes 25 fps, as on a DVD, in step (within the two frames a rate change adds at the end)", Look(m2ts).Rate == "25/1" && Math.Abs(video - sound) < 0.1, $"{Look(m2ts).Rate}, video {video:0.000} s, sound {sound:0.000} s");
+            Check("on a 1080 disc a 50 fps source becomes 25 fps, as on a DVD, in step (within the two frames a rate change adds at the end)", Look(m2ts).Rate == "25/1" && Math.Abs(video - sound) < 0.1, $"{Look(m2ts).Rate}, video {video:0.000} s, sound {sound:0.000} s");
+            Check("1080 at 25 fps is flagged as fields (PsF), the only way a Blu-ray carries it", Fields(m2ts));
+            var hd = Look(Stream(Bd("fps50hd", [new DiscTitle(clip)], Small("ultrafast")), 1));
+            Check("on a 720p disc, which has 50 and no 25, it stays 50 fps", hd.Rate == "50/1", hd.Rate);
+        });
+        Part("29.97 fps", () =>
+        {
+            var clip = Clip("fps2997.mkv", "testsrc=s=320x180:r=30000/1001:d=3", 48000, ["-pix_fmt", "yuv420p"], Aac);
+            var m2ts = Stream(Bd("fps2997", [new DiscTitle(clip)], new EncodeOptions(Preset: "ultrafast")), 1);
+            var (video, sound) = (End(m2ts, "v"), End(m2ts, "a"));
+            Check("a 29.97 fps source keeps every picture on a 1080 disc (it lost one in five to 23.976), flagged as fields, in step",
+                  Look(m2ts).Rate == "30000/1001" && Fields(m2ts) && Math.Abs(video - sound) < 0.1, $"{Look(m2ts).Rate}, video {video:0.000} s, sound {sound:0.000} s");
+            var pal = Look(Stream(Bd("fps25hd", [new DiscTitle(Clip("fps25.mkv", "testsrc=s=320x180:r=25:d=2", 48000, ["-pix_fmt", "yuv420p"], Aac))], Small("ultrafast")), 1));
+            var hd = Look(Stream(Bd("fps2997hd", [new DiscTitle(clip)], Small("ultrafast")), 1));
+            Check("a 720p disc has no 25 nor 29.97: each picture is shown twice, 50 and 59.94", pal.Rate == "50/1" && hd.Rate == "60000/1001", $"{pal.Rate}, {hd.Rate}");
+        });
+        Part("HDR on a 1080 disc", () =>
+        {
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=24000/1001:d=1", "-f", "lavfi", "-i", "sine=f=440:d=1", "-map", "0:v", "-map", "1:a",
+                               "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-x265-params", "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc", "-c:a", "ac3", F("hdr10.mkv")]);
+            Check("the test clip is seen as HDR10", BluRay.Probe(F("hdr10.mkv")).Hdr == "HDR10", BluRay.Probe(F("hdr10.mkv")).Hdr);
+            var m2ts = Stream(Bd("hdr1080", [new DiscTitle(F("hdr10.mkv"))], new EncodeOptions(Preset: "ultrafast")), 1);
+            var colours = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=color_transfer,color_primaries", "-of", "csv=p=0", m2ts]).Trim().Split('\n')[0].Trim(); // an m2ts lists its stream twice (program, stream)
+            Check("its PQ picture is made SDR BT.709 (copied as it is, a player shows it grey)", colours == "bt709,bt709", colours);
         });
     }
 

@@ -125,6 +125,7 @@ public static class BluRay
     public static void Build(BluRayJob job, Action<string>? log = null)
     {
         log ??= _ => { };
+        Tools.KeepInputs(DiscTitle.Inputs(job.Titles, job.Menu), job.OutDir, job.OutDir + "_work");
         var intro = job.Titles.FirstOrDefault(t => t.Intro);
         if (job.Titles.Count(t => t.Intro) > 1) throw new ArgumentException("une seule vidéo de début est possible");
         job = job with { Titles = [.. job.Titles.Where(t => !t.Intro)] }; // the intro is no title: it is muxed apart and starts the disc
@@ -217,7 +218,7 @@ public static class BluRay
             if (MenuBuilder.TracksLeftOut(menuPages, content) is { } leftOut) log(leftOut);
             MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle); // the xlet chains only the main titles
             AddMenu(job, menuDir, log);
-            if (intro != null) StartWithIntro(job.OutDir);
+            if (intro != null) StartWithIntro(job.OutDir, job.Playback?.StartAtFirstTitle == true);
         }
         else if (muxed[0].DefaultSubtitle > 0 || intro != null)
         {
@@ -234,24 +235,43 @@ public static class BluRay
 
     /// <summary>
     /// A menu disc that starts with the intro: First Playback becomes a new movie object that plays <see cref="IntroPlaylist"/> and then jumps to the top menu (the BD-J menu),
-    /// in MovieObject.bdmv and index.bdmv and their BACKUP copies.
+    /// in MovieObject.bdmv and index.bdmv and their BACKUP copies. When the disc starts on the first title it jumps to title 1 instead, the same BD-J object:
+    /// the top menu sets the title register to 0, which the xlet reads as the Top Menu key and so shows the menu.
     /// </summary>
-    static void StartWithIntro(string outDir)
+    static void StartWithIntro(string outDir, bool startAtFirstTitle)
     {
         var bdmv = Path.Combine(outDir, "BDMV");
         var number = -1;
         foreach (var file in new[] { Path.Combine(bdmv, "MovieObject.bdmv"), Path.Combine(bdmv, "BACKUP", "MovieObject.bdmv") })
-            File.WriteAllBytes(file, Bdmv.AppendObject(File.ReadAllBytes(file), out number, Disc.Nav.PlayPlaylist(IntroPlaylist), Disc.Nav.JumpTitle(0)));
+            File.WriteAllBytes(file, Bdmv.AppendObject(File.ReadAllBytes(file), out number, Disc.Nav.PlayPlaylist(IntroPlaylist), Disc.Nav.JumpTitle(startAtFirstTitle ? 1 : 0)));
         foreach (var file in new[] { Path.Combine(bdmv, "index.bdmv"), Path.Combine(bdmv, "BACKUP", "index.bdmv") })
             File.WriteAllBytes(file, Bdmv.FirstPlayToObject(File.ReadAllBytes(file), number));
     }
 
     /// <summary>
     /// The one frame rate of a video on a Blu-ray, as ffmpeg and as tsMuxeR write it (tsMuxeR reads "24000/1001" as 24000 and sizes the playlist at 1/1000 of the clip). The two must
-    /// agree: a video made at 23.976 and declared as 24 ends 0.1 % before its sound. 50 fps becomes 25, as on a DVD; 24 is told from 23.976 by a narrow margin.
+    /// agree: a video made at 23.976 and declared as 24 ends 0.1 % before its sound. 24 is told from 23.976 by a narrow margin. The rates a disc of that
+    /// <paramref name="height"/> may carry: 1080 has 25 and 29.97 (as fields, see <see cref="Fields"/>), so 50 / 59.94 lose every other picture, as on a DVD; 720 has only
+    /// 50 and 59.94, so 25 / 29.97 show each picture twice; 4K has all of them. Any other rate (15, 20...) becomes 23.976.
     /// </summary>
-    internal static (string Ffmpeg, string TsMuxer) DiscRate(double fps) =>
-        Math.Abs(fps - 25) < 0.5 || Math.Abs(fps - 50) < 0.5 ? ("25", "25") : Math.Abs(fps - 24) < 0.01 ? ("24", "24") : ("24000/1001", "23.976");
+    internal static (string Ffmpeg, string TsMuxer) DiscRate(double fps, int height = 1080)
+    {
+        bool pal = Math.Abs(fps - 25) < 0.5 || Math.Abs(fps - 50) < 0.5, ntsc = Math.Abs(fps - 30) < 0.5 || Math.Abs(fps - 60) < 0.5;
+        var doubled = height == 720 || height == 2160 && fps > 40;
+        return pal ? doubled ? ("50", "50") : ("25", "25")
+             : ntsc ? doubled ? ("60000/1001", "59.94") : ("30000/1001", "29.97")
+             : Math.Abs(fps - 24) < 0.01 ? ("24", "24") : ("24000/1001", "23.976");
+    }
+
+    /// <summary>x264's extra settings for a 1080 picture at 25 or 29.97: a Blu-ray has those only as fields, so the progressive pictures are flagged as such (PsF).</summary>
+    static string Fields(string rate, int height) => height == 1080 && rate is "25" or "30000/1001" ? ":fake-interlaced=1:pic-struct=1" : "";
+
+    /// <summary>
+    /// An HDR picture (PQ or HLG, BT.2020) made SDR BT.709 for a disc that cannot show HDR (a 1080p Blu-ray, a DVD): copied as it is, a player shows it grey and flat.
+    /// The input is named, not read from the file; Hable keeps detail in the highlights. Empty for an SDR source.
+    /// </summary>
+    public static string ToSdr(string hdr) => hdr == "SDR" ? ""
+        : $"zscale=tin={(hdr == "HLG" ? "arib-std-b67" : "smpte2084")}:min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p";
 
     /// <summary>Picture size of the disc: 3840x2160 (4K), 1280x720 (a 720p profile) or 1920x1080.</summary>
     static (int W, int H) VideoSize(BluRayJob job) => job.Uhd ? (3840, 2160) : job.Encode?.Hd720 == true ? (1280, 720) : (1920, 1080);
@@ -292,13 +312,16 @@ public static class BluRay
         var seconds = sources.Sum(s => s.Duration);
         var room = job.CapacityGB * 1e9 - AudioAndMenuBytes(job, sources);
         var asIs = FilesBytes(job, sources);
-        if (asIs <= room)
+        // the files' size only says something when they are copied: a re-encode at constant quality has no size bound (an HEVC source often doubles as H.264)
+        var copied = job.Titles.Select((t, i) => CopiesVideo(job, t, sources[i], 0)).All(c => c);
+        if (asIs <= room && copied)
         {
             log($"fit disc: the source ({asIs / 1e9:0.0} GB) fits as it is");
             return 0;
         }
         var kbps = (int)Math.Clamp(room * 8 / seconds / 1000 * 0.94, 2000, top);
-        log($"fit disc: {asIs / 1e9:0.0} GB do not fit {job.CapacityGB:0.#} GB, re-encoded at {kbps} kb/s");
+        log(asIs <= room ? $"fit disc: the video must be re-encoded, at {kbps} kb/s to fill {job.CapacityGB:0.#} GB at most"
+                         : $"fit disc: {asIs / 1e9:0.0} GB do not fit {job.CapacityGB:0.#} GB, re-encoded at {kbps} kb/s");
         if (room * 8 / seconds / 1000 * 0.94 < 2000) log("warning: even at the lowest bit rate this does not fit the disc");
         return kbps;
     }
@@ -334,7 +357,7 @@ public static class BluRay
                 log($"warning: subtitle '{s.Name}' is made for a {plane.Width}x{plane.Height} screen, the disc is {planeW}x{planeH}: its pictures may not sit where they were meant to");
         }
 
-        var fps = DiscRate(src.Fps).TsMuxer;
+        var fps = DiscRate(src.Fps, VideoSize(job).H).TsMuxer;
         var chapterTimes = title.ChapterList(src.Duration, job.ChapterMinutes);
         var chapters = string.Join(';', chapterTimes.Select(t => TimeSpan.FromSeconds(t).ToString(@"hh\:mm\:ss\.fff", Inv)));
         var (w, h) = VideoSize(job);
@@ -412,11 +435,13 @@ public static class BluRay
         var args = new List<string> { "-y", "-v", "warning" };
         SourceInfo? src = null;
         var (fps, declared) = DiscRate(0);
+        var tone = "";
         if (menu.Loop)
         {
             var (file, probe, start) = LoopSource(menu, job.Titles[0], seconds);
             src = probe;
-            (fps, declared) = DiscRate(src.Fps);
+            (fps, declared) = DiscRate(src.Fps, h);
+            tone = ToSdr(src.Hdr) is { Length: > 0 } sdr ? sdr + "," : ""; // a moving menu taken from an HDR film
             log($"menu: moving background, {seconds}s from {Path.GetFileName(file)} at {start}s{(music != null ? " + music" : "")}");
             args.AddRange(["-ss", start.ToString(Inv), "-t", seconds.ToString(Inv), "-i", file]);
         }
@@ -431,9 +456,9 @@ public static class BluRay
         else if (src is { Audio.Count: > 0 }) args.AddRange(["-map", "0:a:0"]);
         var hasAudio = music != null || src is { Audio.Count: > 0 };
         args.AddRange(["-t", seconds.ToString(Inv),
-            "-vf", Fit(w, h), "-r", fps,
+            "-vf", tone + Fit(w, h), "-r", fps,
             "-c:v", "libx264", "-preset", "fast", "-crf", "19", "-pix_fmt", "yuv420p",
-            "-x264-params", "bluray-compat=1:level=41:vbv-maxrate=20000:vbv-bufsize=20000:keyint=24:slices=4:bframes=3:b-pyramid=strict:open-gop=0"]);
+            "-x264-params", "bluray-compat=1:level=41:vbv-maxrate=20000:vbv-bufsize=20000:keyint=24:slices=4:bframes=3:b-pyramid=strict:open-gop=0" + Fields(fps, h)]);
         if (hasAudio) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2", "-ar", "48000"]); // the first title's own sound can be anything
         args.AddRange(["-sn", "-dn", ts]);
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
@@ -479,21 +504,30 @@ public static class BluRay
     /// </summary>
     static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && (t.Start == 0 || uhd) && t.Gaps.Count == 0 && a.SampleRate == 48000 && a.Codec is "ac3" or "dts" or "truehd";
 
+    /// <summary>Whether the title's video goes on the disc as it is (stream copy) instead of being re-encoded; <see cref="TargetKbps"/> and <see cref="Prepare"/> must agree on it.</summary>
+    static bool CopiesVideo(BluRayJob job, DiscTitle title, SourceInfo s, int kbps)
+    {
+        // 4K also takes 29.97, 50 and 59.94 as they are; a 1080 copy keeps the rates it always copied
+        var fpsOk = new[] { 24000 / 1001.0, 24, 25 }.Concat(job.Uhd ? [30000 / 1001.0, 50, 60000 / 1001.0] : []).Any(r => Math.Abs(s.Fps - r) < 0.01);
+        var (w, h) = VideoSize(job);
+        var enc = job.Encode ?? new EncodeOptions();
+        // a cut that starts later must be re-encoded to begin on the exact frame (a copy starts on the keyframe before it); a 4K passthrough copies it anyway
+        var copyCut = title.Start == 0 || (job.Uhd && !enc.ForceReencode && kbps == 0);
+        // a 4K source is 10-bit HEVC at its own levels: only the H.264 of a Blu-ray has a player's limits to check
+        return !enc.ForceReencode && kbps == 0 && copyCut && (job.Uhd ? s.VideoCodec == "hevc" : s.PlayerReadyH264 && s.Hdr == "SDR") && s.Width == w && s.Height == h && fpsOk
+               && title.Effects is null or { IsEmpty: true } // effects are drawn into the picture, so it is made again
+               && title.Gaps.Count == 0; // several clips are joined frame by frame
+    }
+
     /// <summary>
     /// Remuxes to prepared.ts (ffmpeg numbers the streams from PID 256: video = 256, kept audio = 257..), re-encoding only what a Blu-ray cannot carry,
     /// and writes the subtitle files in the same pass over the source.
     /// </summary>
     static void Prepare(BluRayJob job, DiscTitle title, SourceInfo s, IReadOnlyList<AudioTrack> audio, List<(SubtitleTrack Track, string File)> subs, string output, int kbps, Action<string> log)
     {
-        var fpsOk = Math.Abs(s.Fps - 23.976) < 0.01 || Math.Abs(s.Fps - 24) < 0.01 || Math.Abs(s.Fps - 25) < 0.01;
         var (w, h) = VideoSize(job);
         var enc = job.Encode ?? new EncodeOptions();
-        // a cut that starts later must be re-encoded to begin on the exact frame (a copy starts on the keyframe before it); a 4K passthrough copies it anyway
-        var copyCut = title.Start == 0 || (job.Uhd && !enc.ForceReencode && kbps == 0);
-        // a 4K source is 10-bit HEVC at its own levels: only the H.264 of a Blu-ray has a player's limits to check
-        var videoOk = !enc.ForceReencode && kbps == 0 && copyCut && (job.Uhd ? s.VideoCodec == "hevc" : s.PlayerReadyH264) && s.Width == w && s.Height == h && fpsOk
-                      && title.Effects is null or { IsEmpty: true } // effects are drawn into the picture, so it is made again
-                      && title.Gaps.Count == 0; // several clips are joined frame by frame
+        var videoOk = CopiesVideo(job, title, s, kbps);
         if (job.Uhd && videoOk && title.Start > 0) log($"{title.DisplayName}: 4K is not re-encoded, so the cut starts on the keyframe before {Timecode.Format(title.Start)}");
 
         // -ss / -t before -i cut the input itself: the video, the sound and the subtitle files written below all start and stop together
@@ -504,8 +538,10 @@ public static class BluRay
         args.AddRange(["-i", title.Video, "-map", "0:v:0"]);
         foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
         if (videoOk) args.AddRange(["-c:v", "copy"]);
-        else args.AddRange(["-vf", (title.Effects is { IsEmpty: false } fx ? fx.Vf(s.Width, s.Height, title.Start, Fit(w, h)) : Fit(w, h)) + (title.Gaps.Count > 0 ? "," + title.GapFilter(false) : ""),
-                            "-r", DiscRate(s.Fps).Ffmpeg,
+        var tone = job.Uhd ? "" : ToSdr(s.Hdr);
+        var rate = DiscRate(s.Fps, h).Ffmpeg;
+        if (!videoOk) args.AddRange(["-vf", (title.Effects ?? new()).Vf(s.Width, s.Height, title.Start, Fit(w, h), tone) + (title.Gaps.Count > 0 ? "," + title.GapFilter(false) : ""),
+                            "-r", rate,
                             "-c:v", job.Uhd ? "libx265" : "libx264", "-preset", enc.Preset, "-pix_fmt", job.Uhd ? "yuv420p10le" : "yuv420p"]);
         if (!videoOk && job.Uhd)
         {
@@ -521,7 +557,7 @@ public static class BluRay
             // a rate asked for or fitted to the disc: average bit rate with a ceiling; else constant quality. 40 Mb/s is the level 4.1 limit
             var maxrate = kbps > 0 ? Math.Clamp(kbps + kbps / 4, 30000, 40000) : 30000;
             args.AddRange(kbps > 0 ? ["-b:v", kbps.ToString(Inv) + "k"] : ["-crf", Math.Clamp(enc.Crf, 10, 28).ToString(Inv)]);
-            args.AddRange(["-x264-params", $"bluray-compat=1:level=41:vbv-maxrate={maxrate}:vbv-bufsize=30000:keyint=24:slices=4:bframes=3:b-pyramid=strict:open-gop=0"]);
+            args.AddRange(["-x264-params", $"bluray-compat=1:level=41:vbv-maxrate={maxrate}:vbv-bufsize=30000:keyint=24:slices=4:bframes=3:b-pyramid=strict:open-gop=0{Fields(rate, h)}"]);
         }
         for (var j = 0; j < audio.Count; j++)
         {

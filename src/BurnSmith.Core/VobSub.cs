@@ -80,7 +80,7 @@ public static class VobSub
         {
             if (sub[p] != 0 || sub[p + 1] != 0 || sub[p + 2] != 1) { p++; continue; } // padding, or the end of a pack header we skipped short
             var kind = sub[p + 3];
-            if (kind == 0xBA) { p += 14 + (sub[p + 13] & 7); continue; }          // pack header (MPEG-2) with its stuffing
+            if (kind == 0xBA) { if (p + 14 > sub.Length) break; p += 14 + (sub[p + 13] & 7); continue; } // pack header (MPEG-2) with its stuffing; a truncated .sub ends here
             var length = BinaryPrimitives.ReadUInt16BigEndian(sub.AsSpan(p + 4));
             if (kind == 0xBD && p + 9 <= sub.Length)
             {

@@ -27,15 +27,7 @@ static class PictureThemeSkin
             : null;
     }
 
-    static (int W, int H)? Size(string file)
-    {
-        try
-        {
-            var f = BitmapDecoder.Create(new Uri(file), BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).Frames[0];
-            return (f.PixelWidth, f.PixelHeight);
-        }
-        catch (Exception e) when (e is NotSupportedException or FileFormatException or IOException) { return null; }
-    }
+    static (int W, int H)? Size(string file) => MenuRenderer.Size(file);
 
     /// <summary>
     /// Flood-fills the transparent area around the picture's centre (the opening of the frame) and takes the largest rectangle in it.
@@ -45,6 +37,7 @@ static class PictureThemeSkin
     {
         try
         {
+            MenuRenderer.CheckSize(file);
             var decoded = new FormatConvertedBitmap(BitmapDecoder.Create(new Uri(file), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad).Frames[0], PixelFormats.Bgra32, null, 0);
             int w = decoded.PixelWidth, h = decoded.PixelHeight;
             var px = new byte[w * h * 4];

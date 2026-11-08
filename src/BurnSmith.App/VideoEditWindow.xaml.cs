@@ -40,6 +40,8 @@ public partial class VideoEditWindow : Window
 
     readonly string video;
     readonly SourceInfo info;
+    /// <summary>An HDR source is shown as the 1080p disc or the DVD will show it (SDR), not grey: as a filter prefix, empty for SDR.</summary>
+    string Sdr => BluRay.ToSdr(info.Hdr) is { Length: > 0 } f ? f + "," : "";
     readonly double duration;
     readonly List<double> times;
     readonly List<Clip> clips;
@@ -278,7 +280,7 @@ public partial class VideoEditWindow : Window
         ShowCrop();
         var from = SeekSlider.Value >= until - 0.5 ? 0 : SeekSlider.Value;
         var psi = new System.Diagnostics.ProcessStartInfo(Ffmpeg) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
-        foreach (var a in new[] { "-v", "error", "-re", "-ss", N(from), "-i", video, "-an", "-sn", "-vf", $"fps={Fps},scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1" })
+        foreach (var a in new[] { "-v", "error", "-re", "-ss", N(from), "-i", video, "-an", "-sn", "-vf", $"{Sdr}fps={Fps},scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1" })
             psi.ArgumentList.Add(a);
         System.Diagnostics.Process? ffmpeg = null;
         try
@@ -319,7 +321,7 @@ public partial class VideoEditWindow : Window
         try
         {
             Directory.CreateDirectory(temp);
-            await Task.Run(() => Tools.Run(Ffmpeg, ["-y", "-v", "error", "-ss", N(at), "-i", video, "-frames:v", "1", "-update", "1", file]));
+            await Task.Run(() => Tools.Run(Ffmpeg, ["-y", "-v", "error", "-ss", N(at), "-i", video, "-vf", Sdr + "null", "-frames:v", "1", "-update", "1", file]));
         }
         catch (Exception) { return; } // a frame that cannot be read leaves the last one
         if (mine != frameVersion || !File.Exists(file) || playing != null) return;

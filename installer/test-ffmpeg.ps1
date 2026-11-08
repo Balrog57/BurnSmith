@@ -66,15 +66,14 @@ try {
     Check "someone else's file in tools stays" (Test-Path "$app\tools\mine.txt")
     Remove-Item $app -Recurse -Force
 
-    'A usable ffmpeg on the user PATH: no download, no folder, no PATH entry'
+    'A usable ffmpeg on the user PATH is never run by the elevated setup: it downloads its own (here from a site that fails)'
     $good = "$out\good-copy"; New-Item -ItemType Directory -Force $good | Out-Null
     Copy-Item "$GoodFfmpeg\ffmpeg.exe", "$GoodFfmpeg\ffprobe.exe" $good
     SetPath 'User' "$good\"
     $code = Run 'nosite' $app "$out\3.log"; $log = Get-Content "$out\3.log" -Raw
     Check 'exit code 0' ($code -eq 0)
-    Check 'no download' ($log -notmatch 'downloading')
-    Check 'no folder' (-not (Test-Path $own))
-    Check 'no PATH entry' ((GetPath 'Machine').Value -eq "$other;$fake")
+    Check 'the copy on the PATH was not run' ($log -notmatch [regex]::Escape($good))
+    Check 'it tried its own download' ($log -match 'no usable ffmpeg: downloading')
     Remove-Item $app -Recurse -Force
     SetPath 'User' ''
 

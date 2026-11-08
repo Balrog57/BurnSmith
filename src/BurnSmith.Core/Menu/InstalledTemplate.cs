@@ -126,45 +126,55 @@ public sealed class InstalledTemplate
         lock (Cache)
         {
             if (Cache.TryGetValue(dir, out var known)) return known;
-            // a converted pack (template.json + PNGs) is read exactly like a vendor template: the normalized tree is the same
-            if (Directory.Exists(dir) && File.Exists(Path.Combine(dir, TemplatePack.FileName)) && TemplatePack.TryRead(dir) is { HasLayout: true } pack)
-                return Cache[dir] = FromPack(dir, pack);
-            var file = new[] { "template.bd.xml", "template.xml", "template2.xml" }.Select(f => Path.Combine(dir, f)).FirstOrDefault(File.Exists);
-            InstalledTemplate? parsed = null;
-            if (dir.EndsWith(".dvdt", StringComparison.OrdinalIgnoreCase) && File.Exists(dir)) // one file per template, pictures in <library>\backgrounds
+            // one bad file (a size of "24pt", a huge picture, two buttons with one id) must not stop the scan of every other template, nor the editor for good
+            try { return Cache[dir] = Parse(dir); }
+            catch (Exception e) when (e is not OutOfMemoryException)
             {
-                var stem = System.IO.Path.GetFileNameWithoutExtension(dir);
-                var wide = stem.EndsWith("WS", StringComparison.Ordinal);
-                var name = (wide ? stem[..^2] : stem) + (wide ? " 16-9" : " 4-3");
-                var folder = System.IO.Path.GetDirectoryName(dir)!;
-                var tree = DvdtTemplate.Convert(LooseXml.Parse(File.ReadAllText(dir)), name, out var problem);
-                parsed = new InstalledTemplate(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(folder))!, "backgrounds"),
-                    tree ?? DvdtTemplate.Failed(name), TemplateKind.Library, tree == null ? problem : null,
-                    System.IO.Path.ChangeExtension(dir, ".png") is var png && File.Exists(png) ? png : null);
+                return Cache[dir] = new InstalledTemplate(dir, new XNode("template", []), TemplateKind.None, "modèle illisible : " + e.Message);
             }
-            else if (file == null && ThemeSkin.IsTheme(dir))
-                parsed = ThemeSkin.Build(dir) is { } theme
-                    ? new InstalledTemplate(dir, theme, TemplateKind.Theme, null, System.IO.Path.Combine(dir, "thumb_169.jpg"))
-                    : new InstalledTemplate(dir, new XNode("template", []), TemplateKind.Theme, "mise en page illisible (fichier de thème absent ?)");
-            else if (file != null)
-            {
-                var text = File.ReadAllText(file);
-                text = System.Text.RegularExpressions.Regex.Replace(text, "(\\w+=\"\\d+)(\\s+)(\\w+=\")", "$1\"$2$3"); // some files miss a closing quote: Top="136 Width="209
-                var doc = LooseXml.Parse(text);
-                if (doc.Child("template") is { } t) parsed = new InstalledTemplate(dir, AllInOne(t), TemplateKind.BluRay);
-                else if (doc.Child("Template") is { } s) parsed = new InstalledTemplate(dir, Simple(s, dir), TemplateKind.Dvd);
-                else if (doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect").StartsWith("16-9")) is { } def)
-                {
-                    var layout = PictureLayout(def, doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect") == "4-3"));
-                    // the thumbnail positions cover one another in a few files: its pictures are then laid out by BurnSmith
-                    var skin = Directory.Exists(Path.Combine(dir, "Menu")) && Directory.Exists(Path.Combine(dir, "Scene")) && ThumbnailsOverlap(layout);
-                    parsed = new InstalledTemplate(dir, skin ? PictureThemeSkin.Build(dir) : layout, TemplateKind.Pictures);
-                }
-            }
-            else if (Directory.Exists(Path.Combine(dir, "Menu")) && Directory.Exists(Path.Combine(dir, "Scene")))
-                parsed = new InstalledTemplate(dir, PictureThemeSkin.Build(dir), TemplateKind.Pictures); // pictures only: BurnSmith lays them out
-            return Cache[dir] = parsed;
         }
+    }
+
+    static InstalledTemplate? Parse(string dir)
+    {
+        // a converted pack (template.json + PNGs) is read exactly like a vendor template: the normalized tree is the same
+        if (Directory.Exists(dir) && File.Exists(Path.Combine(dir, TemplatePack.FileName)) && TemplatePack.TryRead(dir) is { HasLayout: true } pack)
+            return FromPack(dir, pack);
+        var file = new[] { "template.bd.xml", "template.xml", "template2.xml" }.Select(f => Path.Combine(dir, f)).FirstOrDefault(File.Exists);
+        InstalledTemplate? parsed = null;
+        if (dir.EndsWith(".dvdt", StringComparison.OrdinalIgnoreCase) && File.Exists(dir)) // one file per template, pictures in <library>\backgrounds
+        {
+            var stem = System.IO.Path.GetFileNameWithoutExtension(dir);
+            var wide = stem.EndsWith("WS", StringComparison.Ordinal);
+            var name = (wide ? stem[..^2] : stem) + (wide ? " 16-9" : " 4-3");
+            var folder = System.IO.Path.GetDirectoryName(dir)!;
+            var tree = DvdtTemplate.Convert(LooseXml.Parse(File.ReadAllText(dir)), name, out var problem);
+            parsed = new InstalledTemplate(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(folder))!, "backgrounds"),
+                tree ?? DvdtTemplate.Failed(name), TemplateKind.Library, tree == null ? problem : null,
+                System.IO.Path.ChangeExtension(dir, ".png") is var png && File.Exists(png) ? png : null);
+        }
+        else if (file == null && ThemeSkin.IsTheme(dir))
+            parsed = ThemeSkin.Build(dir) is { } theme
+                ? new InstalledTemplate(dir, theme, TemplateKind.Theme, null, System.IO.Path.Combine(dir, "thumb_169.jpg"))
+                : new InstalledTemplate(dir, new XNode("template", []), TemplateKind.Theme, "mise en page illisible (fichier de thème absent ?)");
+        else if (file != null)
+        {
+            var text = File.ReadAllText(file);
+            text = System.Text.RegularExpressions.Regex.Replace(text, "(\\w+=\"\\d+)(\\s+)(\\w+=\")", "$1\"$2$3"); // some files miss a closing quote: Top="136 Width="209
+            var doc = LooseXml.Parse(text);
+            if (doc.Child("template") is { } t) parsed = new InstalledTemplate(dir, AllInOne(t), TemplateKind.BluRay);
+            else if (doc.Child("Template") is { } s) parsed = new InstalledTemplate(dir, Simple(s, dir), TemplateKind.Dvd);
+            else if (doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect").StartsWith("16-9")) is { } def)
+            {
+                var layout = PictureLayout(def, doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect") == "4-3"));
+                // the thumbnail positions cover one another in a few files: its pictures are then laid out by BurnSmith
+                var skin = Directory.Exists(Path.Combine(dir, "Menu")) && Directory.Exists(Path.Combine(dir, "Scene")) && ThumbnailsOverlap(layout);
+                parsed = new InstalledTemplate(dir, skin ? PictureThemeSkin.Build(dir) : layout, TemplateKind.Pictures);
+            }
+        }
+        else if (Directory.Exists(Path.Combine(dir, "Menu")) && Directory.Exists(Path.Combine(dir, "Scene")))
+            parsed = new InstalledTemplate(dir, PictureThemeSkin.Build(dir), TemplateKind.Pictures); // pictures only: BurnSmith lays them out
+        return parsed;
     }
 
     static bool ThumbnailsOverlap(XNode layout)
@@ -366,8 +376,7 @@ public sealed class InstalledTemplate
         return f.Read(head) == 4 && (head is [0x89, 0x50, 0x4E, 0x47] or [0xFF, 0xD8, _, _]);
     }
 
-    string? Asset(string? relative) =>
-        string.IsNullOrWhiteSpace(relative) || System.IO.Path.Combine(dir, relative.Trim()) is var full && !IsImage(full) ? null : full;
+    string? Asset(string? relative) => TemplatePack.Inside(dir, relative) is { } full && IsImage(full) ? full : null;
 
     /// <summary>
     /// The highlighted twin of a button picture: <c>play/0.normal.png</c> → <c>play/0.sub.png</c>. Null when the template has none
@@ -492,10 +501,9 @@ public sealed class InstalledTemplate
     {
         try
         {
-            var frame = System.Windows.Media.Imaging.BitmapDecoder.Create(new Uri(file), System.Windows.Media.Imaging.BitmapCreateOptions.DelayCreation,
-                System.Windows.Media.Imaging.BitmapCacheOption.None).Frames[0];
-            var k = Math.Min(box.W / (double)frame.PixelWidth, box.H / (double)frame.PixelHeight);
-            double w = frame.PixelWidth * k, h = frame.PixelHeight * k;
+            if (MenuRenderer.Size(file) is not var (pw, ph)) return box;
+            var k = Math.Min(box.W / (double)pw, box.H / (double)ph);
+            double w = pw * k, h = ph * k;
             double ax = align.Contains("xmin") ? 0 : align.Contains("xmax") ? 1 : 0.5, ay = align.Contains("ymin") ? 0 : align.Contains("ymax") ? 1 : 0.5;
             return new Box((int)(box.X + (box.W - w) * ax), (int)(box.Y + (box.H - h) * ay), (int)w, (int)h);
         }
@@ -537,6 +545,7 @@ public sealed class InstalledTemplate
             if (Blanks.TryGetValue(png, out var known)) return known;
             try
             {
+                MenuRenderer.CheckSize(png);
                 var bitmap = new System.Windows.Media.Imaging.FormatConvertedBitmap(System.Windows.Media.Imaging.BitmapDecoder.Create(new Uri(png),
                     System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0],
                     System.Windows.Media.PixelFormats.Bgra32, null, 0);
@@ -544,7 +553,7 @@ public sealed class InstalledTemplate
                 bitmap.CopyPixels(px, bitmap.PixelWidth * 4, 0);
                 return Blanks[png] = !Enumerable.Range(0, px.Length / 4).Any(i => px[i * 4 + 3] > 16);
             }
-            catch (Exception e) when (e is NotSupportedException or System.IO.FileFormatException or IOException) { return Blanks[png] = false; }
+            catch (Exception e) when (e is NotSupportedException or System.IO.FileFormatException or IOException or InvalidDataException) { return Blanks[png] = false; }
         }
     }
 
@@ -604,6 +613,7 @@ public sealed class InstalledTemplate
             {
                 try
                 {
+                    MenuRenderer.CheckSize(png);
                     var bitmap = new System.Windows.Media.Imaging.FormatConvertedBitmap(System.Windows.Media.Imaging.BitmapDecoder.Create(new Uri(png),
                         System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0],
                         System.Windows.Media.PixelFormats.Bgra32, null, 0);
@@ -614,7 +624,7 @@ public sealed class InstalledTemplate
                     while (row > 0 && !Enumerable.Range(0, w).Any(x => px[(row * w + x) * 4 + 3] >= 200)) row--;
                     permille = (row + 1) * 1000 / h;
                 }
-                catch (Exception e) when (e is NotSupportedException or System.IO.FileFormatException or IOException) { permille = 1000; }
+                catch (Exception e) when (e is NotSupportedException or System.IO.FileFormatException or IOException or InvalidDataException) { permille = 1000; }
                 Floors[png] = permille;
             }
             return rect.Y + rect.H * permille / 1000;

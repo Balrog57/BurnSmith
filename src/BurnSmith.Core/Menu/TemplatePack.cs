@@ -81,6 +81,9 @@ public sealed class TemplatePack
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
+    /// <summary>Reading only: "design": null in a downloaded pack is a JsonException, caught by TryRead, not a crash further on (a save is not refused for it).</summary>
+    static readonly JsonSerializerOptions Strict = new(Json) { RespectNullableAnnotations = true };
+
     /// <summary>Reads one pack; null when the file is absent, unreadable or of another schema.</summary>
     public static TemplatePack? TryRead(string dir)
     {
@@ -88,9 +91,13 @@ public sealed class TemplatePack
         {
             var file = Path.Combine(dir, FileName);
             if (!File.Exists(file)) return null;
-            var pack = JsonSerializer.Deserialize<TemplatePack>(File.ReadAllText(file), Json);
+            var pack = JsonSerializer.Deserialize<TemplatePack>(File.ReadAllText(file), Strict);
             if (pack == null || pack.Schema != SchemaId) return null;
             pack.Dir = dir;
+            var d = pack.Design;
+            (d.Poster, d.BackgroundImage, d.LoopFile, d.Music) = (Library(d.Poster), Library(d.BackgroundImage), null, null);
+            d.PageBackgrounds = d.PageBackgrounds.Where(p => Library(p.Value) != null).ToDictionary();
+            foreach (var e in d.Elements) (e.Image, e.Focus) = (Library(e.Image), Library(e.Focus));
             return pack;
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { return null; }
@@ -138,7 +145,7 @@ public sealed class TemplatePack
 
     /// <summary>The pack's thumbnail, when it carries one.</summary>
     public string? ThumbnailFile(string dir) =>
-        Assets.FirstOrDefault(a => a.Role == "thumbnail") is { } t && File.Exists(Path.Combine(dir, t.Path)) ? Path.Combine(dir, t.Path) : null;
+        Assets.FirstOrDefault(a => a.Role == "thumbnail") is { } t && Inside(dir, t.Path) is { } file && File.Exists(file) ? file : null;
 
     // ---------------------------------------------------------------- conversion
 
@@ -363,6 +370,7 @@ public sealed class TemplatePack
             File.Copy(source, target, true);
             return;
         }
+        MenuRenderer.CheckSize(source);
         MenuRenderer.Sta(() =>
         {
             var frame = System.Windows.Media.Imaging.BitmapDecoder.Create(new Uri(source),
@@ -416,8 +424,7 @@ public sealed class TemplatePack
         if (string.IsNullOrWhiteSpace(value)) return null;
         var v = value.Trim();
         if (v.Length == 0 || v.Contains(',') || v.Contains('#')) return null;
-        var path = Path.IsPathRooted(v) ? v : Path.Combine(dir, v.Replace('/', Path.DirectorySeparatorChar));
-        if (!File.Exists(path)) return null;
+        if (Inside(dir, v) is not { } path || !File.Exists(path)) return null;
         var ext = Path.GetExtension(path).ToLowerInvariant();
         return ext is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" ? path : null;
     }
@@ -428,6 +435,23 @@ public sealed class TemplatePack
         var full = Path.GetFullPath(file);
         return IsUnder(full, root) ? Path.GetRelativePath(root, full).Replace('\\', '/') : Path.GetFileName(full);
     }
+
+    /// <summary>
+    /// The file a template names, only when it is a relative path that stays inside <paramref name="dir"/>, else null. A downloaded template must not make the app
+    /// open a network share (Windows would send it the user's login hash) or read a private picture into a pack: no C:\, no \\server, no ..\..
+    /// </summary>
+    internal static string? Inside(string dir, string? relative)
+    {
+        if (string.IsNullOrWhiteSpace(relative) || relative.Contains('\0')) return null;
+        var v = relative.Trim().Replace('/', Path.DirectorySeparatorChar);
+        if (Path.IsPathRooted(v)) return null; // C:\x, C:x, \x and \\server\share
+        var full = Path.GetFullPath(Path.Combine(dir, v));
+        return IsUnder(full, dir) ? full : null;
+    }
+
+    /// <summary>A picture reference of a pack's design, kept only when it names the library: a pack is shared looks, never a path to follow.</summary>
+    static string? Library(string? reference) =>
+        reference != null && (reference.StartsWith("lib:", StringComparison.Ordinal) || reference.StartsWith("carried:", StringComparison.Ordinal)) ? reference : null;
 
     static bool IsUnder(string path, string root)
     {

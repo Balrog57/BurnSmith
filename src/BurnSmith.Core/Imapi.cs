@@ -112,6 +112,17 @@ public static class Imapi
         if (label.Length > 32) label = label[..32];
 
         log?.Invoke("iso: IMAPI2FS (UDF " + (dvd ? "1.02" : "2.50") + ")");
+        // written beside it, then renamed once whole and checked: half an image (cancelled, disk full, FAT32's 4 GB) never bears the name that gets burnt, and an older one stays until then
+        var part = isoFile + ".part";
+        try { WriteImage(folder, part, label, dvd, progress, cancel); }
+        catch (Exception) { File.Delete(part); throw; }
+        if (UdfRevision(part) is not { } rev) { File.Delete(part); throw new IOException("The image written by Windows has no UDF volume."); }
+        File.Move(part, isoFile, true);
+        log?.Invoke($"done: {isoFile} (UDF {rev.Major}.{rev.Minor:00}, {new FileInfo(isoFile).Length / 1e9:0.00} GB)");
+    }
+
+    static void WriteImage(string folder, string part, string label, bool dvd, IProgress<double>? progress, CancellationToken cancel)
+    {
         dynamic fsi = Create("IMAPI2FS.MsftFileSystemImage");
         try
         {
@@ -124,10 +135,12 @@ public static class Imapi
             try
             {
                 long total = Convert.ToInt64(result.TotalBlocks) * Convert.ToInt32(result.BlockSize);
+                if (Path.GetPathRoot(part) is { Length: 3 } root && new DriveInfo(root).AvailableFreeSpace < total)
+                    throw new IOException($"pas assez de place sur {root} pour l'image : il faut {total / 1e9:0.0} Go");
                 var stream = (IStream)result.ImageStream;
                 try
                 {
-                    using var output = File.Create(isoFile);
+                    using var output = File.Create(part);
                     var buffer = new byte[1 << 20];
                     var read = Marshal.AllocHGlobal(sizeof(int));
                     try
@@ -151,8 +164,6 @@ public static class Imapi
             finally { Release(result); }
         }
         finally { Release(fsi); }
-        if (UdfRevision(isoFile) is not { } rev) throw new IOException("The image written by Windows has no UDF volume.");
-        log?.Invoke($"done: {isoFile} (UDF {rev.Major}.{rev.Minor:00}, {new FileInfo(isoFile).Length / 1e9:0.00} GB)");
     }
 
     /// <summary>The UDF revision recorded in an image (looked up in its first 4 MiB), or null when it has none.</summary>

@@ -50,7 +50,7 @@ public static class ElementLibrary
         if (reference.StartsWith("lib:", StringComparison.Ordinal)) { prefix = "lib:"; dir = OpenLibrary.Dir()!; }
         else if (reference.StartsWith("carried:", StringComparison.Ordinal)) { prefix = "carried:"; dir = Tools.TemplatesDir()!; }
         else return reference;
-        return dir == null ? null : System.IO.Path.Combine(dir, reference[prefix.Length..].Replace('/', System.IO.Path.DirectorySeparatorChar));
+        return dir == null ? null : TemplatePack.Inside(dir, reference[prefix.Length..]); // "lib:..\..\x" stays in the library
     }
 
     /// <summary>Every background, grouped by source (the order of the sources is the order of the list).</summary>
@@ -92,11 +92,7 @@ public static class ElementLibrary
     }
 
     /// <summary>The file of a pack asset, or null when the picture was removed from the folder.</summary>
-    static string? PackFile(string dir, string relative)
-    {
-        var file = System.IO.Path.Combine(dir, relative.Replace('/', System.IO.Path.DirectorySeparatorChar));
-        return File.Exists(file) ? file : null;
-    }
+    static string? PackFile(string dir, string relative) => TemplatePack.Inside(dir, relative) is { } file && File.Exists(file) ? file : null;
 
     static string PageLabel(string? page) => page switch
     {

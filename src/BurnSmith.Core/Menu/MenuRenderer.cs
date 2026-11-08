@@ -15,7 +15,12 @@ public static class MenuRenderer
     {
         T result = default!;
         Exception? error = null;
-        var t = new Thread(() => { try { result = work(); } catch (Exception e) { error = e; } });
+        var t = new Thread(() =>
+        {
+            try { result = work(); }
+            catch (Exception e) { error = e; }
+            finally { System.Windows.Threading.Dispatcher.FromThread(Thread.CurrentThread)?.InvokeShutdown(); } // else each render leaks its dispatcher's window and handles
+        });
         t.SetApartmentState(ApartmentState.STA);
         t.Start();
         t.Join();
@@ -70,6 +75,10 @@ public static class MenuRenderer
         {
             var doc = System.Xml.Linq.XDocument.Load(path);
             var root = doc.Root!;
+            // an imported SVG draws itself only: SharpVectors would follow <image href="file://server/share/x.png"> (Windows then sends the login hash), so links leave the document
+            doc.DocumentType?.Remove();
+            foreach (var link in root.DescendantsAndSelf().SelectMany(e => e.Attributes()).Where(a => a.Name.LocalName == "href" && !a.Value.StartsWith('#') && !a.Value.StartsWith("data:", StringComparison.OrdinalIgnoreCase)).ToList())
+                link.Remove();
             if (size is { } s) { root.SetAttributeValue("width", Math.Round(s.Width)); root.SetAttributeValue("height", Math.Round(s.Height)); }
             double Dim(string name) => double.TryParse(((string?)root.Attribute(name))?.TrimEnd('p', 'x'), System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 100;
             var (w, h) = (Dim("width"), Dim("height"));
@@ -96,6 +105,7 @@ public static class MenuRenderer
     {
         try
         {
+            CheckSize(p);
             var img = new BitmapImage();
             img.BeginInit();
             img.CacheOption = BitmapCacheOption.OnLoad;
@@ -159,13 +169,23 @@ public static class MenuRenderer
     public static byte[] Marker(MenuDesign d, int size, double scale = 1) =>
         Encode(new PngBitmapEncoder(), size, size, dc => dc.DrawEllipse(new SolidColorBrush(Col(d.Accent)), null, new Point(size / 2.0, size / 2.0), size / 2.0, size / 2.0), scale);
 
+    /// <summary>
+    /// Refuses, before it is decoded, a picture over 8192 pixels a side (the library's largest is 3840x2160): a 2 MB PNG can say 20000x20000, gigabytes in memory,
+    /// and an out-of-memory error ends the app.
+    /// </summary>
+    internal static void CheckSize(string image)
+    {
+        if (Size(image) is var (w, h) && (w > 8192 || h > 8192)) throw new InvalidDataException($"Image trop grande ({w} x {h}) : {image}");
+    }
+
     /// <summary>Pixel size of an image file, or null when it cannot be read (a template picture can be damaged).</summary>
     public static (int W, int H)? Size(string image)
     {
         try
         {
             if (IsSvg(image)) return Load(image) is { Width: > 0, Height: > 0 } svg ? ((int)Math.Round(svg.Width), (int)Math.Round(svg.Height)) : null;
-            var frame = BitmapDecoder.Create(new Uri(image), BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).Frames[0];
+            using var file = File.OpenRead(image); // a stream closed here: from a Uri, WPF holds the file open until a garbage collection ("Retirer" then fails)
+            var frame = BitmapDecoder.Create(file, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).Frames[0];
             return (frame.PixelWidth, frame.PixelHeight);
         }
         catch (InvalidDataException) { return null; }
