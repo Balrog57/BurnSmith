@@ -189,10 +189,11 @@ public static class Imapi
 
     /// <summary>
     /// Writes an image to the blank disc in <paramref name="letter"/> ("F:"), closes the disc and, with <paramref name="verify"/>, reads it back.
-    /// shortcut: not tried on real media in this project's test PC (no burner visible there); speed is the drive's choice.
+    /// <paramref name="speed"/> is × the disc's 1x (0 = the drive's choice); the drive takes the nearest speed it supports.
+    /// shortcut: not tried on real media in this project's test PC (no burner visible there).
     /// </summary>
     public static void Burn(string isoFile, string letter, Action<string>? log = null, IProgress<double>? progress = null,
-                            bool verify = true, CancellationToken cancel = default)
+                            bool verify = true, CancellationToken cancel = default, int speed = 0)
     {
         if (!File.Exists(isoFile)) throw new FileNotFoundException("image not found", isoFile);
         var size = new FileInfo(isoFile).Length;
@@ -212,6 +213,8 @@ public static class Imapi
             format.put_Recorder(recorder);
             format.put_ClientName("BurnSmith");
             format.put_ForceMediaToBeClosed(true);
+            // 1x in 2048-byte sectors per second: CD 150 kB/s, DVD 1385 kB/s, Blu-ray 4495 kB/s
+            if (speed > 0) format.SetWriteSpeed(speed * (media.Kind.StartsWith("BD") ? 2195 : media.Kind.StartsWith("CD") ? 75 : 676), false);
             var start = Environment.TickCount64;
             Action<object, object> update = (_, args) =>
             {

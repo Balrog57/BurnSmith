@@ -246,6 +246,13 @@
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>
+          <ComboBox x:Name="SpeedBox" Margin="6,0,0,0" VerticalAlignment="Center" SelectedIndex="0" AutomationProperties.Name="Vitesse de gravure"
+                    ToolTip="Vitesse de gravure. Plus lent est souvent plus sûr pour un DVD lu sur une vieille platine. Une vitesse que le disque n'offre pas laisse le choix au graveur.">
+            <ComboBoxItem Content="Vitesse max"/>
+            <ComboBoxItem Content="8x"/>
+            <ComboBoxItem Content="6x"/>
+            <ComboBoxItem Content="4x"/>
+          </ComboBox>
         </StackPanel>
         <Button x:Name="StartButton" Style="{StaticResource Primary}" Grid.Column="6" Content="Démarrer" Margin="16,0,0,0"
                 MinWidth="150" Padding="24,10" FontSize="16" FontWeight="SemiBold" Click="OnStart"/>

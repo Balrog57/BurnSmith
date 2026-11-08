@@ -793,6 +793,9 @@ if (a.Count >= 1 && a[0] == "check-edit")
           && DiscTitle.Readable("Cobra.Kai.S01E01.Le.roi.des.tares.MULTi.AD.1080p.NF.WEB.DDP.H265-THESYNDiCATE.mkv") == ("Épisode 1 · Le roi des tares", "Cobra Kai Saison 1")
           && DiscTitle.Readable("The_French_Village_S01E02_x264-GRP.mkv") == ("Épisode 2", "The French Village Saison 1")
           && DiscTitle.Readable("Mon film 1080p.mkv") == ("Mon film 1080p", null) && new DiscTitle("x.mkv", "Mine").DisplayName == "Mine");
+    Check("ImgBurn gets the chosen speed as its list shows it (MAX, 4x), the drive letter and its log file",
+          string.Join(" ", Iso.ImgBurnArgs(@"C:\a.iso", "f:", 4, @"C:\l.log")).Contains("/DEST F /SPEED 4x /LOG C:\\l.log /SRC C:\\a.iso")
+          && Iso.ImgBurnArgs(@"C:\a.iso", "F:", 0, "l").Contains("MAX") && Iso.Speeds[0] == 0);
     var tracked = new SourceInfo("h264", 1920, 1080, 24, "ac3", 6, 600, [new(0, "dts", 6, "und", ""), new(1, "ac3", 2, "eng", "")], [new(0, "subrip", "und", "", false), new(1, "hdmv_pgs_subtitle", "fre", "", false)]);
     var relabel = new DiscTitle("x", Audio: [0, 1], Subtitles: [0, 1], External: [new ExternalSubtitle("s.srt", "ger")], TrackLanguage: new Dictionary<string, string> { ["a0"] = "fre", ["s0"] = "eng", ["s2"] = "spa" });
     var relabelled = relabel.Cut(tracked);
@@ -1379,7 +1382,8 @@ if (a.Count >= 2 && a[0] == "hold-tool")
     return 0;
 }
 if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BURNSMITH", a.Contains("--dvd"), Console.WriteLine); return 0; }
-if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  "))); return 0; }
+// burnsmith burn IMAGE.iso F: [--speed 4] : the speed is × 1x, absent = the drive's fastest
+if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0); return 0; }
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || Opt("--out") is not { } outDir)
 {

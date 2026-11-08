@@ -1046,6 +1046,7 @@ public partial class MainWindow : Window
         var play = playback;
         var label = volume;
         var drive = DriveBox.SelectedItem as Imapi.Drive;
+        var speed = Iso.Speeds[Math.Max(0, SpeedBox.SelectedIndex)];
         var burn = BurnCheck.IsChecked == true && drive != null;
         if (burn && MessageBox.Show(this,
                 $"Après la création, graver « {label} » sur {drive!.Letter} ?\n\nInsérez un disque vierge adapté ({cap.Name}). Le disque sera écrit définitivement.",
@@ -1079,7 +1080,7 @@ public partial class MainWindow : Window
             {
                 writing = true;
                 token.ThrowIfCancellationRequested();
-                Iso.Burn(iso, drive!.Letter, log, progress, token);
+                Iso.Burn(iso, drive!.Letter, log, progress, token, speed);
             }
             if (!withIso) File.Delete(iso); // only made to burn
         });
@@ -1101,7 +1102,8 @@ public partial class MainWindow : Window
             "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (answer != MessageBoxResult.Yes) return;
         writing = true;
-        if (await Work("Gravure…", (log, progress, token) => Iso.Burn(iso, drive.Letter, log, progress, token))) Append("Terminé.");
+        var speed = Iso.Speeds[Math.Max(0, SpeedBox.SelectedIndex)];
+        if (await Work("Gravure…", (log, progress, token) => Iso.Burn(iso, drive.Letter, log, progress, token, speed))) Append("Terminé.");
     }
 
     async void OnErase(object s, RoutedEventArgs e)

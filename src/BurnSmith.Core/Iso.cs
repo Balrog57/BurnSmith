@@ -37,18 +37,38 @@ public static class Iso
         return drives;
     }
 
-    /// <summary>Burns an image to the blank disc in <paramref name="drive"/> ("F:") and verifies it.</summary>
-    public static void Burn(string isoFile, string drive, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default)
+    /// <summary>The write speeds offered, × the disc's 1x (0 = the drive's fastest): values found in ImgBurn's list for DVD as for Blu-ray.</summary>
+    public static readonly int[] Speeds = [0, 8, 6, 4];
+
+    /// <summary>ImgBurn's log of the last burn, next to burnsmith.log.</summary>
+    public static string ImgBurnLog() => Path.Combine(Path.GetDirectoryName(AppFiles.ErrorLog())!, "imgburn.log");
+
+    /// <summary>
+    /// DVDFab's switches (DVDFab64.exe): no question asked, it waits for a disc, closes on success and stays open on an error so the user can read it.
+    /// /SPEED must match an entry of ImgBurn's drop-down list ("4x", its ReadMe); the log is written when ImgBurn closes.
+    /// </summary>
+    public static List<string> ImgBurnArgs(string iso, string drive, int speed, string logFile) =>
+        ["/MODE", "ISOWRITE", "/WAITFORMEDIA", "/START", "/CLOSESUCCESS", "/IGNORELOCKVOLUME", "/NOIMAGEDETAILS", "/VERIFY", "YES",
+         "/DEST", drive[..1].ToUpperInvariant(), "/SPEED", speed > 0 ? $"{speed}x" : "MAX", "/LOG", logFile, "/SRC", iso];
+
+    /// <summary>Burns an image to the blank disc in <paramref name="drive"/> ("F:") at <paramref name="speed"/> (× 1x, 0 = fastest) and verifies it.</summary>
+    public static void Burn(string isoFile, string drive, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default, int speed = 0)
     {
         var iso = Path.GetFullPath(isoFile);
-        if (ImgBurn() is not { } exe) { Imapi.Burn(iso, drive, log, progress, verify: true, cancel); return; }
+        if (ImgBurn() is not { } exe) { Imapi.Burn(iso, drive, log, progress, verify: true, cancel, speed); return; }
         if (!File.Exists(iso)) throw new FileNotFoundException("image not found", iso);
         if (drive.Length < 2 || !char.IsAsciiLetter(drive[0]) || drive[1] != ':') throw new ArgumentException("drive must look like F:", nameof(drive));
-        log?.Invoke($"burn: ImgBurn {Path.GetFileName(iso)} -> {drive[..2]} ({new FileInfo(iso).Length / 1e9:0.00} GB)");
-        // DVDFab's switches (DVDFab64.exe): no question asked, it waits for a disc, closes on success and stays open on an error so the user can read it.
+        log?.Invoke($"burn: ImgBurn {Path.GetFileName(iso)} -> {drive[..2]} ({new FileInfo(iso).Length / 1e9:0.00} GB, {(speed > 0 ? $"{speed}x" : "vitesse max")})");
+        var imgLog = ImgBurnLog();
+        try { File.Delete(imgLog); } catch (IOException) { } // an older burn's log must not pass for this one's
         // shortcut: untested on real media, and no progress reaches the app (ImgBurn's window shows it)
-        Tools.WithCancel(cancel, () => Tools.Run(exe, ["/MODE", "ISOWRITE", "/WAITFORMEDIA", "/START", "/CLOSESUCCESS", "/IGNORELOCKVOLUME", "/NOIMAGEDETAILS",
-            "/VERIFY", "YES", "/DEST", drive[..1].ToUpperInvariant(), "/SPEED", "MAX", "/SRC", iso], outlivesApp: true)); // a crash of the app must not spoil the disc being written
+        try { Tools.WithCancel(cancel, () => Tools.Run(exe, ImgBurnArgs(iso, drive, speed, imgLog), outlivesApp: true)); } // a crash of the app must not spoil the disc being written
+        catch (InvalidOperationException e) when (File.Exists(imgLog))
+        {
+            // ImgBurn prints nothing: the reason is in its log (exit 1 = could not start, 2 = write failed, 3 = verify failed)
+            throw new InvalidOperationException($"{e.Message.Split('\n')[0]}\n{string.Join("\n", File.ReadLines(imgLog).TakeLast(15))}\n(journal complet : {imgLog})", e);
+        }
+        if (File.Exists(imgLog)) log?.Invoke($"journal d'ImgBurn : {imgLog}");
         log?.Invoke("done: disc written");
     }
 }
