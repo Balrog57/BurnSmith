@@ -1,5 +1,6 @@
 # Builds the installer .\dist\BurnSmith-Setup-<version>.exe, the only file of a GitHub release and the one the in-app update downloads (Program Files; Inno Setup 6 is required).
-# It wraps .\dist\BurnSmith.exe, an intermediate step: self-contained, one file, with tsMuxeR inside. ffmpeg and ffprobe are not carried: installer\ffmpeg.iss finds or downloads them.
+# It wraps .\dist\BurnSmith.exe, an intermediate step: self-contained, one file, with tsMuxeR inside. The installer itself carries ffmpeg and ffprobe
+# (installer\ffmpeg.iss) and ImgBurn's own setup (installer\imgburn.iss), taken from this PC once their SHA-256 matches: nothing is downloaded at install.
 # tsMuxeR is not in this repository: it is taken from this PC and zipped
 # into obj\payload\tools.zip, which the BurnSmith.Payload assembly embeds, with tsMuxeR's Apache-2.0 licence.
 # None of the templates below stops the script.
@@ -7,11 +8,25 @@
 # obj\payload\templates.zip. The first time it runs, the installed exe unpacks the tools into %LOCALAPPDATA%\BurnSmith\files
 # and the template pictures into Documents\BurnSmith\Templates.
 param(
-    [string]$TsMuxer = "$PSScriptRoot\tools\tsmuxer\bin\tsMuxeR.exe"
+    [string]$TsMuxer = "$PSScriptRoot\tools\tsmuxer\bin\tsMuxeR.exe",
+    # the folder of ffmpeg.exe and ffprobe.exe: tools\ffmpeg as CI fills it, else the one on the PATH (winget install Gyan.FFmpeg --version 8.1.1)
+    [string]$Ffmpeg = $(if (Test-Path "$PSScriptRoot\tools\ffmpeg\ffmpeg.exe") { "$PSScriptRoot\tools\ffmpeg" } elseif (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) { Split-Path (Get-Command ffmpeg.exe).Source } else { "$PSScriptRoot\tools\ffmpeg" }),
+    # from https://download.imgburn.com/SetupImgBurn_2.5.8.0.exe
+    [string]$ImgBurnSetup = "$PSScriptRoot\tools\imgburn-setup\SetupImgBurn_2.5.8.0.exe"
 )
 $ErrorActionPreference = 'Stop' # a missing licence file must fail the build, not ship without it
 $root = $PSScriptRoot
 if (-not (Test-Path $TsMuxer)) { throw "missing: $TsMuxer" }
+# the setup carries exactly what was tested: the ffmpeg build CI pins (.github\workflows\ci.yml), ImgBurn's setup as Chocolatey's moderated package checks it
+$pins = @{
+    "$Ffmpeg\ffmpeg.exe" = '09948D4CDD0650DA6FF5A87577469F2A218DC2615AE379F8F734D24C49DE0F73'
+    "$Ffmpeg\ffprobe.exe" = 'A6618E99BB58869DED3C6F37B53AA1A8D701C3591DBB7B5B317D47369C112BE2'
+    $ImgBurnSetup = '49AA06EAFFE431F05687109FEE25F66781ABBE1108F3F8CA78C79BDEC8753420'
+}
+foreach ($f in $pins.Keys) {
+    if (-not (Test-Path -LiteralPath $f)) { throw "missing: $f" }
+    if ((Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash -ne $pins[$f]) { throw "$f is not the pinned build" }
+}
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $payload = "$root\obj\payload"
@@ -55,6 +70,6 @@ foreach ($l in @(
 $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $iscc) { throw "Inno Setup 6 not found (winget install JRSoftware.InnoSetup): a release is its installer" }
 $version = ((Get-Item "$root\dist\BurnSmith.exe").VersionInfo.ProductVersion -split '\+')[0]
-& $iscc "/DAppVersion=$version" "$root\installer\BurnSmith.iss"
+& $iscc "/DAppVersion=$version" "/DFfmpegDir=$Ffmpeg" "/DImgBurnSetup=$ImgBurnSetup" "$root\installer\BurnSmith.iss"
 if ($LASTEXITCODE -ne 0) { throw "installer failed" }
 Get-Item "$root\dist\BurnSmith-Setup-$version.exe" | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) } }

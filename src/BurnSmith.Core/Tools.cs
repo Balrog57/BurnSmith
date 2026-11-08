@@ -63,7 +63,7 @@ public static class Tools
             var p = Path.Combine(dir, exe);
             if (File.Exists(p)) return cache[exe] = p;
         }
-        var installer = exe is "ffmpeg.exe" or "ffprobe.exe" ? "relancez l'installateur de BurnSmith, avec Internet : il les télécharge. Sinon, " : ""; // first: the journal does not wrap, the end of a long line is off screen
+        var installer = exe is "ffmpeg.exe" or "ffprobe.exe" ? "réinstallez BurnSmith, dont l'installateur les contient. Sinon, " : ""; // first: the journal does not wrap, the end of a long line is off screen
         throw new FileNotFoundException($"{exe} introuvable : {installer}indiquez son dossier dans la variable d'environnement BURNSMITH_TOOLS, ajoutez-le au PATH ou placez-le dans un dossier tools à côté de BurnSmith.");
     }
 

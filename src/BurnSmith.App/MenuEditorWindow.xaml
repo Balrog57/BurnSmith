@@ -34,19 +34,27 @@
 
     <!-- the library: templates, then backgrounds and buttons apart -->
     <TabControl x:Name="Library">
+      <!-- the 4 tabs in a fixed 2 × 2 grid: none moves when another is picked, each name on one line -->
+      <TabControl.Template>
+        <ControlTemplate TargetType="TabControl">
+          <DockPanel>
+            <UniformGrid DockPanel.Dock="Top" Columns="2" IsItemsHost="True" Margin="0,0,0,4"/>
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+              <ContentPresenter ContentSource="SelectedContent"/>
+            </Border>
+          </DockPanel>
+        </ControlTemplate>
+      </TabControl.Template>
       <TabControl.Resources>
-        <!-- 4 fixed squares on one row: 4 × (62 + 4) fits the 270 px column -->
         <Style TargetType="TabItem" BasedOn="{StaticResource {x:Type TabItem}}">
-          <Setter Property="Width" Value="62"/>
-          <Setter Property="Height" Value="62"/>
-          <Setter Property="Margin" Value="0,0,4,0"/>
-          <Setter Property="Padding" Value="2"/>
+          <Setter Property="Margin" Value="2"/>
           <Setter Property="HorizontalContentAlignment" Value="Center"/>
           <Setter Property="VerticalContentAlignment" Value="Center"/>
           <Setter Property="HeaderTemplate">
             <Setter.Value>
               <DataTemplate>
-                <TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Center"/>
+                <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis"/>
               </DataTemplate>
             </Setter.Value>
           </Setter>

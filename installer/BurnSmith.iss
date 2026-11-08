@@ -26,10 +26,14 @@ OutputBaseFilename=BurnSmith-Setup-{#AppVersion}
 UninstallDisplayIcon={app}\BurnSmith.exe
 SetupIconFile=..\assets\burnsmith.ico
 WizardStyle=modern
-; the exe is already compressed (single file, compressed), so a fast pass is enough
-Compression=lzma2/fast
-SolidCompression=no
+; one solid block whose dictionary outgrows ffmpeg.exe: ffprobe.exe, made of mostly the same bytes, then costs almost nothing. The exe is already compressed.
+Compression=lzma2/normal
+SolidCompression=yes
+LZMADictionarySize=262144
+LZMAUseSeparateProcess=yes
 CloseApplications=yes
+; %TEMP%\Setup Log <date>.txt, every time: what an update that went wrong did
+SetupLogging=yes
 
 [Languages]
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
@@ -39,21 +43,26 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\dist\BurnSmith.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\BurnSmith.exe"; DestDir: "{app}"; Flags: ignoreversion nocompression
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-; the SVG reader built into the exe (BSD-3-Clause asks for its notice beside the program)
+; the SVG reader built into the exe (MIT asks for its notice with the program)
 Source: "SVGImage-LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 ; copied into dist by publish.ps1 from the runtime packs of the build
 Source: "..\dist\dotnet-runtime-LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\dotnet-runtime-THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\windowsdesktop-runtime-LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 
+[InstallDelete]
+; files of older versions that no longer ship
+Type: files; Name: "{app}\SharpVectors-LICENSE.txt"
+Type: files; Name: "{app}\THIRD-PARTY-NOTICES.md"
+
 [Icons]
 Name: "{autoprograms}\BurnSmith"; Filename: "{app}\BurnSmith.exe"
 Name: "{autodesktop}\BurnSmith"; Filename: "{app}\BurnSmith.exe"; Tasks: desktopicon
 
 [Run]
-; after a manual install: a tick box; after an update started by the app (/relaunch=1): start it again without asking, as the user, not as administrator. postinstall on both: an entry without it runs before ffmpeg.iss has finished
+; after a manual install: a tick box; after an update started by the app (/relaunch=1): start it again without asking, as the user, not as administrator. postinstall on both: an entry without it runs before imgburn.iss and ffmpeg.iss have finished
 Filename: "{app}\BurnSmith.exe"; Description: "{cm:LaunchProgram,BurnSmith}"; Flags: nowait postinstall skipifsilent
 Filename: "{app}\BurnSmith.exe"; Flags: nowait postinstall runasoriginaluser skipifnotsilent; Check: Relaunch
 
