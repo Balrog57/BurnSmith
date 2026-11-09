@@ -223,6 +223,18 @@ static class BdCheck
             var size = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height", "-of", "csv=p=0", Stream(Bd("sbs", [new DiscTitle(F("sbs.mkv"))], new EncodeOptions(Preset: "ultrafast")), 1)]).Trim().Split('\n')[0].Trim();
             Check("it fills the 1080 picture as half side by side (no bars)", size == "1920,1080", size);
         });
+        Part("tsMuxeR listing of a 3D playlist", () =>
+        {
+            // as tsMuxeR lists a 3D disc's playlist: the right eye first, a track it cannot take (no Stream ID), the left eye listed again
+            var listing = "Track ID:    4114\r\nStream ID:   V_MPEG4/ISO/MVC\r\nStream lang: \r\nTrack ID:    4113\r\nStream ID:   V_MPEG4/ISO/AVC\r\n"
+                          + "Track ID:    4352\r\nStream ID:   A_DTS\r\nStream lang: eng\r\nTrack ID:    4400\r\nStream info: unknown\r\n"
+                          + "Track ID:    4608\r\nStream ID:   S_HDMV/PGS\r\nStream info: Presentation Graphic Stream #0   3d-plane: 3\r\nStream lang: fra\r\n"
+                          + "Track ID:    4113\r\nStream ID:   V_MPEG4/ISO/AVC\r\nFile #00000 name=a.ssif\r\nFile #00001 name=b.ssif\r\n";
+            var t = BluRay.ListedTracks(listing);
+            Check("tracks in order, each once", string.Join(' ', t.Select(x => x.Id)) == "4114 4352 4400 4608 4113", string.Join(' ', t.Select(x => x.Id)));
+            Check("codec, language and depth read", t.Contains((4352, "A_DTS", "eng", -1)) && t.Contains((4608, "S_HDMV/PGS", "fra", 3)) && t.Contains((4400, "", "", -1)));
+        });
+
         Part("Blu-ray 3D image", () =>
         {
             // a disc folder as tsMuxeR writes a 3D film (no encoder makes MVC, so the clips are noise): 00202 the left eye, 00203 the right eye, cut in
