@@ -574,13 +574,40 @@ public static partial class MenuRenderer
         return sb.ToString();
     }
 
+    /// <summary>Width in pixels of a label as <see cref="DrawLabel"/> draws it.</summary>
+    internal static double TextWidth(MenuDesign d, string value, int size, bool bold) =>
+        new FormattedText(Shown(d, value), System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            new Typeface(new FontFamily(d.Font), FontStyles.Normal, bold ? FontWeights.Bold : FontWeights.SemiBold, FontStretches.Normal), size, Brushes.White, 1.0).Width;
+
+    /// <summary>A label as written on the page: in capitals in the Metal style, like a title logo.</summary>
+    static string Shown(MenuDesign d, string value) => d.ButtonStyle == "Metal" ? value.ToUpperInvariant() : value;
+
     static void DrawLabel(DrawingContext dc, MenuDesign d, Label l, Color? colour = null)
     {
         var face = new Typeface(new FontFamily(d.Font), FontStyles.Normal, l.Bold ? FontWeights.Bold : FontWeights.SemiBold, FontStretches.Normal);
-        var text = new FormattedText(l.Value, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+        var text = new FormattedText(Shown(d, l.Value), System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                                      face, l.Size, new SolidColorBrush(colour ?? Col(d.TextColor)), 1.0)
         { MaxTextWidth = l.Rect.W, MaxLineCount = 1, Trimming = TextTrimming.CharacterEllipsis };
         var x = l.Align == "left" ? l.Rect.X : l.Rect.X + (l.Rect.W - text.Width) / 2;
-        dc.DrawText(text, new Point(x, l.Rect.Y + (l.Rect.H - text.Height) / 2));
+        var at = new Point(x, l.Rect.Y + (l.Rect.H - text.Height) / 2);
+        if (d.ButtonStyle != "Metal")
+        {
+            dc.DrawText(text, at);
+            return;
+        }
+        // the look of a film's title logo: a warm glow (widening strokes of the design's Glow colour), a drop shadow, brushed steel letters
+        var shape = text.BuildGeometry(at);
+        var glow = Col(d.Glow);
+        foreach (var (width, alpha) in new[] { (0.50, 0.07), (0.34, 0.11), (0.20, 0.17), (0.10, 0.28) })
+            dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb((byte)(alpha * 255), glow.R, glow.G, glow.B)), l.Size * width) { LineJoin = PenLineJoin.Round }, shape);
+        dc.PushTransform(new TranslateTransform(l.Size * 0.04, l.Size * 0.06));
+        dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(210, 0, 0, 0)), null, shape);
+        dc.Pop();
+        Brush steel = colour is { } c ? new SolidColorBrush(c) : new LinearGradientBrush(new GradientStopCollection
+        {
+            new(Color.FromRgb(246, 246, 250), 0), new(Color.FromRgb(222, 222, 228), 0.44), new(Color.FromRgb(150, 150, 156), 0.58),
+            new(Color.FromRgb(214, 214, 220), 0.72), new(Color.FromRgb(196, 196, 202), 1),
+        }, 90);
+        dc.DrawGeometry(steel, null, shape);
     }
 }

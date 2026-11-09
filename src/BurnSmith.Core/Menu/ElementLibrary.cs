@@ -23,7 +23,7 @@ public static class ElementLibrary
 
     /// <summary>The button looks the generic layout can draw (value = <see cref="MenuDesign.ButtonStyle"/>).</summary>
     public static readonly (string Label, string Value)[] ButtonStyles =
-        [("Capsules", "Pill"), ("Texte seul", "Text"), ("Cartes", "Card"), ("Cadre classique", "Frame"), ("Verre néon", "Glass")];
+        [("Capsules", "Pill"), ("Texte seul", "Text"), ("Cartes", "Card"), ("Cadre classique", "Frame"), ("Verre néon", "Glass"), ("Métal (logo)", "Metal")];
 
     /// <summary>The pictures that travel in the exe, by the prefix a design stores them with: the open-source library and the carried template pictures.</summary>
     static IEnumerable<(string Prefix, string? Root)> Carried() => [("lib:", OpenLibrary.Dir()), ("carried:", Tools.TemplatesDir())];

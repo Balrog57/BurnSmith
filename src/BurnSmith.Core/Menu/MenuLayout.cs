@@ -251,7 +251,7 @@ public static class MenuBuilder
         var radius = d.Square ? 0 : 28;
         switch (d.ButtonStyle)
         {
-            case "Text": return [];
+            case "Text" or "Metal": return []; // Metal: no card, the letters themselves are drawn as steel (MenuRenderer.DrawLabel)
             case "Card": return [new Fill(r, d.CardFill, 0.92, radius)];
             case "Frame": return [new Fill(r, d.Accent, 1, 0), new Fill(r.Inflate(-3), d.CardFill, 1, 0), new Fill(r.Inflate(-9), d.Accent, 1, 0), new Fill(r.Inflate(-12), d.CardFill, 1, 0)];
             case "Glass": return [new Fill(r.Inflate(3), d.Glow, 0.9, radius + 3), new Fill(r, d.CardFill, 0.85, radius)];
@@ -530,12 +530,14 @@ public static class MenuBuilder
         {
             ops.Add(new Label(header, new Box(x, 200, colW, 70), 46, true)); // centred like the rows under it
             var ids = new List<string>();
+            // rows as wide as the column's longest name: the active-track dot, left of the row, then sits by the words, not 200 px away
+            var w = Math.Min(colW, (int)Math.Ceiling(names.Max(n => MenuRenderer.TextWidth(d, n, 44, true))) + 40);
             for (var i = 0; i < names.Count; i++)
             {
                 var number = firstNumber + i;
-                var box = new Box(x, top + i * pitch, colW, rowH);
+                var box = new Box(x + (colW - w) / 2, top + i * pitch, w, rowH);
                 ops.AddRange(Button(d, box, names[i], 44));
-                if (active == number) ops.Add(new Fill(new Box(x - MarkerSize - MarkerGap, box.Y + (rowH - MarkerSize) / 2, MarkerSize, MarkerSize), d.Accent, 1, MarkerSize / 2));
+                if (active == number) ops.Add(new Fill(new Box(box.X - MarkerSize - MarkerGap, box.Y + (rowH - MarkerSize) / 2, MarkerSize, MarkerSize), d.Accent, 1, MarkerSize / 2));
                 var bid = idPrefix + number;
                 ids.Add(bid);
                 buttons.Add(new MenuButton(bid, box, new MenuAction(kind, Mark: number)));
