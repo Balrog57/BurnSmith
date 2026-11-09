@@ -957,7 +957,10 @@ public static class BluRay
             }
         }
         args.AddRange(["-sn", "-dn", output]);
-        if (!noVideo || audio.Count > 0) Tools.Run(Tools.Find("ffmpeg.exe"), args, log); // without picture or sound there is nothing to write
+        if (!noVideo || audio.Count > 0) // without picture or sound there is nothing to write
+            // one more try: a long encode once stopped with exit 255 and no message (a whole season lost) and went through when run again
+            try { Tools.Run(Tools.Find("ffmpeg.exe"), args, log); }
+            catch (InvalidOperationException e) { log($"conversion failed, trying once more: {e.Message.Split('\n')[0]}"); Tools.Run(Tools.Find("ffmpeg.exe"), args, log); }
         WriteOwnSubtitles(title, subs.Where(x => x.Track.File == null && !x.Track.IsVobSub).ToList(), span, log); // a VobSub is made apart, the subtitle files too
         foreach (var (t, file) in subs.Where(x => x.Track.File != null)) WriteExternalSubtitle(title, t, span, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
         foreach (var (t, file) in subs.Where(x => x.Track.File == null && x.Track.IsVobSub)) WriteEmbeddedVobSub(title, t, span, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
