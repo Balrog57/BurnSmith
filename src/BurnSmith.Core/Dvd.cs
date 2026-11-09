@@ -76,7 +76,7 @@ public static class Dvd
     {
         var movies = items.Sum(i => i.Src.Duration * (videoBps + i.Title.KeptAudio(i.Src).Take(8).Sum(AudioBps))) / 8;
         var copies = job.Titles.Any(t => !t.Intro && t.Subtitles is { Count: > 0 }) ? 3 : 2;
-        var menu = job.Menu is not { } m ? 0 : 0.2e9 + (m.Loop || m.ExistingMusic() != null ? Math.Clamp(m.LoopSeconds, 5, 120) * 18e6 : 0);
+        var menu = job.Menu is not { } m ? 0 : 0.2e9 + (m.Loop || m.ExistingMusic() != null ? BluRay.LoopLength(m, 120) * 18e6 : 0);
         return (long)(movies * copies * 1.05 + menu);
     }
 
@@ -320,8 +320,8 @@ public static class Dvd
         var loop = job.Menu!.Loop;
         // a moving menu: the pages are transparent overlays burned onto a clip of the film (or the design's own video) that plays and repeats
         var backgrounds = MenuRenderer.Sta(() => pages.Select(p => loop ? MenuRenderer.Overlay(job.Menu!, p) : MenuRenderer.Background(job.Menu!, p)).ToList());
-        var loopSeconds = Math.Clamp(job.Menu.LoopSeconds, 5, 120);
-        var (loopFile, loopSrc, loopStart) = loop ? BluRay.LoopSource(job.Menu, job.Titles[0], loopSeconds) : default;
+        var loopSeconds = BluRay.LoopLength(job.Menu, 120);
+        var (loopFile, loopSrc, loopStart, loopInput) = loop ? BluRay.LoopSource(job.Menu, job.Titles[0], loopSeconds) : default;
         var musicFile = job.Menu.ExistingMusic();
         var music = musicFile == null ? null : BluRay.PrepareMusic(job.Menu, musicFile, loopSeconds, work, log);
         if (loop) log($"menu: moving background, {loopSeconds}s from {Path.GetFileName(loopFile)} at {loopStart}s{(music != null ? " + music" : "")}");
@@ -377,7 +377,8 @@ public static class Dvd
             else
             {
                 // the clip, the page drawn over it, and its sound (music repeated, else the clip's own, else silence)
-                var args = new List<string> { "-y", "-v", "warning", "-ss", loopStart.ToString(Inv), "-t", loopSeconds.ToString(Inv), "-i", loopFile };
+                var args = new List<string> { "-y", "-v", "warning" };
+                args.AddRange(loopInput); // -stream_loop when the clip is shorter than the loop
                 string audioMap;
                 int overlayInput;
                 if (music != null) { args.AddRange(["-i", music]); audioMap = "1:a:0"; overlayInput = 2; }

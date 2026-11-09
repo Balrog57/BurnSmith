@@ -133,6 +133,7 @@ public sealed class MenuDesign
     /// <summary>
     /// Moving menu: a clip of <see cref="LoopSeconds"/> seconds, taken from <see cref="LoopFile"/> (the disc's first video when null) from
     /// <see cref="LoopStart"/> on, plays behind the buttons and starts again when it ends. The page background picture is then left out.
+/// LoopSeconds 0 = the music's length (BluRay.LoopLength); a clip shorter than the loop is played again from its start.
     /// </summary>
     public bool Loop { get; set; }
     public string? LoopFile { get; set; }

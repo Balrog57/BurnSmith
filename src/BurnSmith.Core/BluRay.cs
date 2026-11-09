@@ -560,7 +560,7 @@ public static class BluRay
     internal const int MaxLoopSeconds = 300;
 
     static double MenuBytes(BluRayJob job) =>
-        0.15e9 + (job.Menu is { } m ? Math.Clamp(m.LoopSeconds, 5, MaxLoopSeconds) * (m.Loop ? (job.Uhd ? 5e6 : 2.6e6) : m.ExistingMusic() != null ? 0.1e6 : 0) : 0); // a moving clip, or a black one with music
+        0.15e9 + (job.Menu is { } m ? LoopLength(m, MaxLoopSeconds) * (m.Loop ? (job.Uhd ? 5e6 : 2.6e6) : m.ExistingMusic() != null ? 0.1e6 : 0) : 0); // a moving clip, or a black one with music
 
     /// <summary>Size in GB the disc will take: the source files when they are kept, else video at the bit rate asked for or fitted, plus audio and menu.</summary>
     public static double EstimateGB(BluRayJob job, IReadOnlyList<SourceInfo> sources)
@@ -733,13 +733,30 @@ public static class BluRay
     /// The file a moving menu plays, its probe and the second to start at: the design's file, else the first title, which counts
     /// <see cref="MenuDesign.LoopStart"/> from the start of the part kept (a cut-out intro never shows on the menu).
     /// </summary>
-    internal static (string File, SourceInfo Src, int Start) LoopSource(MenuDesign menu, DiscTitle first, int seconds)
+    /// A clip shorter than the loop is played again from its start until the loop ends (<c>Input</c> then carries ffmpeg's -stream_loop),
+    /// so a 2-minute clip under a 4-minute song repeats instead of stopping half-way.
+    internal static (string File, SourceInfo Src, int Start, string[] Input) LoopSource(MenuDesign menu, DiscTitle first, int seconds)
     {
         var file = menu.LoopFile is { Length: > 0 } f && File.Exists(f) ? f : first.Video;
         var src = Probe(file);
         var own = file == first.Video;
         var room = own ? first.Length(src) : src.Duration;
-        return (file, src, (own ? (int)first.Start : 0) + Math.Clamp(menu.LoopStart, 0, Math.Max(0, (int)room - seconds)));
+        var start = (own ? (int)first.Start : 0) + Math.Clamp(menu.LoopStart, 0, Math.Max(0, (int)room - seconds));
+        var repeat = (own ? first.Start + room : room) - start < seconds - 0.5;
+        string[] input = ["-ss", start.ToString(Inv), "-t", seconds.ToString(Inv), "-i", file];
+        return (file, src, start, repeat ? ["-stream_loop", "-1", .. input] : input);
+    }
+
+    /// <summary>
+    /// How long the menu loop lasts: <see cref="MenuDesign.LoopSeconds"/>, or with 0 the music's length from <see cref="MenuDesign.MusicStart"/>
+    /// (the whole song, not cut), within 5 s and <paramref name="max"/> (300 on a Blu-ray, 120 on a DVD); 30 s when 0 and no music.
+    /// </summary>
+    internal static int LoopLength(MenuDesign menu, int max)
+    {
+        if (menu.LoopSeconds > 0) return Math.Clamp(menu.LoopSeconds, 5, max);
+        var music = menu.ExistingMusic();
+        var shown = music == null ? "" : Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", music]).Trim();
+        return double.TryParse(shown, NumberStyles.Float, Inv, out var length) ? Math.Clamp((int)Math.Floor(length - Math.Max(0, menu.MusicStart)), 5, max) : Math.Min(30, max);
     }
 
     /// <summary>
@@ -784,7 +801,7 @@ public static class BluRay
     static void MuxLoop(BluRayJob job, string work, Action<string> log)
     {
         var menu = job.Menu!;
-        var seconds = Math.Clamp(menu.LoopSeconds, 5, MaxLoopSeconds);
+        var seconds = LoopLength(menu, MaxLoopSeconds);
         var musicFile = menu.ExistingMusic();
         var music = musicFile == null ? null : PrepareMusic(menu, musicFile, seconds, work, log);
         var (w, h) = VideoSize(job);
@@ -795,12 +812,13 @@ public static class BluRay
         var tone = "";
         if (menu.Loop)
         {
-            var (file, probe, start) = LoopSource(menu, job.Titles[0], seconds);
+            var (file, probe, start, input) = LoopSource(menu, job.Titles[0], seconds);
             src = probe;
             (fps, declared) = DiscRate(Fps(job, src), h);
             tone = !job.Uhd && ToSdr(src.Hdr, src.Width, src.Height, w) is { Length: > 0 } sdr ? sdr + "," : ""; // a moving menu taken from an HDR film; a 4K disc keeps its HDR, like the film
             log($"menu: moving background, {seconds}s from {Path.GetFileName(file)} at {start}s{(music != null ? " + music" : "")}");
-            args.AddRange(["-ss", start.ToString(Inv), "-t", seconds.ToString(Inv), "-i", file]);
+            if (input[0] == "-stream_loop") log("menu: the clip is shorter than the loop, it plays again from its start");
+            args.AddRange(input);
         }
         else
         {

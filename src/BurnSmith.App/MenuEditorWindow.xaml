@@ -357,7 +357,7 @@
               <TextBox Text="{Binding MusicFade, UpdateSourceTrigger=PropertyChanged}"/>
             </DockPanel>
             <DockPanel Margin="0,4">
-              <TextBlock Text="Durée boucle (s)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left" ToolTip="Durée de la vidéo animée et de la musique avant qu'elles recommencent (5 à 120)"/>
+              <TextBlock Text="Durée boucle (s)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left" ToolTip="Durée de la vidéo animée et de la musique avant qu'elles recommencent : 5 à 300 s sur Blu-ray, 5 à 120 s sur DVD. 0 = la durée de la musique (la chanson entière). Une vidéo plus courte est rejouée depuis son début."/>
               <TextBox Text="{Binding LoopSeconds, UpdateSourceTrigger=PropertyChanged}"/>
             </DockPanel>
             <TextBlock Text="Sans menu animé, la musique joue sur le menu fixe. Sur DVD elle repart quand on change de page ; sur Blu-ray elle continue." TextWrapping="Wrap" Opacity="0.65" Margin="0,4,0,12"/>
