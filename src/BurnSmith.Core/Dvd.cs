@@ -211,7 +211,7 @@ public static class Dvd
         var args = new List<string> { "-y", "-v", "warning", "-i", movie };
         for (var k = 0; k < subs.Count; k++)
         {
-            var pictures = subs[k].Track.IsPicture ? DvdSubtitles.PgsPictures(subs[k].File, 720, h, log) : DvdSubtitles.Pictures(subs[k].File, 720, h, wide ? (pal ? 64.0 / 45 : 32.0 / 27) : pal ? 16.0 / 15 : 8.0 / 9);
+            var pictures = subs[k].Track.IsPicture ? DvdSubtitles.PgsPictures(subs[k].File, 720, h, log) : DvdSubtitles.Pictures(subs[k].File, 720, h);
             var idx = Path.Combine(work, $"{name}_s{k + 1}.idx");
             Spu.WriteVobSub(idx, pictures, 720, h, Languages.Iso1(subs[k].Track.Lang), DvdSubtitles.Rgb, [0, 1, 2, 3], [0, 15, 15, 15], false, start);
             args.AddRange(["-i", idx]);

@@ -45,10 +45,10 @@ public static class DvdSubtitles
         Path.GetExtension(file).Equals(".sup", StringComparison.OrdinalIgnoreCase) ? PgsSubtitles.Cues(File.ReadAllBytes(file), out _).Count > 0 : File.ReadAllText(file).Contains("-->");
 
     /// <summary>The cues of <paramref name="srt"/> as subpictures of the frame.</summary>
-    public static List<Spu.Picture> Pictures(string srt, int w, int h, double sar)
+    public static List<Spu.Picture> Pictures(string srt, int w, int h)
     {
         var cues = ParseSrt(srt);
-        var images = MenuRenderer.Sta(() => cues.Select(c => Draw(c.Text, w, h, sar)).ToList());
+        var images = MenuRenderer.Sta(() => cues.Select(c => Draw(c.Text, w, h)).ToList());
         return [.. cues.Select((c, i) => new Spu.Picture(c.Start, c.End, images[i].Pixels, w, h))];
     }
 
@@ -60,23 +60,23 @@ public static class DvdSubtitles
         return [.. cues.Select(c => new Spu.Picture(c.Start, c.End, Redraw(c, w, h).Pixels, w, h))];
     }
 
-    /// <summary>Full-frame bitmap, text at the bottom. DVD pixels are wider than tall (<paramref name="sar"/>), so the text is squeezed to look right on a 16:9 screen.</summary>
-    static Canvas Draw(string text, int w, int h, double sar)
+    /// <summary>
+    /// Full-frame bitmap, text at the bottom, as DVDStyler draws it with spumux: Arial Regular 28 on a 576-line frame, square pixels
+    /// (on a 16:9 screen the letters come out wider), white with a black outline about 2.5 pixels wide, grey where they meet.
+    /// </summary>
+    static Canvas Draw(string text, int w, int h)
     {
         var visual = new DrawingVisual();
         using (var dc = visual.RenderOpen())
         {
-            var size = h * 0.058;
-            var face = new Typeface(new FontFamily("Arial"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+            var size = h * 28.0 / 576;
+            var face = new Typeface(new FontFamily("Arial"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
             var ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, size, Brushes.White, 1.0)
-            { MaxTextWidth = (w - 120) * sar, TextAlignment = TextAlignment.Center };
-            var geometry = ft.BuildGeometry(new Point((w * sar - ft.MaxTextWidth) / 2, h - h * 0.07 - ft.Height));
-            dc.PushTransform(new ScaleTransform(1 / sar, 1));
-            // as a commercial DVD: white letters, a black outline about 2 pixels wide, grey where they meet. The outline first, the white over it:
-            // a pen drawn on top covers half its width inside the letters, all of a stroke 5 pixels thick
-            dc.DrawGeometry(null, new Pen(Brushes.Black, size * 0.14) { LineJoin = PenLineJoin.Round }, geometry);
+            { MaxTextWidth = w - 120, TextAlignment = TextAlignment.Center };
+            var geometry = ft.BuildGeometry(new Point(60, h - h * 0.07 - ft.Height));
+            // the outline first, the white over it: a pen drawn on top would cover half its width inside the letters
+            dc.DrawGeometry(null, new Pen(Brushes.Black, size * 0.15) { LineJoin = PenLineJoin.Round }, geometry);
             dc.DrawGeometry(Brushes.White, null, geometry);
-            dc.Pop();
         }
         var bmp = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
         bmp.Render(visual);
