@@ -9,7 +9,7 @@
     <AssemblyName>BurnSmith</AssemblyName>
     <RootNamespace>BurnSmith.App</RootNamespace>
     <!-- the release tag is v<Version>; the installer (installer\BurnSmith.iss) and the update check read it from the built exe -->
-    <Version>1.0.8</Version>
+    <Version>1.0.9</Version>
     <!-- Application.ThemeMode (native Fluent theme) is still flagged experimental in .NET 10 -->
     <NoWarn>$(NoWarn);WPF0001</NoWarn>
     <!-- exe, taskbar and title-bar icon (windows without their own Icon take the exe's) -->
