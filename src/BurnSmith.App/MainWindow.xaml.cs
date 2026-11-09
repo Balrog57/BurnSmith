@@ -372,8 +372,8 @@ public partial class MainWindow : Window
         var dlg = new OpenFileDialog
         {
             Multiselect = true,
-            Filter = "Vidéos, photos et musique|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv;*.webm;*.mpg;*.mpeg;*.vob;*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tif;*.tiff;*.mp3;*.flac;*.wav;*.m4a;*.aac;*.ogg;*.opus;*.wma;*.ac3;*.mka"
-                     + "|Vidéos|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv;*.webm;*.mpg;*.mpeg;*.vob|Photos (diaporama)|*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tif;*.tiff|Musique|*.mp3;*.flac;*.wav;*.m4a;*.aac;*.ogg;*.opus;*.wma;*.ac3;*.mka|Tous les fichiers|*.*",
+            Filter = "Vidéos, photos et musique|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv;*.webm;*.mpg;*.mpeg;*.vob;*.iso;*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tif;*.tiff;*.mp3;*.flac;*.wav;*.m4a;*.aac;*.ogg;*.opus;*.wma;*.ac3;*.mka"
+                     + "|Vidéos|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv;*.webm;*.mpg;*.mpeg;*.vob|Blu-ray (image ISO non chiffrée, 3D compris)|*.iso|Photos (diaporama)|*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tif;*.tiff|Musique|*.mp3;*.flac;*.wav;*.m4a;*.aac;*.ogg;*.opus;*.wma;*.ac3;*.mka|Tous les fichiers|*.*",
         };
         if (dlg.ShowDialog(this) == true) _ = AddFiles(dlg.FileNames);
     }
@@ -388,6 +388,7 @@ public partial class MainWindow : Window
     // what MediaMaker built from photos and songs (a folder of ours, removed when the window closes) and the name each one shows
     readonly string mediaDir = Path.Combine(Path.GetTempPath(), "BurnSmith-media-" + Environment.ProcessId);
     readonly Dictionary<string, string> madeNames = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, string> discNames = new(StringComparer.OrdinalIgnoreCase); // the film of a Blu-ray added whole, named after its .iso or folder
 
     static void NaturalOrder(List<string> list) =>
         list.Sort((a, b) => string.Compare(Path.GetFileName(a), Path.GetFileName(b), CultureInfo.CurrentCulture, CompareOptions.NumericOrdering));
@@ -463,7 +464,23 @@ public partial class MainWindow : Window
     /// <summary>Probes and adds videos; several at once are put in natural order (episode 2 before episode 10).</summary>
     async Task AddFiles(IEnumerable<string> files)
     {
-        var list = files.Where(File.Exists).ToList();
+        var list = new List<string>();
+        foreach (var f in files)
+        {
+            // a Blu-ray given whole (.iso, or a folder with BDMV) adds its film, named after the disc
+            if (!Directory.Exists(f) && !Path.GetExtension(f).Equals(".iso", StringComparison.OrdinalIgnoreCase)) { if (File.Exists(f)) list.Add(f); continue; }
+            try
+            {
+                StatusText.Text = "Ouverture de " + Path.GetFileName(Path.TrimEndingDirectorySeparator(f)) + "…";
+                var clip = await Task.Run(() => BluRay.MainClip(f));
+                discNames[clip] = Path.GetFileNameWithoutExtension(Path.TrimEndingDirectorySeparator(f));
+                list.Add(clip);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or IOException or UnauthorizedAccessException)
+            {
+                Warn($"Impossible de lire {Path.GetFileName(Path.TrimEndingDirectorySeparator(f))} : {ex.Message.Split('\n')[0]}");
+            }
+        }
         NaturalOrder(list);
         list = await MakeVideos(list);
         foreach (var path in list)
@@ -471,7 +488,7 @@ public partial class MainWindow : Window
             try
             {
                 var entry = new Entry(path, await Task.Run(() => BluRay.Probe(path))) { Extra = ExternalSubtitle.Near(path) };
-                if (madeNames.TryGetValue(path, out var shown)) entry.Name = shown;
+                if (madeNames.TryGetValue(path, out var shown) || discNames.TryGetValue(path, out shown)) entry.Name = shown;
                 // episodes usually share one layout: start from the first video's choice
                 if (titles.FirstOrDefault() is { } first && first.Info.Audio.Count == entry.Info.Audio.Count)
                 {

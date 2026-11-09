@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
@@ -221,6 +222,58 @@ static class BdCheck
             Check("a full side-by-side clip is seen as 3D", BluRay.Probe(F("sbs.mkv")).Stereo == "sbs", BluRay.Probe(F("sbs.mkv")).Stereo);
             var size = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height", "-of", "csv=p=0", Stream(Bd("sbs", [new DiscTitle(F("sbs.mkv"))], new EncodeOptions(Preset: "ultrafast")), 1)]).Trim().Split('\n')[0].Trim();
             Check("it fills the 1080 picture as half side by side (no bars)", size == "1920,1080", size);
+        });
+        Part("Blu-ray 3D image", () =>
+        {
+            // a disc folder as tsMuxeR writes a 3D film (no encoder makes MVC, so the clips are noise): 00202 the left eye, 00203 the right eye, cut in
+            // 6144-byte units at the points their .clpi record; plus enough files that the STREAM directory takes more than one sector, and an empty one
+            var disc = F("disc3d");
+            var (stream, clipinf) = (Path.Combine(disc, "BDMV", "STREAM"), Path.Combine(disc, "BDMV", "CLIPINF"));
+            Directory.CreateDirectory(stream);
+            Directory.CreateDirectory(clipinf);
+            var random = new Random(3);
+            byte[] Noise(int n) { var b = new byte[n]; random.NextBytes(b); return b; }
+            List<byte[]> Clip3D(string name, int[] units)
+            {
+                var data = Noise(units.Sum() * 6144);
+                var clpi = new byte[0x38 + 8 + 4 * units.Length];
+                "HDMV0200"u8.CopyTo(clpi);
+                BinaryPrimitives.WriteUInt32BigEndian(clpi.AsSpan(0x18), 0x20); // extension data
+                clpi[0x2B] = 1;
+                BinaryPrimitives.WriteUInt16BigEndian(clpi.AsSpan(0x2C), 2); BinaryPrimitives.WriteUInt16BigEndian(clpi.AsSpan(0x2E), 4); // ExtentStartPoint
+                BinaryPrimitives.WriteUInt32BigEndian(clpi.AsSpan(0x30), 24);
+                BinaryPrimitives.WriteUInt16BigEndian(clpi.AsSpan(0x38 + 6), (ushort)units.Length);
+                var pieces = new List<byte[]>();
+                for (int i = 0, at = 0; i < units.Length; at += units[i++])
+                {
+                    BinaryPrimitives.WriteUInt32BigEndian(clpi.AsSpan(0x38 + 8 + 4 * i), (uint)(at * 32)); // source packets of 192 bytes
+                    pieces.Add(data[(at * 6144)..((at + units[i]) * 6144)]);
+                }
+                File.WriteAllBytes(Path.Combine(stream, name + ".m2ts"), data);
+                File.WriteAllBytes(Path.Combine(clipinf, name + ".clpi"), clpi);
+                return pieces;
+            }
+            // 300 pieces each: more extents than one file entry holds (112), so its list goes on in continuation sectors, as with a real film (~1600 pieces)
+            var (left, right) = (Clip3D("00202", [.. Enumerable.Range(0, 300).Select(_ => random.Next(1, 4))]), Clip3D("00203", [.. Enumerable.Range(0, 300).Select(_ => random.Next(1, 3))]));
+            for (var i = 0; i < 80; i++) File.WriteAllBytes(Path.Combine(stream, $"{300 + i:00000}.m2ts"), Noise(random.Next(1, 5000)));
+            File.WriteAllBytes(Path.Combine(stream, "00400.m2ts"), []);
+            File.WriteAllBytes(Path.Combine(disc, "BDMV", "index.bdmv"), Noise(120));
+            var iso = F("disc3d.iso");
+            Iso.Build(disc, iso, "CHECK3D", dvd: false);
+            string Shell(string command) => Tools.Run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command]).Trim();
+            var drive = Shell($"(Mount-DiskImage -ImagePath '{iso}' -Access ReadOnly -PassThru | Get-Volume).DriveLetter") + @":\";
+            try
+            {
+                var differ = Directory.GetFiles(disc, "*", SearchOption.AllDirectories)
+                    .Where(f => !File.Exists(drive + Path.GetRelativePath(disc, f)) || !File.ReadAllBytes(f).SequenceEqual(File.ReadAllBytes(drive + Path.GetRelativePath(disc, f)))).ToList();
+                Check("Windows reads every file of BurnSmith's own image as it was (83 in STREAM, one empty)", differ.Count == 0, string.Join(' ', differ.Select(Path.GetFileName)));
+                var ssif = drive + @"BDMV\STREAM\SSIF\00202.ssif";
+                var expected = left.Zip(right, (l, r) => r.Concat(l)).SelectMany(p => p).ToArray();
+                Check("the .ssif is both eyes in turns, right eye first, from the same sectors (no room taken twice)",
+                      File.Exists(ssif) && File.ReadAllBytes(ssif).SequenceEqual(expected) && new FileInfo(iso).Length < 3 * 1024 * 1024 + expected.Length + 80 * 8192,
+                      File.Exists(ssif) ? $"{new FileInfo(ssif).Length} bytes, image {new FileInfo(iso).Length}" : "no .ssif");
+            }
+            finally { Shell($"Dismount-DiskImage -ImagePath '{iso}' | Out-Null"); }
         });
         Part("4K HDR10+ and Dolby Vision", () =>
         {

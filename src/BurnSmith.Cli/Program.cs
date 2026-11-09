@@ -23,7 +23,7 @@ static List<int> SubsToKeep(List<int>? asked, int own, int files, string video, 
     if (missing.Count > 0) tell($"warning: --sub {string.Join(',', missing)}: {video} has no such subtitle ({own} of its own, {files} from --sub-file)");
     return [.. (asked ?? []).Except(missing).Union(Enumerable.Range(own, files))];
 }
-var videos = a.Select((v, i) => (v, i)).Where(x => x.v == "--video" && x.i + 1 < a.Count).Select(x => Path.GetFullPath(a[x.i + 1])).ToList();
+var videos = a.Select((v, i) => (v, i)).Where(x => x.v == "--video" && x.i + 1 < a.Count).Select(x => BluRay.MainClip(Path.GetFullPath(a[x.i + 1]))).ToList(); // a Blu-ray given whole (.iso, BDMV folder): its film
 
 // burnsmith preview <template name or folder> <out folder> [--picture frame.jpg] [--episodes N] [--bonus N]
 //   draws every page of a menu template with sample content (3 audio, 2 subtitles), to compare with the vendor's own thumbnail

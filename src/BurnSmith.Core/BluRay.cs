@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using BurnSmith.Core.Menu;
 
 namespace BurnSmith.Core;
@@ -102,13 +104,17 @@ public static class BluRay
         static int Kbps(JsonElement s) => (int)((long.TryParse(Tag(s, "BPS") is { Length: > 0 } b ? b : Tag(s, "BPS-eng"), out var bps) ? bps
                                                  : s.TryGetProperty("bit_rate", out var br) && long.TryParse(br.GetString(), out var bits) ? bits : 0) / 1000);
 
+        // a clip taken from a Blu-ray has its languages in the playlist, not in itself
+        var playlist = Path.GetExtension(file).Equals(".m2ts", StringComparison.OrdinalIgnoreCase) ? PlaylistTracks(file) : [];
+        string Lang(JsonElement s) => Tag(s, "language") is { Length: > 0 } l ? l
+            : s.TryGetProperty("id", out var pid) && Pid(pid.GetString()) is var n && playlist.TryGetValue(n, out var t) ? t.Lang : "";
         // cover art is a video stream too
         var v = Of("video").FirstOrDefault(s => !Flag(s, "attached_pic"));
         if (v.ValueKind == JsonValueKind.Undefined) throw new InvalidDataException("no video stream in " + file);
         var audio = Of("audio").Select((s, i) => new AudioTrack(i, s.GetProperty("codec_name").GetString()!,
-            s.TryGetProperty("channels", out var c) ? c.GetInt32() : 0, Tag(s, "language"), Tag(s, "title"),
+            s.TryGetProperty("channels", out var c) ? c.GetInt32() : 0, Lang(s), Tag(s, "title"),
             s.TryGetProperty("sample_rate", out var rate) && int.TryParse(rate.GetString(), out var hz) ? hz : 0, Kbps(s))).ToList();
-        var subs = Of("subtitle").Select((s, i) => new SubtitleTrack(i, s.GetProperty("codec_name").GetString() ?? "", Tag(s, "language"), Tag(s, "title"), Flag(s, "forced"))).ToList();
+        var subs = Of("subtitle").Select((s, i) => new SubtitleTrack(i, s.GetProperty("codec_name").GetString() ?? "", Lang(s), Tag(s, "title"), Flag(s, "forced"))).ToList();
         if (!doc.RootElement.GetProperty("format").TryGetProperty("duration", out var duration)) // a picture has a video stream but no length
             throw new InvalidDataException("no duration: not a video file");
         var r = v.GetProperty("r_frame_rate").GetString()!.Split('/');
@@ -116,7 +122,7 @@ public static class BluRay
         var hdr = dolby ? "Dolby Vision" : (v.TryGetProperty("color_transfer", out var ct) ? ct.GetString() : null) switch { "smpte2084" => "HDR10", "arib-std-b67" => "HLG", _ => "SDR" };
         var (dual, p5) = (false, false);
         var packing = Tag(v, "stereo_mode") + (v.TryGetProperty("side_data_list", out var sides) ? string.Join(' ', sides.EnumerateArray().Select(d => d.TryGetProperty("type", out var t) ? t.ToString() : "")) : "");
-        var stereo = packing.Contains("left") || packing.Contains("side by side") ? "sbs" : packing.Contains("top") || packing.Contains("bottom") ? "tab" : "";
+        var stereo = Ssif(file) != null ? "mvc" : packing.Contains("left") || packing.Contains("side by side") ? "sbs" : packing.Contains("top") || packing.Contains("bottom") ? "tab" : "";
         if (hdr is "HDR10" or "Dolby Vision" && v.GetProperty("codec_name").GetString() == "hevc")
         {
             // Dolby Vision and HDR10+ ride on the frames: the first one tells (a raw stream has no Dolby Vision record in its header)
@@ -133,6 +139,65 @@ public static class BluRay
             PixFmt: v.TryGetProperty("pix_fmt", out var pf) ? pf.GetString() ?? "" : "",
             Profile: v.TryGetProperty("profile", out var pr) ? pr.GetString() ?? "" : "",
             Level: v.TryGetProperty("level", out var lv) && lv.TryGetInt32(out var level) ? level : 0, DualLayer: dual, DvProfile5: p5, Stereo: stereo);
+    }
+
+    /// <summary>
+    /// The video to add for a Blu-ray given whole: an .iso (opened read-only by Windows, and left open for the build) or a folder holding BDMV gives its biggest
+    /// clip, the film; any other path is itself. The disc must not be encrypted (AACS): ffmpeg and tsMuxeR read only a copy without it.
+    /// shortcut: the biggest clip is the film on the discs seen; a film made of several clips (seamless branching) gets its first part only.
+    /// </summary>
+    public static string MainClip(string path)
+    {
+        string root;
+        if (File.Exists(path) && Path.GetExtension(path).Equals(".iso", StringComparison.OrdinalIgnoreCase))
+        {
+            var quoted = Path.GetFullPath(path).Replace("'", "''");
+            var letter = Tools.Run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+                $"$i = Get-DiskImage -ImagePath '{quoted}'; if (-not $i.Attached) {{ $i = Mount-DiskImage -ImagePath '{quoted}' -Access ReadOnly -PassThru }}; ($i | Get-Volume).DriveLetter"]).Trim();
+            root = letter.Length == 1 ? letter + @":\" : throw new InvalidDataException($"{Path.GetFileName(path)}: Windows could not open the image");
+        }
+        else if (Directory.Exists(path)) root = path;
+        else return path;
+        var stream = new[] { Path.Combine(root, "BDMV", "STREAM"), Path.Combine(root, "STREAM") }.FirstOrDefault(Directory.Exists); // the disc, or its BDMV folder
+        return (stream == null ? null : Directory.GetFiles(stream, "*.m2ts").OrderByDescending(f => new FileInfo(f).Length).FirstOrDefault())
+               ?? throw new InvalidDataException($"{Path.GetFileName(Path.TrimEndingDirectorySeparator(path))}: no Blu-ray film (BDMV\\STREAM) in it");
+    }
+
+    /// <summary>The .ssif of a clip of a 3D Blu-ray (BDMV\STREAM\SSIF\N.ssif beside BDMV\STREAM\N.m2ts): both eyes, which tsMuxeR reads; null for any other video.</summary>
+    public static string? Ssif(string video) =>
+        Path.GetExtension(video).Equals(".m2ts", StringComparison.OrdinalIgnoreCase)
+        && Path.Combine(Path.GetDirectoryName(Path.GetFullPath(video))!, "SSIF", Path.GetFileNameWithoutExtension(video) + ".ssif") is var ssif && File.Exists(ssif) ? ssif : null;
+
+    static int Pid(string? id) => id is { Length: > 2 } && id.StartsWith("0x") && int.TryParse(id.AsSpan(2), NumberStyles.HexNumber, Inv, out var n) ? n : -1;
+
+    /// <summary>
+    /// What the playlist of a clip taken from a Blu-ray says of its tracks, which the clip does not carry: by PID, the language and, for the subtitles of a
+    /// 3D film, the depth they are shown at (3d-plane, -1 = none). Read by tsMuxeR from the biggest playlist that plays the clip; empty when there is none.
+    /// shortcut: the biggest playlist is the film on the discs seen; a disc full of decoy playlists may give another one's, which only costs names and depths.
+    /// </summary>
+    public static Dictionary<int, (string Lang, int Plane)> PlaylistTracks(string video)
+    {
+        var found = new Dictionary<int, (string Lang, int Plane)>();
+        var stream = Path.GetDirectoryName(Path.GetFullPath(video))!;
+        var playlists = Path.Combine(Path.GetDirectoryName(stream) ?? "", "PLAYLIST");
+        if (!Path.GetFileName(stream).Equals("STREAM", StringComparison.OrdinalIgnoreCase) || !Directory.Exists(playlists)) return found;
+        var clip = Encoding.ASCII.GetBytes(Path.GetFileNameWithoutExtension(video) + "M2TS");
+        var mpls = Directory.GetFiles(playlists, "*.mpls").Where(f => File.ReadAllBytes(f).AsSpan().IndexOf(clip) >= 0).OrderByDescending(f => new FileInfo(f).Length).FirstOrDefault();
+        if (mpls == null) return found;
+        string listing;
+        try { listing = Tools.Run(Tools.Find("tsMuxeR.exe"), [mpls]); }
+        catch (Exception e) when (e is InvalidOperationException or FileNotFoundException) { return found; } // names are a bonus
+        var track = -1;
+        foreach (var line in listing.Split('\n'))
+        {
+            if (line.Split(':', 2) is not [var key, var value]) continue;
+            (key, value) = (key.Trim(), value.Trim());
+            if (key == "Track ID" && int.TryParse(value, out var id)) found[track = id] = ("", -1); // a track listed again (the right eye's copy first) is read anew
+            else if (track < 0) continue;
+            else if (key == "Stream lang") found[track] = (value, found[track].Plane);
+            else if (key == "Stream info" && Regex.Match(value, @"3d-plane: (\d+)") is { Success: true } m) found[track] = (found[track].Lang, int.Parse(m.Groups[1].Value, Inv));
+        }
+        return found;
     }
 
     /// <summary>Chapter start times (seconds): one every <paramref name="minutes"/>, never a chapter shorter than 1 minute.</summary>
@@ -189,6 +254,14 @@ public static class BluRay
             MuxTitle(job, intro, introSource!, null, IntroPlaylist, introDest, work, kbps, log);
             Merge(introDest, job.OutDir);
         }
+        // tsMuxeR marks a disc as 3D (SS_content_exist_flag) when its first title is; a later 3D title needs the mark too. The image writer makes the .ssif (see Udf)
+        if (Udf.Interleaved(job.OutDir).Count > 0)
+            foreach (var index in new[] { Path.Combine(job.OutDir, "BDMV", "index.bdmv"), Path.Combine(job.OutDir, "BDMV", "BACKUP", "index.bdmv") }.Where(File.Exists))
+            {
+                var bytes = File.ReadAllBytes(index);
+                bytes[44] |= 0x20; // AppInfoBDMV, after its length: reserved, initial_output_mode_preference, SS_content_exist_flag
+                File.WriteAllBytes(index, bytes);
+            }
 
         // disc title and thumbnails shown by players and Windows (BDMV/META/DL: bdmt_*.xml, thumbnail_WxH.jpg, the two sizes of commercial discs)
         var metaDir = Path.Combine(job.OutDir, "BDMV", "META", "DL");
@@ -350,8 +423,10 @@ public static class BluRay
         : a.Kbps > 0 ? a.Kbps : a.Codec switch { "dts" => 1536, _ => a.Channels > 2 ? 640 : 448 }; // copied: what the file says it weighs
 
     static double AudioAndMenuBytes(BluRayJob job, IReadOnlyList<SourceInfo> sources) =>
-        job.Titles.Select((t, i) => t.KeptAudio(sources[i]).Sum(a => AudioKbps(a, t, job.Uhd) * 125.0 * sources[i].Duration)).Sum()
-        + 0.15e9 + (job.Menu is { } m ? Math.Clamp(m.LoopSeconds, 5, 120) * (m.Loop ? 2.6e6 : m.ExistingMusic() != null ? 0.1e6 : 0) : 0); // a moving clip, or a black one with music
+        job.Titles.Select((t, i) => t.KeptAudio(sources[i]).Sum(a => AudioKbps(a, t, job.Uhd) * 125.0 * sources[i].Duration)).Sum() + MenuBytes(job);
+
+    static double MenuBytes(BluRayJob job) =>
+        0.15e9 + (job.Menu is { } m ? Math.Clamp(m.LoopSeconds, 5, 120) * (m.Loop ? 2.6e6 : m.ExistingMusic() != null ? 0.1e6 : 0) : 0); // a moving clip, or a black one with music
 
     /// <summary>Size in GB the disc will take: the source files when they are kept, else video at the bit rate asked for or fitted, plus audio and menu.</summary>
     public static double EstimateGB(BluRayJob job, IReadOnlyList<SourceInfo> sources)
@@ -365,7 +440,11 @@ public static class BluRay
     /// shortcut: proportional to the length, not to what that stretch really weighs; a cut that starts later is re-encoded at constant quality, so the size is approximate.
     /// </summary>
     static double FilesBytes(BluRayJob job, IReadOnlyList<SourceInfo> sources) =>
-        job.Titles.Select((t, i) => Tools.SizeOf(t.Video) * (sources[i].FileDuration > 0 ? sources[i].Duration / sources[i].FileDuration : 1)).Sum();
+        job.Titles.Select((t, i) => (sources[i].Stereo == "mvc" && Ssif(t.Video) is { } both
+                                        // a 3D film: both eyes, without the languages left out (a disc's film carries them all)
+                                        ? Tools.SizeOf(both) - sources[i].Audio.Except(t.KeptAudio(sources[i])).Sum(a => AudioKbps(a, t, job.Uhd) * 125.0 * (sources[i].FileDuration > 0 ? sources[i].FileDuration : sources[i].Duration))
+                                        : Tools.SizeOf(t.Video))
+                                    * (sources[i].FileDuration > 0 ? sources[i].Duration / sources[i].FileDuration : 1)).Sum();
 
     /// <summary>
     /// The video bit rate (kb/s) every title is re-encoded at, 0 = keep the source's own quality (copied when the disc accepts it, else constant quality).
@@ -383,7 +462,8 @@ public static class BluRay
         var asIs = FilesBytes(job, sources);
         // the files' size only says something when they are copied: a re-encode at constant quality has no size bound (an HEVC source often doubles as H.264)
         var copied = job.Titles.Select((t, i) => CopiesVideo(job, t, sources[i], 0)).All(c => c);
-        if (asIs <= room && copied)
+        // copied files already hold their sound, and a copy does not overshoot like an encoder: the disc's real size (the profiles' sizes are GiB: a BD-50 is 46.5), 1 % kept for the file system
+        if (asIs + MenuBytes(job) <= job.CapacityGB * (1 << 30) * 0.99 && copied)
         {
             log($"fit disc: the source ({asIs / 1e9:0.0} GB) fits as it is");
             return 0;
@@ -406,7 +486,11 @@ public static class BluRay
         // subtitles the disc can carry: PGS is copied, text becomes SRT (tsMuxeR renders it); other image formats would need OCR
         var subs = Subtitles(title, src, lined, n => Path.Combine(work, $"sub{playlist}_{n}"), log);
         log($"prepare {playlist}: {src.VideoCodec} {src.Width}x{src.Height} {src.Fps:0.###}fps, audio {(audio.Count == 0 ? "none" : string.Join('+', audio.Select(a => a.Codec)))}, subtitles {subs.Count}");
-        Prepare(job, title, src, audio, [.. subs.Where(x => x.Track.Index >= 0)], prepared, kbps, log);
+        // a 3D Blu-ray film (MVC) keeps its right eye only as it is: no encoder makes MVC, and the two eyes must stay picture for picture
+        var ssif = src.Stereo == "mvc" ? Ssif(title.Video) : null;
+        var mvc = ssif != null && !job.Uhd && title.End == null && CopiesVideo(job, title, src, kbps);
+        if (ssif != null && !mvc) log($"{title.DisplayName}: 3D lost, the disc gets the left eye: a 3D Blu-ray film stays 3D only copied whole as it is (no cut, effect or re-encode, not on a 4K disc)");
+        Prepare(job, title, src, audio, [.. subs.Where(x => x.Track.Index >= 0)], prepared, kbps, log, noVideo: mvc);
         // a subtitle with nothing to show in the part kept is an empty file, which tsMuxeR cannot take
         Blanks(subs, lined != null, file => new FileInfo(file).Length == 0, job.Uhd ? (1920, 1080) : VideoSize(job), log);
         foreach (var (s, file) in subs.Where(x => x.Track.IsPgs && x.Track.File != null))
@@ -424,9 +508,27 @@ public static class BluRay
         var lines = new List<string>
         {
             // PCR on its own PID, and for a copied H.264 the SEI / SPS a player needs added where missing: what Leawo's and Yuhan's tsMuxeR lines also ask
-            $"MUXOPT {(job.Uhd ? "--blu-ray-v3" : "--blu-ray")} --label={job.Label} --vbr --no-pcr-on-video-pid --custom-chapters={chapters} --mplsOffset={playlist} --m2tsOffset={playlist}",
+            // a 3D film takes two clips (left eye N, right eye N+1): numbered apart so that the next title's clip does not land on its right eye
+            $"MUXOPT {(job.Uhd ? "--blu-ray-v3" : "--blu-ray")} --label={job.Label} --vbr --no-pcr-on-video-pid --custom-chapters={chapters} --mplsOffset={playlist} --m2tsOffset={(mvc ? 200 + 2 * playlist : playlist)}",
         };
-        if (job.Uhd && src.DualLayer && CopiesVideo(job, title, src, kbps))
+        var planes = new List<int>(); // by subtitle track: the depth a 3D film shows it at, -1 = on the screen
+        var shifts = new List<int>(); // by audio track: how many ms it starts before (-) or after the picture in the source
+        if (mvc)
+        {
+            // both eyes from the .ssif, so each right-eye picture pairs with its left one; the sound comes from prepared.ts. tsMuxeR starts every track with the
+            // picture, so the sound gets back its own start in the source (a film cut from a disc may begin with sound a frame or more before its first picture)
+            lines.Add($"V_MPEG4/ISO/AVC, \"{ssif}\", insertSEI, contSPS, fps={fps}, track=4113");
+            lines.Add($"V_MPEG4/ISO/MVC, \"{ssif}\", fps={fps}, track=4114");
+            var tracks = PlaylistTracks(title.Video);
+            var streams = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-show_entries", "stream=codec_type,id,start_time", "-of", "csv=p=0", title.Video])
+                .Split('\n').Select(l => l.Trim().Split(',')).Where(f => f.Length == 3).ToList();
+            double Start(string[] f) => double.TryParse(f[2], NumberStyles.Float, Inv, out var t) ? t : 0;
+            var picture = streams.FirstOrDefault(f => f[0] == "video") is { } v ? Start(v) : 0;
+            shifts = [.. streams.Where(f => f[0] == "audio").Select(f => (int)Math.Round((Start(f) - picture) * 1000))];
+            planes = [.. streams.Where(f => f[0] == "subtitle").Select(f => tracks.TryGetValue(Pid(f[1]), out var t) ? t.Plane : -1)];
+            log($"{title.DisplayName}: 3D kept (Blu-ray 3D, left eye and right eye){(planes.Any(p => p >= 0) ? ", subtitles at their depth" : "")}");
+        }
+        else if (job.Uhd && src.DualLayer && CopiesVideo(job, title, src, kbps))
         {
             // Dolby Vision profile 7 as a UHD disc carries it: the HDR10 base and the enhancement layer (with the Dolby Vision data) in two tracks, which tsMuxeR puts on their own PIDs
             var (raw, bl, el) = (Path.Combine(work, $"dv{playlist}.hevc"), Path.Combine(work, $"bl{playlist}.hevc"), Path.Combine(work, $"el{playlist}.hevc"));
@@ -448,16 +550,19 @@ public static class BluRay
             }
         }
         for (var j = 0; j < audio.Count; j++)
-            lines.Add($"{AudioTag(BdAudio(audio[j], title, job.Uhd))}, \"{prepared}\", track={257 + j}, lang={Languages.Iso2(audio[j].Lang)}");
+            lines.Add($"{AudioTag(BdAudio(audio[j], title, job.Uhd))}, \"{prepared}\", track={(mvc ? 256 : 257) + j}, lang={Languages.Iso2(audio[j].Lang)}" // without picture, ffmpeg numbers the sound from PID 256
+                      + (audio[j].Index < shifts.Count && shifts[audio[j].Index] != 0 ? $", timeshift={shifts[audio[j].Index]}ms" : ""));
         foreach (var (s, file) in subs)
             lines.Add(s.IsPicture
-                ? $"S_HDMV/PGS, \"{file}\", fps={fps}, lang={Languages.Iso2(s.Lang)}"
+                ? $"S_HDMV/PGS, \"{file}\", fps={fps}, lang={Languages.Iso2(s.Lang)}" + (s.Index >= 0 && s.File == null && s.Index < planes.Count && planes[s.Index] >= 0 ? $", 3d-plane={planes[s.Index]}" : "")
                 : $"S_TEXT/UTF8, \"{file}\", font-name=\"Arial\", font-size={65 * h / 1080}, font-color=0xffffffff, bottom-offset=24, font-border=5, text-align=center, video-width={w}, video-height={h}, fps={fps}, lang={Languages.Iso2(s.Lang)}");
         var meta = Path.Combine(work, $"disc{playlist}.meta");
         File.WriteAllLines(meta, lines);
         log($"mux {playlist}: tsMuxeR");
-        Tools.Run(Tools.Find("tsMuxeR.exe"), [meta, dest], log);
-        return new Muxed(prepared, audio.Select(a => a.Name).ToList(), subs.Select(s => s.Track.Name).ToList(), chapterTimes, title.DefaultSubtitleNumber(subs.Select(s => s.Track).ToList()));
+        try { Tools.Run(Tools.Find("tsMuxeR.exe"), [meta, dest], log); }
+        catch (InvalidOperationException) { foreach (var line in lines) log("meta: " + line); throw; } // the work folder goes with the failure: what was asked stays in the log
+        // a 3D title's prepared.ts holds no picture to take thumbnails from
+        return new Muxed(mvc ? title.Video : prepared, audio.Select(a => a.Name).ToList(), subs.Select(s => s.Track.Name).ToList(), chapterTimes, title.DefaultSubtitleNumber(subs.Select(s => s.Track).ToList()));
     }
 
     /// <summary>
@@ -635,7 +740,8 @@ public static class BluRay
     /// Remuxes to prepared.ts (ffmpeg numbers the streams from PID 256: video = 256, kept audio = 257..), re-encoding only what a Blu-ray cannot carry,
     /// and writes the subtitle files in the same pass over the source.
     /// </summary>
-    static void Prepare(BluRayJob job, DiscTitle title, SourceInfo s, IReadOnlyList<AudioTrack> audio, List<(SubtitleTrack Track, string File)> subs, string output, int kbps, Action<string> log)
+    static void Prepare(BluRayJob job, DiscTitle title, SourceInfo s, IReadOnlyList<AudioTrack> audio, List<(SubtitleTrack Track, string File)> subs, string output, int kbps, Action<string> log,
+                        bool noVideo = false) // noVideo: the sound and subtitles only (a 3D film's picture is muxed from the source itself)
     {
         var (w, h) = VideoSize(job);
         var enc = job.Encode ?? new EncodeOptions();
@@ -648,9 +754,10 @@ public static class BluRay
         if (title.Start > 0) args.AddRange(["-ss", title.Start.ToString(Inv)]);
         var span = s.Duration + title.GapLength; // the part read: from the first clip's start to the last one's end
         if (title.End != null) args.AddRange(["-t", span.ToString("0.###", Inv)]);
-        args.AddRange(["-i", title.Video, "-map", "0:v:0"]);
+        args.AddRange(["-i", title.Video]);
+        if (!noVideo) args.AddRange(["-map", "0:v:0"]);
         foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
-        if (videoOk) args.AddRange(["-c:v", "copy"]);
+        if (videoOk && !noVideo) args.AddRange(["-c:v", "copy"]);
         // a UHD disc takes Dolby Vision only as two tracks (profile 7): tsMuxeR puts a single-layer one on the enhancement-layer PID, with no base, and no player reads it
         if (videoOk && job.Uhd && s.Hdr == "Dolby Vision" && !s.DualLayer)
         {
@@ -695,7 +802,7 @@ public static class BluRay
             }
         }
         args.AddRange(["-sn", "-dn", output]);
-        Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
+        if (!noVideo || audio.Count > 0) Tools.Run(Tools.Find("ffmpeg.exe"), args, log); // without picture or sound there is nothing to write
         WriteOwnSubtitles(title, subs.Where(x => x.Track.File == null && !x.Track.IsVobSub).ToList(), span, log); // a VobSub is made apart, the subtitle files too
         foreach (var (t, file) in subs.Where(x => x.Track.File != null)) WriteExternalSubtitle(title, t, span, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
         foreach (var (t, file) in subs.Where(x => x.Track.File == null && x.Track.IsVobSub)) WriteEmbeddedVobSub(title, t, span, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
