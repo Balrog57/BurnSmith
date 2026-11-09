@@ -72,7 +72,9 @@ public static class DvdSubtitles
             { MaxTextWidth = (w - 120) * sar, TextAlignment = TextAlignment.Center };
             var geometry = ft.BuildGeometry(new Point((w * sar - ft.MaxTextWidth) / 2, h - h * 0.07 - ft.Height));
             dc.PushTransform(new ScaleTransform(1 / sar, 1));
-            dc.DrawGeometry(Brushes.White, new Pen(Brushes.Black, size * 0.12) { LineJoin = PenLineJoin.Round }, geometry);
+            // the outline first, the white over it: a pen drawn on top covers half its width inside the letters, all of a stroke 5 pixels thick
+            dc.DrawGeometry(null, new Pen(Brushes.Black, size * 0.2) { LineJoin = PenLineJoin.Round }, geometry);
+            dc.DrawGeometry(Brushes.White, null, geometry);
             dc.Pop();
         }
         var bmp = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);

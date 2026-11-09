@@ -519,7 +519,20 @@ public static class Authoring
         var srpt = new byte[8 + 12 * titles.Count];
         BinaryPrimitives.WriteUInt16BigEndian(srpt, (ushort)titles.Count);
         BinaryPrimitives.WriteUInt32BigEndian(srpt.AsSpan(4), (uint)(srpt.Length - 1));
-        const int ifoSectors = 3;
+        // the Title key (and Pop-up, which a DVD player sends as Title) calls the manager's title menu: without one it does nothing. One with no picture
+        // that jumps to the root menu of the title set, as the Menu key shows it
+        byte[]? titleMenu = null;
+        if (disc.Menus.Count > 0)
+        {
+            var lu = PgcTable([Pgc(new Chain(null, [], [Vm.JumpRootMenu()], []), [], disc.Pal, 0, 0, true)], _ => 0x82000000u);
+            titleMenu = new byte[16 + lu.Length];
+            BinaryPrimitives.WriteUInt16BigEndian(titleMenu, 1);
+            BinaryPrimitives.WriteUInt32BigEndian(titleMenu.AsSpan(4), (uint)(titleMenu.Length - 1));
+            titleMenu[8] = (byte)'e'; titleMenu[9] = (byte)'n'; titleMenu[11] = 0x80; // the title menu exists
+            BinaryPrimitives.WriteUInt32BigEndian(titleMenu.AsSpan(12), 16);
+            lu.CopyTo(titleMenu, 16);
+        }
+        var ifoSectors = titleMenu == null ? 3 : 4;
         for (var t = 0; t < titles.Count; t++)
         {
             var e = srpt.AsSpan(8 + 12 * t);
@@ -528,7 +541,7 @@ public static class Authoring
             BinaryPrimitives.WriteUInt16BigEndian(e[2..], (ushort)titles[t].Cells.Count);
             e[6] = 1;
             e[7] = (byte)(t + 1);
-            BinaryPrimitives.WriteUInt32BigEndian(e[8..], 2 * ifoSectors); // the title set starts after this IFO and its backup
+            BinaryPrimitives.WriteUInt32BigEndian(e[8..], (uint)(2 * ifoSectors)); // the title set starts after this IFO and its backup
         }
         var atrt = new byte[12 + 8 + 0x300];
         BinaryPrimitives.WriteUInt16BigEndian(atrt, 1);
@@ -540,7 +553,8 @@ public static class Authoring
         var ifo = new byte[ifoSectors * Sector];
         var span = ifo.AsSpan();
         Encoding.ASCII.GetBytes("DVDVIDEO-VMG").CopyTo(ifo, 0);
-        BinaryPrimitives.WriteUInt32BigEndian(span[0x1C..], ifoSectors - 1);
+        BinaryPrimitives.WriteUInt32BigEndian(span[0x0C..], (uint)(2 * ifoSectors - 1)); // the manager: its IFO and the backup, no menu picture
+        BinaryPrimitives.WriteUInt32BigEndian(span[0x1C..], (uint)(ifoSectors - 1));
         BinaryPrimitives.WriteUInt16BigEndian(span[0x20..], 0x0011);
         BinaryPrimitives.WriteUInt16BigEndian(span[0x26..], 1);
         BinaryPrimitives.WriteUInt16BigEndian(span[0x28..], 1);
@@ -554,6 +568,12 @@ public static class Authoring
         fp.CopyTo(ifo, 0x400);
         srpt.CopyTo(ifo, Sector);
         atrt.CopyTo(ifo, 2 * Sector);
+        if (titleMenu != null)
+        {
+            BinaryPrimitives.WriteUInt32BigEndian(span[0xC8..], 3);
+            titleMenu.CopyTo(ifo, 3 * Sector);
+            Array.Copy(vts, 0x100, ifo, 0x100, 0x5C); // its attributes: those of the title set's menus
+        }
         return ifo;
     }
 }
