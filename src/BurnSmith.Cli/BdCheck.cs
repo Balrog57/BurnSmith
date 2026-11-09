@@ -214,6 +214,14 @@ static class BdCheck
             var s = Look(Stream(Bd("uhd", [new DiscTitle(F("uhd.mkv"))], new EncodeOptions(), uhd: true), 1));
             Check("a 4K disc still copies its 10-bit HEVC source", s.PixFmt == "yuv420p10le", s.PixFmt);
         });
+        Part("3D side by side", () =>
+        {
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=3840x1080:r=24:d=1", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                               "-metadata:s:v:0", "stereo_mode=left_right", F("sbs.mkv")]);
+            Check("a full side-by-side clip is seen as 3D", BluRay.Probe(F("sbs.mkv")).Stereo == "sbs", BluRay.Probe(F("sbs.mkv")).Stereo);
+            var size = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height", "-of", "csv=p=0", Stream(Bd("sbs", [new DiscTitle(F("sbs.mkv"))], new EncodeOptions(Preset: "ultrafast")), 1)]).Trim().Split('\n')[0].Trim();
+            Check("it fills the 1080 picture as half side by side (no bars)", size == "1920,1080", size);
+        });
         Part("4K HDR10+ and Dolby Vision", () =>
         {
             // a raw HDR10 stream, then the same with HDR10+ (hdr10plus_tool) or a Dolby Vision profile 8.1 RPU (dovi_tool) put in, timed by a plain tsMuxeR TS

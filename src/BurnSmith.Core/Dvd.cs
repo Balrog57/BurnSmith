@@ -140,7 +140,7 @@ public static class Dvd
         if (title.End != null) args.AddRange(["-t", span.ToString("0.###", Inv)]);
         args.AddRange(["-i", title.Video, "-map", "0:v:0"]);
         foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
-        var fit = $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={(wide ? 1024 : 768)}:576:force_original_aspect_ratio=decrease,pad={(wide ? 1024 : 768)}:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h}:in_color_matrix={(src.Height >= 720 || src.Hdr != "SDR" ? "bt709" : "bt601")}:out_color_matrix=bt601,setsar={sar},{rate}"; // a player decodes a DVD as BT.601
+        var fit = $"{src.HalfStereo}scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={(wide ? 1024 : 768)}:576:force_original_aspect_ratio=decrease,pad={(wide ? 1024 : 768)}:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h}:in_color_matrix={(src.Height >= 720 || src.Hdr != "SDR" ? "bt709" : "bt601")}:out_color_matrix=bt601,setsar={sar},{rate}"; // a player decodes a DVD as BT.601
         var plain = title.Effects is null or { IsEmpty: true }; // effects are placed in the source's pixels: with some, the picture keeps its size until they are drawn
         var vf = (title.Effects ?? new()).Vf(src.Width, src.Height, title.Start, fit, plain ? BluRay.ToSdr(src.Hdr, src.Width, src.Height, wide ? 1024 : 768) : BluRay.ToSdr(src.Hdr)); // a DVD has no HDR
         if (title.GapFilter(false) is { Length: > 0 } dropV) vf += "," + dropV;
@@ -276,7 +276,7 @@ public static class Dvd
             try
             {
                 Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, sources[title].Duration - 1)).ToString("0.###", Inv),
-                    "-i", movies[title].Mpg, "-frames:v", "1", "-q:v", "2", "-vf", $"scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}", file]);
+                    "-i", movies[title].Mpg, "-frames:v", "1", "-q:v", "2", "-vf", $"{sources[title].OneView}scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}", file]);
             }
             catch (InvalidOperationException) { log($"warning: no picture for {name} (ffmpeg could not read a frame)"); } // the menu then shows an empty frame
             return File.Exists(file) ? file : null;

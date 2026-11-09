@@ -62,7 +62,7 @@ public partial class MainWindow : Window
         /// <summary>The length on the disc, which is the cut one once the video was edited.</summary>
         public string DurationText => Timecode.Format(Math.Floor(OnDisc.Duration));
         public string? DurationTip => ToDisc() is { Trimmed: true } ? $"Durée d'origine : {Timecode.Format(Math.Floor(Info.Duration))}" : null;
-        public string Hdr => Info.Hdr;
+        public string Hdr => Info.Stereo.Length > 0 ? Info.Hdr + " 3D" : Info.Hdr; // 3D side by side or top and bottom: made half-size for a 3D TV
         public string AudioText => Summary(ToDisc().KeptAudio(Tracks).Select(a => a.Name).ToList()); // in disc order: the default one first
         public string SubText => Summary(Subs.OrderBy(i => i == DefaultSub ? 0 : 1).Select(i => (Tracks.Subtitles.FirstOrDefault(t => t.Index == i)?.Name ?? "?") + (i == DefaultSub ? " (défaut)" : "")).ToList());
 

@@ -58,8 +58,20 @@ public sealed record BdProfile(string Name, double Gb, double UsableGb, bool Hd7
 public sealed record SourceInfo(string VideoCodec, int Width, int Height, double Fps, string AudioCodec, int AudioChannels, double Duration,
                                 IReadOnlyList<AudioTrack> Audio, IReadOnlyList<SubtitleTrack> Subtitles, string Hdr = "SDR", double FileDuration = 0,
                                 string Encoding = "", string PixFmt = "", string Profile = "", int Level = 0, // Encoding: the video's profile / level / reorder depth / reference frames, which a stream-copy join must not mix
-                                bool DualLayer = false) // Dolby Vision with its enhancement layer in the same track (profile 7, a UHD Blu-ray's)
+                                bool DualLayer = false, // Dolby Vision with its enhancement layer in the same track (profile 7, a UHD Blu-ray's)
+                                string Stereo = "") // 3D packed in one picture: "sbs" (side by side), "tab" (top and bottom), "" = 2D
 {
+    /// <summary>
+    /// A full-size 3D picture (each view as large as a 2D one: 3840x1080 side by side) made half-size, the frame-packed 3D a 3D TV reads from a 2D disc:
+    /// its pixels are declared half as wide (or tall), and the fit to the disc does the rest. A half-size one (1920x1080) already is.
+    /// </summary>
+    public string HalfStereo => Stereo == "sbs" && Width / 2.0 / Height > 1.5 ? "setsar=1/2," : Stereo == "tab" && Width * 2.0 / Height > 1.5 ? "setsar=2," : "";
+
+    /// <summary>One view (the left, or the top), back to its shape: what a menu thumbnail shows of a 3D picture.</summary>
+    public string OneView => Stereo == "sbs" ? "crop=iw/2:ih:0:0,scale=iw*2:ih," : Stereo == "tab" ? "crop=iw:ih/2:0:0,scale=iw:ih*2," : "";
+
+    /// <summary><see cref="OneView"/> taken from this source itself (a moving menu cut from the film), which may be full-size.</summary>
+    public string SourceView => HalfStereo.Length == 0 ? OneView : Stereo == "sbs" ? "crop=iw/2:ih:0:0," : "crop=iw:ih/2:0:0,";
     /// <summary>What a Blu-ray player takes from H.264 as it is: 8-bit 4:2:0 at level 4.1 at most (ffprobe says -99 for a level it cannot read).</summary>
     public bool PlayerReadyH264 => VideoCodec == "h264" && PixFmt == "yuv420p" && Level is > 0 and <= 41 && !Profile.Contains("10");
 }
@@ -102,6 +114,8 @@ public static class BluRay
         var dolby = v.TryGetProperty("side_data_list", out var side) && side.EnumerateArray().Any(d => d.TryGetProperty("side_data_type", out var t) && (t.GetString() ?? "").Contains("DOVI"));
         var hdr = dolby ? "Dolby Vision" : (v.TryGetProperty("color_transfer", out var ct) ? ct.GetString() : null) switch { "smpte2084" => "HDR10", "arib-std-b67" => "HLG", _ => "SDR" };
         var dual = false;
+        var packing = Tag(v, "stereo_mode") + (v.TryGetProperty("side_data_list", out var sides) ? string.Join(' ', sides.EnumerateArray().Select(d => d.TryGetProperty("type", out var t) ? t.ToString() : "")) : "");
+        var stereo = packing.Contains("left") || packing.Contains("side by side") ? "sbs" : packing.Contains("top") || packing.Contains("bottom") ? "tab" : "";
         if (hdr is "HDR10" or "Dolby Vision" && v.GetProperty("codec_name").GetString() == "hevc")
         {
             // Dolby Vision and HDR10+ ride on the frames: the first one tells (a raw stream has no Dolby Vision record in its header)
@@ -117,7 +131,7 @@ public static class BluRay
             Encoding: string.Join('/', new[] { "profile", "level", "has_b_frames", "refs" }.Select(n => v.TryGetProperty(n, out var p) ? p.ToString() : "")),
             PixFmt: v.TryGetProperty("pix_fmt", out var pf) ? pf.GetString() ?? "" : "",
             Profile: v.TryGetProperty("profile", out var pr) ? pr.GetString() ?? "" : "",
-            Level: v.TryGetProperty("level", out var lv) && lv.TryGetInt32(out var level) ? level : 0, DualLayer: dual);
+            Level: v.TryGetProperty("level", out var lv) && lv.TryGetInt32(out var level) ? level : 0, DualLayer: dual, Stereo: stereo);
     }
 
     /// <summary>Chapter start times (seconds): one every <paramref name="minutes"/>, never a chapter shorter than 1 minute.</summary>
@@ -210,7 +224,7 @@ public static class BluRay
                 try
                 {
                     Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-ss", Math.Max(0, Math.Min(t, sources[title].Duration - 1)).ToString("0.###", Inv),
-                        "-i", muxed[title].Prepared, "-frames:v", "1", "-q:v", "2", "-vf", $"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}", file]);
+                        "-i", muxed[title].Prepared, "-frames:v", "1", "-q:v", "2", "-vf", $"{sources[title].OneView}scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}", file]);
                 }
                 catch (InvalidOperationException) { log($"warning: no picture for {name} (ffmpeg could not read a frame)"); } // the menu then shows an empty frame
                 return File.Exists(file) ? file : null;
@@ -332,7 +346,7 @@ public static class BluRay
 
     /// <summary>Rough kb/s of what an audio track weighs on the disc (copied as it is, or re-encoded as AC-3 at 448 / 640).</summary>
     static int AudioKbps(AudioTrack a, DiscTitle t, bool uhd) => !CopiesAudio(a, t, uhd) ? (a.Channels > 2 ? 640 : 448) // re-encoded as AC-3 (volume change, later start)
-        : a.Kbps > 0 ? a.Kbps : a.Codec switch { "truehd" => 3500, "dts" => 1536, _ => a.Channels > 2 ? 640 : 448 }; // copied: what the file says it weighs
+        : a.Kbps > 0 ? a.Kbps : a.Codec switch { "dts" => 1536, _ => a.Channels > 2 ? 640 : 448 }; // copied: what the file says it weighs
 
     static double AudioAndMenuBytes(BluRayJob job, IReadOnlyList<SourceInfo> sources) =>
         job.Titles.Select((t, i) => t.KeptAudio(sources[i]).Sum(a => AudioKbps(a, t, job.Uhd) * 125.0 * sources[i].Duration)).Sum()
@@ -542,7 +556,7 @@ public static class BluRay
         else if (src is { Audio.Count: > 0 }) args.AddRange(["-map", "0:a:0"]);
         var hasAudio = music != null || src is { Audio.Count: > 0 };
         args.AddRange(["-t", seconds.ToString(Inv),
-            "-vf", tone + Fit(w, h) + (src is { } loop ? HdMatrix(loop) : ""), "-r", fps,
+            "-vf", tone + (src?.SourceView ?? "") + Fit(w, h) + (src is { } loop ? HdMatrix(loop) : ""), "-r", fps,
             "-c:v", "libx264", "-preset", "fast", "-crf", "19", "-pix_fmt", "yuv420p",
             "-x264-params", "bluray-compat=1:level=41:vbv-maxrate=20000:vbv-bufsize=20000:keyint=24:slices=4:bframes=3:b-pyramid=strict:open-gop=0" + Fields(fps, h)]);
         if (hasAudio) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2", "-ar", "48000"]); // the first title's own sound can be anything
@@ -577,7 +591,7 @@ public static class BluRay
 
     static string AudioTag(string codec) => codec switch
     {
-        "dts" => "A_DTS", "truehd" => "A_MLP", _ => "A_AC3",
+        "dts" => "A_DTS", _ => "A_AC3",
     };
 
     /// <summary>The codec a source audio ends up as on the disc: copied when a Blu-ray carries it and the volume stays, AC-3 otherwise.</summary>
@@ -588,7 +602,7 @@ public static class BluRay
     /// a second early. So a title that starts later has its sound re-encoded too (decoded, then cut exactly); a 4K disc copies both from the same keyframe and stays in step.
     /// Only 48 kHz is copied: a disc does not take 44.1 kHz.
     /// </summary>
-    static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && (t.Start == 0 || uhd) && t.Gaps.Count == 0 && a.SampleRate == 48000 && a.Codec is "ac3" or "dts" or "truehd";
+    static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && (t.Start == 0 || uhd) && t.Gaps.Count == 0 && a.SampleRate == 48000 && a.Codec is "ac3" or "dts"; // not TrueHD: a disc wants its AC-3 core, which an mkv or ffmpeg never carries (tsMuxeR: "the disk will not play")
 
     /// <summary>Whether the title's video goes on the disc as it is (stream copy) instead of being re-encoded; <see cref="TargetKbps"/> and <see cref="Prepare"/> must agree on it.</summary>
     static bool CopiesVideo(BluRayJob job, DiscTitle title, SourceInfo s, int kbps)
@@ -635,7 +649,7 @@ public static class BluRay
         // effects are placed in the source's pixels: with some, the picture keeps its size until they are drawn
         var tone = job.Uhd ? "" : title.Effects is null or { IsEmpty: true } ? ToSdr(s.Hdr, s.Width, s.Height, w) : ToSdr(s.Hdr);
         var rate = DiscRate(s.Fps, h).Ffmpeg;
-        if (!videoOk) args.AddRange(["-vf", (title.Effects ?? new()).Vf(s.Width, s.Height, title.Start, Fit(w, h) + HdMatrix(s), tone) + (title.Gaps.Count > 0 ? "," + title.GapFilter(false) : ""),
+        if (!videoOk) args.AddRange(["-vf", (title.Effects ?? new()).Vf(s.Width, s.Height, title.Start, s.HalfStereo + Fit(w, h) + HdMatrix(s), tone) + (title.Gaps.Count > 0 ? "," + title.GapFilter(false) : ""),
                             "-r", rate,
                             "-c:v", job.Uhd ? "libx265" : "libx264", "-preset", enc.Preset, "-pix_fmt", job.Uhd ? "yuv420p10le" : "yuv420p"]);
         if (!videoOk && job.Uhd)
