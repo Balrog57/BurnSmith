@@ -6,7 +6,7 @@
 
 Glissez vos vidéos, choisissez un menu parmi **144 modèles** (ou dessinez le vôtre), cliquez sur *Démarrer* : vous obtenez un dossier de disque, une image ISO, ou le disque gravé.
 
-> Projet jeune. Les dossiers BDMV générés se lisent dans VLC et les ISO se montent sous Windows ; la **gravure sur disque réel et la lecture sur lecteurs de salon n'ont pas encore été testées**.
+> Projet jeune. Les dossiers BDMV générés se lisent dans VLC et les ISO se montent sous Windows ; un **DVD gravé** (DVD-R, série de trois épisodes avec bonus, deux langues, quatre sous-titres, menu animé) **marche sur une platine de salon** : menus, touches Menu / Titre / Pop-up, audio, sous-titres. La gravure et la lecture d'un **Blu-ray** sur lecteur de salon n'ont **pas encore été testées**.
 
 ![La fenêtre principale de BurnSmith : trois épisodes, le disque BD25, le menu choisi](docs/images/fenetre-principale.png)
 
@@ -71,7 +71,7 @@ Tout est dans [`docs/`](docs/README.md) :
 
 ## Reste à faire
 
-- **Essais de gravure sur disque réel et sur lecteurs de salon** (un DVD-RW d'abord, le Blu-ray en dernier) ; menus HDMV natifs (le menu BD-J est signé comme ceux de DVDFab, mais pas encore essayé sur lecteur de salon).
+- **Essai d'un Blu-ray gravé sur lecteur de salon** (le DVD est fait) ; menus HDMV natifs (le menu BD-J est signé comme ceux de DVDFab, mais pas encore essayé sur lecteur de salon).
 - Amélioration IA / HDR, menu contextuel dans l'éditeur.
 
 ## Licence
