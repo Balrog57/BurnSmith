@@ -85,10 +85,15 @@
         </Grid>
         <TextBlock Text="Un chapitre toutes les" Style="{StaticResource Label}"/>
         <ComboBox x:Name="ChapterBox" HorizontalAlignment="Stretch" ItemStringFormat="{}{0} min"/>
+        <CheckBox x:Name="GpuBox" Content="Convertir avec la carte graphique NVIDIA" Margin="0,12,0,0"
+                  ToolTip="Plusieurs fois plus rapide. Le processeur reste utilisé quand la carte ne peut pas : pas de carte NVIDIA, 1080i, 4K HDR10+ ou Dolby Vision, MPEG-2 du DVD (la carte lit alors la vidéo)."/>
         <StackPanel x:Name="EncodePanel">
           <TextBlock x:Name="ModeLabel" Text="Mode vidéo" Style="{StaticResource Label}"/>
           <ComboBox x:Name="ModeBox" HorizontalAlignment="Stretch"/>
-          <TextBlock Text="Vitesse de conversion (x264)" Style="{StaticResource Label}"/>
+          <TextBlock Text="Images par seconde" Style="{StaticResource Label}"/>
+          <ComboBox x:Name="FpsBox" HorizontalAlignment="Stretch" SelectionChanged="OnRefresh"
+                    ToolTip="Le 1080p n'a 25 et 29,97 qu'en entrelacé, le 720p n'a que 50 et 59,94 : une autre cadence y est ramenée à la plus proche."/>
+          <TextBlock Text="Vitesse de conversion (processeur)" Style="{StaticResource Label}"/>
           <ComboBox x:Name="SpeedBox" HorizontalAlignment="Stretch"/>
           <TextBlock TextWrapping="Wrap" Opacity="0.65" Margin="0,12,0,0"
                      Text="« Adapter au disque » garde la vidéo telle quelle tant qu'elle tient sur le support, sinon la refait au débit qui remplit le disque. « Identique à la source » copie la vidéo si elle est déjà en H.264 1080p à 23,976 / 24 / 25 i/s, sinon la refait à qualité constante."/>

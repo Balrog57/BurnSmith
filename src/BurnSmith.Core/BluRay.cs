@@ -23,7 +23,7 @@ public sealed record BluRayJob(IReadOnlyList<DiscTitle> Titles, string OutDir, M
 /// DVD: <see cref="DvdPal"/> forces PAL (true) or NTSC (false), null follows the first video; <see cref="DvdWide"/> false = 4:3 titles (the menu stays 16:9).
 /// </summary>
 public sealed record EncodeOptions(bool ForceReencode = false, int Crf = 17, string Preset = "medium", int DvdKbps = 0,
-                                   int BdKbps = 0, bool FitDisc = false, bool Hd720 = false, bool? DvdPal = null, bool DvdWide = true);
+                                   int BdKbps = 0, bool FitDisc = false, bool Hd720 = false, bool? DvdPal = null, bool DvdWide = true, bool Gpu = true, double? Fps = null);
 
 /// <summary>
 /// The play mode (Blu-ray menu). <see cref="StartAtFirstTitle"/>: the disc starts on the first title instead of the menu.
@@ -263,7 +263,22 @@ public static class BluRay
     }
 
     /// <summary>What one muxed title gives the menu: its preview source and the names of the tracks that really went on the disc.</summary>
-    sealed record Muxed(string Prepared, List<string> Audio, List<string> Subtitles, List<double> ChapterTimes, int DefaultSubtitle);
+    sealed record Muxed(string Prepared, List<string> Audio, List<string> Subtitles, List<double> ChapterTimes, int DefaultSubtitle,
+                        List<string> AudioLangs, List<(string Lang, bool Forced)> SubFlags);
+
+    /// <summary>
+    /// The forced subtitle tracks placed last, each in the language of an audio track ("French (Forced)" after "French"): the menu does not list them,
+    /// it shows the one of the audio's language while subtitles are off. Returns how many tracks the menu lists and, by audio stream, the forced stream.
+    /// </summary>
+    public static (int Listed, List<(int Audio, int Sub)> Forced) ForcedTracks(IReadOnlyList<string> audioLangs, IReadOnlyList<(string Lang, bool Forced)> subs)
+    {
+        var listed = subs.Count;
+        string Key(string lang) => Languages.Iso1(Languages.Code(lang) ?? lang); // "fre", "fra" and "fr" are one language
+        while (listed > 0 && subs[listed - 1].Forced && audioLangs.Any(a => Key(a) == Key(subs[listed - 1].Lang))) listed--;
+        var forced = audioLangs.Select((lang, a) => (Audio: a + 1, Sub: Enumerable.Range(listed, subs.Count - listed).FirstOrDefault(i => Key(subs[i].Lang) == Key(lang), -1) + 1))
+                               .Where(f => f.Sub > 0).ToList();
+        return (listed, forced);
+    }
 
     public static void Build(BluRayJob job, Action<string>? log, CancellationToken cancel) => Tools.WithCancel(cancel, () => Build(job, log));
 
@@ -367,10 +382,12 @@ public static class BluRay
             }
             TitleEntry Entry(int i, string name) => new(job.Titles[i].DisplayName, MoviePlaylist + i, (job.Titles[i].ThumbImage is { } img ? Cover(name, img, 480, 270) : null)
                 ?? Thumb(name, i, job.Titles[i].ThumbAt ?? sources[i].Duration * 0.1, 480, 270));
+            var (listed, forced) = ForcedTracks(muxed[0].AudioLangs, muxed[0].SubFlags);
+            if (forced.Count > 0) log($"menu: {forced.Count} forced subtitle track(s) shown with their audio while subtitles are off, not listed");
             var content = new MenuContent(MoviePlaylist, Thumb("preview", 0, sources[0].Duration * 0.1, 800, 450),
                 series ? [] : muxed[0].ChapterTimes.Select((t, i) => Thumb($"c{i + 1}", 0, t + 3, 480, 270)).ToList(),
                 series ? Enumerable.Range(0, mainCount).Select(i => Entry(i, $"t{i + 1}")).ToList() : null,
-                muxed[0].Audio, muxed[0].Subtitles,
+                muxed[0].Audio, muxed[0].Subtitles.Take(listed).ToList(),
                 mainCount < job.Titles.Count ? Enumerable.Range(mainCount, job.Titles.Count - mainCount).Select(i => Entry(i, $"b{i - mainCount + 1}")).ToList() : null);
             var menuDir = Path.Combine(work, "menu");
             var loop = 0;
@@ -380,7 +397,7 @@ public static class BluRay
             if (MenuBuilder.TracksLeftOut(menuPages, content) is { } leftOut) log(leftOut);
             var popup = job.Menu.Popup ? MenuBuilder.Popup(job.Menu, content, muxed.Select((m, i) => (MoviePlaylist + i, m.ChapterTimes.Count)).ToList()) : null;
             if (popup != null) log($"menu: pop-up menu on {job.Titles.Count} title(s)");
-            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle, popup: popup); // the xlet chains only the main titles
+            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, popup: popup, forced: forced); // the xlet chains only the main titles
             AddMenu(job, menuDir, log);
             if (intro != null) StartWithIntro(job.OutDir, job.Playback?.StartAtFirstTitle == true);
         }
@@ -418,6 +435,58 @@ public static class BluRay
     /// <paramref name="height"/> may carry: 1080 has 25 and 29.97 (as fields, see <see cref="Fields"/>), so 50 / 59.94 lose every other picture, as on a DVD; 720 has only
     /// 50 and 59.94, so 25 / 29.97 show each picture twice; 4K has all of them. Any other rate (15, 20...) becomes 23.976.
     /// </summary>
+    /// <summary>
+    /// The menu pages of <paramref name="job"/> as the disc will show them (menu_PAGE.jpg in <paramref name="dir"/>), without encoding anything: the same tracks, names,
+    /// thumbnails and hidden forced subtitles as <see cref="Build"/>, pictures taken from the sources. What the CLI's --preview gives an AI instead of the editor's view.
+    /// </summary>
+    public static List<string> PreviewMenu(BluRayJob job, string dir, Action<string>? log = null)
+    {
+        log ??= _ => { };
+        if (job.Menu == null) throw new ArgumentException("no menu to preview (--no-menu)");
+        Directory.CreateDirectory(dir);
+        job = job with { Titles = DiscTitle.MainFirst([.. job.Titles.Where(t => !t.Intro)]) }; // as Build: the intro is no title, the feature comes first
+        var sources = job.Titles.Select(t => t.Cut(Probe(t.Video))).ToList();
+        var mainCount = job.Titles.Count(t => !t.Bonus);
+        // shortcut: a picture at Start + t of the file (a title cut into several clips may show a moment of a dropped part); exact enough to judge a layout
+        string? Frame(string name, int i, double t, int w, int h)
+        {
+            var file = Path.Combine(dir, $"thumb_{name}.jpg");
+            var image = job.Titles[i].ThumbImage;
+            try
+            {
+                Tools.Run(Tools.Find("ffmpeg.exe"), image != null && name[0] is 't' or 'b' // a picture chosen for the title (--thumb), as Build's Cover
+                    ? ["-y", "-v", "error", "-i", image, "-frames:v", "1", "-q:v", "2", "-vf", $"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}", file]
+                    : ["-y", "-v", "error", "-ss", (job.Titles[i].Start + Math.Max(0, Math.Min(t, sources[i].Duration - 1))).ToString("0.###", Inv), "-i", job.Titles[i].Video,
+                       "-frames:v", "1", "-q:v", "2", "-vf", $"{sources[i].OneView}scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}", file]);
+            }
+            catch (InvalidOperationException) { log($"warning: no picture for {name}"); }
+            return File.Exists(file) ? file : null;
+        }
+        var series = mainCount > 1;
+        TitleEntry Entry(int i, string name) => new(job.Titles[i].DisplayName, MoviePlaylist + i, Frame(name, i, job.Titles[i].ThumbAt ?? sources[i].Duration * 0.1, 480, 270));
+        var audio = job.Titles[0].KeptAudio(sources[0]);
+        var subs = job.Titles[0].KeptSubtitles(sources[0]).Where(s => s.Supported).ToList();
+        var (listed, _) = ForcedTracks([.. audio.Select(a => a.Lang)], [.. subs.Select(s => (s.Lang, s.Forced))]);
+        var content = new MenuContent(MoviePlaylist, Frame("preview", 0, sources[0].Duration * 0.1, 800, 450),
+            series ? [] : job.Titles[0].ChapterList(sources[0].Duration, job.ChapterMinutes).Select((t, i) => Frame($"c{i + 1}", 0, t + 3, 480, 270)).ToList(),
+            series ? Enumerable.Range(0, mainCount).Select(i => Entry(i, $"t{i + 1}")).ToList() : null,
+            [.. audio.Select(a => a.Name)], [.. subs.Take(listed).Select(s => s.Name)],
+            mainCount < job.Titles.Count ? Enumerable.Range(mainCount, job.Titles.Count - mainCount).Select(i => Entry(i, $"b{i - mainCount + 1}")).ToList() : null);
+        var pages = MenuBuilder.Build(job.Menu, content);
+        if (MenuBuilder.TracksLeftOut(pages, content) is { } leftOut) log(leftOut);
+        var files = MenuRenderer.Sta(() => pages.Select(p =>
+        {
+            var file = Path.Combine(dir, $"menu_{p.Id}.jpg");
+            File.WriteAllBytes(file, MenuRenderer.Background(job.Menu, p));
+            return file;
+        }).ToList());
+        foreach (var f in files) log($"preview: {f}");
+        return files;
+    }
+
+    /// <summary>The rate the disc is made at: the one chosen in the settings, else the source's (<see cref="DiscRate"/> turns either into one a disc carries).</summary>
+    static double Fps(BluRayJob job, SourceInfo s) => job.Encode?.Fps ?? s.Fps;
+
     internal static (string Ffmpeg, string TsMuxer) DiscRate(double fps, int height = 1080)
     {
         bool pal = Math.Abs(fps - 25) < 0.5 || Math.Abs(fps - 50) < 0.5, ntsc = Math.Abs(fps - 30) < 0.5 || Math.Abs(fps - 60) < 0.5;
@@ -426,6 +495,13 @@ public static class BluRay
              : ntsc ? doubled ? ("60000/1001", "59.94") : ("30000/1001", "29.97")
              : Math.Abs(fps - 24) < 0.01 ? ("24", "24") : ("24000/1001", "23.976");
     }
+
+    /// <summary>Whether this PC's ffmpeg can encode H.264 on an NVIDIA card: listed is not enough (the encoder is always built in), a one-frame test says it.</summary>
+    public static readonly Lazy<bool> Nvenc = new(() =>
+    {
+        try { Tools.Run(Tools.Find("ffmpeg.exe"), ["-v", "error", "-f", "lavfi", "-i", "color=s=640x360:d=0.1", "-c:v", "h264_nvenc", "-f", "null", "-"]); return true; }
+        catch (Exception e) when (e is InvalidOperationException or FileNotFoundException) { return false; }
+    });
 
     /// <summary>x264's extra settings for a 1080 picture at 25 or 29.97: a Blu-ray has those only as fields, so the progressive pictures are flagged as such (PsF).</summary>
     static string Fields(string rate, int height) => height == 1080 && rate is "25" or "30000/1001" ? ":fake-interlaced=1:pic-struct=1" : "";
@@ -555,7 +631,7 @@ public static class BluRay
                 log($"warning: subtitle '{s.Name}' is made for a {plane.Width}x{plane.Height} screen, the disc is {planeW}x{planeH}: its pictures may not sit where they were meant to");
         }
 
-        var fps = DiscRate(src.Fps, VideoSize(job).H).TsMuxer;
+        var fps = DiscRate(mvc ? src.Fps : Fps(job, src), VideoSize(job).H).TsMuxer; // a 3D film is copied: its own rate
         var chapterTimes = title.ChapterList(src.Duration, job.ChapterMinutes);
         var chapters = string.Join(';', chapterTimes.Select(t => TimeSpan.FromSeconds(t).ToString(@"hh\:mm\:ss\.fff", Inv)));
         var (w, h) = VideoSize(job);
@@ -597,7 +673,7 @@ public static class BluRay
         {
             lines.Add($"{(job.Uhd ? "V_MPEGH/ISO/HEVC" : "V_MPEG4/ISO/AVC")}, \"{prepared}\", {(job.Uhd ? "" : "insertSEI, contSPS, ")}fps={fps}, track=256");
             // a re-encoded Dolby Vision title: its metadata on an enhancement layer made to match the new base (profile 7 MEL)
-            if (job.Uhd && File.Exists(Path.ChangeExtension(prepared, ".rpu.bin")) && DolbyLayer(prepared, Path.ChangeExtension(prepared, ".rpu.bin"), DiscRate(src.Fps, h).Ffmpeg, log) is { } el)
+            if (job.Uhd && File.Exists(Path.ChangeExtension(prepared, ".rpu.bin")) && DolbyLayer(prepared, Path.ChangeExtension(prepared, ".rpu.bin"), DiscRate(Fps(job, src), h).Ffmpeg, log) is { } el)
             {
                 lines.Add($"V_MPEGH/ISO/HEVC, \"{el}\", fps={fps}");
                 log($"{title.DisplayName}: Dolby Vision kept (re-encoded, profile 7 MEL)");
@@ -616,7 +692,8 @@ public static class BluRay
         try { Tools.Run(Tools.Find("tsMuxeR.exe"), [meta, dest], log); }
         catch (InvalidOperationException) { foreach (var line in lines) log("meta: " + line); throw; } // the work folder goes with the failure: what was asked stays in the log
         // a 3D title's prepared.ts holds no picture to take thumbnails from
-        return new Muxed(mvc ? title.Video : prepared, audio.Select(a => a.Name).ToList(), subs.Select(s => s.Track.Name).ToList(), chapterTimes, title.DefaultSubtitleNumber(subs.Select(s => s.Track).ToList()));
+        return new Muxed(mvc ? title.Video : prepared, audio.Select(a => a.Name).ToList(), subs.Select(s => s.Track.Name).ToList(), chapterTimes, title.DefaultSubtitleNumber(subs.Select(s => s.Track).ToList()),
+                         audio.Select(a => a.Lang).ToList(), subs.Select(s => (s.Track.Lang, s.Track.Forced)).ToList());
     }
 
     /// <summary>
@@ -709,7 +786,7 @@ public static class BluRay
         {
             var (file, probe, start) = LoopSource(menu, job.Titles[0], seconds);
             src = probe;
-            (fps, declared) = DiscRate(src.Fps, h);
+            (fps, declared) = DiscRate(Fps(job, src), h);
             tone = !job.Uhd && ToSdr(src.Hdr, src.Width, src.Height, w) is { Length: > 0 } sdr ? sdr + "," : ""; // a moving menu taken from an HDR film; a 4K disc keeps its HDR, like the film
             log($"menu: moving background, {seconds}s from {Path.GetFileName(file)} at {start}s{(music != null ? " + music" : "")}");
             args.AddRange(["-ss", start.ToString(Inv), "-t", seconds.ToString(Inv), "-i", file]);
@@ -781,7 +858,7 @@ public static class BluRay
     static bool CopiesVideo(BluRayJob job, DiscTitle title, SourceInfo s, int kbps)
     {
         var (w, h) = VideoSize(job);
-        var rate = DiscRate(s.Fps, h).Ffmpeg;
+        var rate = DiscRate(Fps(job, s), h).Ffmpeg;
         var fpsOk = Math.Abs(s.Fps - Value(rate)) < 0.01; // the disc keeps the source's rate as it is (720p has no 25: such a source is made again at 50)
         var enc = job.Encode ?? new EncodeOptions();
         // a cut that starts later must be re-encoded to begin on the exact frame (a copy starts on the keyframe before it); a 4K passthrough copies it anyway
@@ -824,11 +901,31 @@ public static class BluRay
         }
         // effects are placed in the source's pixels: with some, the picture keeps its size until they are drawn
         var tone = job.Uhd ? "" : title.Effects is null or { IsEmpty: true } ? ToSdr(s.Hdr, s.Width, s.Height, w) : ToSdr(s.Hdr);
-        var rate = DiscRate(s.Fps, h).Ffmpeg;
+        var rate = DiscRate(Fps(job, s), h).Ffmpeg;
+        // the NVIDIA card encodes several times faster (what DVDFab does). The processor only when the card cannot: 25i/29.97i fields (x264 writes them),
+        // a 4K HDR10+ or Dolby Vision film (x265 carries their frame-by-frame metadata), or no NVIDIA card
+        var cpuOnly = Fields(rate, h).Length > 0 ? "interlaced output" : job.Uhd && s.Hdr is "HDR10+" or "Dolby Vision" ? s.Hdr + " metadata" : !Nvenc.Value ? "no NVIDIA encoder" : null;
+        var gpu = !videoOk && enc.Gpu && cpuOnly == null;
+        if (!videoOk && enc.Gpu && !gpu) log($"{title.DisplayName}: encoded by the processor ({cpuOnly})");
+        if (gpu) args.InsertRange(args.IndexOf("-i"), ["-hwaccel", "auto"]); // decoded by the card too (ffmpeg falls back to the processor by itself)
         if (!videoOk) args.AddRange(["-vf", (title.Effects ?? new()).Vf(s.Width, s.Height, title.Start, s.HalfStereo + Fit(w, h) + HdMatrix(s), tone) + (title.Gaps.Count > 0 ? "," + title.GapFilter(false) : ""),
-                            "-r", rate,
-                            "-c:v", job.Uhd ? "libx265" : "libx264", "-preset", enc.Preset, "-pix_fmt", job.Uhd ? "yuv420p10le" : "yuv420p"]);
-        if (!videoOk && job.Uhd)
+                            "-r", rate, "-pix_fmt", !job.Uhd ? "yuv420p" : gpu ? "p010le" : "yuv420p10le"]);
+        if (!videoOk) args.AddRange(gpu ? ["-c:v", job.Uhd ? "hevc_nvenc" : "h264_nvenc"] : ["-c:v", job.Uhd ? "libx265" : "libx264", "-preset", enc.Preset]);
+        if (gpu)
+        {
+            // the limits x264's bluray-compat / x265's uhd-bd set below: level 4.1 (5.1 high tier), 1 s GOP, 3 B-frames without pyramid, access unit delimiters; two passes for an accurate size
+            var maxrate = job.Uhd ? (kbps > 0 ? Math.Clamp(kbps + kbps / 2, 40000, 100000) : 100000) : kbps > 0 ? Math.Clamp(kbps + kbps / 4, 30000, 40000) : 30000;
+            args.AddRange(["-preset", "p6", "-tune", "hq", "-rc", "vbr", "-multipass", "fullres", "-spatial-aq", "1",
+                           "-g", "24", "-bf", "3", "-b_ref_mode", "disabled", "-aud", "1", "-maxrate", maxrate + "k", "-bufsize", (job.Uhd ? maxrate : 30000) + "k"]);
+            args.AddRange(job.Uhd ? ["-profile:v", "main10", "-level", "5.1", "-tier", "high"] : ["-profile:v", "high", "-level", "4.1", "-slices", "4"]);
+            if (job.Uhd) // the colours named as for x265 (the scaler drops them); the HDR10 mastering and light levels come from the frames
+            {
+                var (prim, trc, matrix) = s.Hdr switch { "HDR10" => ("bt2020", "smpte2084", "bt2020nc"), "HLG" => ("bt2020", "arib-std-b67", "bt2020nc"), _ => ("bt709", "bt709", "bt709") };
+                args.AddRange(["-color_primaries", prim, "-color_trc", trc, "-colorspace", matrix]);
+            }
+            args.AddRange(kbps > 0 ? ["-b:v", kbps.ToString(Inv) + "k"] : ["-cq", Math.Clamp(enc.Crf, 10, 28).ToString(Inv), "-b:v", "0"]);
+        }
+        else if (!videoOk && job.Uhd)
         {
             // 10-bit HEVC at level 5.1, 100 Mb/s at most. The colours are named here: ffmpeg does not pass them on through the scaler; the HDR10 mastering
             // and light levels come from the source's frames. Dolby Vision is kept as profile 7 MEL, an enhancement layer made apart (DolbyLayer), so the base

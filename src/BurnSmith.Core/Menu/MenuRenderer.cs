@@ -543,7 +543,9 @@ public static partial class MenuRenderer
         var natural = t.Wrap ? 0 : Make(t.Size).WidthIncludingTrailingWhitespace;
         var size = natural > t.Rect.W ? Math.Max(t.Size * 0.6, t.Size * t.Rect.W / natural) : t.Size;
         var lines = t.Wrap ? Math.Max(1, (int)(t.Rect.H / (t.Size * 1.25))) : 1;
-        if (!t.Wrap && natural * 0.6 > t.Rect.W && t.Rect.H / 2.5 >= t.Size * 0.5) (lines, size) = (2, Math.Min(size, t.Rect.H / 2.5));
+        var room = (int)(t.Rect.H / (t.Size * 1.25)); // a zone high enough for several lines at full size takes them first (a synopsis in a tall text box)
+        if (!t.Wrap && natural > t.Rect.W && room >= 2) (lines, size) = (room, t.Size);
+        else if (!t.Wrap && natural * 0.6 > t.Rect.W && t.Rect.H / 2.5 >= t.Size * 0.5) (lines, size) = (2, Math.Min(size, t.Rect.H / 2.5));
         var text = Make(size);
         text.MaxTextWidth = t.Rect.W;
         text.MaxLineCount = lines;

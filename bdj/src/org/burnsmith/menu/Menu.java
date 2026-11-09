@@ -54,6 +54,7 @@ import org.havi.ui.event.HRcEvent;
  *   loop PLAYLIST
  *   playback menu|first CHAIN REWIND FIRST_PLAYLIST COUNT   (CHAIN, REWIND: 1 or 0; absent = menu, no chaining, back to the menu)
  *   defaults AUDIO SUB   (the audio / subtitle stream number the disc starts with; absent = 1 and 0, no subtitles)
+ *   forced AUDIO SUB     (repeatable: with subtitles off and that audio stream playing, subtitle stream SUB is shown, a forced track the menu does not list)
  * ACTION is "play PLAYLIST", "chapter PLAYLIST MARK", "page PAGE", "playall FIRST_PLAYLIST COUNT" (plays them one
  * after the other), "audio N" (stream number, 1-based) or "sub N" (0 = no subtitles). The first page is shown
  * first and the first button of a page has the initial focus. The marker image is drawn DX pixels from the left
@@ -112,6 +113,8 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private int width = 1920, height = 1080;
     private boolean listening;
     private int audio = 1, sub = 0; // current choice: audio stream number, subtitle stream number (0 = off)
+    /** "forced" lines: audio stream number -> the forced subtitle stream shown while subtitles are off (the lines the film's language needs). */
+    private final Hashtable forced = new Hashtable();
     private Image marker;
     private String markerName;
     private int markerW, markerH, markerDx;
@@ -402,13 +405,15 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             Control c = p.getControl("org.bluray.media.SubtitlingControl");
             if (c instanceof SubtitlingControl) {
                 SubtitlingControl s = (SubtitlingControl) c;
-                if (sub > 0) {
-                    s.selectStreamNumber(sub);
+                Integer own = sub > 0 ? null : (Integer) forced.get(new Integer(audio));
+                int shown = sub > 0 ? sub : own != null ? own.intValue() : 0;
+                if (shown > 0) {
+                    s.selectStreamNumber(shown);
                     s.setSubtitling(true);
                 } else {
                     s.setSubtitling(false);
                 }
-                log("subtitle stream " + sub + " selected");
+                log("subtitle stream " + shown + " selected" + (own != null ? " (forced, audio " + audio + ")" : ""));
             } else {
                 log("no SubtitlingControl");
             }
@@ -557,6 +562,8 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             } else if (cmd.equals("defaults")) {
                 audio = Integer.parseInt(t.nextToken());
                 sub = Integer.parseInt(t.nextToken());
+            } else if (cmd.equals("forced")) {
+                forced.put(new Integer(Integer.parseInt(t.nextToken())), new Integer(Integer.parseInt(t.nextToken())));
             } else if (cmd.equals("popupkey")) {
                 popupKey = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("loop")) {

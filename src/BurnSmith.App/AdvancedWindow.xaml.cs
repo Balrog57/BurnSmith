@@ -16,6 +16,7 @@ public partial class AdvancedWindow : Window
     public PlaybackOptions Playback { get; private set; }
     public Output Output { get; private set; }
 
+    static readonly double[] Rates = [0, 23.976, 24, 25, 29.97, 50, 59.94]; // 0 = as the source
     static readonly (string Name, int Crf, string Preset)[] Speeds = [("Rapide (fichier plus gros)", 20, "veryfast"), ("Standard", 17, "medium"), ("Lente (meilleure qualité)", 14, "slow")];
     // index 0 = fit the disc, the last = typed in; Blu-ray: 1 = the source's own quality. A DVD is always made again in MPEG-2: it has no "source" choice
     static readonly (string Name, int Kbps)[] BdRates = [("Adapter au disque", 0), ("Identique à la source", 0), ("15 Mbps", 15000), ("20 Mbps", 20000), ("30 Mbps", 30000), ("Personnaliser", -1)];
@@ -66,6 +67,9 @@ public partial class AdvancedWindow : Window
         RateBox.Text = kbps > 0 ? kbps.ToString() : dvd ? "6000" : "15000";
         ModeBox.ItemsSource = new[] { "Automatique (copie si la vidéo convient)", "Toujours convertir" };
         ModeBox.SelectedIndex = encode.ForceReencode ? 1 : 0;
+        GpuBox.IsChecked = encode.Gpu;
+        FpsBox.ItemsSource = Rates.Select(r => r == 0 ? "Comme la source" : r.ToString("0.###")).ToList();
+        FpsBox.SelectedIndex = Math.Max(0, Array.IndexOf(Rates, encode.Fps ?? 0));
         SpeedBox.ItemsSource = Speeds.Select(q => q.Name).ToList();
         SpeedBox.SelectedIndex = Array.FindIndex(Speeds, q => q.Crf == encode.Crf && q.Preset == encode.Preset) is var speed and >= 0 ? speed : 1;
 
@@ -87,7 +91,8 @@ public partial class AdvancedWindow : Window
         // a 4K passthrough never re-encodes: no rate, no fitting
         return new EncodeOptions(uhd ? !Passthrough : ModeBox.SelectedIndex == 1, speed.Crf, speed.Preset, dvd ? ChosenRate : Encode.DvdKbps,
             dvd ? Encode.BdKbps : Passthrough ? 0 : ChosenRate, dvd ? Encode.FitDisc : !Passthrough && QualityBox.SelectedIndex == 0, output.Hd720,
-            TvPal.IsChecked == true ? true : TvNtsc.IsChecked == true ? false : null, Narrow.IsChecked != true);
+            TvPal.IsChecked == true ? true : TvNtsc.IsChecked == true ? false : null, Narrow.IsChecked != true,
+            GpuBox.IsChecked == true, dvd ? Encode.Fps : FpsBox.SelectedIndex > 0 ? Rates[FpsBox.SelectedIndex] : null);
     }
 
     void OnQuality(object s, RoutedEventArgs e)

@@ -1410,17 +1410,35 @@ if (a.Count >= 2 && a[0] == "hold-tool")
     Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-re", "-f", "lavfi", "-i", "testsrc=s=64x64:r=10:d=60", "-progress", a[1], "-f", "null", "-"], outlivesApp: a.Contains("--free"));
     return 0;
 }
+// burnsmith design-export NAME|FILE.json OUT.json : a template as the JSON --design reads (what "Enregistrer le modèle" saves), to edit and pass back
+if (a.Count >= 3 && a[0] == "design-export")
+{
+    var named = a[1].EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(File.ReadAllText(a[1]))
+        : TemplateCatalog.Find(a[1]) ?? Templates.List().FirstOrDefault(t => t.Name == a[1]);
+    if (named == null) { Console.Error.WriteLine($"unknown template: {a[1]} (burnsmith templates lists them)"); return 2; }
+    File.WriteAllText(a[2], System.Text.Json.JsonSerializer.Serialize(named.Clone(), new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    Console.WriteLine($"template '{a[1]}' written to {a[2]}");
+    return 0;
+}
+// burnsmith probe VIDEO : the video and its tracks as BurnSmith reads them (JSON); "Index" is the number --audio / --sub take, "Name" what the menu shows
+if (a.Count >= 2 && a[0] == "probe")
+{
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(BluRay.Probe(a[1]), new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+    return 0;
+}
 if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BURNSMITH", a.Contains("--dvd"), Console.WriteLine); return 0; }
 // burnsmith burn IMAGE.iso F: [--speed 4] : the speed is × 1x, absent = the drive's fastest
 if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0); return 0; }
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || Opt("--out") is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--bonus] [--credits 'A|B'] [bd: --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--bonus] [--credits 'A|B'] [--preview] [--cpu] [--fps R] [bd: --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
     return 2;
 }
 
 var design = a.Contains("--no-menu") ? null
+    : Opt("--design") is { } saved && saved.EndsWith(".json", StringComparison.OrdinalIgnoreCase) // a template saved from the menu editor (Mes modèles)
+        ? System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(File.ReadAllText(saved)) ?? throw new InvalidOperationException($"not a template: {saved}")
     : (TemplateCatalog.Find(Opt("--design")) ?? (Opt("--design") is { } unknown ? throw new InvalidOperationException($"unknown template: {unknown}") : TemplateCatalog.Default())).Clone();
 if (design != null && Opt("--title") is { } title) design.Title = title;
 if (design != null && Opt("--highlight") is { } hlStyle) design.HighlightStyle = hlStyle; // box | underline | textcolor
@@ -1476,7 +1494,8 @@ var titles = videos.Select((v, k) =>
     int? chapterMinutes = int.TryParse(Own("--chapter-every"), out var every) ? Math.Clamp(every, 1, 600) : null;
     // --sub-file FILE | --sub-file fra=FILE (repeatable): a subtitle file kept as one more track, after the video's own and the --sub ones
     var files = own.Select((x, i) => (x, i)).Where(x => x.x == "--sub-file" && x.i + 1 < own.Count).SelectMany(x => ExternalSubtitle.ParseAll(own[x.i + 1])).ToList();
-    var subs = Numbers("--sub");
+    // --sub after a --video is that video's own choice ("none": only its --sub-file ones), else the one for every video
+    List<int>? subs = Own("--sub") is "none" ? [] : Own("--sub") is { } ownSubs ? [.. ownSubs.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse)] : Numbers("--sub");
     if (subs != null || files.Count > 0) subs = SubsToKeep(subs, BluRay.Probe(v).Subtitles.Count, files.Count, Path.GetFileName(v), Console.Error.WriteLine);
     int? defaultAudio = int.TryParse(Own("--default-audio"), out var da) ? da : null, defaultSub = int.TryParse(Own("--default-sub"), out var ds) ? ds : null;
     if (defaultAudio is { } wanted && !(Numbers("--audio") ?? [0]).Contains(wanted)) throw new ArgumentException($"--default-audio {wanted} is not one of the audio tracks kept (--audio)");
@@ -1490,12 +1509,14 @@ var titles = videos.Select((v, k) =>
         if (!System.Text.RegularExpressions.Regex.IsMatch(kv[0].Trim(), "^[as][0-9]+$") || code == null) throw new ArgumentException($"--track-lang: a track and a language are expected (a0=fre,s1=eng), not '{pair}'");
         (trackLanguage ??= [])[kv[0].Trim()] = code;
     }
-    return new DiscTitle(v, null, Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes, own.Contains("--intro"), trackLanguage,
+    // --name: the video's name on the menu, as renamed in the app
+    return new DiscTitle(v, Own("--name"), Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes, own.Contains("--intro"), trackLanguage,
                           Own("--effects") is { } fx ? System.Text.Json.JsonSerializer.Deserialize<VideoEffects>(File.ReadAllText(fx)) : null, // --effects FILE.json: the video editor's settings (VideoEffects, by property name)
                           clipList,
                           Own("--thumb-at") is { } thumbAt ? Time(thumbAt) : null, Own("--thumb") is { } thumb ? Path.GetFullPath(thumb) : null); // the menu thumbnail: a moment of the video, or a picture
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
+// --cpu (encode and decode on the processor; default: the NVIDIA card when there is one), --fps 23.976|24|25|29.97|50|59.94 (bd: the disc's rate; default: as the source)
 // bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (default fit = "Adapter au disque"; up to 60000 with --uhd, where --reencode = "Conversion"),
 //     --capacity GB (usable size, instead of the profile's), --play-mode 0|1|2 (menu then all titles | first title then all | back to the menu) [--no-rewind] (DVD too)
 // dvd: --pal | --ntsc (default: as the first video), --4x3 (4:3 titles, the menu stays 16:9)
@@ -1503,10 +1524,17 @@ var profile = BdProfile.Find(Opt("--profile") ?? "BD25");
 var quality = Opt("--quality") ?? "fit"; // as the app: "Adapter au disque"
 var rate = int.TryParse(quality, out var q) ? (q < 1000 ? q * 1000 : q) : 0; // "15" = 15 Mb/s
 var encode = new EncodeOptions(a.Contains("--reencode"), int.TryParse(Opt("--crf"), out var crf) ? crf : 17, Opt("--preset") ?? "medium", int.TryParse(Opt("--dvd-kbps"), out var kbps) ? kbps : 0,
-                               rate, quality == "fit", profile.Hd720);
+                               rate, quality == "fit", profile.Hd720, Gpu: !a.Contains("--cpu"),
+                               Fps: double.TryParse(Opt("--fps"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var fps) ? fps : null);
 var capacity = double.TryParse(Opt("--capacity"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var gb) ? gb : profile.UsableGb;
 var playback = int.TryParse(Opt("--play-mode"), out var mode) ? PlaybackOptions.FromMode(mode, !a.Contains("--no-rewind")) : null;
 
+// --preview: only the menu pages, as JPEGs in --out (menu_root.jpg...), nothing encoded: to check a menu before the hours of a build
+if (a.Contains("--preview"))
+{
+    BluRay.PreviewMenu(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback), Path.GetFullPath(outDir), Console.WriteLine);
+    return 0;
+}
 if (a[0] == "bd")
     BluRay.Build(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback), Console.WriteLine);
 else

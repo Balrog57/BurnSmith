@@ -223,6 +223,14 @@ static class BdCheck
             var size = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height", "-of", "csv=p=0", Stream(Bd("sbs", [new DiscTitle(F("sbs.mkv"))], new EncodeOptions(Preset: "ultrafast")), 1)]).Trim().Split('\n')[0].Trim();
             Check("it fills the 1080 picture as half side by side (no bars)", size == "1920,1080", size);
         });
+        Part("forced subtitles placed last follow the audio", () =>
+        {
+            // French full, then French forced and English forced: the menu lists one track, French sound shows stream 2 and English sound stream 3 while off
+            var (listed, forced) = BluRay.ForcedTracks(["fre", "eng"], [("fre", false), ("fra", true), ("eng", true)]);
+            Check("forced tracks: one listed, one forced track per audio", listed == 1 && forced.SequenceEqual([(1, 2), (2, 3)]), $"{listed} {string.Join(",", forced)}");
+            var (all, none) = BluRay.ForcedTracks(["fre"], [("fre", true), ("eng", false)]);
+            Check("forced tracks: a forced track before an ordinary one stays listed", all == 2 && none.Count == 0, $"{all} {none.Count}");
+        });
         Part("tsMuxeR listing of a 3D playlist", () =>
         {
             // as tsMuxeR lists a 3D disc's playlist: the right eye first, a track it cannot take (no Stream ID), the left eye listed again
