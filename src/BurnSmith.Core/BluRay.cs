@@ -556,8 +556,11 @@ public static class BluRay
     static double AudioAndMenuBytes(BluRayJob job, IReadOnlyList<SourceInfo> sources) =>
         job.Titles.Select((t, i) => t.KeptAudio(sources[i]).Sum(a => AudioKbps(a, t, job.Uhd) * 125.0 * sources[i].Duration)).Sum() + MenuBytes(job);
 
+    /// <summary>Longest moving menu: a whole song (Bright's is 3 min 57), its picture fits a BD-25 beside the film (5 min of 4K = 1.5 GB).</summary>
+    internal const int MaxLoopSeconds = 300;
+
     static double MenuBytes(BluRayJob job) =>
-        0.15e9 + (job.Menu is { } m ? Math.Clamp(m.LoopSeconds, 5, 120) * (m.Loop ? (job.Uhd ? 5e6 : 2.6e6) : m.ExistingMusic() != null ? 0.1e6 : 0) : 0); // a moving clip, or a black one with music
+        0.15e9 + (job.Menu is { } m ? Math.Clamp(m.LoopSeconds, 5, MaxLoopSeconds) * (m.Loop ? (job.Uhd ? 5e6 : 2.6e6) : m.ExistingMusic() != null ? 0.1e6 : 0) : 0); // a moving clip, or a black one with music
 
     /// <summary>Size in GB the disc will take: the source files when they are kept, else video at the bit rate asked for or fitted, plus audio and menu.</summary>
     public static double EstimateGB(BluRayJob job, IReadOnlyList<SourceInfo> sources)
@@ -781,7 +784,7 @@ public static class BluRay
     static void MuxLoop(BluRayJob job, string work, Action<string> log)
     {
         var menu = job.Menu!;
-        var seconds = Math.Clamp(menu.LoopSeconds, 5, 120);
+        var seconds = Math.Clamp(menu.LoopSeconds, 5, MaxLoopSeconds);
         var musicFile = menu.ExistingMusic();
         var music = musicFile == null ? null : PrepareMusic(menu, musicFile, seconds, work, log);
         var (w, h) = VideoSize(job);
