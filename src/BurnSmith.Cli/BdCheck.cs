@@ -225,8 +225,8 @@ static class BdCheck
         Part("4K HDR10+ and Dolby Vision", () =>
         {
             // a raw HDR10 stream, then the same with HDR10+ (hdr10plus_tool) or a Dolby Vision profile 8.1 RPU (dovi_tool) put in, timed by a plain tsMuxeR TS
-            Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=3840x2160:r=24:d=1", "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le",
-                               "-x265-params", "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:hdr10=1:repeat-headers=1", "-f", "hevc", F("base.hevc")]);
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=3840x2160:r=24:d=2", "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le",
+                               "-x265-params", "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:hdr10=1:repeat-headers=1:keyint=12", "-f", "hevc", F("base.hevc")]);
             string Timed(string hevc)
             {
                 File.WriteAllLines(F("timed.meta"), ["MUXOPT --vbr", $"V_MPEGH/ISO/HEVC, \"{hevc}\", fps=24"]);
@@ -234,14 +234,14 @@ static class BdCheck
                 return Path.ChangeExtension(hevc, ".ts");
             }
             string FirstFrame(string file) => Tools.Run(ffprobe, ["-v", "error", "-of", "json", "-select_streams", "v:0", "-read_intervals", "%+#1", "-show_frames", file]);
-            var frames = string.Join(',', Enumerable.Range(0, 24).Select(i => $"{{\"LuminanceParameters\":{{\"AverageRGB\":1200,\"LuminanceDistributions\":{{\"DistributionIndex\":[1,5,10,25,50,75,90,95,99],\"DistributionValues\":[10,50,100,300,600,900,1500,2000,4000]}},\"MaxScl\":[5000,6000,4000]}},\"NumberOfWindows\":1,\"TargetedSystemDisplayMaximumLuminance\":0,\"SceneFrameIndex\":{i},\"SceneId\":0,\"SequenceFrameIndex\":{i}}}"));
-            File.WriteAllText(F("hdr10plus.json"), $"{{\"JSONInfo\":{{\"HDR10plusProfile\":\"A\",\"Version\":\"1.0\"}},\"SceneInfo\":[{frames}],\"SceneInfoSummary\":{{\"SceneFirstFrameIndex\":[0],\"SceneFrameNumbers\":[24]}},\"ToolInfo\":{{\"Tool\":\"check\",\"Version\":\"1\"}}}}");
+            var frames = string.Join(',', Enumerable.Range(0, 48).Select(i => $"{{\"LuminanceParameters\":{{\"AverageRGB\":1200,\"LuminanceDistributions\":{{\"DistributionIndex\":[1,5,10,25,50,75,90,95,99],\"DistributionValues\":[10,50,100,300,600,900,1500,2000,4000]}},\"MaxScl\":[5000,6000,4000]}},\"NumberOfWindows\":1,\"TargetedSystemDisplayMaximumLuminance\":0,\"SceneFrameIndex\":{i},\"SceneId\":0,\"SequenceFrameIndex\":{i}}}"));
+            File.WriteAllText(F("hdr10plus.json"), $"{{\"JSONInfo\":{{\"HDR10plusProfile\":\"A\",\"Version\":\"1.0\"}},\"SceneInfo\":[{frames}],\"SceneInfoSummary\":{{\"SceneFirstFrameIndex\":[0],\"SceneFrameNumbers\":[48]}},\"ToolInfo\":{{\"Tool\":\"check\",\"Version\":\"1\"}}}}");
             Tools.Run(Tools.Find("hdr10plus_tool.exe"), ["inject", "-i", F("base.hevc"), "-j", F("hdr10plus.json"), "-o", F("plus.hevc")]);
             var plus = Timed(F("plus.hevc"));
             Check("an HDR10+ clip is seen as HDR10+", BluRay.Probe(plus).Hdr == "HDR10+", BluRay.Probe(plus).Hdr);
             Check("a 4K disc keeps its HDR10+ metadata", FirstFrame(Stream(Bd("uhdplus", [new DiscTitle(plus)], new EncodeOptions(), uhd: true), 1)).Contains("SMPTE2094-40"));
 
-            File.WriteAllText(F("rpu.json"), "{\"cm_version\":\"V40\",\"profile\":\"8.1\",\"length\":24,\"level6\":{\"max_display_mastering_luminance\":1000,\"min_display_mastering_luminance\":1,\"max_content_light_level\":1000,\"max_frame_average_light_level\":400}}");
+            File.WriteAllText(F("rpu.json"), "{\"cm_version\":\"V40\",\"profile\":\"8.1\",\"length\":48,\"level6\":{\"max_display_mastering_luminance\":1000,\"min_display_mastering_luminance\":1,\"max_content_light_level\":1000,\"max_frame_average_light_level\":400}}");
             Tools.Run(Tools.Find("dovi_tool.exe"), ["generate", "-j", F("rpu.json"), "-o", F("rpu.bin")]);
             Tools.Run(Tools.Find("dovi_tool.exe"), ["inject-rpu", "-i", F("base.hevc"), "--rpu-in", F("rpu.bin"), "-o", F("dv.hevc")]);
             var dv = Timed(F("dv.hevc"));
@@ -251,6 +251,21 @@ static class BdCheck
             var pids = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=id", "-of", "csv=p=0", m2ts]).Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).Distinct().ToList();
             // tsMuxeR puts a single-layer Dolby Vision track on the enhancement-layer PID (0x1015), with no base: no UHD player reads that disc
             Check("single-layer Dolby Vision becomes the HDR10 base on PID 0x1011, without its RPU", pids is ["0x1011"] && !FirstFrame(m2ts).Contains("Dolby Vision RPU"), string.Join(' ', pids));
+
+            // re-encoded, it is kept as profile 7 MEL: an enhancement layer made apart, with the base's frames and structure
+            var mel = Stream(Bd("uhdmel", [new DiscTitle(dv, Start: 0.5)], new EncodeOptions(ForceReencode: true, Preset: "ultrafast"), uhd: true), 1);
+            var melPids = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=id", "-of", "csv=p=0", mel]).Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).Distinct().ToList();
+            Check("re-encoded Dolby Vision gets its enhancement layer on PID 0x1015", melPids is ["0x1011", "0x1015"], string.Join(' ', melPids));
+            string Types(int track)
+            {
+                Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", mel, "-map", $"0:v:{track}", "-c", "copy", "-f", "hevc", F($"layer{track}.hevc")]);
+                return string.Concat(Tools.Run(ffprobe, ["-v", "error", "-show_entries", "frame=pict_type", "-of", "csv=p=0", F($"layer{track}.hevc")]).Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0 && "IPB".Contains(l[0])).Select(l => l[0])); // side data adds lines of its own
+            }
+            var (bl, el) = (Types(0), Types(1));
+            Check("the enhancement layer has the base's frames, in the same structure", bl.Length > 0 && bl == el, $"{bl.Length} / {el.Length}");
+            Tools.Run(Tools.Find("dovi_tool.exe"), ["extract-rpu", F("layer1.hevc"), "-o", F("mel.bin")]);
+            var summary = Tools.Run(Tools.Find("dovi_tool.exe"), ["info", "-i", F("mel.bin"), "--summary"]);
+            Check("its metadata is profile 7 MEL, one per frame", summary.Contains("Profile: 7 (MEL)") && summary.Contains($"Frames: {bl.Length}"), summary.Split('\n').FirstOrDefault(l => l.Contains("Profile"))?.Trim() ?? "");
         });
     }
 

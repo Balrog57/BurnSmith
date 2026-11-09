@@ -59,6 +59,7 @@ public sealed record SourceInfo(string VideoCodec, int Width, int Height, double
                                 IReadOnlyList<AudioTrack> Audio, IReadOnlyList<SubtitleTrack> Subtitles, string Hdr = "SDR", double FileDuration = 0,
                                 string Encoding = "", string PixFmt = "", string Profile = "", int Level = 0, // Encoding: the video's profile / level / reorder depth / reference frames, which a stream-copy join must not mix
                                 bool DualLayer = false, // Dolby Vision with its enhancement layer in the same track (profile 7, a UHD Blu-ray's)
+                                bool DvProfile5 = false, // Dolby Vision whose base is not HDR10 (IPT): nothing of it can be kept on a disc
                                 string Stereo = "") // 3D packed in one picture: "sbs" (side by side), "tab" (top and bottom), "" = 2D
 {
     /// <summary>
@@ -113,14 +114,14 @@ public static class BluRay
         var r = v.GetProperty("r_frame_rate").GetString()!.Split('/');
         var dolby = v.TryGetProperty("side_data_list", out var side) && side.EnumerateArray().Any(d => d.TryGetProperty("side_data_type", out var t) && (t.GetString() ?? "").Contains("DOVI"));
         var hdr = dolby ? "Dolby Vision" : (v.TryGetProperty("color_transfer", out var ct) ? ct.GetString() : null) switch { "smpte2084" => "HDR10", "arib-std-b67" => "HLG", _ => "SDR" };
-        var dual = false;
+        var (dual, p5) = (false, false);
         var packing = Tag(v, "stereo_mode") + (v.TryGetProperty("side_data_list", out var sides) ? string.Join(' ', sides.EnumerateArray().Select(d => d.TryGetProperty("type", out var t) ? t.ToString() : "")) : "");
         var stereo = packing.Contains("left") || packing.Contains("side by side") ? "sbs" : packing.Contains("top") || packing.Contains("bottom") ? "tab" : "";
         if (hdr is "HDR10" or "Dolby Vision" && v.GetProperty("codec_name").GetString() == "hevc")
         {
             // Dolby Vision and HDR10+ ride on the frames: the first one tells (a raw stream has no Dolby Vision record in its header)
             var frame = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-of", "json", "-select_streams", "v:0", "-read_intervals", "%+#1", "-show_frames", file]);
-            if (frame.Contains("\"Dolby Vision RPU Data\"")) (hdr, dual) = ("Dolby Vision", frame.Contains("\"el_spatial_resampling_filter_flag\": 1"));
+            if (frame.Contains("\"Dolby Vision RPU Data\"")) (hdr, dual, p5) = ("Dolby Vision", frame.Contains("\"el_spatial_resampling_filter_flag\": 1"), frame.Contains("\"vdr_rpu_profile\": 0"));
             else if (frame.Contains("SMPTE2094-40")) hdr = "HDR10+";
         }
         return new SourceInfo(
@@ -131,7 +132,7 @@ public static class BluRay
             Encoding: string.Join('/', new[] { "profile", "level", "has_b_frames", "refs" }.Select(n => v.TryGetProperty(n, out var p) ? p.ToString() : "")),
             PixFmt: v.TryGetProperty("pix_fmt", out var pf) ? pf.GetString() ?? "" : "",
             Profile: v.TryGetProperty("profile", out var pr) ? pr.GetString() ?? "" : "",
-            Level: v.TryGetProperty("level", out var lv) && lv.TryGetInt32(out var level) ? level : 0, DualLayer: dual, Stereo: stereo);
+            Level: v.TryGetProperty("level", out var lv) && lv.TryGetInt32(out var level) ? level : 0, DualLayer: dual, DvProfile5: p5, Stereo: stereo);
     }
 
     /// <summary>Chapter start times (seconds): one every <paramref name="minutes"/>, never a chapter shorter than 1 minute.</summary>
@@ -436,7 +437,16 @@ public static class BluRay
             lines.Add($"V_MPEGH/ISO/HEVC, \"{el}\", fps={fps}");
             log($"{title.DisplayName}: Dolby Vision kept (profile 7, base and enhancement layer)");
         }
-        else lines.Add($"{(job.Uhd ? "V_MPEGH/ISO/HEVC" : "V_MPEG4/ISO/AVC")}, \"{prepared}\", {(job.Uhd ? "" : "insertSEI, contSPS, ")}fps={fps}, track=256");
+        else
+        {
+            lines.Add($"{(job.Uhd ? "V_MPEGH/ISO/HEVC" : "V_MPEG4/ISO/AVC")}, \"{prepared}\", {(job.Uhd ? "" : "insertSEI, contSPS, ")}fps={fps}, track=256");
+            // a re-encoded Dolby Vision title: its metadata on an enhancement layer made to match the new base (profile 7 MEL)
+            if (job.Uhd && File.Exists(Path.ChangeExtension(prepared, ".rpu.bin")) && DolbyLayer(prepared, Path.ChangeExtension(prepared, ".rpu.bin"), DiscRate(src.Fps, h).Ffmpeg, log) is { } el)
+            {
+                lines.Add($"V_MPEGH/ISO/HEVC, \"{el}\", fps={fps}");
+                log($"{title.DisplayName}: Dolby Vision kept (re-encoded, profile 7 MEL)");
+            }
+        }
         for (var j = 0; j < audio.Count; j++)
             lines.Add($"{AudioTag(BdAudio(audio[j], title, job.Uhd))}, \"{prepared}\", track={257 + j}, lang={Languages.Iso2(audio[j].Lang)}");
         foreach (var (s, file) in subs)
@@ -633,6 +643,7 @@ public static class BluRay
         if (job.Uhd && videoOk && title.Start > 0) log($"{title.DisplayName}: 4K is not re-encoded, so the cut starts on the keyframe before {Timecode.Format(title.Start)}");
 
         // -ss / -t before -i cut the input itself: the video, the sound and the subtitle files written below all start and stop together
+        File.Delete(Path.ChangeExtension(output, ".rpu.bin")); // its presence tells MuxTitle to add the Dolby Vision layer
         var args = new List<string> { "-y", "-v", "warning" };
         if (title.Start > 0) args.AddRange(["-ss", title.Start.ToString(Inv)]);
         var span = s.Duration + title.GapLength; // the part read: from the first clip's start to the last one's end
@@ -644,7 +655,7 @@ public static class BluRay
         if (videoOk && job.Uhd && s.Hdr == "Dolby Vision" && !s.DualLayer)
         {
             args.AddRange(["-bsf:v", "dovi_rpu=strip=1"]);
-            log($"{title.DisplayName}: Dolby Vision without its enhancement layer (profile 5 or 8): the disc keeps its HDR10 base only");
+            log($"{title.DisplayName}: Dolby Vision without its enhancement layer (profile 5 or 8): copied, the disc keeps its HDR10 base only; 4K Conversion keeps it (profile 7 MEL)");
         }
         // effects are placed in the source's pixels: with some, the picture keeps its size until they are drawn
         var tone = job.Uhd ? "" : title.Effects is null or { IsEmpty: true } ? ToSdr(s.Hdr, s.Width, s.Height, w) : ToSdr(s.Hdr);
@@ -655,15 +666,15 @@ public static class BluRay
         if (!videoOk && job.Uhd)
         {
             // 10-bit HEVC at level 5.1, 100 Mb/s at most. The colours are named here: ffmpeg does not pass them on through the scaler; the HDR10 mastering
-            // and light levels come from the source's frames. shortcut: Dolby Vision keeps only its HDR10 base layer (a profile 5 source has no such base and comes out wrong);
-            // left to itself ffmpeg would write it single-layer, which a UHD disc cannot carry (see the copy above)
+            // and light levels come from the source's frames. Dolby Vision is kept as profile 7 MEL, an enhancement layer made apart (DolbyLayer), so the base
+            // is held to a fixed structure; left to itself ffmpeg would write it single-layer, which a UHD disc cannot carry (see the copy above)
             var colors = s.Hdr switch { "HDR10" or "HDR10+" or "Dolby Vision" => "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:hdr10=1", "HLG" => "colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc", _ => "colorprim=bt709:transfer=bt709:colormatrix=bt709" };
             var maxrate = kbps > 0 ? Math.Clamp(kbps + kbps / 2, 40000, 100000) : 100000;
             args.AddRange(kbps > 0 ? ["-b:v", kbps.ToString(Inv) + "k"] : ["-crf", Math.Clamp(enc.Crf, 10, 28).ToString(Inv)]);
-            if (s.Hdr == "Dolby Vision") log($"{title.DisplayName}: re-encoded, Dolby Vision is not kept (HDR10 stays)");
             var plus = s.Hdr == "HDR10+" ? Hdr10Plus(title, s, rate, Path.ChangeExtension(output, ".hdr10plus.json"), log) : null;
+            var dv = s.Hdr == "Dolby Vision" ? DolbyVisionRpu(title, s, rate, Path.ChangeExtension(output, ".rpu.bin"), log) : null;
             args.AddRange(["-dolbyvision", "0", "-x265-params", $"log-level=error:{colors}:uhd-bd=1:repeat-headers=1:aud=1:keyint=24:vbv-maxrate={maxrate}:vbv-bufsize={maxrate}"
-                           + (plus != null ? $":dhdr10-info='{plus.Replace('\\', '/')}'" : "")]);
+                           + (plus != null ? $":dhdr10-info='{plus.Replace('\\', '/')}'" : "") + (dv != null ? ":" + FixedGop : "")]);
         }
         else if (!videoOk)
         {
@@ -703,19 +714,83 @@ public static class BluRay
         var whole = json + ".all.json";
         try { tool = Tools.Find("hdr10plus_tool.exe"); Tools.Run(tool, ["extract", title.Video, "-o", whole]); }
         catch (Exception e) when (e is InvalidOperationException or FileNotFoundException) { log($"{title.DisplayName}: HDR10+ not read ({e.Message.Split('\n').Last()}), HDR10 stays"); return null; }
-        int Frame(double t) => (int)Math.Ceiling(t * s.Fps - 0.001); // ffmpeg keeps the frames from this time on
-        var first = Frame(title.Start);
-        var remove = (first > 0 ? [$"0-{first - 1}"] : new List<string>())
-            .Concat(title.Gaps.Select(g => (From: first + Frame(g.From), To: first + Frame(g.To) - 1)).Where(g => g.To >= g.From).Select(g => $"{g.From}-{g.To}")).ToList();
-        if (remove.Count == 0) File.Move(whole, json, true);
-        else
-        {
-            var edits = json + ".edit.json";
-            File.WriteAllText(edits, JsonSerializer.Serialize(new { remove }));
-            Tools.Run(tool, ["editor", whole, "-j", edits, "-o", json]);
-        }
+        Keep(tool, whole, json, Removed(title, s));
         log($"{title.DisplayName}: HDR10+ kept");
         return json;
+    }
+
+    /// <summary>The source frames a re-encode leaves out (before <see cref="DiscTitle.Start"/>, in the gaps), as the "a-b" ranges hdr10plus_tool's and dovi_tool's editors take.</summary>
+    static List<string> Removed(DiscTitle title, SourceInfo s)
+    {
+        int Frame(double t) => (int)Math.Ceiling(t * s.Fps - 0.001); // ffmpeg keeps the frames from this time on
+        var first = Frame(title.Start);
+        return (first > 0 ? [$"0-{first - 1}"] : new List<string>())
+            .Concat(title.Gaps.Select(g => (From: first + Frame(g.From), To: first + Frame(g.To) - 1)).Where(g => g.To >= g.From).Select(g => $"{g.From}-{g.To}")).ToList();
+    }
+
+    /// <summary>Writes <paramref name="whole"/>'s metadata less the <paramref name="remove"/> frames to <paramref name="kept"/>, with the tool's editor.</summary>
+    static void Keep(string tool, string whole, string kept, List<string> remove)
+    {
+        if (remove.Count == 0) { File.Move(whole, kept, true); return; }
+        File.WriteAllText(kept + ".edit.json", JsonSerializer.Serialize(new { remove }));
+        Tools.Run(tool, ["editor", whole, "-j", kept + ".edit.json", "-o", kept]);
+    }
+
+    /// <summary>
+    /// The structure x265 is held to when a re-encode keeps Dolby Vision: a fixed GOP (no adaptive B frames, no scene cuts), so the enhancement layer
+    /// made apart (<see cref="DolbyLayer"/>) has the very same picture types and order as the base, as a player pairs them.
+    /// </summary>
+    const string FixedGop = "b-adapt=0:scenecut=0:bframes=3:keyint=24:min-keyint=24:open-gop=0";
+
+    /// <summary>
+    /// The Dolby Vision metadata of the frames a re-encode keeps, made profile 7 MEL (dovi_tool mode 1: an enhancement layer that adds nothing to the picture),
+    /// the form a UHD disc carries; null when it cannot be kept (a frame rate that changes, a profile 5 source whose base is not HDR10).
+    /// </summary>
+    static string? DolbyVisionRpu(DiscTitle title, SourceInfo s, string rate, string rpu, Action<string> log)
+    {
+        if (Math.Abs(s.Fps - Value(rate)) >= 0.01) { log($"{title.DisplayName}: Dolby Vision dropped, the frame rate changes (HDR10 stays)"); return null; }
+        var tool = "";
+        var whole = rpu + ".all.bin";
+        try
+        {
+            tool = Tools.Find("dovi_tool.exe");
+            if (s.DvProfile5) { log($"{title.DisplayName}: Dolby Vision profile 5 has no HDR10 base, not kept (its colours come out wrong)"); return null; }
+            // dovi_tool reads Matroska and raw HEVC; anything else (a .m2ts, an .mp4) goes through a raw copy of the video first
+            var input = Path.GetExtension(title.Video).ToLowerInvariant() is ".mkv" or ".hevc" or ".h265" or ".265" ? title.Video : rpu + ".hevc";
+            if (input != title.Video) Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-i", title.Video, "-map", "0:v:0", "-c", "copy", "-f", "hevc", input]);
+            try { Tools.Run(tool, ["-m", "1", "extract-rpu", input, "-o", whole]); }
+            finally { if (input != title.Video) File.Delete(input); }
+        }
+        catch (Exception e) when (e is InvalidOperationException or FileNotFoundException)
+        {
+            log($"{title.DisplayName}: Dolby Vision not read ({e.Message.Split('\n').LastOrDefault(l => l.Trim().Length > 0)?.Trim()}), HDR10 stays");
+            return null;
+        }
+        Keep(tool, whole, rpu, Removed(title, s));
+        return rpu;
+    }
+
+    /// <summary>
+    /// The enhancement layer of a re-encoded Dolby Vision title: a black 1920x1080 HEVC with the base's frame count and structure (<see cref="FixedGop"/>),
+    /// carrying the profile 7 MEL metadata. tsMuxeR puts it on its own PID next to the base. Returns the file, or null when the frames do not match.
+    /// </summary>
+    static string? DolbyLayer(string prepared, string rpu, string rate, Action<string> log)
+    {
+        var ffprobe = Tools.Find("ffprobe.exe");
+        var frames = int.Parse(Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries", "stream=nb_read_packets", "-of", "csv=p=0", prepared]).Trim().Split('\n')[0].Trim(), Inv);
+        var dovi = Tools.Find("dovi_tool.exe");
+        var summary = Tools.Run(dovi, ["info", "-i", rpu, "--summary"]);
+        var have = int.Parse(System.Text.RegularExpressions.Regex.Match(summary, @"Frames: (\d+)").Groups[1].Value, Inv);
+        if (have < frames) { log($"warning: Dolby Vision has {have} frames for {frames} pictures, not kept (HDR10 stays)"); return null; }
+        if (have > frames) Keep(dovi, rpu, rpu + ".fit.bin", [$"{frames}-{have - 1}"]); // the end a cut leaves out
+        var fitted = have > frames ? rpu + ".fit.bin" : rpu;
+        var black = Path.ChangeExtension(rpu, ".el0.hevc");
+        var el = Path.ChangeExtension(rpu, ".el.hevc");
+        Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-f", "lavfi", "-i", $"color=c=black:s=1920x1080:r={rate}", "-frames:v", frames.ToString(Inv),
+            "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-x265-params", $"log-level=error:{FixedGop}:repeat-headers=1:aud=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc", "-f", "hevc", black], log);
+        Tools.Run(dovi, ["inject-rpu", "-i", black, "--rpu-in", fitted, "-o", el], log);
+        File.Delete(black);
+        return el;
     }
 
     /// <summary>
