@@ -397,7 +397,8 @@ public static class BluRay
             if (MenuBuilder.TracksLeftOut(menuPages, content) is { } leftOut) log(leftOut);
             var popup = job.Menu.Popup ? MenuBuilder.Popup(job.Menu, content, muxed.Select((m, i) => (MoviePlaylist + i, m.ChapterTimes.Count)).ToList()) : null;
             if (popup != null) log($"menu: pop-up menu on {job.Titles.Count} title(s)");
-            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, VideoSize(job).H / 1080.0, job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, popup: popup, forced: forced); // the xlet chains only the main titles
+            // the BD-J graphics plane is 1920x1080 on a 4K disc too (the player scales it up): 3840x2160 pages ran the xlet out of heap
+            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, Math.Min(1, VideoSize(job).H / 1080.0), job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, popup: popup, forced: forced); // the xlet chains only the main titles
             AddMenu(job, menuDir, log);
             if (intro != null) StartWithIntro(job.OutDir, job.Playback?.StartAtFirstTitle == true);
         }
@@ -685,7 +686,7 @@ public static class BluRay
         foreach (var (s, file) in subs)
             lines.Add(s.IsPicture
                 ? $"S_HDMV/PGS, \"{file}\", fps={fps}, lang={Languages.Iso2(s.Lang)}" + (s.Index >= 0 && s.File == null && s.Index < planes.Count && planes[s.Index] >= 0 ? $", 3d-plane={planes[s.Index]}" : "")
-                : $"S_TEXT/UTF8, \"{file}\", font-name=\"Arial\", font-size={65 * h / 1080}, font-color=0xffffffff, bottom-offset=24, font-border=5, text-align=center, video-width={w}, video-height={h}, fps={fps}, lang={Languages.Iso2(s.Lang)}");
+                : $"S_TEXT/UTF8, \"{file}\", font-name=\"Arial\", font-size={65 * Math.Min(h, 1080) / 1080}, font-color=0xffffffff, bottom-offset=24, font-border=5, text-align=center, video-width={w}, video-height={h}, fps={fps}, lang={Languages.Iso2(s.Lang)}");
         var meta = Path.Combine(work, $"disc{playlist}.meta");
         File.WriteAllLines(meta, lines);
         log($"mux {playlist}: tsMuxeR");
@@ -744,6 +745,7 @@ public static class BluRay
     /// </summary>
     internal static string PrepareMusic(MenuDesign menu, string music, int seconds, string work, Action<string> log)
     {
+        const double MusicLufs = -27; // integrated loudness of a film's soundtrack on disc, roughly: the menu should not shout over it
         var ffmpeg = Tools.Find("ffmpeg.exe");
         // not Probe: it wants a video stream
         var shown = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", music]).Trim();
@@ -758,7 +760,13 @@ public static class BluRay
         Tools.Run(ffmpeg, ["-y", "-v", "error", "-ss", start.ToString(Inv), "-i", music, "-map", "0:a:0", "-vn", "-ac", "2", "-ar", "48000", part], log); // -vn: cover art is a video stream
         if (new FileInfo(part).Length < 100_000) throw new InvalidDataException($"{Path.GetFileName(music)}: nothing to play from {start} s"); // looping an empty file never ends
         var fade = Math.Clamp(menu.MusicFade, 0, seconds / 2);
-        var filter = $"volume={(Math.Clamp(menu.MusicVolume, 0, 300) / 100.0).ToString("0.###", Inv)}"
+        // a song is mastered far louder than a film (Bright: menu song -11 LUFS, film -25): one linear gain down to a film's level, never up (no clipping)
+        double? loudness = null;
+        Tools.Run(ffmpeg, ["-hide_banner", "-nostats", "-i", part, "-af", "ebur128", "-f", "null", "-"],
+            l => { if (Regex.Match(l, @"^\s*I:\s+(-?\d+(?:\.\d+)?) LUFS") is { Success: true } m) loudness = double.Parse(m.Groups[1].Value, Inv); });
+        var gain = loudness is double lufs && lufs > MusicLufs ? Math.Pow(10, (MusicLufs - lufs) / 20) : 1;
+        if (gain < 1) log($"menu music: {loudness:0.0} LUFS brought down to {MusicLufs} LUFS, a film's loudness");
+        var filter = $"volume={(gain * Math.Clamp(menu.MusicVolume, 0, 300) / 100.0).ToString("0.#####", Inv)}"
             + (fade > 0 ? $",afade=t=in:st=0:d={fade},afade=t=out:st={seconds - fade}:d={fade}" : "");
         var output = Path.Combine(work, "music.wav");
         Tools.Run(ffmpeg, ["-y", "-v", "error", "-stream_loop", "-1", "-i", part, "-t", seconds.ToString(Inv), "-af", filter, "-ac", "2", "-ar", "48000", output], log);

@@ -395,9 +395,10 @@ public static partial class MenuRenderer
                 case "textcolor": // no frame: the label is redrawn in the accent colour (the text-colour style)
                     DrawLabel(dc, d, new Label(label!, new Box(m, m, b.Rect.W, b.Rect.H), Math.Clamp(b.Rect.H / 3, 20, 54), true), Col(d.SelectionInk));
                     break;
-                default: // "box": the accent frame BurnSmith has always drawn
+                default: // "box": the accent frame BurnSmith has always drawn; around a picture (no label) a bare frame, as DVDFab and Yuhan do, or the fill hides the thumbnail
                     var pen = new Pen(new SolidColorBrush(Col(d.SelectionInk)), 6);
-                    dc.DrawRoundedRectangle(new SolidColorBrush(Col(d.SelectionInk, Math.Clamp(d.SelectionOpacity, 0, 100) / 100.0)), pen, new Rect(3, 3, box.W - 6, box.H - 6), 22, 22);
+                    var fill = label == null ? null : new SolidColorBrush(Col(d.SelectionInk, Math.Clamp(d.SelectionOpacity, 0, 100) / 100.0));
+                    dc.DrawRoundedRectangle(fill, pen, new Rect(3, 3, box.W - 6, box.H - 6), 22, 22);
                     break;
             }
         }, scale);

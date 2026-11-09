@@ -89,8 +89,9 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             Button b = focus;
             if (loopPlaylist > 0 || popupOpen) clear(g);
             if (p == null) return;
-            if (p.bg != null) g.drawImage(p.bg, 0, 0, this);
-            if (b != null && b.focus != null) g.drawImage(b.focus, b.x, b.y, this);
+            Image bg = p.bg, hl = b == null ? null : b.focus; // read once: show() frees the previous page's pictures while this may run
+            if (bg != null) g.drawImage(bg, 0, 0, this);
+            if (hl != null) g.drawImage(hl, b.x, b.y, this);
             if (marker == null) return;
             for (int i = 0; i < p.buttons.size(); i++) {
                 Button m = (Button) p.buttons.elementAt(i);
@@ -167,17 +168,10 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         view.setBounds(0, 0, width, height);
         scene.add(view);
         MediaTracker tracker = new MediaTracker(view);
-        int n = 0;
-        marker = load(markerName, tracker, n++);
-        for (java.util.Enumeration e = pages.elements(); e.hasMoreElements();) {
-            Page p = (Page) e.nextElement();
-            p.bg = load(p.bgName, tracker, n++);
-            for (int i = 0; i < p.buttons.size(); i++) {
-                Button b = (Button) p.buttons.elementAt(i);
-                b.focus = load(b.focusName, tracker, n++);
-            }
-        }
+        marker = load(markerName, tracker, 0);
         tracker.waitForAll();
+        // the pages are decoded one at a time, when shown (see pictures): all of them at once (~8 MB each at 1920x1080) filled the player's
+        // image memory, and the pages decoded last stayed empty on screen
         lastButton = readGpr(108) - 1; // the register holds index + 1, so 0 means "nothing remembered"
         if (startFirst && titleCount > 0 && firstPlayback()) startSequence();
         else showMenu();
@@ -237,6 +231,8 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
 
     private void show(Page p) {
         log("page " + p.id);
+        Page old = page;
+        pictures(p, true);
         page = p;
         focus = p.buttons.isEmpty() ? null : (Button) p.buttons.elementAt(0);
         // back from a title: the button that started it is focused again, from GPR108
@@ -244,6 +240,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             focus = (Button) p.buttons.elementAt(lastButton);
             log("resume on button " + lastButton);
         }
+        if (old != null && old != p) pictures(old, false);
         view.repaint();
     }
 
@@ -517,6 +514,32 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             p.stop();
             p.close();
         } catch (Exception ignored) {
+        }
+    }
+
+    /** Decodes a page's background and focus pictures (on), or frees them (off): only the page on screen holds image memory. */
+    private void pictures(Page p, boolean on) {
+        if (!on) {
+            if (p.bg != null) p.bg.flush();
+            p.bg = null;
+            for (int i = 0; i < p.buttons.size(); i++) {
+                Button b = (Button) p.buttons.elementAt(i);
+                if (b.focus != null) b.focus.flush();
+                b.focus = null;
+            }
+            return;
+        }
+        if (p.bg != null) return;
+        try {
+            MediaTracker tracker = new MediaTracker(view);
+            p.bg = load(p.bgName, tracker, 0);
+            for (int i = 0; i < p.buttons.size(); i++) {
+                Button b = (Button) p.buttons.elementAt(i);
+                b.focus = load(b.focusName, tracker, i + 1);
+            }
+            tracker.waitForAll(); // no isErrorAny() check: libbluray's tracker flags every picture as failed though they draw (seen in VLC)
+        } catch (Throwable t) {
+            log("page " + p.id + ": pictures not loaded: " + t);
         }
     }
 

@@ -528,7 +528,7 @@ public static class MenuBuilder
 
         List<string> Column(string header, int x, IReadOnlyList<string> names, int firstNumber, string idPrefix, string kind, int? active)
         {
-            ops.Add(new Label(header, new Box(x, 200, colW, 70), 46, true, "left"));
+            ops.Add(new Label(header, new Box(x, 200, colW, 70), 46, true)); // centred like the rows under it
             var ids = new List<string>();
             for (var i = 0; i < names.Count; i++)
             {
