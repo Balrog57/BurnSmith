@@ -72,8 +72,9 @@ public static class DvdSubtitles
             { MaxTextWidth = (w - 120) * sar, TextAlignment = TextAlignment.Center };
             var geometry = ft.BuildGeometry(new Point((w * sar - ft.MaxTextWidth) / 2, h - h * 0.07 - ft.Height));
             dc.PushTransform(new ScaleTransform(1 / sar, 1));
-            // the outline first, the white over it: a pen drawn on top covers half its width inside the letters, all of a stroke 5 pixels thick
-            dc.DrawGeometry(null, new Pen(Brushes.Black, size * 0.2) { LineJoin = PenLineJoin.Round }, geometry);
+            // as a commercial DVD: white letters, a black outline about 2 pixels wide, grey where they meet. The outline first, the white over it:
+            // a pen drawn on top covers half its width inside the letters, all of a stroke 5 pixels thick
+            dc.DrawGeometry(null, new Pen(Brushes.Black, size * 0.14) { LineJoin = PenLineJoin.Round }, geometry);
             dc.DrawGeometry(Brushes.White, null, geometry);
             dc.Pop();
         }
@@ -88,7 +89,7 @@ public static class DvdSubtitles
             int a = px[i * 4 + 3];
             if (a < 60) continue; // transparent
             var luminance = (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / 3.0 * 255 / a; // premultiplied -> plain
-            canvas.Pixels[i] = (byte)(luminance > 140 ? 2 : 1); // white text, black outline
+            canvas.Pixels[i] = (byte)(luminance >= 170 ? 2 : luminance >= 85 ? 3 : 1); // white text, grey edge, black outline (as the PGS pictures below)
         }
         return canvas;
     }
