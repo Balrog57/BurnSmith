@@ -173,6 +173,7 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// <see cref="Clips"/>: the parts kept when there are several (DVDFab's "output clips"), in order and in seconds of the source; <see cref="Start"/> and
 /// <see cref="End"/> are then the first one's start and the last one's end, and what lies between two clips (<see cref="Gaps"/>) is left out of the disc.
 /// <see cref="ThumbAt"/>: the moment of the video on the disc (seconds after its start) its menu thumbnail is taken from, null = a tenth of the way in; <see cref="ThumbImage"/>: a picture file used instead.
+/// <see cref="Overview"/>: the video's summary, written under its name on the menu pages that show one (Streaming); null = none.
 /// <see cref="TrackLanguage"/>: languages set by hand on the video's own tracks (key <see cref="LanguageKey"/>, value an ISO 639-2 code), for a track the file leaves "und" or mislabels.
 /// </summary>
 /// <summary>One part of a video kept on the disc, from <see cref="From"/> to <see cref="To"/> seconds of the source.</summary>
@@ -182,7 +183,8 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
                                double Start = 0, double? End = null, int Volume = 100, IReadOnlyList<double>? ChapterAt = null,
                                IReadOnlyList<ExternalSubtitle>? External = null, bool Bonus = false, int? DefaultAudio = null, int? DefaultSubtitle = null,
                                int? ChapterMinutes = null, bool Intro = false, IReadOnlyDictionary<string, string>? TrackLanguage = null,
-                               VideoEffects? Effects = null, IReadOnlyList<Clip>? Clips = null, double? ThumbAt = null, string? ThumbImage = null)
+                               VideoEffects? Effects = null, IReadOnlyList<Clip>? Clips = null, double? ThumbAt = null, string? ThumbImage = null,
+                               string? Overview = null)
 {
     public string DisplayName => Name ?? Readable(Video).Name;
 

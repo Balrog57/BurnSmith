@@ -292,7 +292,7 @@ public static class Dvd
             return file;
         }
         TitleEntry Entry(int i, string name) => new(job.Titles[i].DisplayName, i + 1, (job.Titles[i].ThumbImage is { } img ? Cover(name, img, 480, 270) : null)
-            ?? Thumb(name, i, job.Titles[i].ThumbAt ?? sources[i].Duration * 0.1, 480, 270));
+            ?? Thumb(name, i, job.Titles[i].ThumbAt ?? sources[i].Duration * 0.1, 480, 270), job.Titles[i].Overview);
         var content = new MenuContent(1, Thumb("preview", 0, sources[0].Duration * 0.1, 800, 450),
             series ? [] : movies[0].ChapterTimes.Select((t, i) => Thumb($"c{i + 1}", 0, t + 3, 480, 270)).ToList(),
             series ? Enumerable.Range(0, mainCount).Select(i => Entry(i, $"t{i + 1}")).ToList() : null,

@@ -381,7 +381,7 @@ public static class BluRay
                 return file;
             }
             TitleEntry Entry(int i, string name) => new(job.Titles[i].DisplayName, MoviePlaylist + i, (job.Titles[i].ThumbImage is { } img ? Cover(name, img, 480, 270) : null)
-                ?? Thumb(name, i, job.Titles[i].ThumbAt ?? sources[i].Duration * 0.1, 480, 270));
+                ?? Thumb(name, i, job.Titles[i].ThumbAt ?? sources[i].Duration * 0.1, 480, 270), job.Titles[i].Overview);
             var (listed, forced) = ForcedTracks(muxed[0].AudioLangs, muxed[0].SubFlags);
             if (forced.Count > 0) log($"menu: {forced.Count} forced subtitle track(s) shown with their audio while subtitles are off, not listed");
             var content = new MenuContent(MoviePlaylist, Thumb("preview", 0, sources[0].Duration * 0.1, 800, 450),
@@ -464,7 +464,7 @@ public static class BluRay
             return File.Exists(file) ? file : null;
         }
         var series = mainCount > 1;
-        TitleEntry Entry(int i, string name) => new(job.Titles[i].DisplayName, MoviePlaylist + i, Frame(name, i, job.Titles[i].ThumbAt ?? sources[i].Duration * 0.1, 480, 270));
+        TitleEntry Entry(int i, string name) => new(job.Titles[i].DisplayName, MoviePlaylist + i, Frame(name, i, job.Titles[i].ThumbAt ?? sources[i].Duration * 0.1, 480, 270), job.Titles[i].Overview);
         var audio = job.Titles[0].KeptAudio(sources[0]);
         var subs = job.Titles[0].KeptSubtitles(sources[0]).Where(s => s.Supported).ToList();
         var (listed, _) = ForcedTracks([.. audio.Select(a => a.Lang)], [.. subs.Select(s => (s.Lang, s.Forced))]);

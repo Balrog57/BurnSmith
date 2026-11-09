@@ -70,14 +70,16 @@ public partial class MainWindow : Window
         /// <summary>The menu thumbnail: a moment of the video on the disc, or a picture (see <see cref="DiscTitle.ThumbAt"/>); both null = automatic.</summary>
         public double? ThumbAt { get; set; }
         public string? ThumbImage { get; set; }
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects, Clips, ThumbAt, ThumbImage);
+        /// <summary>The summary written under the video's name on the menu pages that show one (Streaming).</summary>
+        public string? Overview { get; set; }
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects, Clips, ThumbAt, ThumbImage, Overview);
 
         /// <summary>Another row for the same video with the same settings (a title cut in two).</summary>
         public Entry Clone() => new(Path, Info)
         {
             Name = Name, Audio = [.. Audio], Subs = [.. Subs], Extra = [.. Extra], Start = Start, End = End, Volume = Volume, ChapterAt = ChapterAt,
             ChapterMinutes = ChapterMinutes, Bonus = Bonus, Intro = Intro, DefaultAudio = DefaultAudio, DefaultSub = DefaultSub, TrackLanguage = new(TrackLanguage), Effects = Effects, Clips = Clips,
-            ThumbAt = ThumbAt, ThumbImage = ThumbImage,
+            ThumbAt = ThumbAt, ThumbImage = ThumbImage, Overview = Overview,
         };
     }
 
@@ -230,7 +232,7 @@ public partial class MainWindow : Window
         // the same moments as the disc's pictures: BluRay.Build and Dvd.Build take them there
         string? TenPercent(Entry t) => Frame(t, t.Start + t.OnDisc.Duration * 0.1);
         return new MenuContent(1, previewFrame, series ? [] : disc.ChapterList(first.OnDisc.Duration, chapterMinutes).Select(at => Frame(first, first.Start + at + 3)).ToList(),
-            series ? main.Select((t, i) => new TitleEntry(t.Name, i + 1, TenPercent(t))).ToList() : null,
+            series ? main.Select((t, i) => new TitleEntry(t.Name, i + 1, TenPercent(t), t.Overview)).ToList() : null,
             disc.KeptAudio(first.Tracks).Select(a => a.Name).ToList(), disc.KeptSubtitles(first.Tracks).Where(s => s.Supported).Select(s => s.Name).ToList(),
             extras.Count > 0 ? extras.Select((t, i) => new TitleEntry(t.Name, main.Count + i + 1, TenPercent(t))).ToList() : null);
     }
@@ -653,6 +655,13 @@ public partial class MainWindow : Window
             auto.Click += (_, _) => (entry.ThumbAt, entry.ThumbImage) = (null, null);
             menu.Items.Add(auto);
         }
+        var overview = new MenuItem { Header = entry.Overview is { Length: > 0 } ? "Résumé pour le menu : modifier…" : "Résumé pour le menu…" };
+        overview.Click += (_, _) =>
+        {
+            if (Prompt.Ask(this, "Résumé de la vidéo, sous son nom sur les pages d'épisodes (modèle Streaming) ; vide = aucun", entry.Overview ?? "") is not { } text) return;
+            entry.Overview = text.Trim().Length > 0 ? text.Trim() : null;
+        };
+        menu.Items.Add(overview);
         // SplitEntry / JoinWithNext are kept but out of the menu for now (Marc, 2026-11-07)
         menu.IsOpen = true;
     }

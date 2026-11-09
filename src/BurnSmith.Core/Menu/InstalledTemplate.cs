@@ -460,7 +460,7 @@ public sealed class InstalledTemplate
     /// The text zones this page of the template declares (the user writes in them, and an empty one draws nothing).
     /// <paramref name="autoInfo"/> stands in for an empty information line. A template that declares none has none.
     /// </summary>
-    void TemplateTexts(List<Op> ops, List<MenuZone> zones, XNode page, MenuDesign d, string? autoInfo = null)
+    void TemplateTexts(List<Op> ops, List<MenuZone> zones, XNode page, MenuDesign d, string? autoInfo = null, bool noOverview = false)
     {
         var overview = 0;
         foreach (var t in page.Child("texts")?.Children("text") ?? [])
@@ -471,7 +471,7 @@ public sealed class InstalledTemplate
                 ops.Add(Txt(t, d.Title));
                 zones.Add(new("title", t.Rect()));
             }
-            if (kind != "volume_category" && kind != "title_overview") continue;
+            if (kind != "volume_category" && (kind != "title_overview" || noOverview)) continue;
             var key = kind == "volume_category" ? "info" : $"overview{++overview}";
             zones.Add(new("slot:" + key, t.Rect()));
             var value = d.TextZones.GetValueOrDefault(key) is { Length: > 0 } written ? written : key == "info" ? autoInfo : null;
@@ -569,7 +569,7 @@ public sealed class InstalledTemplate
         var total = cells.Count > 1 ? (cells.Count + perPage - 1) / perPage : 0;
         // a template with no menu of its own: its first page of thumbnails, with the poster and the title, is the menu
         var pages = new List<MenuPage> { (IsAllInOne || d.ScenesOnly) && total > 0 ? Scenes(d, cells, 1, total, perPage, d.Title, c.PreviewPicture, c) : Root(d, c, cells.Count > 1) };
-        for (var i = (IsAllInOne || d.ScenesOnly) && total > 0 ? 2 : 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, c.Series ? d.EpisodesLabel : d.ScenesLabel, c.PreviewPicture));
+        for (var i = (IsAllInOne || d.ScenesOnly) && total > 0 ? 2 : 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, IsAllInOne ? d.Title : c.Series ? d.EpisodesLabel : d.ScenesLabel, c.PreviewPicture)); // a one-piece template keeps the disc's title on every page
         if (c.HasBonus) // the template has no Bonus page: its scene page layout lists the extras
         {
             var bonus = MenuBuilder.BonusCells(c);
@@ -587,6 +587,15 @@ public sealed class InstalledTemplate
     }
 
     bool IsAllInOne => template.Child("rootmenu")?.Attr("allinone") == "1";
+
+    /// <summary>An episode's name with its number in front, as streaming services show it: "Épisode 3 · Le dojo" → "E03 - Le dojo"; a name already numbered (E03…) is kept.</summary>
+    internal static string Numbered(MenuBuilder.Cell cell)
+    {
+        if (System.Text.RegularExpressions.Regex.IsMatch(cell.Label, @"^E\d+\b")) return cell.Label;
+        var number = $"E{int.Parse(cell.Id[1..]):00}";
+        var m = System.Text.RegularExpressions.Regex.Match(cell.Label, @"^Épisode \d+(?: · (.+))?$"); // DiscTitle.Readable's default name
+        return m.Success ? (m.Groups[1].Success ? $"{number} - {m.Groups[1].Value}" : number) : $"{number} - {cell.Label}";
+    }
 
     /// <summary>The page id of page <paramref name="number"/> of a list (scenes, bonus): the first scene page is the root when the template has no menu of its own.</summary>
     string PageId(MenuDesign d, string prefix, int number) => number == 1 && (IsAllInOne || d.ScenesOnly) && prefix == "scenes" ? "root" : $"{prefix}{number}";
@@ -748,8 +757,27 @@ public sealed class InstalledTemplate
             if (root.SubtitleNames.Count > 0) info.Add($"{root.SubtitleNames.Count} {d.SubtitlesLabel}");
             autoInfo = string.Join("  |  ", info);
         }
-        TemplateTexts(ops, zones, s, d, autoInfo);
         var slots = s.Child("videoes")!.Children("video").ToList();
+        var onPage = cells.Skip((number - 1) * perPage).Take(perPage).ToList();
+        // a one-piece template's episodes are numbered (E01 - Name), and their summaries take the text zones' place: one row per episode, name over summary
+        var episodes = IsAllInOne && prefix == "scenes" && onPage.All(cell => cell.Id.StartsWith('e'));
+        string Shown(MenuBuilder.Cell cell) => episodes ? Numbered(cell) : cell.Label;
+        var summaries = episodes && onPage.Any(cell => cell.Overview is { Length: > 0 });
+        TemplateTexts(ops, zones, s, d, autoInfo, summaries);
+        if (summaries && s.Child("texts")?.Children("text").FirstOrDefault(t => t.Attr("as") == "title_overview") is { } area)
+        {
+            var top = area.Rect().Y;
+            var row = ((slots.Count > 0 ? slots.Min(v => v.Rect().Y) - 12 : MenuBuilder.H - 120) - top) / perPage;
+            var grey = slots.FirstOrDefault()?.Child("name") is { } n ? Txt(n, "").Color : "#C8C8C8";
+            for (var i = 0; i < onPage.Count; i++)
+            {
+                var y = top + i * row;
+                var name = Txt(area, Shown(onPage[i])) with { Rect = new Box(area.Rect().X, y, area.Rect().W, 32), Size = 26, Bold = true };
+                ops.Add(name);
+                if (onPage[i].Overview is { Length: > 0 } summary)
+                    ops.Add(Txt(area, summary) with { Rect = new Box(area.Rect().X, y + 34, area.Rect().W, row - 40), Size = 21, Bold = false, Color = grey, Wrap = true });
+            }
+        }
         var lines = d.SceneList ? s.Child("list")?.Children("item").ToList() ?? [] : [];
         if (lines.Count > 0)
         {
@@ -757,7 +785,7 @@ public sealed class InstalledTemplate
             for (var i = 0; i < lines.Count && (number - 1) * perPage + i < cells.Count; i++)
             {
                 var cell = cells[(number - 1) * perPage + i];
-                ops.Add(Txt(lines[i], cell.Label, lines[i].Attr("align", "left")));
+                ops.Add(Txt(lines[i], Shown(cell), lines[i].Attr("align", "left")));
                 if (cell.Action.Kind == "play") zones.Add(new($"name:{cell.Action.Playlist}", lines[i].Rect()));
                 buttons.Add(new MenuButton(cell.Id, lines[i].Rect(), cell.Action));
             }
@@ -770,7 +798,7 @@ public sealed class InstalledTemplate
             ops.Add(framed);
             if (slots[i].Child("name") is { } name)
             {
-                ops.Add(Txt(name, cell.Label, "center"));
+                ops.Add(Txt(name, Shown(cell), "center"));
                 if (cell.Action.Kind == "play") zones.Add(new($"name:{cell.Action.Playlist}", name.Rect()));
             }
             buttons.Add(Dvd(new MenuButton(cell.Id, slots[i].Rect(), cell.Action) { FocusImage = Selected(framed.Frame) })); // none for picture themes: the accent frame

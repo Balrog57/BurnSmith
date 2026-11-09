@@ -330,6 +330,15 @@ if (a.Count >= 1 && a[0] == "check-elements")
         var filled = MenuBuilder.Build(zd, zoneSeries)[0].Ops.OfType<Text>().ToList();
         Check("what the user writes is drawn in the template's zone, on several lines where it allows them",
               filled.Any(t => t.Value == "2018 | Action" && !t.Wrap && t.Rect.Y == 298) && filled.Any(t => t.Value == "Trente ans après" && t.Wrap && t.Rect.Y == 488));
+        var told = streaming.Clone();
+        told.Title = "Ma série";
+        var season5 = new MenuContent(1, null, [], [.. Enumerable.Range(1, 5).Select(i => new TitleEntry(i == 2 ? "E02 - Déjà" : $"Épisode {i} · Nom {i}", i, null, i == 1 ? "Il était une fois" : null))]);
+        var told5 = MenuBuilder.Build(told, season5);
+        var first = told5[0].Ops.OfType<Text>().ToList();
+        Check("Streaming: episodes numbered E01 - Name, a summary under its episode's name in place of the text zones, the disc's title on every episode page",
+              first.Any(t => t.Value == "E01 - Nom 1" && t.Bold && t.Rect.X == 536 && t.Rect.Y == 298) && first.Any(t => t.Value == "Il était une fois" && t.Wrap && t.Rect.Y == 332)
+              && first.Count(t => t.Value == "E02 - Déjà") == 2 && !told5[0].Zones.Any(z => z.Key.StartsWith("slot:overview"))
+              && told5.First(p => p.Id == "scenes2").Ops.OfType<Text>().Any(t => t.Value == "Ma série") && told5.First(p => p.Id == "scenes2").Zones.Any(z => z.Key == "slot:overview1"));
         Check("a template that declares no text zone offers none", !MenuBuilder.Build(noZones.Clone(), zoneSeries).SelectMany(p => p.Zones).Any(z => z.Key.StartsWith("slot:")));
     }
 
@@ -1513,7 +1522,8 @@ var titles = videos.Select((v, k) =>
     return new DiscTitle(v, Own("--name"), Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes, own.Contains("--intro"), trackLanguage,
                           Own("--effects") is { } fx ? System.Text.Json.JsonSerializer.Deserialize<VideoEffects>(File.ReadAllText(fx)) : null, // --effects FILE.json: the video editor's settings (VideoEffects, by property name)
                           clipList,
-                          Own("--thumb-at") is { } thumbAt ? Time(thumbAt) : null, Own("--thumb") is { } thumb ? Path.GetFullPath(thumb) : null); // the menu thumbnail: a moment of the video, or a picture
+                          Own("--thumb-at") is { } thumbAt ? Time(thumbAt) : null, Own("--thumb") is { } thumb ? Path.GetFullPath(thumb) : null, // the menu thumbnail: a moment of the video, or a picture
+                          Own("--overview")); // the video's summary on the menu pages that show one (Streaming)
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
 // --cpu (encode and decode on the processor; default: the NVIDIA card when there is one), --fps 23.976|24|25|29.97|50|59.94 (bd: the disc's rate; default: as the source)

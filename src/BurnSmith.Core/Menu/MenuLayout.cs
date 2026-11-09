@@ -67,8 +67,8 @@ public sealed record MenuPage(string Id, List<Op> Ops, List<MenuButton> Buttons)
 /// </summary>
 public sealed record MenuZone(string Key, Box Rect);
 
-/// <summary>One video of a multi-video disc (an episode).</summary>
-public sealed record TitleEntry(string Name, int Playlist, string? Picture);
+/// <summary>One video of a multi-video disc (an episode). <paramref name="Overview"/>: its summary (see <see cref="DiscTitle.Overview"/>).</summary>
+public sealed record TitleEntry(string Name, int Playlist, string? Picture, string? Overview = null);
 
 /// <summary>
 /// Disc facts the menu needs: playlist number, preview picture, one picture per chapter (null = none).
@@ -96,10 +96,10 @@ public static class MenuBuilder
     /// <summary>Scene buttons per page.</summary>
     public static int PerPage(MenuDesign d) => Math.Max(1, d.Cols) * Math.Max(1, d.Rows);
 
-    internal sealed record Cell(string Id, string Label, string? Picture, MenuAction Action);
+    internal sealed record Cell(string Id, string Label, string? Picture, MenuAction Action, string? Overview = null);
 
     internal static List<Cell> Cells(MenuDesign d, MenuContent c) => c.Series
-        ? c.Titles!.Select((t, i) => new Cell($"e{i + 1}", t.Name, t.Picture, new MenuAction("play", Playlist: t.Playlist))).Skip(d.SkipFirstScene ? 1 : 0).ToList()
+        ? c.Titles!.Select((t, i) => new Cell($"e{i + 1}", t.Name, t.Picture, new MenuAction("play", Playlist: t.Playlist), t.Overview)).Skip(d.SkipFirstScene ? 1 : 0).ToList()
         : c.ChapterPictures.Select((p, i) => new Cell($"c{i + 1}", $"{d.ChapterLabel} {i + 1}", p, new MenuAction("chapter", Playlist: c.Playlist, Mark: i))).ToList();
 
     /// <summary>The Bonus page's buttons: each plays its video on its own and the disc then comes back to the menu.</summary>
