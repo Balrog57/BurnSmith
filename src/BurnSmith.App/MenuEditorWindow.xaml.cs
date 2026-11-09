@@ -15,7 +15,7 @@ namespace BurnSmith.App;
 /// </summary>
 public partial class MenuEditorWindow : Window
 {
-    readonly MenuDesign working;
+    MenuDesign working; // replaced by undo / redo
     MenuContent content;
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     int version;
@@ -90,6 +90,59 @@ public partial class MenuEditorWindow : Window
     }
 
     void Dirty() { timer.Stop(); timer.Start(); }
+
+    // ---------------------------------------------------------------- undo / redo
+    // one step per state the preview shows: the preview waits for a 250 ms pause, so a drag or a word typed is one step, not one per pixel or letter.
+    // shortcut: the names given to the videos on the pages (renamed) are not in the design, so undo leaves them; move them into it if that is missed
+    readonly Stack<(MenuDesign Design, string Json)> undo = new(), redo = new();
+    (MenuDesign Design, string Json)? kept; // the state last shown
+
+    /// <summary>The design as it is now becomes a step when it differs from the last one (a change not yet shown included).</summary>
+    void Remember()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(working);
+        if (kept?.Json == json) return;
+        if (kept is { } previous) { undo.Push(previous); redo.Clear(); }
+        kept = (working.Clone(), json);
+        UndoButton.IsEnabled = undo.Count > 0;
+        RedoButton.IsEnabled = redo.Count > 0;
+    }
+
+    void Step(Stack<(MenuDesign Design, string Json)> from, Stack<(MenuDesign Design, string Json)> to)
+    {
+        if (editing != null) return; // a zone typed on the page: Escape or Enter first
+        timer.Stop();
+        Remember();
+        if (from.Count == 0 || kept is not { } now) return;
+        to.Push(now);
+        kept = from.Pop();
+        working = kept.Value.Design.Clone();
+        sel = null; // the elements are copies now
+        UndoButton.IsEnabled = undo.Count > 0;
+        RedoButton.IsEnabled = redo.Count > 0;
+        Rebind();
+        FillZonePanel(force: true);
+    }
+
+    /// <summary>Undo the last change (Ctrl+Z).</summary>
+    public void Undo() => Step(undo, redo);
+
+    /// <summary>Redo what was undone (Ctrl+Y or Ctrl+Maj+Z).</summary>
+    public void Redo() => Step(redo, undo);
+
+    void OnUndo(object s, RoutedEventArgs e) => Undo();
+    void OnRedo(object s, RoutedEventArgs e) => Redo();
+
+    // the editor's own undo, also in a text box: the box's would undo letters the design no longer has after a step
+    void OnWindowKey(object s, System.Windows.Input.KeyEventArgs e)
+    {
+        if (System.Windows.Input.Keyboard.Modifiers is not (System.Windows.Input.ModifierKeys.Control or (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))) return;
+        var shift = System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift);
+        if (e.Key == System.Windows.Input.Key.Z && !shift) Undo();
+        else if (e.Key == System.Windows.Input.Key.Y && !shift || e.Key == System.Windows.Input.Key.Z && shift) Redo();
+        else return;
+        e.Handled = true;
+    }
 
     void Rebind()
     {
@@ -250,6 +303,7 @@ public partial class MenuEditorWindow : Window
 
     async Task Render()
     {
+        Remember();
         var d = working.Clone();
         var mine = ++version;
         var wanted = current?.Id ?? "root";
@@ -445,6 +499,19 @@ public partial class MenuEditorWindow : Window
             if (z.Key == "poster") PosterMenu(); else BeginZoneEdit(z);
         };
         StageCanvas.Children.Add(shape);
+    }
+
+    /// <summary>For the off-screen snapshot (<c>undo</c>): two titles typed in the box, undone twice, redone once; the status line says whether each step came back.</summary>
+    public async Task TryUndo()
+    {
+        var start = TitleBox.Text;
+        TitleBox.Text = start + " A"; await Task.Delay(700);
+        TitleBox.Text = start + " B"; await Task.Delay(700);
+        Undo(); var one = TitleBox.Text; await Task.Delay(700);
+        Undo(); var two = TitleBox.Text; await Task.Delay(700);
+        Redo(); var three = TitleBox.Text; await Task.Delay(700);
+        var ok = one == start + " A" && two == start && three == start + " A" && working.Title == three && RedoButton.IsEnabled;
+        Status.Text = $"undo {(ok ? "ok" : "FAIL")}: {one} | {two} | {three}";
     }
 
     /// <summary>For the off-screen snapshot (<c>zones</c>): writes in the page's zones as a click then Enter does, and types in one that Escape gives back.</summary>

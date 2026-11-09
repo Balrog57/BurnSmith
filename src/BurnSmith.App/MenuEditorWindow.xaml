@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:BurnSmith.App"
         Title="Menu du disque" Width="1440" Height="800" MinWidth="1200" MinHeight="700"
-        Background="{StaticResource BgBrush}" WindowStartupLocation="CenterOwner">
+        Background="{StaticResource BgBrush}" WindowStartupLocation="CenterOwner" PreviewKeyDown="OnWindowKey">
   <Window.Resources>
     <local:ThumbConverter x:Key="Thumb"/>
     <Style x:Key="Caption" TargetType="TextBlock">
@@ -153,6 +153,8 @@
     <DockPanel Grid.Column="1" Margin="16,0">
       <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DockPanel.Dock="Top">
+          <Button x:Name="UndoButton" Content="↶ Annuler" Click="OnUndo" Padding="10,4" Margin="0,0,8,0" IsEnabled="False" ToolTip="Annuler la dernière modification (Ctrl+Z)"/>
+          <Button x:Name="RedoButton" Content="↷ Rétablir" Click="OnRedo" Padding="10,4" Margin="0,0,24,0" IsEnabled="False" ToolTip="Rétablir ce qui a été annulé (Ctrl+Y)"/>
           <Button Content="◀" Width="40" Click="OnPrev"/>
           <TextBlock x:Name="PageText" Margin="16,0" VerticalAlignment="Center"/>
           <Button Content="▶" Width="40" Click="OnNext"/>
@@ -278,7 +280,7 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="0,8,8,0">
             <TextBlock Text="Titre" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
-            <TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"/>
+            <TextBox x:Name="TitleBox" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"/>
             <StackPanel x:Name="ZonePanel"/>
             <TextBlock Text="Bouton lecture" Style="{StaticResource Caption}"/>
             <TextBox Text="{Binding PlayLabel, UpdateSourceTrigger=PropertyChanged}"/>

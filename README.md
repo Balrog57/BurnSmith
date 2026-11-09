@@ -72,7 +72,7 @@ Tout est dans [`docs/`](docs/README.md) :
 ## Reste à faire
 
 - **Essais de gravure sur disque réel et sur lecteurs de salon** (un DVD-RW d'abord, le Blu-ray en dernier) ; menus HDMV natifs (le menu BD-J est signé comme ceux de DVDFab, mais pas encore essayé sur lecteur de salon).
-- Éditeur : annuler / rétablir. Aussi : amélioration IA / HDR, menu contextuel.
+- Amélioration IA / HDR, menu contextuel dans l'éditeur.
 
 ## Licence
 
