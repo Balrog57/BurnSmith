@@ -84,6 +84,14 @@ public static class BluRay
     /// <summary>Playlist / clip number of the first title; title N is playlist N.</summary>
     public const int MoviePlaylist = 1;
 
+    /// <summary>
+    /// Text subtitles of a Blu-ray, on a 1080-line picture: Calibri (a Windows font, drawn into the pictures, not carried), capitals 42 pixels tall and
+    /// 46 pixels of margin under the text, as measured on a disc made by DVDFab. tsMuxeR's own Arial 65 and 24 (Yuhan's too) gave capitals of 48
+    /// pixels and wider lines, the relative size found too big on a DVD.
+    /// </summary>
+    public const int TextSubtitleSize = 60, TextSubtitleOffset = 40;
+    public const string TextSubtitleFont = "Calibri";
+
     /// <summary>Playlist / clip number of the moving menu's video.</summary>
     public const int LoopPlaylist = 99;
 
@@ -694,7 +702,7 @@ public static class BluRay
         foreach (var (s, file) in subs)
             lines.Add(s.IsPicture
                 ? $"S_HDMV/PGS, \"{file}\", fps={fps}, lang={Languages.Iso2(s.Lang)}" + (s.Index >= 0 && s.File == null && s.Index < planes.Count && planes[s.Index] >= 0 ? $", 3d-plane={planes[s.Index]}" : "")
-                : $"S_TEXT/UTF8, \"{file}\", font-name=\"Arial\", font-size={65 * Math.Min(h, 1080) / 1080}, font-color=0xffffffff, bottom-offset=24, font-border=5, text-align=center, video-width={w}, video-height={h}, fps={fps}, lang={Languages.Iso2(s.Lang)}");
+                : $"S_TEXT/UTF8, \"{file}\", font-name=\"{TextSubtitleFont}\", font-size={TextSubtitleSize * Math.Min(h, 1080) / 1080}, font-color=0xffffffff, bottom-offset={TextSubtitleOffset * Math.Min(h, 1080) / 1080}, font-border=5, text-align=center, video-width={w}, video-height={h}, fps={fps}, lang={Languages.Iso2(s.Lang)}");
         var meta = Path.Combine(work, $"disc{playlist}.meta");
         File.WriteAllLines(meta, lines);
         log($"mux {playlist}: tsMuxeR");
