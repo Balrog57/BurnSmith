@@ -9,7 +9,7 @@ public static class BuiltInTemplates
     static MenuDesign T(string name, int cols, int rows, bool thumbs, string style, bool square, string bg, string accent, string font,
         string text, string fill, string glow, double mx, double my, double gap, double header, double footer, int dim) => new()
     {
-        Name = name, Category = TemplateLabel.Open, Kind = TemplateKind.BuiltIn,
+        Name = name, Category = TemplateLabel.Own, Kind = TemplateKind.BuiltIn,
         Cols = cols, Rows = rows, Thumbnails = thumbs, ButtonStyle = style, Square = square,
         Top = bg, Bottom = bg, Accent = accent, Font = font, TextColor = text, CardFill = fill, Glow = glow,
         MarginX = mx, MarginY = my, Gap = gap, Header = header, Footer = footer, Dim = dim,

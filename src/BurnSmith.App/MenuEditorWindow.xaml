@@ -66,13 +66,26 @@
             <Button Content="Ajouter un dossier…" HorizontalAlignment="Stretch" Click="OnAddFolder"/>
             <TextBlock x:Name="ConvertNote" Margin="0,4,0,0" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
           </StackPanel>
-          <ListBox x:Name="BuiltInList" SelectionChanged="OnPick" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+          <!-- one heading per group, BurnSmith's own designs first; still virtualized: some hundred and fifty pictures.
+               Not synchronized: a grouped view has a current item, which would pick the first template as soon as the editor opens -->
+          <ListBox x:Name="BuiltInList" SelectionChanged="OnPick" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                   IsSynchronizedWithCurrentItem="False">
+            <ListBox.GroupStyle>
+              <GroupStyle>
+                <GroupStyle.HeaderTemplate>
+                  <DataTemplate>
+                    <TextBlock FontWeight="SemiBold" Foreground="{StaticResource AccentHoverBrush}" Margin="2,10,0,4">
+                      <Run Text="{Binding Name, Mode=OneWay}"/> <Run Text="{Binding ItemCount, Mode=OneWay, StringFormat=({0})}"/>
+                    </TextBlock>
+                  </DataTemplate>
+                </GroupStyle.HeaderTemplate>
+              </GroupStyle>
+            </ListBox.GroupStyle>
             <ListBox.ItemTemplate>
               <DataTemplate>
                 <StackPanel Margin="0,4">
                   <Image Source="{Binding Thumbnail}" Width="170" Stretch="Uniform"/>
                   <TextBlock Text="{Binding Design.Name}" HorizontalAlignment="Center" Margin="0,3,0,0"/>
-                  <TextBlock Text="{Binding Design.Category}" HorizontalAlignment="Center" Opacity="0.5" FontSize="11"/>
                 </StackPanel>
               </DataTemplate>
             </ListBox.ItemTemplate>
@@ -80,7 +93,10 @@
         </DockPanel>
       </TabItem>
       <TabItem Header="Mes modèles">
-        <ListBox x:Name="CustomList" DisplayMemberPath="Name" SelectionChanged="OnPick"/>
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="Les menus que vous enregistrez avec « Enregistrer le modèle… ». Ceux livrés avec BurnSmith (Métal, Streaming…) sont dans l'onglet Modèles." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
+          <ListBox x:Name="CustomList" DisplayMemberPath="Name" SelectionChanged="OnPick"/>
+        </DockPanel>
       </TabItem>
       <TabItem Header="Fonds">
         <DockPanel>

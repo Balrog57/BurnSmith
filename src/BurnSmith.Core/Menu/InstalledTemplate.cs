@@ -628,24 +628,87 @@ public sealed class InstalledTemplate
         {
             if (!Floors.TryGetValue(png, out var permille))
             {
-                try
+                permille = 1000;
+                if (Pixels(png) is var (w, h, px))
                 {
-                    MenuRenderer.CheckSize(png);
-                    var bitmap = new System.Windows.Media.Imaging.FormatConvertedBitmap(System.Windows.Media.Imaging.BitmapDecoder.Create(new Uri(png),
-                        System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0],
-                        System.Windows.Media.PixelFormats.Bgra32, null, 0);
-                    int w = bitmap.PixelWidth, h = bitmap.PixelHeight;
-                    var px = new byte[w * h * 4];
-                    bitmap.CopyPixels(px, w * 4, 0);
                     var row = h - 1;
                     while (row > 0 && !Enumerable.Range(0, w).Any(x => px[(row * w + x) * 4 + 3] >= 200)) row--;
                     permille = (row + 1) * 1000 / h;
                 }
-                catch (Exception e) when (e is NotSupportedException or System.IO.FileFormatException or IOException or InvalidDataException) { permille = 1000; }
                 Floors[png] = permille;
             }
             return rect.Y + rect.H * permille / 1000;
         }
+    }
+
+    /// <summary>A picture's pixels (BGRA, 4 bytes each); null when it cannot be read.</summary>
+    static (int W, int H, byte[] Px)? Pixels(string png)
+    {
+        try
+        {
+            MenuRenderer.CheckSize(png);
+            var bitmap = new System.Windows.Media.Imaging.FormatConvertedBitmap(System.Windows.Media.Imaging.BitmapDecoder.Create(new Uri(png),
+                System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0],
+                System.Windows.Media.PixelFormats.Bgra32, null, 0);
+            int w = bitmap.PixelWidth, h = bitmap.PixelHeight;
+            var px = new byte[w * h * 4];
+            bitmap.CopyPixels(px, w * 4, 0);
+            return (w, h, px);
+        }
+        catch (Exception e) when (e is NotSupportedException or System.IO.FileFormatException or IOException or InvalidDataException) { return null; }
+    }
+
+    static readonly Dictionary<string, (int, int)?> Spans = [];
+
+    /// <summary>
+    /// The longest solid stretch (alpha of 200 or more) of a picture along screen row <paramref name="y"/>, as screen columns: the body of a
+    /// banner without its glow or its scattered dots. Null when the picture does not reach that row or is clear there.
+    /// </summary>
+    static (int Left, int Right)? SolidSpan(string? png, Box rect, int y)
+    {
+        if (png == null || y < rect.Y || y >= rect.Y + rect.H) return null;
+        lock (Spans)
+        {
+            var key = $"{png}|{rect}|{y}";
+            if (Spans.TryGetValue(key, out var known)) return known;
+            (int, int)? span = null;
+            if (Pixels(png) is var (w, h, px))
+            {
+                var row = (y - rect.Y) * h / rect.H;
+                int best = 0, start = 0;
+                for (var x = 0; x <= w; x++)
+                {
+                    if (x < w && px[(row * w + x) * 4 + 3] >= 200) continue;
+                    if (x - start > best) (best, span) = (x - start, (rect.X + start * rect.W / w, rect.X + x * rect.W / w));
+                    start = x + 1;
+                }
+            }
+            return Spans[key] = span;
+        }
+    }
+
+    /// <summary>
+    /// Where the words of a DVD template's menu go once BurnSmith adds some (Settings, Bonus, Credits) to its Play and Scenes: down the column at
+    /// the template's own step or, for words side by side, spread again over the solid part of the banner they are written on, each with the
+    /// place of its star on its left. Null when they do not fit: the added ones are capsules then.
+    /// </summary>
+    List<Box>? WordSlots(XNode n, List<Text> words)
+    {
+        Box p = n.Child("play")!.Rect(), s = n.Child("scenes")!.Rect();
+        if (p.Y != s.Y)
+        {
+            var column = words.Select((_, k) => new Box(p.X + k * (s.X - p.X), p.Y + k * (s.Y - p.Y), p.W, p.H)).ToList();
+            return column[^1].Y >= 0 && column[^1].Y + p.H <= MenuBuilder.H - 20 ? column : null;
+        }
+        var banner = (n.Child("pics")?.Children("pic") ?? []).Select(pic => SolidSpan(Asset(pic.Attr("image")), pic.Rect(), p.Y + p.H / 2))
+            .FirstOrDefault(span => span is var (x0, x1) && x0 <= p.X && p.X < x1);
+        if (banner is not var (left, right)) return null;
+        var widths = words.Select(w => p.H + (int)Math.Ceiling(MenuRenderer.TextWidth(w))).ToList();
+        var gap = (right - left - widths.Sum()) / (words.Count + 1);
+        if (gap < p.H / 2) return null;
+        var row = new List<Box>();
+        for (int k = 0, x = left + gap; k < words.Count; x += widths[k++] + gap) row.Add(new Box(x + p.H, p.Y, widths[k] - p.H, p.H));
+        return row;
     }
 
     MenuPage Root(MenuDesign d, MenuContent c, bool withScenes)
@@ -669,6 +732,19 @@ public sealed class InstalledTemplate
         TemplateTexts(ops, zones, n, d);
 
         var buttons = new List<MenuButton>();
+        // DVD templates: the label is a word, a star marks the selected one. DVDFab writes it from the left edge of its zone (its own pictures
+        // of 03wedding and 04baby show it), the other formats in the middle of it
+        Text Written(XNode node, string label) => Txt(node, label, node.Attr("align", Kind == TemplateKind.Dvd ? "left" : "center"));
+        void Word(string id, XNode node, Box r, MenuAction action, string label)
+        {
+            var text = Written(node, label) with { Rect = r };
+            // written from the left, the button is the word and not its whole zone: DVDFab's zones side by side run over each other
+            if (text.Align == "left") r = r with { W = Math.Min(r.W, (int)Math.Ceiling(MenuRenderer.TextWidth(text))) };
+            var star = Asset(common.Child("selection")?.Text);
+            var slot = new Box(r.X - r.H, r.Y, r.H, r.H);
+            ops.Add(text);
+            buttons.Add(Dvd(star == null ? new MenuButton(id, r, action) : new MenuButton(id, new Box(slot.X, r.Y, r.W + r.H, r.H), action) { FocusImage = star, FocusSlot = slot }));
+        }
         void Add(string id, XNode? node, string? image, MenuAction action, string label)
         {
             if (node == null) return;
@@ -678,19 +754,18 @@ public sealed class InstalledTemplate
                 ops.Add(new Image(image, box));
                 buttons.Add(Dvd(new MenuButton(id, box, action) { FocusImage = Selected(image) }));
             }
-            else if (node.Attr("textbutton") == "1") // DVD templates: the label is text, a star marks the selected one
-            {
-                var r = node.Rect();
-                var star = Asset(common.Child("selection")?.Text);
-                var slot = new Box(r.X - r.H, r.Y, r.H, r.H);
-                ops.Add(Txt(node, label, node.Attr("align", "center")));
-                buttons.Add(Dvd(star == null ? new MenuButton(id, r, action) : new MenuButton(id, new Box(slot.X, r.Y, r.W + r.H, r.H), action) { FocusImage = star, FocusSlot = slot }));
-            }
+            else if (node.Attr("textbutton") == "1") Word(id, node, node.Rect(), action, label);
         }
-        Add("play", n.Child("play"), Button("playbuttontimage"),
-            c.Series ? new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count) : new MenuAction("play", Playlist: c.Playlist),
-            c.Series ? d.PlayAllLabel : d.PlayLabel);
-        if (withScenes) Add("scenes", n.Child("scenes"), Button("scenebuttontimage"), new MenuAction("page", "scenes1"), c.Series ? d.EpisodesLabel : d.ScenesLabel);
+        var main = new List<(string Id, string Label, MenuAction Action)>
+        {
+            ("play", c.Series ? d.PlayAllLabel : d.PlayLabel,
+                c.Series ? new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count) : new MenuAction("play", Playlist: c.Playlist)),
+        };
+        if (withScenes) main.Add(("scenes", c.Series ? d.EpisodesLabel : d.ScenesLabel, new MenuAction("page", "scenes1")));
+        // a DVDFab DVD menu is two words: the buttons BurnSmith adds are written with them further down, once they are all known
+        var words = Kind == TemplateKind.Dvd && Button("playbuttontimage") == null && n.Child("play")?.Attr("textbutton") == "1" && n.Child("scenes") != null;
+        if (!words)
+            foreach (var b in main) Add(b.Id, n.Child(b.Id), Button(b.Id == "play" ? "playbuttontimage" : "scenebuttontimage"), b.Action, b.Label);
         // "none_setup" templates have no picture for Settings, and none has one for Bonus or Credits: plain capsules in a row under the other buttons, BurnSmith's own addition
         var pills = new List<(string Id, string Label, MenuAction Action)>();
         // a template that draws a Bonus button (<c>BonusText</c>) puts it where it says; the others get BurnSmith's capsule
@@ -706,6 +781,16 @@ public sealed class InstalledTemplate
             else pills.Add(("settings", d.SettingsLabel, settings));
         }
         if (d.CreditLines().Count > 0) pills.Add(("credits", d.CreditsLabel, new MenuAction("page", "credits")));
+        if (words)
+        {
+            // the added buttons are words like the template's own when they fit beside them (not a dark capsule under a banner); else the template's two stay where it puts them
+            XNode Node(int k) => n.Child(k == 0 ? "play" : "scenes")!;
+            var all = main.Concat(pills).ToList();
+            var slots = pills.Count == 0 ? null : WordSlots(n, all.Select((w, k) => Written(Node(k), w.Label)).ToList());
+            if (slots != null) pills.Clear();
+            else (all, slots) = (main, [n.Child("play")!.Rect(), n.Child("scenes")!.Rect()]);
+            for (var k = 0; k < all.Count; k++) Word(all[k].Id, Node(k), slots[k], all[k].Action, all[k].Label);
+        }
         if (pills.Count > 0)
         {
             const int pillW = 320, pillGap = 20;

@@ -527,7 +527,7 @@ public static partial class MenuRenderer
         if (f.Frame != null) dc.DrawImage(Load(f.Frame, rect), rect);
     }
 
-    static void DrawText(DrawingContext dc, Text t)
+    static Typeface Face(Text t)
     {
         // a template's own .ttf is read from its folder (never installed); the system font of the same name is the fallback
         // when neither the template nor Windows has the font (Brush Script MT, Showcard Gothic... are Office fonts), one of the same kind from Windows stands in
@@ -535,17 +535,28 @@ public static partial class MenuRenderer
         {
             var f when f.Contains("script") || f.Contains("brush") || f.Contains("corsiva") || f.Contains("calligraph") || f.Contains("handwrit") => "Segoe Script",
             var f when f.Contains("showcard") || f.Contains("impact") || f.Contains("cooper") => "Segoe UI Black",
+            var f when f.Contains("alien") || f.Contains("space") || f.Contains("tech") => "Bahnschrift SemiBold", // science-fiction lettering (SF Alien Encounters): Windows' engineering face
             _ => "Segoe UI",
         };
         var family = t.FontDir == null ? new FontFamily($"{t.Font}, {stand}")
             : new FontFamily(new Uri(Path.GetFullPath(t.FontDir).TrimEnd('\\') + "\\"), $"./#{t.Font}, {t.Font}, {stand}");
-        var face = new Typeface(family, t.Italic ? FontStyles.Italic : FontStyles.Normal, t.Bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal);
+        return new Typeface(family, t.Italic ? FontStyles.Italic : FontStyles.Normal, t.Bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal);
+    }
+
+    /// <summary>Width in pixels of a text on one line at its own size, as <see cref="DrawText"/> writes it when its zone is wide enough.</summary>
+    internal static double TextWidth(Text t) =>
+        new FormattedText(t.Value, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, Face(t), t.Size, Brushes.White, 1.0).WidthIncludingTrailingWhitespace;
+
+    static void DrawText(DrawingContext dc, Text t)
+    {
+        var face = Face(t);
         FormattedText Make(double size) => new(t.FontDir == null ? t.Value : Drawable(face, t.Value), System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                                                face, size, new SolidColorBrush(Col(t.Color)), 1.0);
         // one line longer than its zone is drawn smaller (down to 60 %), then on two lines when the zone is high enough, before it is cut with "…":
         // "Cobra Kai Saison 1" (01movie: 240 x 70 at 48) came out as "Cobra..."
         var natural = t.Wrap ? 0 : Make(t.Size).WidthIncludingTrailingWhitespace;
-        var size = natural > t.Rect.W ? Math.Max(t.Size * 0.6, t.Size * t.Rect.W / natural) : t.Size;
+        // 0.98: a line shrunk to exactly its zone's width was still cut ("My Blu-r…" on 01movie), the last pixel being a matter of rounding
+        var size = natural > t.Rect.W ? Math.Max(t.Size * 0.6, t.Size * t.Rect.W / natural * 0.98) : t.Size;
         var lines = t.Wrap ? Math.Max(1, (int)(t.Rect.H / (t.Size * 1.25))) : 1;
         var room = (int)(t.Rect.H / (t.Size * 1.25)); // a zone high enough for several lines at full size takes them first (a synopsis in a tall text box)
         if (!t.Wrap && natural > t.Rect.W && room >= 2) (lines, size) = (room, t.Size);

@@ -372,6 +372,22 @@ if (a.Count >= 1 && a[0] == "check-elements")
         Check("a template that declares no text zone offers none", !MenuBuilder.Build(noZones.Clone(), zoneSeries).SelectMany(p => p.Zones).Any(z => z.Key.StartsWith("slot:")));
     }
 
+    // DVDFab's DVD menus are words: written from the left of their zone, and the buttons BurnSmith adds are words beside them, not capsules
+    if (TemplateCatalog.Find("The Fleeting Meteor") is { } meteor && TemplateCatalog.Find("04baby") is { } baby)
+    {
+        var wordDisc = new MenuContent(1, null, Enumerable.Repeat<string?>(null, 8).ToList(), null, ["Français", "English"], ["Français"]);
+        var row = MenuBuilder.Build(meteor.Clone(), wordDisc)[0];
+        var rb = row.Buttons;
+        Check("The Fleeting Meteor: Play, Scenes and Settings are three words side by side on the banner's solid part, none over another, no capsule",
+              rb.Select(b => b.Id).SequenceEqual(["play", "scenes", "settings"]) && rb.All(b => b.Rect.Y == rb[0].Rect.Y) && !row.Ops.OfType<Fill>().Any()
+              && rb.Zip(rb.Skip(1), (l, r) => l.Rect.X + l.Rect.W < r.Rect.X).All(apart => apart) && rb[0].Rect.X > 540 && rb[^1].Rect.X + rb[^1].Rect.W < 1350);
+        var column = MenuBuilder.Build(baby.Clone(), wordDisc)[0];
+        var (cb, cw) = (column.Buttons, column.Ops.OfType<Text>().TakeLast(3).ToList());
+        Check("04baby: the words start at the left of their zone, and Settings follows Scenes down the column at the template's step",
+              cw.All(t => t.Align == "left" && t.Rect.X == cw[0].Rect.X) && cw[2].Value == "Settings" && !column.Ops.OfType<Fill>().Any()
+              && cb.Count == 3 && cb[1].Rect.Y > cb[0].Rect.Y && cb[2].Rect.Y - cb[1].Rect.Y == cb[1].Rect.Y - cb[0].Rect.Y);
+    }
+
     var elDesign = TemplateCatalog.Default().Clone();
     var elContent = new MenuContent(1, null, ["a", "b", "c"], null, ["Français", "English"], ["Français"]);
     var elBefore = MenuBuilder.Build(elDesign, elContent);

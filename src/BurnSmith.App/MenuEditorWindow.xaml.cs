@@ -160,17 +160,17 @@ public partial class MenuEditorWindow : Window
     void LoadCatalog()
     {
         var (usable, skipped) = TemplateCatalog.Scan();
-        BuiltInList.ItemsSource = usable;
+        BuiltInList.ItemsSource = BySource(usable, "Design.Category");
         LoadBackgrounds((usable, skipped));
         LoadButtons((usable, skipped));
         _ = FillThumbnails(usable);
     }
 
     /// <summary>A list the library shows under one heading per source (BurnSmith's looks, yours, each template's own).</summary>
-    static System.ComponentModel.ICollectionView BySource<T>(IEnumerable<T> items)
+    static System.ComponentModel.ICollectionView BySource<T>(IEnumerable<T> items, string by = "Source")
     {
         var view = new System.Windows.Data.ListCollectionView(items.ToList());
-        view.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription("Source"));
+        view.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription(by));
         return view;
     }
 
@@ -236,7 +236,7 @@ public partial class MenuEditorWindow : Window
     async Task FillThumbnails(List<TemplateCatalog.Found> usable)
     {
         if (!await Task.Run(() => TemplateCatalog.RenderThumbnails(usable))) return;
-        BuiltInList.ItemsSource = TemplateCatalog.Scan().Usable;
+        BuiltInList.ItemsSource = BySource(TemplateCatalog.Scan().Usable, "Design.Category");
     }
 
     /// <summary>

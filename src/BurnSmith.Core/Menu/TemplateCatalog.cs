@@ -129,8 +129,9 @@ public static class TemplateCatalog
         {
             var design = pack.Design.Clone();
             design.Name = pack.Name;
-            design.Category = pack.Category;
             design.Kind = pack.KindValue;
+            // a pack made of one of BurnSmith's own designs before they had their group says "Libres": it is that design, not a second one
+            design.Category = design.Kind == TemplateKind.BuiltIn ? TemplateLabel.Own : pack.Category;
             design.TemplateDir = pack.HasLayout ? pack.Dir : null;
             if (!seen.Add($"{design.Category}|{design.Name}")) continue;
             if (pack.Unsupported is { } why) skipped.Add(new Skipped(design.Name, why, pack.Dir));
@@ -151,7 +152,7 @@ public static class TemplateCatalog
             if (pack.Unsupported is { } why) skipped.Add(new Skipped(design.Name, why, dir));
             else usable.Add(new Found(design, pack.Thumbnail));
         }
-        return (usable.OrderBy(f => f.Design.Category).ThenBy(f => f.Design.Name, StringComparer.OrdinalIgnoreCase).ToList(), skipped);
+        return (usable.OrderBy(f => f.Design.Kind != TemplateKind.BuiltIn).ThenBy(f => f.Design.Category).ThenBy(f => f.Design.Name, StringComparer.OrdinalIgnoreCase).ToList(), skipped);
     }
 
     /// <summary>

@@ -24,7 +24,7 @@ public enum TemplateKind
 /// <summary>The neutral name of each kind, both in the template gallery and in the element library.</summary>
 public static class TemplateLabel
 {
-    public const string BluRay = "Blu-ray", Dvd = "DVD", Themes = "Thèmes", Open = "Libres";
+    public const string BluRay = "Blu-ray", Dvd = "DVD", Themes = "Thèmes", Open = "Libres", Own = "BurnSmith";
 
     /// <summary>
     /// <paramref name="category"/> when it is one of the neutral labels, else "": a design saved by an earlier version kept the name of
@@ -34,7 +34,7 @@ public static class TemplateLabel
     {
         if (string.IsNullOrWhiteSpace(category)) return "";
         var trimmed = category.Trim();
-        return trimmed is BluRay or Dvd or Themes or Open ? trimmed : "";
+        return trimmed is BluRay or Dvd or Themes or Open or Own ? trimmed : "";
     }
 
     public static string Of(TemplateKind kind) => kind switch
@@ -42,7 +42,8 @@ public static class TemplateLabel
         TemplateKind.BluRay => BluRay,
         TemplateKind.Dvd => Dvd,
         TemplateKind.Pictures or TemplateKind.Theme => Themes,
-        TemplateKind.Library or TemplateKind.BuiltIn => Open,
+        TemplateKind.Library => Open,
+        TemplateKind.BuiltIn => Own, // BurnSmith's own designs (Métal…) have their group, first in the gallery: among the open library's fifty they were not found
         _ => "",
     };
 }
