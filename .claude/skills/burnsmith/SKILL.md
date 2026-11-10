@@ -5,15 +5,12 @@ description: Pilote BurnSmith en ligne de commande, sans sa fenêtre - fabriquer
 
 # BurnSmith en ligne de commande
 
-Tout ce que fait la fenêtre de BurnSmith se fait aussi ici. Le programme est `BurnSmith.Cli.exe` (écrit `burnsmith` plus bas). Il n'est pas dans l'installateur : il se compile depuis le dépôt.
+Tout ce que fait la fenêtre de BurnSmith se fait aussi ici. Le programme est `BurnSmith.Cli.exe` (écrit `burnsmith` plus bas). 
 
-```bash
-dotnet build src/BurnSmith.Cli -c Release
-```
+- **BurnSmith installé** (depuis la version 1.0.19) : l'exe est à côté de l'application, `C:\Program Files\BurnSmith\BurnSmith.Cli.exe` sauf autre dossier choisi à l'installation. Rien à compiler ni à télécharger. Il se sert des outils et des modèles que l'application déballe à son premier lancement : si une commande répond « introuvable » ou si `templates` ne liste que quelques modèles, demander à l'utilisateur d'ouvrir BurnSmith une fois. Ce fichier est installé dans `C:\Program Files\BurnSmith\skill\burnsmith\SKILL.md` ; on le donne à son IA en copiant le dossier `burnsmith` dans son dossier de skills (`%USERPROFILE%\.claude\skills\` pour Claude).
+- **Depuis le dépôt** : `dotnet build src/BurnSmith.Cli -c Release` donne `src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe`. Il lui faut `ffmpeg`, `ffprobe` et `tsMuxeR` dans `tools\` ou sur le `PATH`. `docs/COMPILER-ET-LIGNE-DE-COMMANDE.md` et les commentaires en tête de `src/BurnSmith.Cli/Program.cs` détaillent chaque option.
 
-L'exe est alors `src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe`. Il lui faut `ffmpeg`, `ffprobe` et `tsMuxeR` dans `tools\` ou sur le `PATH`.
-
-La référence complète des options est `docs/COMPILER-ET-LIGNE-DE-COMMANDE.md` (section « Ligne de commande ») ; les commentaires en tête de `src/BurnSmith.Cli/Program.cs` font foi en cas de doute. Sans argument, l'exe affiche son usage et sort avec 2.
+Sans argument, l'exe affiche son usage et sort avec 2.
 
 ## Règles
 
@@ -98,4 +95,4 @@ Le résultat se donne ensuite à `--video`.
 
 ## Vérifier le logiciel après une modification du code
 
-`check-update`, `check-edit`, `check-elements`, `check-highlights`, `check-templates`, `check-fidelity`, `check-bd`, `check-reliability` (ajouter `--no-dvd` aux trois qui l'acceptent pour passer les vrais builds DVD, lents). Les lancer un par un : l'exe est verrouillé pendant qu'un contrôle tourne, donc pas de `dotnet build` en même temps.
+Depuis le dépôt seulement. `check-update`, `check-edit`, `check-elements`, `check-highlights`, `check-templates`, `check-fidelity`, `check-bd`, `check-reliability` (ajouter `--no-dvd` aux trois qui l'acceptent pour passer les vrais builds DVD, lents). Les lancer un par un : l'exe est verrouillé pendant qu'un contrôle tourne, donc pas de `dotnet build` en même temps.

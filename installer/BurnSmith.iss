@@ -44,6 +44,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "..\dist\BurnSmith.exe"; DestDir: "{app}"; Flags: ignoreversion nocompression
+; the command line and the skill that teaches an AI to drive it (to copy into the AI's skills folder)
+Source: "..\dist\BurnSmith.Cli.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\.claude\skills\burnsmith\SKILL.md"; DestDir: "{app}\skill\burnsmith"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 ; the SVG reader built into the exe (MIT asks for its notice with the program)
 Source: "SVGImage-LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion

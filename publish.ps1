@@ -60,6 +60,13 @@ dotnet publish "$root\src\BurnSmith.App" -c Release -r win-x64 --self-contained 
 if ($LASTEXITCODE -ne 0) { throw "publish failed" }
 Get-Item "$root\dist\BurnSmith.exe" | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) } }
 
+# the command line an AI drives (.claude\skills\burnsmith\SKILL.md, installed with it): one file too, not compressed (the installer does it better),
+# and without the zips: it uses the tools and templates the app unpacked (Tools.Unpacked)
+$appVersion = ((Get-Item "$root\dist\BurnSmith.exe").VersionInfo.ProductVersion -split '\+')[0]
+dotnet publish "$root\src\BurnSmith.Cli" -c Release -r win-x64 --self-contained `
+    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None "-p:Version=$appVersion" -o "$root\dist"
+if ($LASTEXITCODE -ne 0) { throw "publish of the command line failed" }
+
 # the licences of the .NET runtime inside the exe, from the very packs this publish used (its restore records them, and honours NUGET_PACKAGES); not in git, the installer installs them
 $assets = Get-Content "$root\src\BurnSmith.App\obj\project.assets.json" -Raw | ConvertFrom-Json
 $packs = $assets.project.frameworks.PSObject.Properties.Value.downloadDependencies

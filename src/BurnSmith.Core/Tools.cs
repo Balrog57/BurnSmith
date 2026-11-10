@@ -42,11 +42,19 @@ public static class Tools
         return AppFiles.Unpack(name, AppFiles.Stamp(stream), dir => System.IO.Compression.ZipFile.ExtractToDirectory(stream, dir), inLibrary);
     }
 
+    /// <summary>
+    /// The command line installed next to BurnSmith.exe carries no zip (the templates alone weigh 180 MB): it uses what the app unpacked,
+    /// so the app must have been started once. Null anywhere else, and when nothing is unpacked yet.
+    /// </summary>
+    static string? Unpacked(string name, bool inLibrary = false) =>
+        File.Exists(Path.Combine(AppContext.BaseDirectory, "BurnSmith.exe"))
+        && Path.Combine(inLibrary ? AppFiles.Library() : AppFiles.Root(), name) is var dir && File.Exists(Path.Combine(dir, ".ready")) ? dir : null;
+
     /// <summary>tsMuxeR carried by the exe, unpacked to a <c>tools</c> folder under <see cref="AppFiles.Root"/>; null when this exe carries none.</summary>
-    public static string? BundledDir() { lock (bundledLock) return bundledDir ??= UnpackZip("tools", Payload); }
+    public static string? BundledDir() { lock (bundledLock) return bundledDir ??= UnpackZip("tools", Payload) ?? Unpacked("tools"); }
 
     /// <summary>The menu template folders carried by the exe, unpacked to <c>Documents\BurnSmith\Templates\carried</c>; null when this exe carries none.</summary>
-    public static string? TemplatesDir() { lock (bundledLock) return templatesDir ??= UnpackZip("carried", TemplatePayload, true); }
+    public static string? TemplatesDir() { lock (bundledLock) return templatesDir ??= UnpackZip("carried", TemplatePayload, true) ?? Unpacked("carried", true); }
 
     public static string Find(string exe)
     {
@@ -63,7 +71,8 @@ public static class Tools
             var p = Path.Combine(dir, exe);
             if (File.Exists(p)) return cache[exe] = p;
         }
-        var installer = exe is "ffmpeg.exe" or "ffprobe.exe" ? "réinstallez BurnSmith, dont l'installateur les contient. Sinon, " : ""; // first: the journal does not wrap, the end of a long line is off screen
+        var installer = exe is "ffmpeg.exe" or "ffprobe.exe" ? "réinstallez BurnSmith, dont l'installateur les contient. Sinon, "
+            : Payload == null && File.Exists(Path.Combine(AppContext.BaseDirectory, "BurnSmith.exe")) ? "ouvrez BurnSmith une fois, qui le déballe. Sinon, " : ""; // first: the journal does not wrap, the end of a long line is off screen
         throw new FileNotFoundException($"{exe} introuvable : {installer}indiquez son dossier dans la variable d'environnement BURNSMITH_TOOLS, ajoutez-le au PATH ou placez-le dans un dossier tools à côté de BurnSmith.");
     }
 

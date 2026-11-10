@@ -48,7 +48,7 @@ L'éditeur dessine **en direct** les pages du disque (menu, scènes, réglages, 
 
 ## Et aussi
 
-DVD (PAL / NTSC), Blu-ray (1080p, 720p) et Blu-ray 4K · plusieurs vidéos et séries · pistes audio et sous-titres au choix, avec piste et sous-titre **par défaut** · sous-titres externes (`.srt`, `.ass`, `.vtt`, `.sup`, `.idx` + `.sub`) · chapitres automatiques ou à la main · capacité DVD-5/9 et BD-25/50/66/100 · effacement des disques réinscriptibles · [ligne de commande](docs/COMPILER-ET-LIGNE-DE-COMMANDE.md), à compiler soi-même (elle n'est pas dans la release). Le détail est dans les [fonctionnalités](docs/FONCTIONNALITES.md).
+DVD (PAL / NTSC), Blu-ray (1080p, 720p) et Blu-ray 4K · plusieurs vidéos et séries · pistes audio et sous-titres au choix, avec piste et sous-titre **par défaut** · sous-titres externes (`.srt`, `.ass`, `.vtt`, `.sup`, `.idx` + `.sub`) · chapitres automatiques ou à la main · capacité DVD-5/9 et BD-25/50/66/100 · effacement des disques réinscriptibles · [ligne de commande](docs/COMPILER-ET-LIGNE-DE-COMMANDE.md) installée avec l'application, et son skill pour la faire piloter par une IA. Le détail est dans les [fonctionnalités](docs/FONCTIONNALITES.md).
 
 ## Démarrer
 
@@ -66,7 +66,7 @@ Tout est dans [`docs/`](docs/README.md) :
 |---|---|
 | [Fonctionnalités](docs/FONCTIONNALITES.md) | tout ce que fait BurnSmith, en détail |
 | [Modèles de menu](docs/MODELES.md) | d'où viennent les modèles, la bibliothèque, l'état de chacun |
-| [Installer, compiler, ligne de commande](docs/COMPILER-ET-LIGNE-DE-COMMANDE.md) | installateur et mise à jour automatique, compilation, commandes `bd` / `dvd` / `iso` / `burn` (à compiler), vérifications |
+| [Installer, compiler, ligne de commande](docs/COMPILER-ET-LIGNE-DE-COMMANDE.md) | installateur et mise à jour automatique, compilation, commandes `bd` / `dvd` / `iso` / `burn`, skill IA, vérifications |
 | [Plan de production](docs/PLAN-PRODUCTION.md) | où va le projet, dans quel ordre |
 
 ## Reste à faire
