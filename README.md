@@ -4,7 +4,7 @@
 
 **Créateur de disques Blu-ray, Blu-ray 4K et DVD avec menus, pour Windows. Libre et gratuit.**
 
-Glissez vos vidéos, choisissez un menu parmi **144 modèles** (ou dessinez le vôtre), cliquez sur *Démarrer* : vous obtenez un dossier de disque, une image ISO, ou le disque gravé.
+Glissez vos vidéos, choisissez un menu parmi **145 modèles** (ou dessinez le vôtre), cliquez sur *Démarrer* : vous obtenez un dossier de disque, une image ISO, ou le disque gravé.
 
 > Projet jeune. Les dossiers BDMV générés se lisent dans VLC et les ISO se montent sous Windows ; un **DVD gravé** (DVD-R, série de trois épisodes avec bonus, deux langues, quatre sous-titres, menu animé) **marche sur une platine de salon** : menus, touches Menu / Titre / Pop-up, audio, sous-titres. La gravure et la lecture d'un **Blu-ray** sur lecteur de salon n'ont **pas encore été testées**.
 
@@ -23,7 +23,7 @@ Avant de graver, BurnSmith **contrôle le disque qu'il vient de construire** (fi
 - **Un seul installateur, rien à télécharger** : tsMuxeR, ffmpeg, ImgBurn et les modèles sont dedans. Ni le Blu-ray ni le DVD ne demandent autre chose. La gravure passe par ImgBurn, que l'installateur met en place s'il manque, ou par le graveur de Windows (IMAPI2).
 - **On ne réencode pas ce qu'on peut garder.** Une vidéo Blu-ray déjà conforme est recopiée telle quelle ; avec *Adapter au disque*, elle reste intacte tant qu'elle tient sur le disque et n'est refaite qu'au débit qui le remplit si elle est trop grosse. En 4K, *Passthrough* garde la vidéo HEVC telle quelle ; *Conversion* la refait en HEVC 10 bits.
 
-### 144 modèles de menu
+### 145 modèles de menu
 
 ![Six des modèles livrés : Nuit d'encre, Landscape, Cake, Tube cathodique, Camera, Balloons](docs/images/modeles.jpg)
 
