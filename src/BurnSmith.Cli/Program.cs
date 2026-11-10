@@ -110,6 +110,32 @@ if (a.Count >= 1 && a[0] == "check-highlights")
 
     var hlContent = new MenuContent(1, null, Enumerable.Repeat<string?>(null, 4).ToList(), null, ["Français AC-3 mono", "English AC-3 mono"], ["Français"]);
 
+    // (0) sans modèle : l'ordre des couleurs de la teinte, une image réécrite sous le même nom, un paquet téléchargé mal formé
+    Check("la teinte d'une image rouge est rouge (octets B, G, R, A)", IndexedPng.Average([0, 0, 255, 255], 1, 1) is { R: 255, G: 0, B: 0 });
+    var hlTmp = Path.Combine(Path.GetTempPath(), $"burnsmith-hl-{Environment.ProcessId}");
+    Directory.CreateDirectory(hlTmp);
+    try
+    {
+        void Dot(string file, byte b, byte g, byte r, int day)
+        {
+            var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(System.Windows.Media.Imaging.BitmapSource.Create(1, 1, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null, new byte[] { b, g, r, 255 }, 4)));
+            using (var stream = File.Create(file)) png.Save(stream);
+            File.SetLastWriteTimeUtc(file, new DateTime(2020, 1, day, 0, 0, 0, DateTimeKind.Utc));
+        }
+        var dot = Path.Combine(hlTmp, "c1.png");
+        Dot(dot, 0, 0, 255, 1);
+        var dotRed = MenuRenderer.Sta(() => MenuRenderer.Raster(dot, null, 1, 1)).Px;
+        Dot(dot, 255, 0, 0, 2);
+        var dotBlue = MenuRenderer.Sta(() => MenuRenderer.Raster(dot, null, 1, 1)).Px;
+        Check("une image réécrite sous le même nom est relue (les vignettes du disque suivant, dans l'application)", dotRed[2] == 255 && dotRed[0] == 0 && dotBlue[0] == 255 && dotBlue[2] == 0);
+        File.WriteAllText(Path.Combine(hlTmp, TemplatePack.FileName), """{"schema":"burnsmith/template/1","name":"x","design":{"elements":[null]}}""");
+        Check("un paquet dont une liste contient null est refusé, sans arrêter le catalogue", TemplatePack.TryRead(hlTmp) == null);
+        File.WriteAllText(Path.Combine(hlTmp, TemplatePack.FileName), """{"schema":"burnsmith/template/1","name":"x","assets":[{"role":"image","path":"C:\\Windows\\win.ini"},{"role":"image","path":"c1.png"}]}""");
+        Check("un paquet ne fait rien ouvrir hors de son dossier (un chemin complet, un partage réseau) : l'image est dite absente", TemplatePack.TryRead(hlTmp)?.Problems() is [var outside] && outside.Contains("win.ini"));
+    }
+    finally { Directory.Delete(hlTmp, true); }
+
     // (a) an installed DVD template names its highlighted artwork for each button that has one
     var hlModel = TemplateCatalog.Scan().Usable.Select(f => f.Design).FirstOrDefault(d => d.TemplateDir != null && d.Kind == TemplateKind.Dvd);
     if (hlModel == null) Console.WriteLine("ok   (aucun modèle DVD installé : la vérification du modèle est sautée)");
@@ -312,6 +338,10 @@ if (a.Count >= 1 && a[0] == "check-elements")
     Check("page targeting: all, root, scenes, bonus; a misspelt page hits nothing",
           new MenuElement { Page = "all" }.AppliesTo("settings") && new MenuElement { Page = "root" }.AppliesTo("root") && !new MenuElement { Page = "root" }.AppliesTo("scenes1")
           && new MenuElement { Page = "scenes" }.AppliesTo("scenes2") && !new MenuElement { Page = "scenes" }.AppliesTo("bonus1") && !new MenuElement { Page = "roots" }.AppliesTo("root"));
+    var strayPages = MenuBuilder.Build(new MenuDesign { Elements = [MenuElement.Parse("kind=button;text=Bonus;target=bonus1;x=100;y=100;w=300;h=80"), MenuElement.Parse("kind=button;text=X;target=my page;x=100;y=300;w=300;h=80")] },
+        new MenuContent(1, null, Enumerable.Repeat<string?>(null, 4).ToList()));
+    Check("a hand-placed button to a page the disc does not have (no bonus, a mistyped name) leads to the root page",
+          strayPages.SelectMany(p => p.Buttons).Where(b => b.Id.StartsWith('u')).ToList() is { Count: > 0 } stray && stray.All(b => b.Action is { Kind: "page", Page: "root" }));
     Check("an unknown kind is refused, so a misspelt element is not silently something else", Throws(() => MenuElement.Parse("kind=vidéo;text=x")));
 
     // the zones the editor offers: what each template draws, nothing more; only what the user wrote reaches the page
@@ -804,6 +834,10 @@ if (a.Count >= 1 && a[0] == "check-edit")
     var whole = new DiscTitle("x.mkv");
     var cutBoth = new DiscTitle("x.mkv", Start: 100, End: 400);
     Check("whole file keeps 600 s", whole.Length(src) == 600 && whole.Cut(src) == src);
+    var fiveTracks = new SourceInfo("h264", 1920, 1080, 24, "ac3", 6, 600, [.. Enumerable.Range(0, 5).Select(i => new AudioTrack(i, "ac3", 6, "fre", ""))], []);
+    var fitted = Dvd.VideoBitrate([(fiveTracks, new DiscTitle("x.mkv", Audio: [0, 1, 2, 3, 4]))], 4.2);
+    Check("DVD: five 5.1 tracks leave the picture what a 10.08 Mb/s stream allows, a single stereo one the usual 8 Mb/s",
+          fitted > 1_000_000 && fitted + 5 * 448_000 <= 9_800_000 && Dvd.VideoBitrate([(src with { Audio = [new(0, "ac3", 2, "fre", "")] }, whole)], 4.2) == 8_000_000);
     Check("start only: 500 s", new DiscTitle("x", Start: 100).Cut(src).Duration == 500);
     Check("end only: 400 s", new DiscTitle("x", End: 400).Cut(src).Duration == 400);
     Check("both: 300 s", cutBoth.Cut(src).Duration == 300);
@@ -1341,6 +1375,8 @@ if (a.Count >= 1 && a[0] == "check-conversion")
     Console.WriteLine($"{ok}/{packs} packs without a problem");
     return packProblems.Count == 0 && packs > 0 ? 0 : 1;
 }
+// burnsmith check-fidelity [--picture frame.jpg] [--only NAME] : each source template and the pack converted from it draw the same menu
+if (a.Count >= 1 && a[0] == "check-fidelity") return TemplateCheck.Fidelity(Opt("--picture") is { } fp ? Path.GetFullPath(fp) : null, Opt("--only"));
 
 // burnsmith check-library : every background and button picture of every converted pack is offered by the library
 if (a.Count >= 1 && a[0] == "check-library")
@@ -1412,6 +1448,8 @@ if (a.Count >= 1 && a[0] == "drives")
     Console.WriteLine("IMAPI2: typed interfaces and progress events OK");
     return 0;
 }
+// burnsmith erase <F:> : erases a rewritable disc quickly (the app's "Effacer")
+if (a.Count >= 2 && a[0] == "erase") { Imapi.Erase(a[1], Console.WriteLine); return 0; }
 if (a.Count >= 3 && a[0] == "verify") { Imapi.Verify(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  "))); return 0; }
 // burnsmith hold-tool FILE [--free] : ffmpeg for a minute, its progress in FILE; check-reliability ends this process by force and looks for that ffmpeg
 if (a.Count >= 2 && a[0] == "hold-tool")
@@ -1504,10 +1542,12 @@ var titles = videos.Select((v, k) =>
     // --sub-file FILE | --sub-file fra=FILE (repeatable): a subtitle file kept as one more track, after the video's own and the --sub ones
     var files = own.Select((x, i) => (x, i)).Where(x => x.x == "--sub-file" && x.i + 1 < own.Count).SelectMany(x => ExternalSubtitle.ParseAll(own[x.i + 1])).ToList();
     // --sub after a --video is that video's own choice ("none": only its --sub-file ones), else the one for every video
-    List<int>? subs = Own("--sub") is "none" ? [] : Own("--sub") is { } ownSubs ? [.. ownSubs.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse)] : Numbers("--sub");
+    List<int>? subs = Own("--sub") is "none" ? [] : Own("--sub") is { } ownSubs ? [.. ownSubs.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse)] : Opt("--sub") is "none" ? null : Numbers("--sub"); // another video's "none" is its own, not a number for this one
     if (subs != null || files.Count > 0) subs = SubsToKeep(subs, BluRay.Probe(v).Subtitles.Count, files.Count, Path.GetFileName(v), Console.Error.WriteLine);
     int? defaultAudio = int.TryParse(Own("--default-audio"), out var da) ? da : null, defaultSub = int.TryParse(Own("--default-sub"), out var ds) ? ds : null;
-    if (defaultAudio is { } wanted && !(Numbers("--audio") ?? [0]).Contains(wanted)) throw new ArgumentException($"--default-audio {wanted} is not one of the audio tracks kept (--audio)");
+    // --audio after a --video is that video's own choice, as --sub; else the one for every video
+    List<int>? audioKept = Own("--audio") is { } ownAudio ? [.. ownAudio.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse)] : Numbers("--audio");
+    if (defaultAudio is { } wanted && !(audioKept ?? [0]).Contains(wanted)) throw new ArgumentException($"--default-audio {wanted} is not one of the audio tracks kept (--audio)");
     if (defaultSub is { } wantedSub && !(subs ?? []).Contains(wantedSub)) throw new ArgumentException($"--default-sub {wantedSub} is not one of the subtitles kept (--sub / --sub-file)");
     // --track-lang a0=fre,s1=eng (this video): the language of one of the file's own tracks (a = audio, s = subtitle, numbered as --audio / --sub), for a track left "und" or mislabelled
     Dictionary<string, string>? trackLanguage = null;
@@ -1519,7 +1559,7 @@ var titles = videos.Select((v, k) =>
         (trackLanguage ??= [])[kv[0].Trim()] = code;
     }
     // --name: the video's name on the menu, as renamed in the app
-    return new DiscTitle(v, Own("--name"), Numbers("--audio"), subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes, own.Contains("--intro"), trackLanguage,
+    return new DiscTitle(v, Own("--name"), audioKept, subs, Time(trim[0]) ?? 0, trim.Length > 1 ? Time(trim[1]) : null, volume, chapterAt, files.Count > 0 ? files : null, own.Contains("--bonus"), defaultAudio, defaultSub, chapterMinutes, own.Contains("--intro"), trackLanguage,
                           Own("--effects") is { } fx ? System.Text.Json.JsonSerializer.Deserialize<VideoEffects>(File.ReadAllText(fx)) : null, // --effects FILE.json: the video editor's settings (VideoEffects, by property name)
                           clipList,
                           Own("--thumb-at") is { } thumbAt ? Time(thumbAt) : null, Own("--thumb") is { } thumb ? Path.GetFullPath(thumb) : null, // the menu thumbnail: a moment of the video, or a picture
@@ -1532,6 +1572,7 @@ var titles = videos.Select((v, k) =>
 // dvd: --pal | --ntsc (default: as the first video), --4x3 (4:3 titles, the menu stays 16:9)
 var profile = BdProfile.Find(Opt("--profile") ?? "BD25");
 var quality = Opt("--quality") ?? "fit"; // as the app: "Adapter au disque"
+if (quality is not ("fit" or "source") && !int.TryParse(quality, out _)) throw new ArgumentException($"--quality: source, fit or a number is expected, not '{quality}'"); // "Fit" would silently mean "source"
 var rate = int.TryParse(quality, out var q) ? (q < 1000 ? q * 1000 : q) : 0; // "15" = 15 Mb/s
 var encode = new EncodeOptions(a.Contains("--reencode"), int.TryParse(Opt("--crf"), out var crf) ? crf : 17, Opt("--preset") ?? "medium", int.TryParse(Opt("--dvd-kbps"), out var kbps) ? kbps : 0,
                                rate, quality == "fit", profile.Hd720, Gpu: !a.Contains("--cpu"),
@@ -1549,7 +1590,9 @@ if (a[0] == "bd")
     BluRay.Build(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback), Console.WriteLine);
 else
     Dvd.Build(new DvdJob(titles, Path.GetFullPath(outDir), design, chapters, Encode: encode with { DvdPal = a.Contains("--pal") ? true : a.Contains("--ntsc") ? false : null, DvdWide = !a.Contains("--4x3") },
-                         Playback: playback), Console.WriteLine);
-var problems = DiscCheck.Folder(Path.GetFullPath(outDir), a[0] == "bd" ? profile.Gb : 4.7);
+                         Playback: playback, CapacityGB: Opt("--capacity") != null ? capacity : 4.2), Console.WriteLine); // --capacity 7.6: a DVD-9
+// the disc the folder must fit: the profile's, or the one --capacity names by its usable size (a BD-100 for --uhd, a DVD-9)
+var discGb = Math.Max(a[0] == "bd" ? profile.Gb : 4.7, Opt("--capacity") != null ? capacity / 0.89 : 0);
+var problems = DiscCheck.Folder(Path.GetFullPath(outDir), discGb);
 Console.WriteLine(problems.Count == 0 ? "disc structure checked: no problem" : "disc structure: " + string.Join(" ; ", problems));
 return problems.Count == 0 ? 0 : 1;

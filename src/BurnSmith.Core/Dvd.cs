@@ -23,8 +23,15 @@ public static class Dvd
     {
         var seconds = items.Sum(i => i.Src.Duration);
         var audioBits = items.Sum(i => i.Src.Duration * i.Title.KeptAudio(i.Src).Sum(AudioBps));
-        return (int)Math.Clamp((capacityGB * 1e9 * 8 * 0.96 - audioBits) / seconds, 1_000_000, 8_000_000);
+        return (int)Math.Clamp((capacityGB * 1e9 * 8 * 0.96 - audioBits) / seconds, 1_000_000, Math.Min(8_000_000, VideoCeiling(items)));
     }
+
+    /// <summary>
+    /// The most the picture may take beside the sound of the title that has the most of it: a DVD stream is 10.08 Mb/s in all, and five 5.1 tracks
+    /// (2.24 Mb/s) beside 8 Mb/s of picture would pass it, for a film that stutters on a player.
+    /// </summary>
+    static int VideoCeiling(IReadOnlyList<(SourceInfo Src, DiscTitle Title)> items) =>
+        Math.Max(1_000_000, 9_800_000 - items.Max(i => i.Title.KeptAudio(i.Src).Sum(AudioBps)));
 
     /// <param name="kbps">The video bit rate chosen by hand (0 = what fills the disc).</param>
     public static double EstimateGB(IReadOnlyList<(SourceInfo Src, DiscTitle Title)> items, double capacityGB, int kbps = 0)
@@ -46,6 +53,7 @@ public static class Dvd
         if (job.Titles.Count(t => t.Intro) > 1) throw new ArgumentException("une seule vidéo de début est possible");
         job = job with { Titles = [.. job.Titles.Where(t => !t.Intro)] }; // the start video is no title of the menu: it is the title the first-play jump goes to
         if (job.Titles.Count == 0) throw new ArgumentException("no video to put on the disc");
+        if (job.Titles.Count + (intro != null ? 1 : 0) > 99) throw new ArgumentException($"{job.Titles.Count} vidéos : un DVD en porte 99 au plus, vidéo de début comprise"); // before the hours of encoding, not after
         if (job.Titles.Count > 1 && job.Menu == null) throw new InvalidOperationException("several videos need a menu to choose from");
         job = job with { Titles = DiscTitle.MainFirst(job.Titles) }; // titles 1..mainCount are the feature, the bonus ones follow
         var mainCount = job.Titles.Count(t => !t.Bonus);
@@ -55,7 +63,7 @@ public static class Dvd
         if (introSource != null) items.Add((introSource, intro!)); // it takes room on the disc too
         var pal = job.Encode?.DvdPal ?? (Math.Abs(sources[0].Fps - 25) < 0.5 || Math.Abs(sources[0].Fps - 50) < 0.5); // chosen, else the disc follows its first video
         var work = job.OutDir + "_work";
-        var videoBps = job.Encode is { DvdKbps: > 0 } manual ? Math.Clamp(manual.DvdKbps, 1500, 9000) * 1000 : VideoBitrate(items, job.CapacityGB); // by hand, else what fills the disc
+        var videoBps = job.Encode is { DvdKbps: > 0 } manual ? Math.Min(Math.Clamp(manual.DvdKbps, 1500, 9000) * 1000, VideoCeiling(items)) : VideoBitrate(items, job.CapacityGB); // by hand, else what fills the disc
         // the fitted rate stops at 1 Mb/s: past that (a season with three languages on a DVD-5) the disc is too small, as the Blu-ray build says too
         if (EstimateGB(items, job.CapacityGB, job.Encode?.DvdKbps ?? 0) is var gb && gb > job.CapacityGB)
             log($"warning: about {gb:0.0} GB, more than the {job.CapacityGB:0.#} GB of the disc: keep fewer audio tracks or take a bigger disc");
@@ -517,7 +525,7 @@ public static class Dvd
                         "settings" => Enter(),
                         "settings_audio" => EnterChoice(a.Page, 2),
                         "settings_sub" => EnterChoice(a.Page, 3),
-                        _ => [Vm.LinkPgc(MenuNumber(a.Page!))],
+                        _ => [Vm.LinkPgc(Math.Max(1, MenuNumber(a.Page!)))], // a page this disc does not have: the first menu, never menu 0
                     };
             }
         }

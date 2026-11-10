@@ -94,6 +94,10 @@ jobs:
           ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-conversion
           ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-library
 
+      # each source template and the pack converted from it draw the same pages, pixel for pixel
+      - name: check-fidelity
+        run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-fidelity
+
       - name: check-bd
         run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-bd --no-dvd
 

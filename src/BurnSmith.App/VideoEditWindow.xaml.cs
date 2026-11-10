@@ -503,10 +503,10 @@ public partial class VideoEditWindow : Window
             SetMargins(top + dy, bottom - dy, left + dx, right - dx);
             return;
         }
-        if (dragSides.L) left = Math.Clamp(left + dx, 0, fw - right - min);
-        if (dragSides.R) right = Math.Clamp(right - dx, 0, fw - left - min);
-        if (dragSides.T) top = Math.Clamp(top + dy, 0, fh - bottom - min);
-        if (dragSides.B) bottom = Math.Clamp(bottom - dy, 0, fh - top - min);
+        if (dragSides.L) left = Math.Clamp(left + dx, 0, Math.Max(0, fw - right - min)); // Max: margins typed larger than the picture would make Clamp throw
+        if (dragSides.R) right = Math.Clamp(right - dx, 0, Math.Max(0, fw - left - min));
+        if (dragSides.T) top = Math.Clamp(top + dy, 0, Math.Max(0, fh - bottom - min));
+        if (dragSides.B) bottom = Math.Clamp(bottom - dy, 0, Math.Max(0, fh - top - min));
         var corner = (dragSides.L || dragSides.R) && (dragSides.T || dragSides.B);
         if (corner && RatioValue() is { } ratio)
         {
@@ -566,9 +566,9 @@ public partial class VideoEditWindow : Window
     {
         if (!ready) return;
         var (fw, fh) = Turned;
-        var (left, top) = (Int(LeftBox.Text, 0), Int(TopBox.Text, 0));
-        var w = Math.Clamp(Int(CropWBox.Text, fw), 16, fw - left);
-        var h = Math.Clamp(Int(CropHBox.Text, fh), 16, fh - top);
+        var (left, top) = (Math.Clamp(Int(LeftBox.Text, 0), 0, Math.Max(0, fw - 16)), Math.Clamp(Int(TopBox.Text, 0), 0, Math.Max(0, fh - 16))); // a margin typed larger than the picture
+        var w = Math.Clamp(Int(CropWBox.Text, fw), 16, Math.Max(16, fw - left));
+        var h = Math.Clamp(Int(CropHBox.Text, fh), 16, Math.Max(16, fh - top));
         SetMargins(top, fh - top - h, left, fw - left - w);
     }
 

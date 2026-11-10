@@ -339,14 +339,17 @@ public static partial class MenuRenderer
         public Stream LoadFile(string hRef, string svgFilename) => throw new InvalidDataException($"lien externe refusé : {hRef}");
     }
 
-    static ImageSource Bitmap(string path) => Images.GetOrAdd(path, p =>
+    // the file's date is part of the key: a build rewrites its thumbnails under the same names, and the app would draw the previous disc's
+    static ImageSource Bitmap(string path) => Images.GetOrAdd($"{path}|{File.GetLastWriteTimeUtc(path).Ticks}", _ =>
     {
+        var p = path;
         try
         {
             CheckSize(p);
             var img = new BitmapImage();
             img.BeginInit();
             img.CacheOption = BitmapCacheOption.OnLoad;
+            img.CreateOptions = BitmapCreateOptions.IgnoreImageCache; // WPF keeps its own cache by file name, which would give the old picture back
             img.UriSource = new Uri(p);
             img.EndInit();
             img.Freeze();

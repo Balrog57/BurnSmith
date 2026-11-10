@@ -80,10 +80,12 @@ public sealed record VideoEffects(
         {
             // the subtitles filter reads cue times off the frame's own time, which -ss reset to 0: shift it to the source's time for the filter, then back
             var shift = N(start - BurnDelay);
+            // a French .srt saved as ANSI: without this the filter drops every line that has an accent
+            var charenc = File.Exists(BurnSubtitle) && !BluRay.IsUnicode(File.ReadAllBytes(BurnSubtitle)) ? ":charenc=CP1252" : "";
             var alpha = ((int)Math.Round(255 * (1 - Math.Clamp(BurnOpacity, 0, 100) / 100.0))).ToString("X2");
             var style = $"Fontname={BurnFont},Fontsize={BurnSize},PrimaryColour=&H{alpha}{Bgr(BurnColor)},Bold={(BurnBold ? 1 : 0)},Italic={(BurnItalic ? 1 : 0)}," +
                         $"Alignment=2,MarginV={10 + Math.Clamp(BurnPosition, 0, 100) * 125 / 100}"; // 288 lines tall: 135 is the middle
-            f.Add($"setpts=PTS+{shift}/TB,subtitles=filename={Quote(BurnSubtitle)}:force_style='{style}',setpts=PTS-{shift}/TB");
+            f.Add($"setpts=PTS+{shift}/TB,subtitles=filename={Quote(BurnSubtitle)}{charenc}:force_style='{style}',setpts=PTS-{shift}/TB");
         }
         var chain = f.Count > 0 ? string.Join(",", f) : "null";
         if (Watermark == null) return chain == "null" ? rest : $"{chain},{rest}";

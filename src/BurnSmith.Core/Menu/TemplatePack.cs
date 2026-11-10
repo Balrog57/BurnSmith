@@ -93,6 +93,8 @@ public sealed class TemplatePack
             if (!File.Exists(file)) return null;
             var pack = JsonSerializer.Deserialize<TemplatePack>(File.ReadAllText(file), Strict);
             if (pack == null || pack.Schema != SchemaId) return null;
+            // "elements": [null] passes the nullable check (it covers properties, not list items) and would stop the scan of every template
+            if (pack.Assets.Contains(null!) || pack.Design.Elements.Contains(null!)) return null;
             pack.Dir = dir;
             var d = pack.Design;
             (d.Poster, d.BackgroundImage, d.LoopFile, d.Music) = (Library(d.Poster), Library(d.BackgroundImage), null, null);
@@ -143,6 +145,9 @@ public sealed class TemplatePack
         Kids = n.Kids.Select(FromNode).ToList(),
     };
 
+    /// <summary>A picture the pack names, when it exists inside the pack's folder (a pack is downloaded data: never a path to follow elsewhere).</summary>
+    public string? AssetFile(string? relative) => Inside(Dir, relative) is { } file && File.Exists(file) ? file : null;
+
     /// <summary>The pack's thumbnail, when it carries one.</summary>
     public string? ThumbnailFile(string dir) =>
         Assets.FirstOrDefault(a => a.Role == "thumbnail") is { } t && Inside(dir, t.Path) is { } file && File.Exists(file) ? file : null;
@@ -187,7 +192,8 @@ public sealed class TemplatePack
                 done++;
                 log?.Invoke($"convertis {key} -> {Path.GetRelativePath(outputRoot, target)} ({pack.Backgrounds} fonds, {pack.Buttons} boutons)");
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or ArgumentException)
+            // InvalidOperationException: a damaged picture, as MenuRenderer.Sta reports it; JsonException: a tree nested too deep to save
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException or JsonException)
             {
                 failed++;
                 messages.Add($"{key}: {e.Message}");
@@ -270,14 +276,15 @@ public sealed class TemplatePack
                 focusTarget = Target(f, "button", mapping.Values.Append(target));
                 mapping[f] = focusTarget;
                 CopyImage(Path.Combine(sourceDir, f.Replace('/', Path.DirectorySeparatorChar)), Path.Combine(targetDir, focusTarget.Replace('/', Path.DirectorySeparatorChar)));
-                // the shape a DVD highlight is cut to: the template keeps it beside the "sub" picture, and the "sub" → "mask" name is how it is found again
-                var mask = f.Replace(".sub.", ".mask.");
-                if (mask != f && focusTarget.Contains(".sub.", StringComparison.Ordinal) && File.Exists(Path.Combine(sourceDir, mask.Replace('/', Path.DirectorySeparatorChar))))
-                {
-                    var maskTarget = focusTarget.Replace(".sub.", ".mask.");
-                    mapping[mask] = maskTarget;
-                    CopyImage(Path.Combine(sourceDir, mask.Replace('/', Path.DirectorySeparatorChar)), Path.Combine(targetDir, maskTarget.Replace('/', Path.DirectorySeparatorChar)));
-                }
+            }
+            // the shape a thumbnail or a DVD highlight is cut to: the template keeps it beside the "normal" picture and no value of the tree names it,
+            // the "normal" / "sub" → "mask" name is how it is found again (a frame without a "sub" picture has one too)
+            var mask = relative.Replace(".normal.", ".mask.", StringComparison.OrdinalIgnoreCase);
+            var maskTarget = target.Replace(".normal.", ".mask.", StringComparison.OrdinalIgnoreCase);
+            if (mask != relative && maskTarget != target && !mapping.ContainsKey(mask) && File.Exists(Path.Combine(sourceDir, mask.Replace('/', Path.DirectorySeparatorChar))))
+            {
+                mapping[mask] = maskTarget;
+                CopyImage(Path.Combine(sourceDir, mask.Replace('/', Path.DirectorySeparatorChar)), Path.Combine(targetDir, maskTarget.Replace('/', Path.DirectorySeparatorChar)));
             }
             pack.Assets.Add(new PackAsset
             {
@@ -475,7 +482,7 @@ public sealed class TemplatePack
         var issues = new List<string>();
         if (Tree != null && !HasLayout) issues.Add("arbre illisible");
         foreach (var asset in Assets)
-            if (!File.Exists(Path.Combine(Dir, asset.Path))) issues.Add($"image absente : {asset.Path}");
+            if (AssetFile(asset.Path) == null) issues.Add($"image absente : {asset.Path}");
         if (Tree != null)
         {
             if (Assets.All(a => a.Role != "background")) issues.Add("aucun fond");

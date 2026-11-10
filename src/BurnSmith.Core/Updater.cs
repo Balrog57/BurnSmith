@@ -31,7 +31,7 @@ public static class Updater
     /// <summary>Only an installed copy updates itself: a development build, or an exe run from anywhere else, must not install anything in Program Files.</summary>
     public static bool IsInstalled() =>
         Environment.ProcessPath is { } p && Path.GetDirectoryName(p) is { } dir
-        && dir.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), StringComparison.OrdinalIgnoreCase);
+        && (dir + Path.DirectorySeparatorChar).StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase); // not "Program Files (x86)"
 
     /// <summary>The newest release when it is newer than <paramref name="current"/> and carries an installer, else null.</summary>
     public static async Task<Release?> LatestAsync(Version current, CancellationToken ct = default)

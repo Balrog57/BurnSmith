@@ -108,13 +108,15 @@ public static class BluRay
         var playlist = Path.GetExtension(file).Equals(".m2ts", StringComparison.OrdinalIgnoreCase) ? PlaylistTracks(file) : [];
         string Lang(JsonElement s) => Tag(s, "language") is { Length: > 0 } l ? l
             : s.TryGetProperty("id", out var pid) && Pid(pid.GetString()) is var n && playlist.TryGetValue(n, out var t) ? t.Lang : "";
+        // ffprobe leaves codec_name out for a track it cannot name: the file is still read, that track is then one the disc cannot take
+        string Codec(JsonElement s) => s.TryGetProperty("codec_name", out var name) ? name.GetString() ?? "" : "";
         // cover art is a video stream too
         var v = Of("video").FirstOrDefault(s => !Flag(s, "attached_pic"));
         if (v.ValueKind == JsonValueKind.Undefined) throw new InvalidDataException("no video stream in " + file);
-        var audio = Of("audio").Select((s, i) => new AudioTrack(i, s.GetProperty("codec_name").GetString()!,
+        var audio = Of("audio").Select((s, i) => new AudioTrack(i, Codec(s),
             s.TryGetProperty("channels", out var c) ? c.GetInt32() : 0, Lang(s), Tag(s, "title"),
             s.TryGetProperty("sample_rate", out var rate) && int.TryParse(rate.GetString(), out var hz) ? hz : 0, Kbps(s))).ToList();
-        var subs = Of("subtitle").Select((s, i) => new SubtitleTrack(i, s.GetProperty("codec_name").GetString() ?? "", Lang(s), Tag(s, "title"), Flag(s, "forced"))).ToList();
+        var subs = Of("subtitle").Select((s, i) => new SubtitleTrack(i, Codec(s), Lang(s), Tag(s, "title"), Flag(s, "forced"))).ToList();
         if (!doc.RootElement.GetProperty("format").TryGetProperty("duration", out var duration)) // a picture has a video stream but no length
             throw new InvalidDataException("no duration: not a video file");
         var r = v.GetProperty("r_frame_rate").GetString()!.Split('/');
@@ -290,6 +292,7 @@ public static class BluRay
         if (job.Titles.Count(t => t.Intro) > 1) throw new ArgumentException("une seule vidéo de début est possible");
         job = job with { Titles = [.. job.Titles.Where(t => !t.Intro)] }; // the intro is no title: it is muxed apart and starts the disc
         if (job.Titles.Count == 0) throw new ArgumentException("no video to put on the disc");
+        if (MoviePlaylist + job.Titles.Count > IntroPlaylist) throw new ArgumentException($"{job.Titles.Count} vidéos : un disque en porte {IntroPlaylist - MoviePlaylist} au plus (les numéros suivants sont ceux de la vidéo de début et du menu)");
         if (job.Titles.Count > 1 && job.Menu == null) throw new InvalidOperationException("several videos need a menu to choose from");
         job = job with { Titles = DiscTitle.MainFirst(job.Titles) }; // playlists 1..mainCount are the feature, the bonus ones follow
         var mainCount = job.Titles.Count(t => !t.Bonus);
@@ -502,7 +505,7 @@ public static class BluRay
     {
         try { Tools.Run(Tools.Find("ffmpeg.exe"), ["-v", "error", "-f", "lavfi", "-i", "color=s=640x360:d=0.1", "-c:v", "h264_nvenc", "-f", "null", "-"]); return true; }
         catch (Exception e) when (e is InvalidOperationException or FileNotFoundException) { return false; }
-    });
+    }, LazyThreadSafetyMode.PublicationOnly); // a test cancelled with its build is asked again, not kept as the answer of every later build
 
     /// <summary>x264's extra settings for a 1080 picture at 25 or 29.97: a Blu-ray has those only as fields, so the progressive pictures are flagged as such (PsF).</summary>
     static string Fields(string rate, int height) => height == 1080 && rate is "25" or "30000/1001" ? ":fake-interlaced=1:pic-struct=1" : "";
@@ -597,7 +600,9 @@ public static class BluRay
         // the files' size only says something when they are copied: a re-encode at constant quality has no size bound (an HEVC source often doubles as H.264)
         var copied = job.Titles.Select((t, i) => CopiesVideo(job, t, sources[i], 0)).All(c => c);
         // copied files already hold their sound, and a copy does not overshoot like an encoder: the disc's real size (the profiles' sizes are GiB: a BD-50 is 46.5), 1 % kept for the file system
-        if (asIs + MenuBytes(job) <= job.CapacityGB * (1 << 30) * 0.99 && copied)
+        // an .mkv or .mp4 grows by about 5 % once it is a transport stream (192-byte packets that carry 184): a 24.3 GB film would be said to fit a BD-25 and then be refused
+        var asStream = job.Titles.All(t => Path.GetExtension(t.Video).ToLowerInvariant() is ".m2ts" or ".mts" or ".ts" or ".ssif") ? asIs : asIs * 1.05;
+        if (asStream + MenuBytes(job) <= job.CapacityGB * (1 << 30) * 0.99 && copied)
         {
             log($"fit disc: the source ({asIs / 1e9:0.0} GB) fits as it is");
             return 0;
@@ -964,8 +969,9 @@ public static class BluRay
             args.AddRange(kbps > 0 ? ["-b:v", kbps.ToString(Inv) + "k"] : ["-crf", Math.Clamp(enc.Crf, 10, 28).ToString(Inv)]);
             var plus = s.Hdr == "HDR10+" ? Hdr10Plus(title, s, rate, Path.ChangeExtension(output, ".hdr10plus.json"), log) : null;
             var dv = s.Hdr == "Dolby Vision" ? DolbyVisionRpu(title, s, rate, Path.ChangeExtension(output, ".rpu.bin"), log) : null;
+            // dhdr10-info: a folder named L'été must not close the quote
             args.AddRange(["-dolbyvision", "0", "-x265-params", $"log-level=error:{colors}:uhd-bd=1:repeat-headers=1:aud=1:keyint=24:vbv-maxrate={maxrate}:vbv-bufsize={maxrate}"
-                           + (plus != null ? $":dhdr10-info='{plus.Replace('\\', '/')}'" : "") + (dv != null ? ":" + FixedGop : "")]);
+                           + (plus != null ? $":dhdr10-info='{plus.Replace('\\', '/').Replace("'", @"'\''")}'" : "") + (dv != null ? ":" + FixedGop : "")]);
         }
         else if (!videoOk)
         {
@@ -1151,7 +1157,7 @@ public static class BluRay
         File.WriteAllText(output, ExternalSubtitle.Cut(File.ReadAllText(output), title.Start, length)); // not ffmpeg's -ss/-t: they keep a cue that ended before the start
     }
 
-    static bool IsUnicode(byte[] bytes)
+    internal static bool IsUnicode(byte[] bytes)
     {
         if (bytes.Length >= 2 && (bytes[0], bytes[1]) is (0xFF, 0xFE) or (0xFE, 0xFF)) return true; // UTF-16 byte order mark
         try { new System.Text.UTF8Encoding(false, true).GetString(bytes); return true; }

@@ -57,9 +57,9 @@ public static class IndexedPng
         {
             int a = bgra[i * 4 + 3];
             if (a < 128) continue;
-            r += bgra[i * 4] * 255L / a;
+            r += bgra[i * 4 + 2] * 255L / a;
             g += bgra[i * 4 + 1] * 255L / a;
-            b += bgra[i * 4 + 2] * 255L / a;
+            b += bgra[i * 4] * 255L / a; // byte 0 is blue
             n++;
         }
         if (n == 0) return new Rgba(255, 255, 255, 255);

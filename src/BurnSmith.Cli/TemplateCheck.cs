@@ -47,6 +47,59 @@ static class TemplateCheck
         return failed == 0 ? 0 : 1;
     }
 
+    /// <summary>
+    /// burnsmith check-fidelity [--only NAME]: every source template is converted to a pack in a temporary folder, then drawn from its own files
+    /// and from that pack: same pages, same buttons and moves, same pixels for every page and every selected button.
+    /// </summary>
+    public static int Fidelity(string? picture, string? only)
+    {
+        var work = Path.Combine(Path.GetTempPath(), "burnsmith-fidelity-" + Guid.NewGuid().ToString("N"));
+        var (count, failed) = (0, 0);
+        try
+        {
+            foreach (var source in TemplateCatalog.Scan(includePacks: false).Usable.Select(f => f.Design)
+                         .Where(d => d.TemplateDir != null && (only == null || d.Name.Contains(only, StringComparison.OrdinalIgnoreCase))))
+            {
+                var issues = new List<string>();
+                try
+                {
+                    var dir = Path.Combine(work, (++count).ToString());
+                    Directory.CreateDirectory(dir);
+                    TemplatePack.ConvertOne(source.Name, source.Category, source.TemplateDir!, source, dir).Save(dir);
+                    var pack = TemplatePack.TryRead(dir) ?? throw new InvalidDataException("paquet illisible après conversion");
+                    if (!pack.HasLayout) throw new InvalidDataException("paquet sans mise en page");
+                    issues.AddRange(pack.Problems());
+                    var converted = pack.Design.Clone(); // as TemplateCatalog.Scan makes it
+                    (converted.Kind, converted.TemplateDir) = (pack.KindValue, dir);
+                    foreach (var (shape, content, _) in Basic(picture).Take(2))
+                    {
+                        var (a, b) = (MenuBuilder.Build(source, content), MenuBuilder.Build(converted, content));
+                        if (!a.Select(Shape).SequenceEqual(b.Select(Shape)))
+                        {
+                            var i = Enumerable.Range(0, Math.Min(a.Count, b.Count)).FirstOrDefault(i => Shape(a[i]) != Shape(b[i]), Math.Min(a.Count, b.Count));
+                            issues.Add($"{shape}: pages différentes ({a.Count} / {b.Count}), première : {(i < a.Count ? a[i].Id : b[i].Id)}");
+                            continue;
+                        }
+                        var differ = MenuRenderer.Sta(() => a.Zip(b).SelectMany(p => new[] { (p.First.Id, Same: MenuRenderer.Background(source, p.First).AsSpan().SequenceEqual(MenuRenderer.Background(converted, p.Second))) }
+                            .Concat(p.First.Buttons.Zip(p.Second.Buttons).Select(q => (Id: $"{p.First.Id}/{q.First.Id} sélectionné", Same: MenuRenderer.Focus(source, q.First).AsSpan().SequenceEqual(MenuRenderer.Focus(converted, q.Second))))))
+                            .Where(r => !r.Same).Select(r => r.Id).ToList());
+                        if (differ.Count > 0) issues.Add($"{shape}: {differ.Count} image(s) différente(s), ex. {string.Join(", ", differ.Take(3))}");
+                    }
+                }
+                catch (Exception e) { issues.Add($"exception {e.GetType().Name}: {e.Message}"); }
+                if (issues.Count > 0) failed++;
+                Console.WriteLine($"{(issues.Count == 0 ? "OK  " : "FAIL")} {source.Category} | {source.Name}{(issues.Count == 0 ? "" : " -> " + string.Join(" ; ", issues))}");
+            }
+        }
+        finally { try { Directory.Delete(work, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+        Console.WriteLine($"{count - failed} fidèles, {failed} différents");
+        return failed == 0 && count > 0 ? 0 : 1;
+    }
+
+    /// <summary>What a page is apart from its picture files: its drawing steps by kind, its buttons, where they go and which have artwork of their own.</summary>
+    static string Shape(MenuPage p) => p.Id + " " + string.Join(",", p.Ops.Select(o => o.GetType().Name)) + " " + string.Join(";", p.Buttons.Select(b =>
+        $"{b.Id} {b.Rect} {b.Action} {b.Left} {b.Right} {b.Up} {b.Down} {b.FocusSlot} {b.FocusImage != null}{b.DvdHighlightImage != null}{b.DvdHighlightMask != null}{b.DvdSelectImage != null}"));
+
     static MenuDesign Credited(MenuDesign d)
     {
         var c = d.Clone();

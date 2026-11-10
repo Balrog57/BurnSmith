@@ -467,7 +467,7 @@ public partial class MenuEditorWindow : Window
 
     void DrawZone(MenuZone z)
     {
-        var accent = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(working.Accent));
+        var accent = AccentBrush();
         var empty = z.Key.StartsWith("slot:") && z.Key != "slot:info" && ZoneValue(z.Key).Length == 0;
         if (empty) // on the editor's screen only: an empty zone draws nothing on the disc
         {
@@ -687,6 +687,13 @@ public partial class MenuEditorWindow : Window
         _ => $"Texte · {e.Page} · {(e.Text.Length > 24 ? e.Text[..24] + "…" : e.Text)}",
     };
 
+    /// <summary>The accent as it is being typed: "#FFC83" is not a colour yet, and must not raise an error box at every move of the mouse.</summary>
+    System.Windows.Media.SolidColorBrush AccentBrush()
+    {
+        try { return new((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(working.Accent)); }
+        catch (FormatException) { return System.Windows.Media.Brushes.White; }
+    }
+
     void RefreshElemList()
     {
         elemSync = true;
@@ -753,13 +760,7 @@ public partial class MenuEditorWindow : Window
         e.Bold = ElemBold.IsChecked == true;
         e.Italic = ElemItalic.IsChecked == true;
         e.Behind = ElemBehind.IsChecked == true;
-        var at = working.Elements.IndexOf(e);
-        if (at >= 0)
-        {
-            elemSync = true;
-            ElemList.Items[at] = Describe(e);
-            elemSync = false;
-        }
+        RefreshElemList(); // not ElemList.Items[at] = …: a list filled through ItemsSource refuses it, with an error box at every keystroke
         Dirty();
     }
 
@@ -989,7 +990,7 @@ public partial class MenuEditorWindow : Window
     void DrawElements()
     {
         if (current == null) return;
-        var accent = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(working.Accent));
+        var accent = AccentBrush();
         var clear = System.Windows.Media.Brushes.Transparent;
         var here = working.Elements.Where(x => x.AppliesTo(current.Id)).ToList();
         foreach (var el in here.Where(x => x != sel).Concat(here.Where(x => x == sel))) // the selected one last, so its corners are the ones that get the click

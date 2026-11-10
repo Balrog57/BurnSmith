@@ -77,7 +77,8 @@ public static class TemplateCatalog
         if (pack.Kind is TemplateKind.Library or TemplateKind.Theme) name = pack.Name;
         var design = new MenuDesign { Name = name, Category = pack.Category, Kind = pack.Kind, TemplateDir = dir };
         if (pack.Accent != null) design.Accent = pack.Accent;
-        if (pack.Kind == TemplateKind.Library) { design.TextColor = pack.UiColor ?? design.TextColor; design.Font = pack.UiFont ?? design.Font; }
+        // every kind, as TemplatePack.ConvertOne does: a template drawn from its folder and from its pack must be the same menu
+        (design.TextColor, design.Font) = (pack.UiColor ?? design.TextColor, pack.UiFont ?? design.Font);
         return design;
     }
 

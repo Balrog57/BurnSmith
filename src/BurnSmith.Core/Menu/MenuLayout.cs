@@ -134,7 +134,13 @@ public static class MenuBuilder
     public static List<MenuPage> Build(MenuDesign d, MenuContent c)
     {
         var pages = BuildCore(d, c);
-        return d.Elements.Count == 0 ? pages : pages.Select(p => WithElements(d, p, c)).ToList();
+        if (d.Elements.Count == 0) return pages;
+        pages = pages.Select(p => WithElements(d, p, c)).ToList();
+        // a hand-placed button to a page this disc does not have (Scènes on a one-page menu, Bonus without extras, a mistyped name) leads to the
+        // root page: left as it is, the button does nothing, or the name breaks the menu file the player reads
+        var ids = pages.Select(p => p.Id).ToHashSet();
+        return pages.Select(p => p.Buttons.All(b => b.Action.Kind != "page" || ids.Contains(b.Action.Page ?? "")) ? p
+            : p with { Buttons = [.. p.Buttons.Select(b => b.Action.Kind == "page" && !ids.Contains(b.Action.Page ?? "") ? b with { Action = b.Action with { Page = "root" } } : b)] }).ToList();
     }
 
     /// <summary>

@@ -9,7 +9,14 @@ public static class Iso
     public static void Build(string discFolder, string isoFile, string label, bool dvd, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default)
     {
         // a 3D film needs its .ssif to share the sectors of its two clips, which IMAPI cannot write
-        if (!dvd && Udf.Interleaved(discFolder).Count > 0) Udf.Write(discFolder, Path.GetFullPath(isoFile), label, log, progress, cancel);
+        if (!dvd && Udf.Interleaved(discFolder).Count > 0)
+        {
+            // under another name until it is whole, as Imapi.BuildImage does: a cancelled image already has its full size and its descriptors
+            var part = Path.GetFullPath(isoFile) + ".part";
+            try { Udf.Write(discFolder, part, label, log, progress, cancel); }
+            catch { try { File.Delete(part); } catch (IOException) { } catch (UnauthorizedAccessException) { } throw; }
+            File.Move(part, Path.GetFullPath(isoFile), true);
+        }
         else Imapi.BuildImage(discFolder, Path.GetFullPath(isoFile), label, dvd, log, progress, cancel);
     }
 

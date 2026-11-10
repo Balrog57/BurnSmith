@@ -231,7 +231,7 @@ public sealed class InstalledTemplate
         string V(XNode? n, string name, string fallback = "") => n?.Child(name)?.Text is { Length: > 0 } t ? t : fallback;
         int I(XNode? n, string name) => int.TryParse(V(n, name), out var v) ? v : 0;
         var background = V(s, "bg");
-        var (bw, bh) = PngSize(System.IO.Path.Combine(dir, background)) ?? (MenuBuilder.W, MenuBuilder.H);
+        var (bw, bh) = (TemplatePack.Inside(dir, background) is { } inside ? PngSize(inside) : null) ?? (MenuBuilder.W, MenuBuilder.H);
         double sx = MenuBuilder.W / (double)bw, sy = MenuBuilder.H / (double)bh;
         string Rect(XNode? n, string p) => $"{(int)(I(n, p + "_left") * sx)},{(int)(I(n, p + "_top") * sy)},{(int)(I(n, p + "_width") * sx)},{(int)(I(n, p + "_height") * sy)}";
         string Scaled(string size) => ((int)(double.Parse(size, System.Globalization.CultureInfo.InvariantCulture) * sy)).ToString();
@@ -446,12 +446,13 @@ public sealed class InstalledTemplate
     {
         var font = n.Attr("font", common.Child("font")?.Text ?? "Segoe UI");
         var hasFiles = Directory.EnumerateFiles(dir, "*.*").Any(f => f.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".otf", StringComparison.OrdinalIgnoreCase));
-        var fontSize = double.TryParse(n.Attr("font_size", common.Child("font_size")?.Text ?? "32"), out var size) ? size : 32;
+        var inv = System.Globalization.CultureInfo.InvariantCulture; // "28.5" is the same size on a French PC
+        var fontSize = double.TryParse(n.Attr("font_size", common.Child("font_size")?.Text ?? "32"), System.Globalization.NumberStyles.Float, inv, out var size) ? size : 32;
         if (n.Attr("fit") == "1" && value.Length > 0) fontSize = Math.Min(fontSize, n.Rect().W / (value.Length * 0.6)); // a text that overflows its box shrinks
         return new Text(value, n.Rect(), fontSize,
             font, hasFiles ? dir : null, n.Attr("color", common.Child("font_color")?.Text ?? "#FFFFFF"),
             n.Attr("bold", common.Child("font_bold")?.Text ?? "0") == "1", n.Attr("italic", common.Child("font_italic")?.Text ?? "0") == "1", align,
-            n.Attrs.ContainsKey("stroke_color") ? n.Attr("stroke_color") : null, double.TryParse(n.Attr("stroke_width"), out var sw) ? sw : 0);
+            n.Attrs.ContainsKey("stroke_color") ? n.Attr("stroke_color") : null, double.TryParse(n.Attr("stroke_width"), System.Globalization.NumberStyles.Float, inv, out var sw) ? sw : 0);
     }
 
     // ---- shared page parts --------------------------------------------------
@@ -493,7 +494,9 @@ public sealed class InstalledTemplate
             ops.Add(new Image(bg, node.Attr("fit") is { Length: > 0 } fit ? Fit(bg, box, fit) : box, Backdrop: true));
         }
         var cover = page.Child("bg")?.Child("covering_color")?.Text; // #AARRGGBB shade between the artwork and the thumbnails
-        if (cover is { Length: 9 }) ops.Add(new Fill(new Box(0, 0, MenuBuilder.W, MenuBuilder.H), "#" + cover[^6..], Convert.ToInt32(cover.TrimStart('#')[..2], 16) / 255.0, 0));
+        // a value that is not a colour draws no shade, rather than failing every page of the template
+        if (cover is ['#', ..] and { Length: 9 } && uint.TryParse(cover.AsSpan(1), System.Globalization.NumberStyles.HexNumber, null, out var argb))
+            ops.Add(new Fill(new Box(0, 0, MenuBuilder.W, MenuBuilder.H), "#" + cover[^6..], (argb >> 24) / 255.0, 0));
     }
 
     /// <summary>The picture inside <paramref name="box"/> with its own proportions (SVG "meet"), aligned as the template says (xminymax, xmidymid...).</summary>

@@ -108,7 +108,7 @@ public partial class App : Application
         var current = typeof(App).Assembly.GetName().Version ?? new Version(0, 0);
         BurnSmith.Core.Updater.Release? release;
         try { release = await BurnSmith.Core.Updater.LatestAsync(current); }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { return; }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException) { return; } // the last two: an answer that is JSON but not a release (a proxy's page)
         if (release == null || MessageBox.Show(owner,
                 $"BurnSmith {release.Version.ToString(3)} est disponible (vous avez la {current.ToString(3)}).\n\nLa télécharger et l'installer maintenant ? BurnSmith se ferme pendant l'installation puis redémarre.",
                 "Mise à jour", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes) return;
