@@ -257,17 +257,21 @@ public sealed class TemplatePack
         // the gallery thumbnail is an extra copy: the template may also use the same picture as its background
         if (thumbnail != null && File.Exists(thumbnail))
         {
-            CopyImage(thumbnail, Path.Combine(targetDir, "thumbnail.png"));
-            pack.Assets.Add(new PackAsset { Role = "thumbnail", Path = "thumbnail.png", Width = Size(thumbnail).W, Height = Size(thumbnail).H });
+            // the gallery shows it 170 wide: a small JPEG, where a theme gives its whole background for it (4K for some)
+            var small = Opaque(thumbnail) ? "thumbnail.jpg" : "thumbnail.png";
+            CopyImage(thumbnail, Path.Combine(targetDir, small), ThumbnailWidth);
+            var (tw, th) = Size(Path.Combine(targetDir, small));
+            pack.Assets.Add(new PackAsset { Role = "thumbnail", Path = small, Width = tw, Height = th });
         }
 
         foreach (var (file, (role, page)) in found.OrderBy(f => f.Key, StringComparer.OrdinalIgnoreCase))
         {
             var relative = Relative(sourceDir, file);
             if (mapping.ContainsKey(relative)) continue;
-            var target = Target(relative, role, mapping.Values);
+            var target = Target(relative, role, mapping.Values, file);
             mapping[relative] = target;
             CopyImage(file, Path.Combine(targetDir, target.Replace('/', Path.DirectorySeparatorChar)));
+            CopyVector(file, Path.Combine(targetDir, target.Replace('/', Path.DirectorySeparatorChar)));
 
             string? focusTarget = null;
             var focus = FocusRelative(relative, sourceDir);
@@ -276,6 +280,7 @@ public sealed class TemplatePack
                 focusTarget = Target(f, "button", mapping.Values.Append(target));
                 mapping[f] = focusTarget;
                 CopyImage(Path.Combine(sourceDir, f.Replace('/', Path.DirectorySeparatorChar)), Path.Combine(targetDir, focusTarget.Replace('/', Path.DirectorySeparatorChar)));
+                CopyVector(Path.Combine(sourceDir, f.Replace('/', Path.DirectorySeparatorChar)), Path.Combine(targetDir, focusTarget.Replace('/', Path.DirectorySeparatorChar)));
             }
             // the shape a thumbnail or a DVD highlight is cut to: the template keeps it beside the "normal" picture and no value of the tree names it,
             // the "normal" / "sub" → "mask" name is how it is found again (a frame without a "sub" picture has one too)
@@ -344,11 +349,14 @@ public sealed class TemplatePack
         return File.Exists(Path.Combine(sourceDir, twin.Replace('/', Path.DirectorySeparatorChar))) ? twin : null;
     }
 
-    static string Target(string relative, string role, IEnumerable<string> taken)
+    /// <param name="file">The picture itself, when its content decides the format: a background without transparency becomes a JPEG.</param>
+    static string Target(string relative, string role, IEnumerable<string> taken, string? file = null)
     {
         var ext = Path.GetExtension(relative);
         var stem = ext.Length > 0 ? relative[..^ext.Length] : relative;
-        var target = (role == "thumbnail" ? "thumbnail" : stem) + (IsJpeg(relative) ? ".jpg" : ".png");
+        // a PNG under half a megabyte stays as it is: already light, and usually flat drawn art, whose sharp edges a JPEG smears for no gain
+        var heavy = file != null && new FileInfo(file).Length >= 512 * 1024;
+        var target = (role == "thumbnail" ? "thumbnail" : stem) + (IsJpeg(relative) || (role == "background" && heavy && Opaque(file!)) ? ".jpg" : ".png");
         return UniqueTarget(target, taken);
     }
 
@@ -368,11 +376,48 @@ public sealed class TemplatePack
     /// <summary>A JPEG is kept as it is: it has no transparency to lose, and as PNG the theme pictures weigh three times more in the exe.</summary>
     static bool IsJpeg(string file) => Path.GetExtension(file).ToLowerInvariant() is ".jpg" or ".jpeg";
 
-    static void CopyImage(string source, string target)
+    /// <summary>
+    /// The JPEG a background becomes. A menu background ends as a frame of the disc's video, compressed far harder than this: at 92 the picture
+    /// cannot be told from its PNG (43 to 50 dB of PSNR on the templates), for a seventh of the size. WebP or AVIF would be smaller still, but Windows'
+    /// own decoder, which draws every menu, reads neither without an add-on.
+    /// </summary>
+    const int JpegQuality = 92;
+    const int ThumbnailWidth = 480;
+
+    /// <summary>No transparency to keep: a JPEG, or a picture whose every pixel is solid.</summary>
+    static bool Opaque(string file)
+    {
+        if (IsJpeg(file)) return true;
+        try
+        {
+            MenuRenderer.CheckSize(file);
+            return MenuRenderer.Sta(() =>
+            {
+                var frame = new System.Windows.Media.Imaging.FormatConvertedBitmap(System.Windows.Media.Imaging.BitmapDecoder.Create(new Uri(file),
+                    System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0],
+                    System.Windows.Media.PixelFormats.Bgra32, null, 0);
+                var px = new byte[frame.PixelWidth * frame.PixelHeight * 4];
+                frame.CopyPixels(px, frame.PixelWidth * 4, 0);
+                for (var i = 3; i < px.Length; i += 4) if (px[i] < 250) return false;
+                return true;
+            });
+        }
+        catch (Exception e) when (e is NotSupportedException or System.IO.FileFormatException or IOException or InvalidDataException) { return false; }
+    }
+
+    /// <summary>The drawing traced from a button picture (tools\vectorize-buttons.ps1) travels with it: the menu draws the .svg in its place.</summary>
+    static void CopyVector(string source, string target)
+    {
+        if (Path.ChangeExtension(source, ".svg") is var svg && File.Exists(svg) && !MenuRenderer.IsSvg(source)) File.Copy(svg, Path.ChangeExtension(target, ".svg"), true);
+    }
+
+    /// <param name="maxWidth">A wider picture is made that wide (the gallery's thumbnail).</param>
+    static void CopyImage(string source, string target, int maxWidth = int.MaxValue)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        if (Path.GetExtension(source).Equals(Path.GetExtension(target), StringComparison.OrdinalIgnoreCase)
-            || IsJpeg(source) && IsJpeg(target))
+        var fits = maxWidth == int.MaxValue || Size(source).W <= maxWidth;
+        if (fits && (Path.GetExtension(source).Equals(Path.GetExtension(target), StringComparison.OrdinalIgnoreCase)
+            || IsJpeg(source) && IsJpeg(target)))
         {
             File.Copy(source, target, true);
             return;
@@ -380,10 +425,14 @@ public sealed class TemplatePack
         MenuRenderer.CheckSize(source);
         MenuRenderer.Sta(() =>
         {
-            var frame = System.Windows.Media.Imaging.BitmapDecoder.Create(new Uri(source),
+            System.Windows.Media.Imaging.BitmapSource frame = System.Windows.Media.Imaging.BitmapDecoder.Create(new Uri(source),
                 System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat,
                 System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0];
-            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            if (!fits) frame = new System.Windows.Media.Imaging.TransformedBitmap(frame, new System.Windows.Media.ScaleTransform(maxWidth / (double)frame.PixelWidth, maxWidth / (double)frame.PixelWidth));
+            System.Windows.Media.Imaging.BitmapEncoder encoder = IsJpeg(target)
+                ? new System.Windows.Media.Imaging.JpegBitmapEncoder { QualityLevel = JpegQuality } : new System.Windows.Media.Imaging.PngBitmapEncoder();
+            // a JPEG has no transparency: the picture is flattened first (it was checked solid)
+            if (IsJpeg(target)) frame = new System.Windows.Media.Imaging.FormatConvertedBitmap(frame, System.Windows.Media.PixelFormats.Bgr24, null, 0);
             encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(frame));
             using var stream = File.Create(target);
             encoder.Save(stream);

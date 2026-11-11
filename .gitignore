@@ -12,6 +12,7 @@ bdj/build/
 tools/*
 !tools/vlctest.ps1
 !tools/dvdstyler-buttons.py
+!tools/vectorize-buttons.ps1
 
 # scratch
 vlc-help.txt

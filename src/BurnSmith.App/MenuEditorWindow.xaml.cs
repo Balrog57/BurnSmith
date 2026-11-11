@@ -394,6 +394,7 @@ public partial class MenuEditorWindow : Window
         }
         foreach (var z in current.Zones) DrawZone(z);
         DrawElements();
+        DrawMarks();
     }
 
     // ---------------------------------------------------------------- the zones the template offers (see MenuZone)
@@ -1028,25 +1029,82 @@ public partial class MenuEditorWindow : Window
 
     void OnCanvasMove(object s, System.Windows.Input.MouseEventArgs e)
     {
-        if (drag is not { } d || !StageCanvas.IsMouseCaptured) return;
-        var at = e.GetPosition(StageCanvas);
+        if (drag == null || !StageCanvas.IsMouseCaptured) return;
+        DragTo(e.GetPosition(StageCanvas), (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Alt) == 0);
+    }
+
+    // the alignment marks of the drag in progress (SmartGuides): lines across what the element is aligned with, drawn over the page
+    List<SmartGuides.Mark> marks = [];
+
+    /// <summary>The element being dragged follows the mouse to <paramref name="at"/>; with <paramref name="guided"/> (Alt not held) it meets the edges and middles within reach.</summary>
+    void DragTo(System.Windows.Point at, bool guided)
+    {
+        if (drag is not { } d) return;
         int dx = (int)(at.X - d.Start.X), dy = (int)(at.Y - d.Start.Y);
         var el = d.El;
+        // what it can be aligned with: the other elements of this page and the template's own buttons (an element's own button is the element)
+        var others = guided && current != null
+            ? working.Elements.Where(x => x != el && x.AppliesTo(current.Id)).Select(x => x.Box()).Concat(current.Buttons.Where(b => !b.Id.StartsWith('u')).Select(b => b.Rect)).ToList()
+            : null;
+        marks = [];
         if (d.Part == 0)
         {
             el.X = Math.Clamp(d.X + dx, 0, MenuBuilder.W - 8);
             el.Y = Math.Clamp(d.Y + dy, 0, MenuBuilder.H - 8);
+            if (others != null)
+            {
+                (var box, marks) = SmartGuides.Move(el.Box(), others);
+                (el.X, el.Y) = (box.X, box.Y);
+            }
         }
         else
         {
             int left = d.X, top = d.Y, right = d.X + d.W, bottom = d.Y + d.H;
             if (d.Part is 1 or 3) left = Math.Clamp(left + dx, 0, right - MinW); else right = Math.Clamp(right + dx, left + MinW, MenuBuilder.W);
             if (d.Part is 1 or 2) top = Math.Clamp(top + dy, 0, bottom - MinH); else bottom = Math.Clamp(bottom + dy, top + MinH, MenuBuilder.H);
-            (el.X, el.Y, el.W, el.H) = (left, top, right - left, bottom - top);
+            var box = new Box(left, top, right - left, bottom - top);
+            if (others != null) (box, marks) = SmartGuides.Resize(box, d.Part is 1 or 3, d.Part is 1 or 2, others, minW: MinW, minH: MinH);
+            (el.X, el.Y, el.W, el.H) = (box.X, box.Y, box.W, box.H);
         }
         dragMoved = true;
         ShowElem();
         DrawStage();
+    }
+
+    /// <summary>The marks of the drag in progress: a line across everything the element is aligned with, a dashed one in each of two equal gaps.</summary>
+    void DrawMarks()
+    {
+        var ink = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0x2B, 0xD6)); // magenta, as picture editors draw them: no menu is that colour
+        foreach (var m in marks)
+        {
+            var (from, to) = m.Spacing ? (m.From, m.To) : (m.From - 24, m.To + 24);
+            var line = new System.Windows.Shapes.Line { Stroke = ink, StrokeThickness = 4, IsHitTestVisible = false, X1 = m.Vertical ? m.At : from, X2 = m.Vertical ? m.At : to, Y1 = m.Vertical ? from : m.At, Y2 = m.Vertical ? to : m.At };
+            if (m.Spacing) line.StrokeDashArray = [3, 2];
+            StageCanvas.Children.Add(line);
+        }
+    }
+
+    /// <summary>
+    /// For the off-screen snapshot (<c>guides</c>): two buttons one under the other, and a third dragged to just beside the place that continues
+    /// the column. The status line says where it landed: on the column's edge and at the same gap (300, 620), not where the mouse left it.
+    /// </summary>
+    public async Task TryGuides()
+    {
+        MenuElement Button(string text, int x, int y) { var b = new MenuElement { Kind = "button", Page = "root", Text = text, X = x, Y = y, W = 420, H = 90 }; working.Elements.Add(b); return b; }
+        Button("Un", 300, 300);
+        Button("Deux", 300, 460);
+        var third = Button("Trois", 180, 700);
+        sel = third;
+        drag = (third, 0, new System.Windows.Point(0, 0), third.X, third.Y, third.W, third.H);
+        DragTo(new System.Windows.Point(124, -84), true); // to (304, 616): 4 px off each way
+        drag = null;
+        var shown = marks;
+        Dirty();
+        await Task.Delay(2500); // the page is drawn again with the three buttons: the marks of the drag are put back over it for the picture
+        marks = shown;
+        DrawStage();
+        Status.Text = $"guides {(third.X == 300 && third.Y == 620 && marks.Count >= 3 ? "ok" : "FAIL")}: {third.X},{third.Y}, {marks.Count} repères";
+        await Task.Delay(300); // the page is laid out again before the picture is taken
     }
 
     /// <summary>The preview is redrawn when the mouse is let go (a click that did not move anything costs nothing).</summary>
@@ -1061,7 +1119,9 @@ public partial class MenuEditorWindow : Window
         var moved = dragMoved;
         drag = null;
         dragMoved = false;
+        marks = []; // the marks last as long as the drag
         if (moved) { RefreshElemList(); Dirty(); }
+        else DrawStage();
     }
 
     /// <summary>Keys on the page: with an element selected, Delete removes it, Escape lets it go and the arrows nudge it (10 px, Shift 1 px); otherwise the arrows and Enter walk the buttons like a remote.</summary>

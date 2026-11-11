@@ -80,8 +80,8 @@ static class TemplateCheck
                             issues.Add($"{shape}: pages différentes ({a.Count} / {b.Count}), première : {(i < a.Count ? a[i].Id : b[i].Id)}");
                             continue;
                         }
-                        var differ = MenuRenderer.Sta(() => a.Zip(b).SelectMany(p => new[] { (p.First.Id, Same: MenuRenderer.Background(source, p.First).AsSpan().SequenceEqual(MenuRenderer.Background(converted, p.Second))) }
-                            .Concat(p.First.Buttons.Zip(p.Second.Buttons).Select(q => (Id: $"{p.First.Id}/{q.First.Id} sélectionné", Same: MenuRenderer.Focus(source, q.First).AsSpan().SequenceEqual(MenuRenderer.Focus(converted, q.Second))))))
+                        var differ = MenuRenderer.Sta(() => a.Zip(b).SelectMany(p => new[] { (p.First.Id, Same: Alike(MenuRenderer.Background(source, p.First), MenuRenderer.Background(converted, p.Second))) }
+                            .Concat(p.First.Buttons.Zip(p.Second.Buttons).Select(q => (Id: $"{p.First.Id}/{q.First.Id} sélectionné", Same: Alike(MenuRenderer.Focus(source, q.First), MenuRenderer.Focus(converted, q.Second))))))
                             .Where(r => !r.Same).Select(r => r.Id).ToList());
                         if (differ.Count > 0) issues.Add($"{shape}: {differ.Count} image(s) différente(s), ex. {string.Join(", ", differ.Take(3))}");
                     }
@@ -162,13 +162,37 @@ static class TemplateCheck
                             };
     }
 
-    static IEnumerable<string> Files(Op op) => op switch
+    /// <summary>
+    /// The same picture: the same bytes, or, since a pack keeps a background without transparency as a JPEG, the same but for what that JPEG
+    /// loses — no more than one pixel in two thousand off by more than 40 levels. A button that moved or a text that changed is far above that.
+    /// </summary>
+    static bool Alike(byte[] one, byte[] other)
+    {
+        if (one.AsSpan().SequenceEqual(other)) return true;
+        static (int W, int H, byte[] Px) Pixels(byte[] file)
+        {
+            var frame = new System.Windows.Media.Imaging.FormatConvertedBitmap(System.Windows.Media.Imaging.BitmapDecoder.Create(new MemoryStream(file),
+                System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0],
+                System.Windows.Media.PixelFormats.Bgra32, null, 0);
+            var px = new byte[frame.PixelWidth * frame.PixelHeight * 4];
+            frame.CopyPixels(px, frame.PixelWidth * 4, 0);
+            return (frame.PixelWidth, frame.PixelHeight, px);
+        }
+        var (a, b) = (Pixels(one), Pixels(other));
+        if (a.W != b.W || a.H != b.H) return false;
+        var off = 0;
+        for (var i = 0; i < a.Px.Length; i += 4)
+            if (Math.Abs(a.Px[i] - b.Px[i]) > 40 || Math.Abs(a.Px[i + 1] - b.Px[i + 1]) > 40 || Math.Abs(a.Px[i + 2] - b.Px[i + 2]) > 40 || Math.Abs(a.Px[i + 3] - b.Px[i + 3]) > 40) off++;
+        return off <= a.W * a.H / 2000;
+    }
+
+    static IEnumerable<string> Files(Op op) => (op switch
     {
         Image i => [i.Path],
         Picture p => [p.Path],
         Framed f => new[] { f.Picture, f.Frame, f.Mask }.Where(s => s != null).Select(s => s!),
-        _ => [],
-    };
+        _ => Enumerable.Empty<string>(),
+    }).Where(s => !MenuRenderer.IsSvgText(s)); // a button's drawing carried by the template itself is not a file
 
     static void Check(MenuDesign design, MenuContent c, string label, List<string> issues, bool render)
     {

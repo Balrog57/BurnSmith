@@ -73,6 +73,7 @@ public partial class App : Application
         await Task.Delay(2500); // lets async previews finish
         if (e.Args.Contains("zones") && window is MenuEditorWindow zoned) { zoned.TryZones(); await Task.Delay(2500); }
         if (e.Args.Contains("undo") && window is MenuEditorWindow undone) { await undone.TryUndo(); await Task.Delay(1000); }
+        if (e.Args.Contains("guides") && window is MenuEditorWindow guided) await guided.TryGuides();
         var bmp = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
         bmp.Render(window);
         var png = new PngBitmapEncoder();

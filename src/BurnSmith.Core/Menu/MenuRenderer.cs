@@ -59,7 +59,10 @@ public static partial class MenuRenderer
 
     static readonly System.Collections.Concurrent.ConcurrentDictionary<string, ImageSource> Images = new(); // frozen, so shared by every render thread
 
-    public static bool IsSvg(string path) => path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase);
+    public static bool IsSvg(string path) => path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) || IsSvgText(path);
+
+    /// <summary>A picture given as the SVG itself instead of a file: a template that keeps the drawing of each of its buttons in its own file (.dvdt).</summary>
+    public static bool IsSvgText(string picture) => picture.StartsWith("<svg", StringComparison.Ordinal);
 
     /// <summary>
     /// A picture file, ready to draw. An SVG is kept as vectors and laid out at the size it will be drawn at (<paramref name="size"/>), as DVDStyler
@@ -75,7 +78,7 @@ public static partial class MenuRenderer
     {
         try
         {
-            var doc = System.Xml.Linq.XDocument.Load(path);
+            var doc = IsSvgText(path) ? System.Xml.Linq.XDocument.Parse(path) : System.Xml.Linq.XDocument.Load(path);
             var root = doc.Root!;
             // an imported SVG draws itself only: a renderer that followed <image href="file://server/share/x.png"> would open it (Windows then sends the login hash), so links leave the document
             doc.DocumentType?.Remove();
@@ -99,7 +102,7 @@ public static partial class MenuRenderer
         }
         catch (Exception e) when (e is System.Xml.XmlException or IOException or NotSupportedException or InvalidOperationException or ArgumentException)
         {
-            throw new InvalidDataException($"Image illisible : {path}", e);
+            throw new InvalidDataException($"Image illisible : {(IsSvgText(path) ? "dessin d'un bouton du modèle" : path)}", e);
         }
     }
 
@@ -567,6 +570,13 @@ public static partial class MenuRenderer
         text.Trimming = TextTrimming.CharacterEllipsis;
         var x = t.Align == "left" ? t.Rect.X : t.Rect.X + (t.Rect.W - text.Width) / (t.Align == "right" ? 1 : 2);
         var at = new Point(x, t.Wrap ? t.Rect.Y : t.Rect.Y + (t.Rect.H - text.Height) / 2); // several lines start at the top of their zone
+        if (t.Shadow != null) // under everything; a blurred shadow is drawn sharp at half its strength, as for the pictures (Simplify)
+        {
+            var shade = Make(size);
+            (shade.MaxTextWidth, shade.MaxLineCount, shade.Trimming) = (t.Rect.W, lines, TextTrimming.CharacterEllipsis);
+            shade.SetForegroundBrush(new SolidColorBrush(Col(t.Shadow, 0.5)));
+            dc.DrawText(shade, new Point(at.X + t.ShadowOffset, at.Y + t.ShadowOffset));
+        }
         if (t.Stroke != null && t.StrokeWidth > 0) // outline first, so the fill stays crisp on top
             dc.DrawGeometry(null, new Pen(new SolidColorBrush(Col(t.Stroke)), t.StrokeWidth * 2) { LineJoin = PenLineJoin.Round }, text.BuildGeometry(at));
         dc.DrawText(text, at);

@@ -190,6 +190,7 @@ public sealed class InstalledTemplate
     internal static (int W, int H)? PngSize(string path)
     {
         if (!File.Exists(path)) return null;
+        if (MenuRenderer.IsSvg(path)) return MenuRenderer.Size(path); // a traced button says its size as its picture did
         Span<byte> head = stackalloc byte[24];
         using var f = File.OpenRead(path);
         return f.Read(head) < 24 || head[0] != 0x89 ? null
@@ -395,18 +396,30 @@ public sealed class InstalledTemplate
     static bool IsImage(string path)
     {
         if (!File.Exists(path)) return false;
+        if (path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)) return true; // a drawing: read when it is drawn
         Span<byte> head = stackalloc byte[4];
         using var f = File.OpenRead(path);
         return f.Read(head) == 4 && (head is [0x89, 0x50, 0x4E, 0x47] or [0xFF, 0xD8, _, _]);
     }
 
-    string? Asset(string? relative) => TemplatePack.Inside(dir, relative) is { } full && IsImage(full) ? full : null;
+    /// <summary>
+    /// A picture of the template. A button traced into vectors (tools\vectorize-buttons.ps1) has its .svg beside the picture, in the template's
+    /// folder as in its pack: the drawing is used in its place, sharp at any size.
+    /// </summary>
+    string? Asset(string? relative) => TemplatePack.Inside(dir, relative) is not { } full || !IsImage(full) ? null
+        : System.IO.Path.ChangeExtension(full, ".svg") is var vector && File.Exists(vector) ? vector : full;
 
     /// <summary>
     /// The highlighted twin of a button picture: <c>play/0.normal.png</c> → <c>play/0.sub.png</c>. Null when the template has none
     /// (the UHD ones) or it is unreadable: the button then gets BurnSmith's accent frame.
     /// </summary>
-    string? Selected(string? normal) => normal != null && IsImage(normal.Replace(".normal.", ".sub.")) ? normal.Replace(".normal.", ".sub.") : null;
+    string? Selected(string? normal)
+    {
+        if (normal == null) return null;
+        var twin = normal.Replace(".normal.", ".sub.");
+        if (!IsImage(twin)) twin = System.IO.Path.ChangeExtension(twin, ".png"); // a drawing whose highlighted twin was not traced keeps the picture
+        return IsImage(twin) ? twin : null;
+    }
 
     /// <summary>
     /// The DVD subpicture of a button: the template's highlighted artwork (<c>frame/0.dvd.sub.png</c> beside <c>frame/0.dvd.normal.png</c>) is
@@ -416,7 +429,7 @@ public sealed class InstalledTemplate
     MenuButton Dvd(MenuButton b)
     {
         if (b.FocusImage is not { } art || !art.Contains(".sub.", StringComparison.Ordinal)) return b;
-        var mask = art.Replace(".sub.", ".mask.");
+        var mask = System.IO.Path.ChangeExtension(art.Replace(".sub.", ".mask."), ".png"); // the shape stays a picture beside a traced button
         // the chosen state has its own picture in the template; Asset gives null when it is missing or not a picture
         return b with { DvdHighlightImage = art, DvdHighlightMask = IsImage(mask) && !IsBlank(mask) ? mask : null, DvdSelectImage = Asset(common.Child("selection")?.Text) };
     }
@@ -476,7 +489,8 @@ public sealed class InstalledTemplate
         return new Text(value, n.Rect(), fontSize,
             font, hasFiles ? dir : null, n.Attr("color", common.Child("font_color")?.Text ?? "#FFFFFF"),
             n.Attr("bold", common.Child("font_bold")?.Text ?? "0") == "1", n.Attr("italic", common.Child("font_italic")?.Text ?? "0") == "1", align,
-            n.Attrs.ContainsKey("stroke_color") ? n.Attr("stroke_color") : null, double.TryParse(n.Attr("stroke_width"), System.Globalization.NumberStyles.Float, inv, out var sw) ? sw : 0);
+            n.Attrs.ContainsKey("stroke_color") ? n.Attr("stroke_color") : null, double.TryParse(n.Attr("stroke_width"), System.Globalization.NumberStyles.Float, inv, out var sw) ? sw : 0,
+            Shadow: n.Attrs.ContainsKey("shadow") ? n.Attr("shadow") : null, ShadowOffset: double.TryParse(n.Attr("shadow_offset"), System.Globalization.NumberStyles.Float, inv, out var so) ? so : 0);
     }
 
     // ---- shared page parts --------------------------------------------------
@@ -552,16 +566,22 @@ public sealed class InstalledTemplate
     void Under(List<Op> ops, XNode video)
     {
         if (Asset(video.Attr("frame_under")) is { } file) ops.Add(new Image(file, video.Rect("under_rect")));
+        if (Drawing(video, "svg_under") is { } art) ops.Add(new Image(art, video.Rect("over_rect")));
     }
 
     /// <summary>The frame of a template that draws it after the picture, larger than the picture: its artwork overlaps the picture's edge.</summary>
     void Over(List<Op> ops, XNode video)
     {
         if (Asset(video.Attr("frame_over")) is { } file) ops.Add(new Image(file, video.Rect("over_rect")));
+        if (Drawing(video, "svg_over") is { } art) ops.Add(new Image(art, video.Rect("over_rect")));
     }
+
+    /// <summary>A drawing the template carries as SVG text (a .dvdt keeps each button's own): read as written, entities included, since it is XML.</summary>
+    static string? Drawing(XNode node, string name) => node.Attrs.TryGetValue(name, out var svg) && MenuRenderer.IsSvgText(svg) ? svg : null;
 
     Framed Frame(XNode video, string? picture)
     {
+        if (Drawing(video, "svg_mask") is { } shape) return new Framed(video.Rect(), picture, null, shape); // the frame is in the drawing put over it
         var frame = Asset(video.Attr("frame_image", common.Child("frame")?.Text ?? ""));
         var mask = frame == null ? null : Asset(System.IO.Path.GetRelativePath(dir, frame).Replace(".normal.", ".mask."));
         return new Framed(video.Rect(), picture, frame, mask == frame || IsBlank(mask) ? null : mask);
@@ -932,6 +952,14 @@ public sealed class InstalledTemplate
         void Nav(string id, string key, string image, string fallbackGlyph, MenuAction action)
         {
             if (s.Child(key) is not { } node) return;
+            // a template that carries the drawing of its own arrow, or writes a word there ("Back"): that drawing, and BurnSmith's word in its place and style
+            if (Drawing(node, "svg") is var art && (art != null || node.Child("text") != null))
+            {
+                if (art != null) ops.Add(new Image(art, node.Rect()));
+                if (node.Child("text") is { } word) ops.Add(Txt(word, id == "home" ? d.HomeLabel : id == "prev" ? "◄" : "►", word.Attr("align", "left")));
+                buttons.Add(new MenuButton(id, node.Rect(), action));
+                return;
+            }
             // some templates draw their arrows as vector art, and a template's picture can be missing or unreadable: BurnSmith draws a text button there
             var drawn = node.Attr("glyph");
             if (Button(image) is not { } file || drawn.Length > 0) { Glyph(id, node.Rect(), drawn.Length > 0 ? drawn : fallbackGlyph, action); return; }

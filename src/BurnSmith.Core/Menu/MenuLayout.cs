@@ -19,7 +19,7 @@ public sealed record Image(string Path, Box Rect, bool Backdrop = false, bool Co
 
 /// <summary>Template text: own font (optionally a .ttf next to the template), colour, outline.</summary>
 public sealed record Text(string Value, Box Rect, double Size, string Font, string? FontDir, string Color, bool Bold, bool Italic, string Align = "left",
-                          string? Stroke = null, double StrokeWidth = 0, bool Wrap = false) : Op;
+                          string? Stroke = null, double StrokeWidth = 0, bool Wrap = false, string? Shadow = null, double ShadowOffset = 0) : Op;
 
 /// <summary>A picture (null = dark placeholder) cut by the template's mask, with its frame drawn on top.</summary>
 public sealed record Framed(Box Rect, string? Picture, string? Frame, string? Mask) : Op;

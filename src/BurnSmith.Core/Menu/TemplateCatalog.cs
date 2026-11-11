@@ -135,7 +135,8 @@ public static class TemplateCatalog
             design.TemplateDir = pack.HasLayout ? pack.Dir : null;
             if (!seen.Add($"{design.Category}|{design.Name}")) continue;
             if (pack.Unsupported is { } why) skipped.Add(new Skipped(design.Name, why, pack.Dir));
-            else usable.Add(new Found(design, pack.ThumbnailFile(pack.Dir)));
+            // a pack without a picture of its own (one made of a BurnSmith design) shows the one drawn for the gallery, as the design itself does
+            else usable.Add(new Found(design, pack.ThumbnailFile(pack.Dir) ?? (File.Exists(ThumbFile(design)) ? ThumbFile(design) : null)));
         }
 
         usable.AddRange(Shipped().Where(f => seen.Add($"{f.Design.Category}|{f.Design.Name}")));

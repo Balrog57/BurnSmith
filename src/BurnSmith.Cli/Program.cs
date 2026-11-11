@@ -373,6 +373,15 @@ if (a.Count >= 1 && a[0] == "check-elements")
     }
 
     // DVDFab's DVD menus are words: written from the left of their zone, and the buttons BurnSmith adds are words beside them, not capsules
+    // the alignment marks of the editor (SmartGuides): a short pull onto an edge, a middle or an even gap, and the lines that say so
+    var (landed, guideMarks) = SmartGuides.Move(new Box(304, 616, 420, 90), [new Box(300, 300, 420, 90), new Box(300, 460, 420, 90)]);
+    Check("alignment marks: a third button let go 4 px off lands on the column's edge and at the gap of the two above, with a line on that edge and a mark in each gap",
+          landed == new Box(300, 620, 420, 90) && guideMarks.Any(g => g is { Vertical: true, At: 300, Spacing: false }) && guideMarks.Count(g => g.Spacing) == 2);
+    Check("alignment marks: with nothing within reach the element stays where it is and no line is drawn",
+          SmartGuides.Move(new Box(1000, 900, 100, 50), [new Box(300, 300, 420, 90)]) is var (free, noMarks) && free == new Box(1000, 900, 100, 50) && noMarks.Count == 0);
+    Check("alignment marks: a corner dragged near the page's middle meets it; the edges that do not move are left alone",
+          SmartGuides.Resize(new Box(100, 100, 857, 200), false, false, []) is var (grown, sized) && grown == new Box(100, 100, 860, 200) && sized.Any(g => g is { Vertical: true, At: 960 }));
+
     // each template against the program it comes from (2026-11-11): the three faults that were plain to see
     if (TemplateCatalog.Find("standard (16-9)") is { } leawo && TemplateCatalog.Find("Natural 18") is { } yuhan18 && TemplateCatalog.Find("blue 16-9") is { } styler)
     {
@@ -386,6 +395,14 @@ if (a.Count >= 1 && a[0] == "check-elements")
               MenuBuilder.Build(yuhan18.Clone(), disc).First(p => p.Id == "scenes1").Ops.OfType<Framed>().Count() == 4);
         Check("DVDStyler blue 16-9: the background covers the whole page, as the program stretches it",
               MenuBuilder.Build(styler.Clone(), disc)[0].Ops.OfType<Image>().First().Rect == new Box(0, 0, 1920, 1080));
+        if (TemplateCatalog.Find("Autumn 4-3") is { } framed && TemplateCatalog.Find("ocean 4-3") is { } oval)
+        {
+            var fp = MenuBuilder.Build(framed.Clone(), disc).First(p => p.Id == "scenes1");
+            Check("DVDStyler Autumn 4-3: each of the four thumbnails under the frame the template draws for it, home and arrow as its own shapes (no capsule), no name where there is no room for one",
+                  fp.Ops.OfType<Framed>().Count() == 4 && fp.Ops.OfType<Image>().Count(i => MenuRenderer.IsSvgText(i.Path)) == 6 && !fp.Ops.OfType<Fill>().Any() && !fp.Ops.OfType<Text>().Any());
+            Check("DVDStyler ocean 4-3: each thumbnail is cut to the ellipse of its button",
+                  MenuBuilder.Build(oval.Clone(), disc).First(p => p.Id == "scenes1").Ops.OfType<Framed>().ToList() is { Count: 4 } cut && cut.All(f => f.Mask != null && MenuRenderer.IsSvgText(f.Mask)));
+        }
     }
 
     // by kind: DVDFab's Blu-ray template of the same name (picture buttons) comes first in the catalogue when the PC has it
