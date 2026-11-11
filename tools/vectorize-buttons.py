@@ -23,7 +23,7 @@ def is_button(path):
     folder, name = os.path.basename(os.path.dirname(path)), os.path.basename(path)
     if not name.lower().endswith(".png") or ".mask." in name or any(p.startswith("LANG_") and p != "LANG_FRA" for p in path.split(os.sep)):  # the vendor's own languages are not pictures we can read; LANG_FRA is ours (tools/french-buttons.py)
         return False
-    return folder in ("play", "scenes", "setup", "home", "left", "right") or (
+    return folder in ("play", "scenes", "setup", "bonus", "home", "left", "right", "tv", "dot") or (  # tv, dot: the pictures of a row (Vamp)
         folder in ("Scene", "1920x1080") and os.path.splitext(name)[0] in ("back", "next", "previous"))
 
 

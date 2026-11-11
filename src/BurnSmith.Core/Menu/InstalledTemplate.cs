@@ -626,6 +626,19 @@ public sealed class InstalledTemplate
     static string? Drawing(XNode node, string name) => node.Attrs.TryGetValue(name, out var svg) && MenuRenderer.IsSvgText(svg) ? svg : null;
 
     /// <summary>
+    /// A row with its own picture beside its words ("icon", at "icon_rect"; "{n}" in the name is the row's number: a numbered disc before
+    /// each episode, a dot before each language): the picture, and a button that lights the picture's chosen twin there. Null without one.
+    /// </summary>
+    MenuButton? Iconed(List<Op> ops, XNode node, Box r, int number, string id, MenuAction action)
+    {
+        if (Asset(node.Attr("icon").Replace("{n}", number.ToString(System.Globalization.CultureInfo.InvariantCulture))) is not { } file) return null;
+        var slot = node.Rect("icon_rect");
+        ops.Add(new Image(file, slot));
+        int x0 = Math.Min(r.X, slot.X), y0 = Math.Min(r.Y, slot.Y);
+        return Dvd(new MenuButton(id, new Box(x0, y0, Math.Max(r.X + r.W, slot.X + slot.W) - x0, Math.Max(r.Y + r.H, slot.Y + slot.H) - y0), action) { FocusImage = Selected(file), FocusSlot = slot });
+    }
+
+    /// <summary>
     /// A button whose template draws its own state under the remote ("svg_focus": a circle beside the words, a line under them, the frame in
     /// another colour): that drawing, at the place the template gives it ("focus_rect") or over the button. Null when the template has none.
     /// </summary>
@@ -891,7 +904,8 @@ public sealed class InstalledTemplate
         // a template that draws a Bonus button (<c>BonusText</c>) puts it where it says; the others get BurnSmith's capsule
         if (c.HasBonus)
         {
-            if (n.Child("bonus")?.Attr("textbutton") == "1") Add("bonus", n.Child("bonus"), null, new MenuAction("page", "bonus1"), d.BonusLabel);
+            // its own picture ("bonusbuttontimage", like the three others) or its word
+            if (Button("bonusbuttontimage", d) != null || n.Child("bonus")?.Attr("textbutton") == "1") Add("bonus", n.Child("bonus"), Button("bonusbuttontimage", d), new MenuAction("page", "bonus1"), d.BonusLabel);
             else pills.Add(("bonus", d.BonusLabel, new MenuAction("page", "bonus1")));
         }
         if (c.HasSettings)
@@ -1028,7 +1042,7 @@ public sealed class InstalledTemplate
                 var line = lines[i].Rect();
                 if (lines[i].Attrs.ContainsKey("svg_focus") && lines[i].Attr("align", "left") == "left")
                     line = line with { W = Math.Min(line.W, (int)Math.Ceiling(MenuRenderer.TextWidth(Txt(lines[i], Shown(cell))))) };
-                buttons.Add(Lit(lines[i], line, cell.Id, cell.Action) ?? new MenuButton(cell.Id, line, cell.Action));
+                buttons.Add(Lit(lines[i], line, cell.Id, cell.Action) ?? Iconed(ops, lines[i], line, (number - 1) * perPage + i + 1, cell.Id, cell.Action) ?? new MenuButton(cell.Id, line, cell.Action));
             }
         }
         for (var i = 0; i < slots.Count && lines.Count == 0 && (number - 1) * perPage + i < cells.Count; i++)
@@ -1130,7 +1144,7 @@ public sealed class InstalledTemplate
                 ops.Add(Txt(rows[i], names[i]));
                 if (active == number)
                     ops.Add(new Fill(new Box(box.X + box.W - MenuBuilder.MarkerSize - RowMarkerGap, box.Y + (box.H - MenuBuilder.MarkerSize) / 2, MenuBuilder.MarkerSize, MenuBuilder.MarkerSize), d.Accent, 1, MenuBuilder.MarkerSize / 2));
-                buttons.Add(Dvd(new MenuButton(prefix + number, box, new MenuAction(kind, Mark: number)) { FocusImage = selection }));
+                buttons.Add(Iconed(ops, rows[i], box, i + 1, prefix + number, new MenuAction(kind, Mark: number)) ?? Dvd(new MenuButton(prefix + number, box, new MenuAction(kind, Mark: number)) { FocusImage = selection }));
             }
         }
         Rows(audioRows, audio, 1, "a", "audio", activeAudio);
