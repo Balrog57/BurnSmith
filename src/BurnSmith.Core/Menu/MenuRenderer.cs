@@ -68,8 +68,18 @@ public static partial class MenuRenderer
     /// A picture file, ready to draw. An SVG is kept as vectors and laid out at the size it will be drawn at (<paramref name="size"/>), as DVDStyler
     /// does: a button in percentages stretches to its box, one with a viewBox keeps its proportions, and both stay sharp at any size.
     /// </summary>
-    static ImageSource Load(string path, Rect? size = null) => !IsSvg(path) ? Bitmap(path)
-        : Images.GetOrAdd($"{path}|{size?.Width:0}x{size?.Height:0}", _ => Svg(path, size));
+    static ImageSource Load(string path, Rect? size = null) => IsSvg(path) ? Images.GetOrAdd($"{path}|{size?.Width:0}x{size?.Height:0}", _ => Svg(path, size))
+        : size is { } drawn && Traced(path, drawn.Width, drawn.Height) is { } vector ? Load(vector, size) : Bitmap(path);
+
+    /// <summary>
+    /// The drawing traced from a picture (name.svg beside name.png, tools\vectorize-buttons.py), when the picture is drawn larger than its pixels.
+    /// At its own size or smaller the picture is the exact copy of the template; enlarged it would blur, where the drawing stays sharp.
+    /// </summary>
+    public static string? Traced(string picture, double width, double height) =>
+        Twins.GetOrAdd(picture, p => Path.ChangeExtension(p, ".svg") is var svg && !IsSvg(p) && File.Exists(svg) && Size(p) is var (w, h) ? (svg, w, h) : (null, 0, 0))
+            is (string twin, var pw, var ph) && (width > pw * 1.02 || height > ph * 1.02) ? twin : null;
+
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string? Svg, int W, int H)> Twins = new();
 
     /// <summary>An SVG file as a frozen vector picture at its own size (for the editor's lists).</summary>
     public static ImageSource SvgPicture(string path) => Load(path);
@@ -269,14 +279,33 @@ public static partial class MenuRenderer
         }
 
         ids = Ids();
+        XElement? solids = null;
         foreach (var e in root.Descendants().ToList())
             foreach (var (paint, fade) in (ReadOnlySpan<(string, string)>)[("fill", "fill-opacity"), ("stroke", "stroke-opacity")])
-                if (own[e].GetValueOrDefault(paint) is { } v && UrlRef().Match(v) is { Success: true } u && ids.TryGetValue(u.Groups[1].Value, out var gradient)
-                    && gradient.Name.LocalName.EndsWith("Gradient") && (Number(own[e].GetValueOrDefault(fade) ?? "1") ?? 1) is var alpha && alpha < 1)
+            {
+                if (own[e].GetValueOrDefault(paint) is not { } v || (Number(own[e].GetValueOrDefault(fade) ?? "1") ?? 1) is var alpha && alpha >= 1) continue;
+                if (UrlRef().Match(v) is { Success: true } u)
                 {
+                    if (!ids.TryGetValue(u.Groups[1].Value, out var gradient) || !gradient.Name.LocalName.EndsWith("Gradient")) continue;
                     Declare(e, own[e], paint, $"url(#{Faded(gradient, alpha)})");
-                    Declare(e, own[e], fade, "1");
                 }
+                else if (v is "none" or "currentColor" or "inherit") continue;
+                // SVGImage keeps one brush per colour, with the opacity of the first shape that used it: a see-through colour is written as a gradient of that one colour
+                else Declare(e, own[e], paint, $"url(#{Solid(v, alpha)})");
+                Declare(e, own[e], fade, "1");
+            }
+
+        string Solid(string colour, double alpha)
+        {
+            var id = $"solid-{new string(colour.Where(char.IsLetterOrDigit).ToArray())}-{Css(Math.Round(alpha, 3))}";
+            if (ids.ContainsKey(id)) return id;
+            if (solids == null) root.AddFirst(solids = new XElement(ns + "defs"));
+            XElement Stop(int at) => new(ns + "stop", new XAttribute("offset", at), new XAttribute("stop-color", colour), new XAttribute("stop-opacity", Css(alpha)));
+            var gradient = new XElement(ns + "linearGradient", new XAttribute("id", id), Stop(0), Stop(1));
+            solids.Add(gradient);
+            ids[id] = gradient;
+            return id;
+        }
 
         string Faded(XElement gradient, double alpha)
         {
@@ -363,6 +392,27 @@ public static partial class MenuRenderer
             throw new InvalidDataException($"Image illisible : {p}", e);
         }
     });
+
+    /// <summary>
+    /// A background picture as the design wants it: as it is, or blurred (<see cref="MenuDesign.BackgroundBlur"/>). The blurred copy is the picture
+    /// cut to the page's shape at half its size (the blur hides the difference), drawn wider than it is kept so that its edges do not fade.
+    /// </summary>
+    static ImageSource Backdrop(string path, MenuDesign d)
+    {
+        var blur = Math.Clamp(d.BackgroundBlur, 0, 40);
+        if (blur == 0 || IsSvg(path)) return Load(path);
+        return Images.GetOrAdd($"{path}|{File.GetLastWriteTimeUtc(path).Ticks}|blur{blur}", _ =>
+        {
+            int w = MenuBuilder.W / 2, h = MenuBuilder.H / 2, edge = blur * 2;
+            var visual = new DrawingVisual { Effect = new System.Windows.Media.Effects.BlurEffect { Radius = blur / 2.0, KernelType = System.Windows.Media.Effects.KernelType.Gaussian } };
+            using (var dc = visual.RenderOpen())
+                dc.DrawRectangle(new ImageBrush(Load(path)) { Stretch = Stretch.UniformToFill }, null, new Rect(-edge, -edge, w + 2 * edge, h + 2 * edge));
+            var bmp = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+            bmp.Render(visual);
+            bmp.Freeze();
+            return bmp;
+        });
+    }
 
     /// <summary>Opaque page background as JPEG (smaller and faster to decode than PNG on a player).</summary>
     public static byte[] Background(MenuDesign d, MenuPage page, double scale = 1) =>
@@ -472,7 +522,7 @@ public static partial class MenuRenderer
         else if (shown == null && d.TemplateDir != null) { /* the template's own artwork is the first op of every page */ }
         else if (shown != null)
         {
-            dc.DrawRectangle(new ImageBrush(Load(shown)) { Stretch = Stretch.UniformToFill }, null, full);
+            dc.DrawRectangle(new ImageBrush(Backdrop(shown, d)) { Stretch = Stretch.UniformToFill }, null, full);
             if (d.Dim > 0 && d.TemplateDir == null) dc.DrawRectangle(new SolidColorBrush(Col("#000000", d.Dim / 100.0)), null, full); // keeps text readable on any picture (a template has no dim setting: its pages are not darkened)
         }
         else
@@ -492,7 +542,8 @@ public static partial class MenuRenderer
             {
                 case Image im:
                     if ((overlay || own != null) && im.Backdrop) break; // a template's background picture: the page has its own, or the video is behind
-                    if (im.Cover) dc.DrawRectangle(new ImageBrush(Load(im.Path)) { Stretch = Stretch.UniformToFill }, null, R(im.Rect));
+                    // Backdrop and Cover together: the film frame a template shows behind its page, the one picture of the user's among a template's ops
+                    if (im.Cover) dc.DrawRectangle(new ImageBrush(im.Backdrop ? Backdrop(im.Path, d) : Load(im.Path)) { Stretch = Stretch.UniformToFill }, null, R(im.Rect));
                     else dc.DrawImage(Load(im.Path, R(im.Rect)), R(im.Rect));
                     break;
                 case Text t:

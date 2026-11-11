@@ -29,15 +29,17 @@ var videos = a.Select((v, i) => (v, i)).Where(x => x.v == "--video" && x.i + 1 <
 //   draws every page of a menu template with sample content (3 audio, 2 subtitles), to compare with the vendor's own thumbnail
 if (a.Count >= 3 && a[0] == "preview")
 {
-    var chosen = TemplateCatalog.Find(a[1]) ?? throw new InvalidOperationException($"unknown template: {a[1]}");
+    // a catalogue name, a template folder, or a design saved as .json (design-export, « Enregistrer le modèle »); --overview TEXT: each episode's summary
+    var chosen = (a[1].EndsWith(".json", StringComparison.OrdinalIgnoreCase) && File.Exists(a[1]) ? System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(File.ReadAllText(a[1])) : TemplateCatalog.Find(a[1]))
+        ?? throw new InvalidOperationException($"unknown template: {a[1]}");
     Directory.CreateDirectory(a[2]);
     var pic = Opt("--picture") is { } p ? Path.GetFullPath(p) : null;
     var episodes = int.TryParse(Opt("--episodes"), out var ep) ? ep : 0;
     var sample = new MenuContent(1, pic, Enumerable.Repeat(pic, 7).ToList(),
-        episodes > 1 ? Enumerable.Range(1, episodes).Select(i => new TitleEntry($"Episode {i}", i, pic)).ToList() : null,
+        episodes > 1 ? Enumerable.Range(1, episodes).Select(i => new TitleEntry($"Episode {i}", i, pic, Opt("--overview"))).ToList() : null,
         ["Français AC-3 mono", "English AC-3 mono", "Español AC-3 mono"], ["Français", "English"],
         int.TryParse(Opt("--bonus"), out var extras) && extras > 0 ? Enumerable.Range(0, extras).Select(i => new TitleEntry($"Bonus {i + 1}", Math.Max(episodes, 1) + 1 + i, pic)).ToList() : null);
-    chosen.Title = "My Blu-ray";
+    chosen.Title = Opt("--title") ?? "My Blu-ray";
     if (a.Contains("--list")) chosen.SceneList = true; // la page de scènes en liste, quand le modèle la décrit
     if (a.Contains("--scenes-only")) chosen.ScenesOnly = true;
     if (a.Contains("--bonus-text")) chosen.BonusText = true;
@@ -282,6 +284,43 @@ if (a.Count >= 1 && a[0] == "check-highlights")
     return hlFailed == 0 ? 0 : 1;
 }
 
+// burnsmith check-vectors [templates folder] [--max percent] [--write folder] : every picture that has a traced .svg beside it (tools\vectorize-buttons.ps1), drawn both ways at the picture's size.
+// Prints, worst first, the share of pixels the trace changes by more than 40 levels (colour or transparency) and the mean change; fails when a trace is over --max (default 100: it only measures).
+if (a.Count >= 1 && a[0] == "check-vectors")
+{
+    var vecRoot = a.Skip(1).Where((x, i) => !x.StartsWith("--") && !a[i].StartsWith("--")).FirstOrDefault() ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "BurnSmith", "Templates", "sources");
+    var vecMax = a.IndexOf("--max") is var at and >= 0 && at + 1 < a.Count ? double.Parse(a[at + 1], System.Globalization.CultureInfo.InvariantCulture) : 100;
+    var vecWrite = a.IndexOf("--write") is var wr and >= 0 && wr + 1 < a.Count ? a[wr + 1] : null; // the traces as BurnSmith draws them, one PNG each: to look at
+    var rows = MenuRenderer.Sta(() => Directory.EnumerateFiles(vecRoot, "*.svg", SearchOption.AllDirectories)
+        .Select(svg => (Svg: svg, Png: Path.ChangeExtension(svg, ".png"))).Where(p => File.Exists(p.Png) && MenuRenderer.Size(p.Png) != null)
+        .Select(p =>
+        {
+            var (w, h) = MenuRenderer.Size(p.Png)!.Value;
+            byte[] drawn = MenuRenderer.Raster(p.Svg, null, w, h).Px, picture = MenuRenderer.Raster(p.Png, null, w, h).Px;
+            if (vecWrite != null)
+            {
+                var file = Path.Combine(vecWrite, Path.ChangeExtension(Path.GetRelativePath(vecRoot, p.Svg), ".png"));
+                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(System.Windows.Media.Imaging.BitmapSource.Create(w, h, 96, 96, System.Windows.Media.PixelFormats.Pbgra32, null, drawn, w * 4)));
+                using var stream = File.Create(file);
+                encoder.Save(stream);
+            }
+            long off = 0, sum = 0;
+            for (var i = 0; i < picture.Length; i += 4)
+            {
+                var worst = 0;
+                for (var c = 0; c < 4; c++) { var d = Math.Abs(drawn[i + c] - picture[i + c]); sum += d; worst = Math.Max(worst, d); }
+                if (worst > 40) off++;
+            }
+            return (Off: 100.0 * off / (w * h), Mean: sum / (double)picture.Length, p.Svg);
+        }).OrderByDescending(r => r.Off).ToList());
+    foreach (var r in rows) Console.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{r.Off,6:F2} %  {r.Mean,6:F2}  {Path.GetRelativePath(vecRoot, r.Svg)}"));
+    var over = rows.Count(r => r.Off > vecMax);
+    Console.WriteLine($"{rows.Count} tracés, {over} au-delà de {vecMax} %");
+    return over == 0 ? 0 : 1;
+}
+
 // burnsmith svg-sheet <dir> <out.png> : every SVG of a folder drawn wide (300x90) and square (120x120), normal then selected, one row each — to look at
 if (a.Count >= 3 && a[0] == "svg-sheet")
 {
@@ -381,6 +420,51 @@ if (a.Count >= 1 && a[0] == "check-elements")
           SmartGuides.Move(new Box(1000, 900, 100, 50), [new Box(300, 300, 420, 90)]) is var (free, noMarks) && free == new Box(1000, 900, 100, 50) && noMarks.Count == 0);
     Check("alignment marks: a corner dragged near the page's middle meets it; the edges that do not move are left alone",
           SmartGuides.Resize(new Box(100, 100, 857, 200), false, false, []) is var (grown, sized) && grown == new Box(100, 100, 860, 200) && sized.Any(g => g is { Vertical: true, At: 960 }));
+
+    // traced buttons stack the same colour at several opacities (tools\vectorize-buttons.py): the opaque shape must not take the faint one's opacity
+    var twoReds = MenuRenderer.Sta(() => MenuRenderer.Raster("""<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect width="10" height="10" fill="#ff0000" fill-opacity="0.2"/><rect x="10" width="10" height="10" fill="#ff0000"/></svg>""", null, 20, 10)).Px;
+    Check("SVG: a colour drawn see-through, then opaque, is opaque the second time (alpha of each half)", twoReds[4 * 5 + 3] is > 40 and < 62 && twoReds[4 * 15 + 3] == 255);
+
+    // a button picture and its traced twin: the picture at its own size (the exact copy), the drawing once it is enlarged
+    var twinDir = Directory.CreateTempSubdirectory("burnsmith-twin").FullName;
+    try
+    {
+        var twinPng = Path.Combine(twinDir, "b.png");
+        MenuRenderer.Sta(() =>
+        {
+            var px = new byte[40 * 20 * 4];
+            Array.Fill(px, (byte)255);
+            var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(System.Windows.Media.Imaging.BitmapSource.Create(40, 20, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null, px, 160)));
+            using var f = File.Create(twinPng);
+            enc.Save(f);
+            return 0;
+        });
+        File.WriteAllText(Path.ChangeExtension(twinPng, ".svg"), """<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#ff0000"/></svg>""");
+        Check("traced twin: not used at the picture's own size or smaller, used when the button is drawn larger",
+              MenuRenderer.Traced(twinPng, 40, 20) == null && MenuRenderer.Traced(twinPng, 30, 15) == null && MenuRenderer.Traced(twinPng, 80, 40)?.EndsWith("b.svg") == true);
+        var (same, large) = MenuRenderer.Sta(() => (MenuRenderer.Raster(twinPng, null, 40, 20).Px, MenuRenderer.Raster(twinPng, null, 80, 40).Px));
+        Check("traced twin: the page shows the white picture at its size and the red drawing enlarged", same[0] == 255 && same[1] == 255 && large[0] == 0 && large[1] == 0 && large[2] == 255);
+    }
+    finally { Directory.Delete(twinDir, true); }
+
+    // BurnSmith's two designs made for a disc, as anyone gets them: Métal (Bright) and Saison (Cobra Kai)
+    var metal = BuiltInTemplates.All().First(t => t.Name == "Métal");
+    var taken = new MenuDesign { Elements = { new MenuElement { Kind = "text", Text = "à moi" } } };
+    taken.TakeLook(metal);
+    Check("Métal chosen in the gallery comes whole: no preview window, its two fades on the main page and its veils, under the user's own text",
+          !taken.ShowPreview && taken.Elements.Count == 5 && taken.Elements[^1].Text == "à moi" && taken.Elements.Count(e => e.OfLook && e.Page == "root" && MenuRenderer.IsSvgText(e.Image ?? "")) == 2);
+    taken.TakeLook(new MenuDesign());
+    Check("another look takes Métal's fades and veils away and leaves the user's text", taken.Elements is [{ Text: "à moi" }] && taken.ShowPreview);
+    var fadePage = MenuBuilder.Build(metal.Clone(), new MenuContent(1, null, [null, null], null, ["Français"], [])).First(p => p.Id == "root");
+    var fadePx = MenuRenderer.Sta(() => new System.Windows.Media.Imaging.JpegBitmapDecoder(new MemoryStream(MenuRenderer.Background(new MenuDesign { Top = "#FFFFFF", Bottom = "#FFFFFF", Elements = metal.Elements, Name = "" }, fadePage with { Ops = fadePage.Ops.Where(o => o is Image).ToList() })),
+        System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0]);
+    int Grey(int y) { var one = new byte[4]; new System.Windows.Media.Imaging.FormatConvertedBitmap(fadePx, System.Windows.Media.PixelFormats.Bgra32, null, 0).CopyPixels(new System.Windows.Int32Rect(960, y, 1, 1), one, 4, 0); return one[1]; }
+    Check($"Métal's fades: the main page is dark at its top and bottom edges and untouched in the middle ({Grey(4)}, {Grey(540)}, {Grey(1075)})", Grey(4) < 60 && Grey(540) > 200 && Grey(1075) < 60);
+    if (TemplateCatalog.Find("Saison") is { } saison)
+        Check("Saison: listed with BurnSmith's own designs, laid out by the Streaming template, its background blurred",
+              saison.Category == TemplateLabel.Own && saison.TemplateDir != null && saison.BackgroundBlur > 0 && TemplateCatalog.Scan().Usable.TakeWhile(f => f.Design.Category == TemplateLabel.Own).Any(f => f.Design.Name == "Saison"));
+    else Console.WriteLine("skip Saison: the Streaming template is not on this PC");
 
     // each template against the program it comes from (2026-11-11): the three faults that were plain to see
     if (TemplateCatalog.Find("standard (16-9)") is { } leawo && TemplateCatalog.Find("Natural 18") is { } yuhan18 && TemplateCatalog.Find("blue 16-9") is { } styler)
@@ -1529,7 +1613,7 @@ if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, ne
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || Opt("--out") is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--bonus] [--credits 'A|B'] [--preview] [--cpu] [--fps R] [bd: --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--bonus] [--credits 'A|B'] [--preview] [--cpu] [--fps R] [bd: --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
     return 2;
 }
 
@@ -1555,6 +1639,7 @@ foreach (var spec in OptAll("--page-bg"))
     if (design == null || eq < 1 || !File.Exists(spec[(eq + 1)..])) throw new ArgumentException($"--page-bg: kind=picture expected (root=fond.jpg), with an existing picture and a menu: '{spec}'");
     design.PageBackgrounds[spec[..eq].Trim().ToLowerInvariant()] = Path.GetFullPath(spec[(eq + 1)..]);
 }
+if (design != null && int.TryParse(Opt("--background-blur"), out var blurred)) design.BackgroundBlur = blurred; // 0-40: the background picture blurred, so the text over it reads well
 foreach (var spec in OptAll("--element")) design?.Elements.Add(MenuElement.Parse(spec)); // --element "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;align=center"
 if (design != null && Opt("--titles") is { } byLanguage) design.TitlesByLanguage = byLanguage.Replace('=', ':').Replace('|', '\n'); // --titles "fra=Mon disque|eng=My disc"
 if (design != null && a.Contains("--loop")) // moving menu: --loop [--loop-file video] [--loop-start S]

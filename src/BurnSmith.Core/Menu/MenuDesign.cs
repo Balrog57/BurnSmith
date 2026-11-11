@@ -124,6 +124,11 @@ public sealed class MenuDesign
     public string Glow { get; set; } = "#000000";
     /// <summary>Darkening laid over a background picture, in percent (keeps the text readable).</summary>
     public int Dim { get; set; } = 35;
+    /// <summary>
+    /// Blur of the background picture (the design's, a page's own, or the film frame a template shows behind its page), 0 to 40 in pixels of the
+    /// 1920x1080 page: a busy picture stops fighting the text written over it. A template's own artwork is never blurred.
+    /// </summary>
+    public int BackgroundBlur { get; set; }
     /// <summary>Margins, gap, header and footer of the scene pages as shares of the canvas; 0 = BurnSmith's original fixed geometry.</summary>
     public double MarginX { get; set; }
     public double MarginY { get; set; }
@@ -190,7 +195,10 @@ public sealed class MenuDesign
         Name = t.Name; Category = t.Category; Kind = t.Kind; TemplateDir = t.TemplateDir; BackgroundImage = t.BackgroundImage;
         Top = t.Top; Bottom = t.Bottom; TextColor = t.TextColor; Accent = t.Accent; HighlightStyle = t.HighlightStyle; SelectionColor = t.SelectionColor; SelectionOpacity = t.SelectionOpacity; AnimatedThumbs = t.AnimatedThumbs; Font = t.Font;
         ButtonStyle = t.ButtonStyle; Cols = t.Cols; Rows = t.Rows; Thumbnails = t.Thumbnails; Square = t.Square;
-        CardFill = t.CardFill; Glow = t.Glow; Dim = t.Dim;
+        CardFill = t.CardFill; Glow = t.Glow; Dim = t.Dim; BackgroundBlur = t.BackgroundBlur; ShowPreview = t.ShowPreview;
         MarginX = t.MarginX; MarginY = t.MarginY; Gap = t.Gap; Header = t.Header; Footer = t.Footer;
+        // the veils and fades of the look change with it, under the elements the user placed
+        Elements.RemoveAll(e => e.OfLook);
+        Elements.InsertRange(0, t.Elements.Where(e => e.OfLook).Select(e => e.Copy()));
     }
 }

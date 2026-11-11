@@ -123,7 +123,9 @@ public static class TemplateCatalog
         var skipped = new List<Skipped>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // converted packs first: one PC can then use the same format for every template, and a pack replaces the vendor copy of the same name
+        // BurnSmith's own designs are the program's: a pack made of one by an earlier version must not keep that version's look after an update
+        usable.AddRange(Shipped().Where(f => seen.Add($"{f.Design.Category}|{f.Design.Name}")));
+        // then the converted packs: one PC can use the same format for every template, and a pack replaces the vendor copy of the same name
         if (includePacks)
             foreach (var pack in TemplatePack.Scan())
         {
@@ -135,11 +137,9 @@ public static class TemplateCatalog
             design.TemplateDir = pack.HasLayout ? pack.Dir : null;
             if (!seen.Add($"{design.Category}|{design.Name}")) continue;
             if (pack.Unsupported is { } why) skipped.Add(new Skipped(design.Name, why, pack.Dir));
-            // a pack without a picture of its own (one made of a BurnSmith design) shows the one drawn for the gallery, as the design itself does
-            else usable.Add(new Found(design, pack.ThumbnailFile(pack.Dir) ?? (File.Exists(ThumbFile(design)) ? ThumbFile(design) : null)));
+            else usable.Add(new Found(design, pack.ThumbnailFile(pack.Dir)));
         }
 
-        usable.AddRange(Shipped().Where(f => seen.Add($"{f.Design.Category}|{f.Design.Name}")));
         var dvdt = OpenLibrary.Dir() is { } lib && Directory.Exists(Path.Combine(lib, "open", "templates"))
             ? Directory.EnumerateFiles(Path.Combine(lib, "open", "templates"), "*.dvdt", SearchOption.AllDirectories) : [];
         foreach (var dir in Roots().SelectMany(r => TemplateFolders(r)).Concat(dvdt).Distinct(StringComparer.OrdinalIgnoreCase))
@@ -153,7 +153,12 @@ public static class TemplateCatalog
             if (pack.Unsupported is { } why) skipped.Add(new Skipped(design.Name, why, dir));
             else usable.Add(new Found(design, pack.Thumbnail));
         }
-        return (usable.OrderBy(f => f.Design.Kind != TemplateKind.BuiltIn).ThenBy(f => f.Design.Category).ThenBy(f => f.Design.Name, StringComparer.OrdinalIgnoreCase).ToList(), skipped);
+        // BurnSmith's design that is laid out by a template (Saison, by Streaming): listed with BurnSmith's own where that template is found.
+        // Not while converting: a pack of it would be a second copy of Streaming's pictures, and would keep this version's look after an update
+        if (includePacks && BuiltInTemplates.Season(usable.Select(f => f.Design).FirstOrDefault(d => d.Name == "Streaming" && d.TemplateDir != null)) is { } season
+            && seen.Add($"{season.Category}|{season.Name}"))
+            usable.Add(new Found(season, File.Exists(ThumbFile(season)) ? ThumbFile(season) : null));
+        return (usable.OrderBy(f => f.Design.Category != TemplateLabel.Own).ThenBy(f => f.Design.Category).ThenBy(f => f.Design.Name, StringComparer.OrdinalIgnoreCase).ToList(), skipped);
     }
 
     /// <summary>

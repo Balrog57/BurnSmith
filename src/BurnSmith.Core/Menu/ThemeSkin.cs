@@ -90,7 +90,8 @@ static class ThemeSkin
                 ("frame_under", Picture(box)), ("under_rect", Rect(I(box, "Left"), I(box, "Top"), I(box, "Width"), I(box, "Height"))));
             var size = I(label, "Size") > 0 ? I(label, "Size") : 30;
             video.Kids.Add(El("name", ("rect", Rect(I(label, "Left"), Up(I(label, "Top"), size), I(box, "Width"), size * 3 / 2)), ("font", label?.Attr("Type", "Tahoma") ?? "Tahoma"),
-                ("font_size", size.ToString()), ("color", label?.Attr("Color", "#FFFFFF") ?? "#FFFFFF"), ("bold", label?.Attr("Bold") == "true" ? "1" : "0")));
+                ("font_size", size.ToString()), ("color", label?.Attr("Color", "#FFFFFF") ?? "#FFFFFF"), ("bold", label?.Attr("Bold") == "true" ? "1" : "0"),
+                ("align", "left"))); // the program writes a name from its Left, whatever Alignment the file gives (read in BlurayDVDCreator.exe)
             videos.Kids.Add(video);
         }
         scene.Kids.Add(videos);

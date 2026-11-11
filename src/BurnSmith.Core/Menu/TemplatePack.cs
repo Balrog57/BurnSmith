@@ -377,11 +377,13 @@ public sealed class TemplatePack
     static bool IsJpeg(string file) => Path.GetExtension(file).ToLowerInvariant() is ".jpg" or ".jpeg";
 
     /// <summary>
-    /// The JPEG a background becomes. A menu background ends as a frame of the disc's video, compressed far harder than this: at 92 the picture
-    /// cannot be told from its PNG (43 to 50 dB of PSNR on the templates), for a seventh of the size. WebP or AVIF would be smaller still, but Windows'
-    /// own decoder, which draws every menu, reads neither without an add-on.
+    /// The JPEG a background becomes. A menu background ends as a frame of the disc's video, compressed far harder than this: at 95 the picture
+    /// cannot be told from its PNG (39 to 52 dB of PSNR on the 27 templates concerned, 46 in the middle), for a sixth of the size. Higher buys
+    /// little: Windows' encoder halves the colour resolution whatever the level, as the disc's video does anyway, and that is what caps the
+    /// figure on the most saturated pictures. WebP or AVIF would be smaller still, but Windows' own decoder, which draws every menu, reads
+    /// neither without an add-on.
     /// </summary>
-    const int JpegQuality = 92;
+    const int JpegQuality = 95;
     const int ThumbnailWidth = 480;
 
     /// <summary>No transparency to keep: a JPEG, or a picture whose every pixel is solid.</summary>
@@ -405,7 +407,7 @@ public sealed class TemplatePack
         catch (Exception e) when (e is NotSupportedException or System.IO.FileFormatException or IOException or InvalidDataException) { return false; }
     }
 
-    /// <summary>The drawing traced from a button picture (tools\vectorize-buttons.ps1) travels with it: the menu draws the .svg in its place.</summary>
+    /// <summary>The drawing traced from a button picture (tools\vectorize-buttons.py) travels with it: the menu draws it when the button is enlarged.</summary>
     static void CopyVector(string source, string target)
     {
         if (Path.ChangeExtension(source, ".svg") is var svg && File.Exists(svg) && !MenuRenderer.IsSvg(source)) File.Copy(svg, Path.ChangeExtension(target, ".svg"), true);

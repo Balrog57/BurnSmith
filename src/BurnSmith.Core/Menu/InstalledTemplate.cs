@@ -402,12 +402,8 @@ public sealed class InstalledTemplate
         return f.Read(head) == 4 && (head is [0x89, 0x50, 0x4E, 0x47] or [0xFF, 0xD8, _, _]);
     }
 
-    /// <summary>
-    /// A picture of the template. A button traced into vectors (tools\vectorize-buttons.ps1) has its .svg beside the picture, in the template's
-    /// folder as in its pack: the drawing is used in its place, sharp at any size.
-    /// </summary>
-    string? Asset(string? relative) => TemplatePack.Inside(dir, relative) is not { } full || !IsImage(full) ? null
-        : System.IO.Path.ChangeExtension(full, ".svg") is var vector && File.Exists(vector) ? vector : full;
+    /// <summary>A picture of the template (a button traced into vectors has its .svg beside it: see <see cref="MenuRenderer.Traced"/>).</summary>
+    string? Asset(string? relative) => TemplatePack.Inside(dir, relative) is { } full && IsImage(full) ? full : null;
 
     /// <summary>
     /// The highlighted twin of a button picture: <c>play/0.normal.png</c> → <c>play/0.sub.png</c>. Null when the template has none
@@ -417,7 +413,6 @@ public sealed class InstalledTemplate
     {
         if (normal == null) return null;
         var twin = normal.Replace(".normal.", ".sub.");
-        if (!IsImage(twin)) twin = System.IO.Path.ChangeExtension(twin, ".png"); // a drawing whose highlighted twin was not traced keeps the picture
         return IsImage(twin) ? twin : null;
     }
 
@@ -939,7 +934,7 @@ public sealed class InstalledTemplate
             Over(ops, slots[i]);
             if (slots[i].Child("name") is { } name)
             {
-                ops.Add(Txt(name, Shown(cell), "center"));
+                ops.Add(Txt(name, Shown(cell), name.Attr("align", "center")));
                 if (cell.Action.Kind == "play") zones.Add(new($"name:{cell.Action.Playlist}", name.Rect()));
             }
             buttons.Add(Dvd(new MenuButton(cell.Id, slots[i].Rect(), cell.Action) { FocusImage = Selected(framed.Frame) })); // none for picture themes: the accent frame

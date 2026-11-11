@@ -55,6 +55,8 @@ public sealed class MenuElement
     public string? Focus { get; set; }
     /// <summary>A "button" without a picture takes this look (Pill, Text, Card, Frame, Glass: <see cref="ElementLibrary.ButtonStyles"/>) instead of the design's; empty = the design's.</summary>
     public string Look { get; set; } = "";
+    /// <summary>Part of a design's look (the veil or the fades a template lays on its pages): it comes and goes with the template, where the user's own elements stay.</summary>
+    public bool OfLook { get; set; }
 
     public const string AllPages = "all";
 
@@ -90,7 +92,7 @@ public sealed class MenuElement
         {
             case "image":
                 var file = ElementLibrary.Resolve(Image) ?? Image;
-                if (file is null || !File.Exists(file)) yield break;
+                if (file is null || !(MenuRenderer.IsSvgText(file) || File.Exists(file))) yield break; // a drawing can be given as its SVG text (a design's own fade)
                 yield return new Image(file, box, Cover: !Fit);
                 if (BorderWidth > 0) yield return new Border(box, Border, BorderWidth, Radius);
                 break;

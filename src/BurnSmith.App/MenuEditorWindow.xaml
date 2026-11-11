@@ -445,6 +445,8 @@
               <TextBlock Text="Assombrir le fond (%)" Style="{StaticResource Caption}"/>
               <Slider Minimum="0" Maximum="80" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding Dim}"/>
             </StackPanel>
+            <TextBlock Text="Flouter l'image de fond" Style="{StaticResource Caption}"/>
+            <Slider Minimum="0" Maximum="40" TickFrequency="2" IsSnapToTickEnabled="True" Value="{Binding BackgroundBlur}" AutomationProperties.Name="Flouter l'image de fond"/>
             <CheckBox Content="Vignettes animées : un extrait du chapitre dans chaque case (DVD)" IsChecked="{Binding AnimatedThumbs}" Margin="0,8,0,12"/>
           </StackPanel>
         </ScrollViewer>

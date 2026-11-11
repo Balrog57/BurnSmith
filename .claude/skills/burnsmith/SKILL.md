@@ -62,13 +62,14 @@ burnsmith dvd --video ep1.mkv --name "Épisode 1" --video ep2.mkv --name "Épiso
 | Sans menu | `--no-menu` (une seule vidéo) |
 | Textes | `--title TEXTE`, `--titles "fra=Mon disque\|eng=My disc"`, `--credits "Ligne 1\|Ligne 2"` |
 | Fonds par page | `--page-bg root=fond.jpg` (répétable ; `root`, `scenes`, `settings`, `credits`, `bonus`) |
+| Flou du fond | `--background-blur 12` (0 à 40 : l'image de fond floutée, pour que le texte posé dessus se lise ; le modèle `Saison` en a 12) |
 | Menu animé | `--loop [--loop-file video] [--loop-start S] [--loop-seconds S\|music]` |
 | Musique | `--music morceau [--music-start S] [--music-volume 80] [--music-fade 2]` |
 | Présentation | `--list` (scènes en liste), `--scenes-only`, `--skip-first-scene`, `--bonus-text`, `--animated-thumbs` (DVD), `--highlight box\|underline\|textcolor` |
 | Pop-up Blu-ray | `--popup [--popup-main TEXTE] [--popup-resume TEXTE]` |
 | Élément libre | `--element "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;align=center"` (répétable ; `kind` = `text`, `image`, `box`, `button` ; un bouton prend `target=movie\|chapter:3\|scenes1\|settings\|bonus1\|credits`) |
 
-Pour modifier un modèle en profondeur : `burnsmith design-export NOM modele.json`, éditer le JSON, puis `--design modele.json`. `burnsmith preview NOM dossier [--picture image.jpg] [--episodes N] [--bonus N]` dessine toutes les pages d'un modèle avec un contenu d'exemple ; `burnsmith dump NOM` liste ce qui est dessiné, rectangle par rectangle.
+Pour modifier un modèle en profondeur : `burnsmith design-export NOM modele.json`, éditer le JSON, puis `--design modele.json`. `burnsmith preview NOM|modele.json dossier [--picture image.jpg] [--episodes N] [--overview "résumé"] [--title TEXTE] [--bonus N]` dessine toutes les pages d'un modèle avec un contenu d'exemple ; `burnsmith dump NOM` liste ce qui est dessiné, rectangle par rectangle.
 
 ## Préparer des vidéos
 
