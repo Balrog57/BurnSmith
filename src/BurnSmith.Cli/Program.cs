@@ -718,8 +718,9 @@ if (a.Count >= 1 && a[0] == "check-elements")
             var inFrench = (string? f) => f != null && f.Contains(Path.DirectorySeparatorChar + InstalledTemplate.FrenchDir + Path.DirectorySeparatorChar);
             var worded = TemplateCatalog.Scan().Usable.Select(f => f.Design).FirstOrDefault(t => t.TemplateDir != null && Directory.Exists(Path.Combine(t.TemplateDir, InstalledTemplate.FrenchDir)) && inFrench(wordsOf(t, "fr").Picture));
             var (fr, en) = worded == null ? default : (wordsOf(worded, "fr"), wordsOf(worded, "en"));
-            Check($"boutons à mot dessiné : français par défaut, anglais sur demande ({worded?.Name ?? "aucun modèle avec ses boutons français"})",
-                  worded != null && new MenuDesign().ButtonLanguage == "fr" && en.Picture != null && !inFrench(en.Picture) && !inFrench(en.Focus)
+            if (worded == null) Console.WriteLine("skip boutons à mot dessiné : aucun modèle avec ses boutons français sur ce PC"); // the vendor's pictures are not in the repository
+            else Check($"boutons à mot dessiné : français par défaut, anglais sur demande ({worded.Name})",
+                  new MenuDesign().ButtonLanguage == "fr" && en.Picture != null && !inFrench(en.Picture) && !inFrench(en.Focus)
                   && MenuRenderer.Size(fr.Picture!) == MenuRenderer.Size(en.Picture) && (en.Focus == null) == (fr.Focus == null));
             Check("un modèle enregistré se retrouve par son nom (Mes modèles), avec ses boutons image",
                   TemplateCatalog.Find(keptDesign.Name) is { } again && again.Elements.Count == keptDesign.Elements.Count && again.Elements[^3].Image == normalPic && Templates.List().Any(t => t.Name == keptDesign.Name));
