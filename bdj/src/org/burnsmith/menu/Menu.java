@@ -390,8 +390,15 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         try {
             Control c = p.getControl("org.bluray.media.PrimaryAudioControl");
             if (c instanceof PrimaryAudioControl) {
-                ((PrimaryAudioControl) c).selectStreamNumber(audio);
-                log("audio stream " + audio + " selected");
+                // a bonus can hold fewer audio streams than the titles the choice was made for: a number it has not would play it silent
+                int[] have = ((PrimaryAudioControl) c).listAvailableStreamNumbers();
+                int played = audio;
+                if (have != null && have.length > 0) {
+                    played = have[0];
+                    for (int i = 0; i < have.length; i++) if (have[i] == audio) played = audio;
+                }
+                ((PrimaryAudioControl) c).selectStreamNumber(played);
+                log("audio stream " + played + " selected");
             } else {
                 log("no PrimaryAudioControl");
             }

@@ -1565,7 +1565,7 @@ if (a.Count >= 1 && a[0] == "check-edit")
               tracks is [{ Lang: "fre", Stream: 0 }, { Lang: "und", Stream: 1 }] && tracks[1].Track(5).IsPgs && typedTrack is [{ Lang: "ger", Stream: 0 }] && missingSub
               && ExternalSubtitle.ForAll(Path.Combine(vobDir, "film.mkv"), Path.Combine(vobDir, "v.sub")).Count == 2 && ExternalSubtitle.Extensions.Contains(".idx"));
         Check("a VobSub inside a video: its codec data (ffprobe's hex dump) reads as the head of an .idx, the track is carried as pictures; the second track of an .idx without language is not named like the first",
-              VobSub.ExtradataText("00000000: 7369 7a65 3a20 3633 3278 3237 360a 7061  size: 632x276.pa\n00000010: 6c65 7474 653a 2066 6666 6666 66         lette: ffffff\n") == "size: 632x276\npalette: ffffff" && VobSub.ParseIndex("size: 632x276") is { Width: 632, Height: 276 }
+              VobSub.ExtradataText("00000000: 7369 7a65 3a20 3633 3278 3237 360a 7061  size: 632x276.pa\n00000010: 6c65 7474 653a 2066 6666 6666 66         lette: ffffff\n") == "size: 632x276\npalette: ffffff" && VobSub.ParseIndex("size: 632x276", 720, 576) is { Width: 632, Height: 276 } && VobSub.ParseIndex("", 720, 576) is { Width: 720, Height: 576 } && VobSub.ParseIndex("") is { Height: 480 }
               && new SubtitleTrack(0, "dvd_subtitle", "fre", "", false) is { IsVobSub: true, IsPicture: true, Supported: true, IsPgs: false } && !new SubtitleTrack(0, "dvb_subtitle", "fre", "", false).Supported
               && new ExternalSubtitle("a.idx", "und", Stream: 0).Track(2).Title == "a" && new ExternalSubtitle("a.idx", "und", Stream: 1).Track(3).Title == "a (2)");
         // an object too big for one segment goes in pieces and reads back whole

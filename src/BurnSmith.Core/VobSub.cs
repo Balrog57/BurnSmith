@@ -32,9 +32,9 @@ public static class VobSub
 
     public static Index ReadIndex(string idxFile) => ParseIndex(File.ReadAllText(idxFile));
 
-    public static Index ParseIndex(string text)
+    /// <summary>The head of an .idx; <paramref name="width"/> x <paramref name="height"/> is the screen when the text names none.</summary>
+    public static Index ParseIndex(string text, int width = 720, int height = 480)
     {
-        int width = 720, height = 480;
         var palette = Enumerable.Range(0, 16).Select(i => i * 0x111111).ToArray(); // greys when the file gives none
         var streams = new List<Stream>();
         List<(double, long)>? cues = null;
@@ -261,7 +261,9 @@ public static class VobSub
     public static byte[] FromVideo(string video, int track, int planeWidth, int planeHeight, string work, out int skipped)
     {
         var (ffprobe, select) = (Tools.Find("ffprobe.exe"), $"s:{track}");
-        var index = ParseIndex(ExtradataText(Tools.Run(ffprobe, ["-v", "error", "-select_streams", select, "-show_streams", "-show_data", video])));
+        // a track cut out of a DVD often carries no codec data: its screen is then the video's, 576 lines on a PAL disc (read as 480, every line landed too low and was squashed at the bottom)
+        var pal = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", video]).Trim().TrimEnd(',') == "576"; // ffprobe ends the line with a comma
+        var index = ParseIndex(ExtradataText(Tools.Run(ffprobe, ["-v", "error", "-select_streams", select, "-show_streams", "-show_data", video])), 720, pal ? 576 : 480);
         var packets = Tools.Run(ffprobe, ["-v", "error", "-select_streams", select, "-show_entries", "packet=pts_time,size", "-of", "csv=p=0", video])
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(l => l.Split(','))
             .Select(f => (Time: double.TryParse(f[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var t) ? t : 0, Size: int.Parse(f[1], CultureInfo.InvariantCulture))).ToList();
