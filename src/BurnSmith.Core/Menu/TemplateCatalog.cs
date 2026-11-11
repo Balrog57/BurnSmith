@@ -62,12 +62,12 @@ public static class TemplateCatalog
     public static MenuDesign Default() =>
         Scan().Usable.Select(f => f.Design).FirstOrDefault(d => d.Name.Equals("Birthday1", StringComparison.OrdinalIgnoreCase)) ?? new MenuDesign();
 
-    /// <summary>A template named on the command line: a catalogue name or a template folder.</summary>
+    /// <summary>A template named on the command line: a template folder, a catalogue name, or one the user saved (« Mes modèles »).</summary>
     public static MenuDesign? Find(string? nameOrFolder) =>
         string.IsNullOrEmpty(nameOrFolder) ? null
         : Directory.Exists(nameOrFolder) && InstalledTemplate.Load(Path.GetFullPath(nameOrFolder)) is { Unsupported: null } pack
             ? Design(Path.GetFullPath(nameOrFolder), pack)
-            : Scan().Usable.Select(f => f.Design).FirstOrDefault(d => d.Name.Equals(nameOrFolder, StringComparison.OrdinalIgnoreCase));
+            : Scan().Usable.Select(f => f.Design).Concat(Templates.List()).FirstOrDefault(d => d.Name.Equals(nameOrFolder, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Picture themes ship the same names for several screen shapes: the shape folder (16-9, 16-9-2) is part of the name.</summary>
     static MenuDesign Design(string dir, InstalledTemplate pack)
@@ -79,13 +79,20 @@ public static class TemplateCatalog
         if (pack.Accent != null) design.Accent = pack.Accent;
         // every kind, as TemplatePack.ConvertOne does: a template drawn from its folder and from its pack must be the same menu
         (design.TextColor, design.Font) = (pack.UiColor ?? design.TextColor, pack.UiFont ?? design.Font);
+        return Moving(design);
+    }
+
+    /// <summary>A template that ships its own moving background plays it behind its menu, for as long as the clip lasts (the user can still choose a still menu or another clip).</summary>
+    static MenuDesign Moving(MenuDesign design)
+    {
+        if (design.TemplateDir is { } dir && InstalledTemplate.LoopClip(dir) is { } clip) (design.Loop, design.LoopFile, design.LoopSeconds) = (true, clip, 0);
         return design;
     }
 
     // ---- designs BurnSmith ships (open source) ----
 
     static string ThumbDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BurnSmith", "thumbs");
-    const int ThumbVersion = 1; // bump when the menu engine draws differently, so cached pictures are redone
+    const int ThumbVersion = 3; // bump when the menu engine draws differently, so cached pictures are redone (3: the words in French, as the application writes them)
 
     static string ThumbFile(MenuDesign d) =>
         Path.Combine(ThumbDir, string.Concat($"{d.Category}_{d.Name}_v{ThumbVersion}".Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)) + ".jpg");
@@ -106,8 +113,9 @@ public static class TemplateCatalog
             foreach (var d in todo)
                 try
                 {
-                    var pages = MenuBuilder.Build(d, content);
-                    File.WriteAllBytes(ThumbFile(d), MenuRenderer.Background(d, pages[Math.Min(1, pages.Count - 1)]));
+                    var french = d.Clone().French(); // the gallery is the application's: its words, not the design's English defaults
+                    var pages = MenuBuilder.Build(french, content);
+                    File.WriteAllBytes(ThumbFile(d), MenuRenderer.Background(french, pages[Math.Min(1, pages.Count - 1)]));
                 }
                 catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException) { /* no picture: the gallery shows the name */ }
 
@@ -135,6 +143,7 @@ public static class TemplateCatalog
             // a pack made of one of BurnSmith's own designs before they had their group says "Libres": it is that design, not a second one
             design.Category = design.Kind == TemplateKind.BuiltIn ? TemplateLabel.Own : pack.Category;
             design.TemplateDir = pack.HasLayout ? pack.Dir : null;
+            Moving(design);
             if (!seen.Add($"{design.Category}|{design.Name}")) continue;
             if (pack.Unsupported is { } why) skipped.Add(new Skipped(design.Name, why, pack.Dir));
             else usable.Add(new Found(design, pack.ThumbnailFile(pack.Dir)));
@@ -189,7 +198,7 @@ public static class TemplateCatalog
             }
             if (done.Count == 0) throw new InvalidOperationException("aucun modèle de menu trouvé : ajoutez un dossier dans template-folders.txt, une version publiée doit les porter");
             File.WriteAllText(Path.Combine(work, "NOTICE.txt"),
-                "Pictures of menu templates, converted to BurnSmith's template format; the pictures belong to their authors and are not part of BurnSmith's own code, which is MIT-licensed (LICENSE).\nNo program, font or interface of these products is included.\n");
+                "Pictures and moving backgrounds of menu templates, converted to BurnSmith's template format; the pictures belong to their authors and are not part of BurnSmith's own code, which is MIT-licensed (LICENSE).\nNo program, font or interface of these products is included.\n");
             if (File.Exists(zip)) File.Delete(zip);
             System.IO.Compression.ZipFile.CreateFromDirectory(work, zip, System.IO.Compression.CompressionLevel.Optimal, false);
             return done.Count;

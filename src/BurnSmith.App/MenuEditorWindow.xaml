@@ -310,6 +310,8 @@
             <TextBox Text="{Binding PlayAllLabel, UpdateSourceTrigger=PropertyChanged}"/>
             <TextBlock Text="Liste des épisodes (séries)" Style="{StaticResource Caption}"/>
             <TextBox Text="{Binding EpisodesLabel, UpdateSourceTrigger=PropertyChanged}"/>
+            <TextBlock Text="Mot devant le résumé d'un épisode" Style="{StaticResource Caption}"/>
+            <TextBox Text="{Binding OverviewLabel, UpdateSourceTrigger=PropertyChanged}"/>
             <TextBlock Text="Bouton et page des bonus" Style="{StaticResource Caption}"/>
             <TextBox Text="{Binding BonusLabel, UpdateSourceTrigger=PropertyChanged}"/>
             <TextBlock Text="Bouton réglages (audio / sous-titres)" Style="{StaticResource Caption}"/>
@@ -387,6 +389,11 @@
             <TextBlock x:Name="LookNote" Text="Ce modèle fixe l'apparence : police, couleurs, fond et libellés des boutons viennent de ses images (souvent en anglais)." TextWrapping="Wrap" Opacity="0.65" Visibility="Collapsed"/>
             <Button x:Name="Detach" Content="Composer à partir de ce fond" Margin="0,8,0,0" HorizontalAlignment="Stretch" Visibility="Collapsed" Click="OnDetach"
                     ToolTip="Garde le fond de ce modèle (sans le copier) et ouvre la police, les boutons, la grille et les couleurs."/>
+            <StackPanel x:Name="Words" Visibility="Collapsed">
+              <TextBlock Text="Mots dessinés dans les boutons du modèle" Style="{StaticResource Caption}"/>
+              <ComboBox x:Name="LanguageBox" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ButtonLanguage}" HorizontalAlignment="Stretch"
+                        ToolTip="Lecture, Chapitres, Réglages, Accueil : la version française refaite par BurnSmith, ou l'image d'origine en anglais (Play, Scenes, Set Up, Main Menu)."/>
+            </StackPanel>
             <StackPanel x:Name="Look">
               <TextBlock Text="Police" Style="{StaticResource Caption}"/>
               <ComboBox x:Name="FontBox" IsEditable="True" Text="{Binding Font, UpdateSourceTrigger=PropertyChanged}"/>

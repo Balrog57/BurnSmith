@@ -305,7 +305,7 @@ public static class Dvd
             series ? [] : movies[0].ChapterTimes.Select((t, i) => Thumb($"c{i + 1}", 0, t + 3, 480, 270)).ToList(),
             series ? Enumerable.Range(0, mainCount).Select(i => Entry(i, $"t{i + 1}")).ToList() : null,
             movies[0].Audio.Select(a => a.Name).ToList(), movies[0].Subtitles.Select(s => s.Name).ToList(),
-            mainCount < job.Titles.Count ? Enumerable.Range(mainCount, job.Titles.Count - mainCount).Select(i => Entry(i, $"b{i - mainCount + 1}")).ToList() : null);
+            mainCount < job.Titles.Count ? Enumerable.Range(mainCount, job.Titles.Count - mainCount).Select(i => Entry(i, $"b{i - mainCount + 1}")).ToList() : null) { PlainFocus = true };
 
         var pages = MenuBuilder.Build(job.Menu!, content);
         if (MenuBuilder.TracksLeftOut(pages, content) is { } leftOut) log(leftOut);
@@ -405,10 +405,13 @@ public static class Dvd
             var sy = h / (double)MenuBuilder.H;
             var hl = new Canvas(w, h);
             var sel = new Canvas(w, h);
-            // the model's per-button artwork is rasterised at the button's size on the page
+            // the model's per-button artwork is rasterised at the button's size on the page. A template that has no DVD artwork but draws its own
+            // state under the remote (a star or a circle beside the words, a line under them, the frame in another colour) gives that drawing,
+            // at the place it has on the page
+            static Box Lit(MenuButton b) => b.DvdHighlightImage == null && b.FocusImage != null ? b.FocusSlot ?? b.Rect : b.Rect;
             var art = MenuRenderer.Sta(() => p.Buttons.Select(b =>
             {
-                int bw = (int)Math.Round(b.Rect.W * sx), bh = (int)Math.Round(b.Rect.H * sy);
+                int bw = (int)Math.Round(Lit(b).W * sx), bh = (int)Math.Round(Lit(b).H * sy);
                 (byte[] Px, int W, int H)? At(string? image, string? mask)
                 {
                     if (image == null) return null;
@@ -425,7 +428,7 @@ public static class Dvd
                     try { return MenuRenderer.Raster(image, null, mw, mh); }
                     catch (InvalidDataException) { return null; }
                 }
-                return (Hl: At(b.DvdHighlightImage, b.DvdHighlightMask), Sel: Marker(b.DvdSelectImage), W: bw, H: bh);
+                return (Hl: At(b.DvdHighlightImage ?? b.FocusImage, b.DvdHighlightMask), Sel: Marker(b.DvdSelectImage), W: bw, H: bh);
             }).ToList());
             var rects = new List<(int X0, int Y0, int X1, int Y1)>();
             for (var k = 0; k < p.Buttons.Count; k++)
@@ -436,6 +439,15 @@ public static class Dvd
                 int x1 = (int)((r.X + r.W) * sx), y1 = (int)((r.Y + r.H) * sy) & ~1;
                 if (art[k].Hl is { } a)
                 {
+                    if (b.DvdHighlightImage == null) // the template's own drawing: where it is on the page; the button's rectangle grows to hold it (a player lights nothing outside)
+                    {
+                        var lit = Lit(b);
+                        int lx = (int)(lit.X * sx) & ~1, ly = (int)(lit.Y * sy) & ~1;
+                        hl.Stamp(a.Px, a.W, a.H, lx, ly, 1);
+                        sel.Stamp(a.Px, a.W, a.H, lx, ly, 2);
+                        rects.Add((Math.Max(0, Math.Min(x0, lx)), Math.Max(0, Math.Min(y0, ly)), Math.Min(w - 1, Math.Max(x1, lx + a.W)), Math.Min(h - 1, Math.Max(y1, ly + a.H + 1 & ~1))));
+                        continue;
+                    }
                     hl.Stamp(a.Px, a.W, a.H, x0, y0, 1); // the artwork's shape, in the one tint a subpicture can spend on it
                     var s = art[k].Sel ?? a; // the model's marker for the chosen state, else the silhouette of the hovered artwork
                     // a marker keeps its own size, centred on the button, instead of covering it
@@ -522,7 +534,7 @@ public static class Dvd
                 default:
                     return a.Page switch
                     {
-                        "settings" => Enter(),
+                        "settings" when states.Count > 0 => Enter(), // else a plain page (a theme's page of two words, Audio and Subtitles)
                         "settings_audio" => EnterChoice(a.Page, 2),
                         "settings_sub" => EnterChoice(a.Page, 3),
                         _ => [Vm.LinkPgc(Math.Max(1, MenuNumber(a.Page!)))], // a page this disc does not have: the first menu, never menu 0

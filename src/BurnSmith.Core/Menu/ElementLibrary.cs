@@ -108,7 +108,7 @@ public static class ElementLibrary
         var p = relative.Replace('\\', '/').ToLowerInvariant();
         foreach (var (prefix, label) in new[]
                  {
-                     ("play/", "Lecture"), ("scenes/", "Scènes"), ("setup/", "Réglages"), ("home/", "Accueil"),
+                     ("play/", "Lecture"), ("scenes/", "Chapitres"), ("setup/", "Réglages"), ("home/", "Accueil"),
                      ("left/", "Précédent"), ("right/", "Suivant"),
                      ("scene/back", "Retour"), ("scene/previous", "Précédent"), ("scene/next", "Suivant"),
                      ("1920x1080/back", "Retour"), ("1920x1080/previous", "Précédent"), ("1920x1080/next", "Suivant"),
@@ -146,7 +146,7 @@ public static class ElementLibrary
     /// <summary>The button pictures a template folder carries: "play\0.normal.png" with its "0.sub.png", or a single arrow picture (no selected state).</summary>
     static IEnumerable<(string Role, string Normal, string? Focus)> TemplateButtons(string dir)
     {
-        foreach (var (folder, role) in new[] { ("play", "Lecture"), ("scenes", "Scènes"), ("home", "Accueil"), ("setup", "Réglages"), ("left", "Précédent"), ("right", "Suivant") })
+        foreach (var (folder, role) in new[] { ("play", "Lecture"), ("scenes", "Chapitres"), ("home", "Accueil"), ("setup", "Réglages"), ("left", "Précédent"), ("right", "Suivant") })
         {
             var normal = System.IO.Path.Combine(dir, folder, "0.normal.png");
             var sub = System.IO.Path.Combine(dir, folder, "0.sub.png");
@@ -188,9 +188,12 @@ public static class ElementLibrary
         }
         return list;
 
-        void Add(TemplateCatalog.Found found, string role, string? normal, string? focus)
+        void Add(TemplateCatalog.Found found, string role, string? normal, string? focus, bool remake = false)
         {
             if (normal == null) return;
+            // the same button in French, when the template has its remake: both are offered
+            if (!remake && found.Design.TemplateDir is { } home && InstalledTemplate.French(home, System.IO.Path.GetRelativePath(home, normal)) is { } french)
+                Add(found, role + " (français)", french, focus != null && InstalledTemplate.French(home, System.IO.Path.GetRelativePath(home, focus)) is { } lit ? lit : focus, true);
             if (MenuRenderer.Size(normal) == null || (focus != null && MenuRenderer.Size(focus) == null)) return; // a damaged picture
             var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(normal))) + (focus == null ? "" : "+" + new FileInfo(focus).Length);
             if (seen.Add(key)) list.Add(new ButtonItem($"{found.Design.Name} · {role}", found.Design.Category, normal, focus));
@@ -201,11 +204,8 @@ public static class ElementLibrary
     public static ButtonItem ImportButton(string normal, string? focus = null)
     {
         foreach (var file in new[] { normal, focus }.OfType<string>())
-            if (!IsPicture(file) || !File.Exists(file)) throw new ArgumentException($"not a picture file (jpg, png, bmp): {file}");
-        Directory.CreateDirectory(UserButtonsDir);
-        var stem = System.IO.Path.GetFileNameWithoutExtension(normal).Replace(".sub", "", StringComparison.OrdinalIgnoreCase);
-        var target = System.IO.Path.Combine(UserButtonsDir, stem + System.IO.Path.GetExtension(normal));
-        for (var n = 2; File.Exists(target); n++) target = System.IO.Path.Combine(UserButtonsDir, $"{stem} ({n}){System.IO.Path.GetExtension(normal)}");
+            if (!IsPicture(file) || !File.Exists(file)) throw new ArgumentException($"not a picture file (jpg, png, bmp, svg): {file}");
+        var target = Free(UserButtonsDir, System.IO.Path.GetFileNameWithoutExtension(normal).Replace(".sub", "", StringComparison.OrdinalIgnoreCase), System.IO.Path.GetExtension(normal));
         File.Copy(normal, target);
         string? twin = null;
         if (focus != null)
@@ -227,13 +227,22 @@ public static class ElementLibrary
     /// <summary>Copies a picture into the user's library (a name that exists is kept apart with a number).</summary>
     public static Element Import(string file)
     {
-        if (!IsPicture(file) || !File.Exists(file)) throw new ArgumentException("not a picture file (jpg, png, bmp)");
-        Directory.CreateDirectory(UserDir);
-        var stem = System.IO.Path.GetFileNameWithoutExtension(file);
-        var target = System.IO.Path.Combine(UserDir, stem + System.IO.Path.GetExtension(file));
-        for (var n = 2; File.Exists(target); n++) target = System.IO.Path.Combine(UserDir, $"{stem} ({n}){System.IO.Path.GetExtension(file)}");
+        if (!IsPicture(file) || !File.Exists(file)) throw new ArgumentException($"not a picture file (jpg, png, bmp, svg): {file}");
+        var target = Free(UserDir, System.IO.Path.GetFileNameWithoutExtension(file), System.IO.Path.GetExtension(file));
         File.Copy(file, target);
         return new Element(System.IO.Path.GetFileNameWithoutExtension(target), Mine, target, true);
+    }
+
+    /// <summary>
+    /// A file name nothing in the folder has yet, whatever the extension ("logo (2).png" when "logo.svg" is there): a picture with a drawing
+    /// of the same name beside it is shown from that drawing (<see cref="MenuRenderer.Traced"/>), which must only happen to a template's traced buttons.
+    /// </summary>
+    static string Free(string dir, string stem, string extension)
+    {
+        Directory.CreateDirectory(dir);
+        var name = stem;
+        for (var n = 2; Directory.EnumerateFiles(dir, name + ".*").Any(); n++) name = $"{stem} ({n})";
+        return System.IO.Path.Combine(dir, name + extension);
     }
 
     /// <summary>Removes one of the user's own pictures; the others are not the library's to delete.</summary>

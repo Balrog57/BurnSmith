@@ -235,7 +235,7 @@ static class TemplateCheck
                 if (b.Action.Kind == "page" && (b.Action.Page == null || !ids.Contains(b.Action.Page))) issues.Add($"{label}/{p.Id}/{b.Id}: mène à une page inconnue ({b.Action.Page})");
                 if ((p.Id.StartsWith("scenes") || (p.Id == "root" && b.Id != "play")) && b.Action.Kind is "play" or "chapter") cellButtons++;
                 if (p.Id.StartsWith("bonus") && b.Action.Kind == "play") bonusButtons.Add(b.Action.Playlist);
-                if (b.FocusImage != null && !File.Exists(b.FocusImage)) issues.Add($"{label}/{p.Id}/{b.Id}: image de sélection introuvable");
+                if (b.FocusImage != null && !MenuRenderer.IsSvgText(b.FocusImage) && !File.Exists(b.FocusImage)) issues.Add($"{label}/{p.Id}/{b.Id}: image de sélection introuvable");
             }
             // remote control: every button reachable from the first one
             var seen = new HashSet<string> { p.Buttons[0].Id };

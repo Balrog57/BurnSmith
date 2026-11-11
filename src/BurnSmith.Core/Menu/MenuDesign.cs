@@ -22,6 +22,8 @@ public sealed class MenuDesign
     public string ChapterLabel { get; set; } = "Chapter";
     public string PlayAllLabel { get; set; } = "Play all";
     public string EpisodesLabel { get; set; } = "Episodes";
+    /// <summary>The word before an episode's summary, where the template writes one (Streaming, Saison).</summary>
+    public string OverviewLabel { get; set; } = "Overview";
     public string SettingsLabel { get; set; } = "Settings";
     public string AudioLabel { get; set; } = "Audio";
     public string SubtitlesLabel { get; set; } = "Subtitles";
@@ -30,6 +32,15 @@ public sealed class MenuDesign
     public string CreditsLabel { get; set; } = "Credits";
     /// <summary>Button and heading of the page that lists the extras (videos marked Bonus).</summary>
     public string BonusLabel { get; set; } = "Bonus";
+
+    /// <summary>The menu's words in French, as the application writes them: a new project, and the gallery's pictures of the designs.</summary>
+    public MenuDesign French()
+    {
+        PlayLabel = "Lecture"; ScenesLabel = "Chapitres"; HomeLabel = "Accueil"; ChapterLabel = "Chapitre";
+        PlayAllLabel = "Tout lire"; EpisodesLabel = "Épisodes"; OverviewLabel = "Aperçu"; SettingsLabel = "Réglages"; AudioLabel = "Audio";
+        SubtitlesLabel = "Sous-titres"; OffLabel = "Désactivés"; BackLabel = "Retour";
+        return this;
+    }
     /// <summary>
     /// Blu-ray pop-up menu: the remote's Pop-up key opens a menu over the title that plays, without stopping it (resume, chapters of that title,
     /// audio and subtitles, back to the main menu). A DVD has none.
@@ -59,6 +70,11 @@ public sealed class MenuDesign
     public string Top { get; set; } = "#0B1B3B";
     public string Bottom { get; set; } = "#2B5DA8";
     public string? BackgroundImage { get; set; }
+    /// <summary>
+    /// For a design laid out by a template whose background is a sample frame of some film: that sample is left out, and without a picture of the
+    /// disc's own the pages get the design's neutral gradient (<see cref="Top"/>, <see cref="Bottom"/>).
+    /// </summary>
+    public bool OwnBackdrop { get; set; }
     /// <summary>
     /// A picture for one kind of page instead of the design's own background (the template's artwork or <see cref="BackgroundImage"/>): the key is the page's kind,
     /// see <see cref="PageKind"/> ("root", "scenes", "settings", "credits", "bonus"), the value a picture (<see cref="ElementLibrary.Reference"/> or a path).
@@ -102,6 +118,11 @@ public sealed class MenuDesign
     /// "Card" = solid card in <see cref="CardFill"/>, "Frame" = double frame in the accent colour, "Glass" = card with a <see cref="Glow"/> outline.
     /// </summary>
     public string ButtonStyle { get; set; } = "Pill";
+    /// <summary>
+    /// A template button whose word is part of its picture ("Play", "Scenes", "Set Up", "Main Menu"): "fr" = its French remake, kept beside it
+    /// (<c>LANG_FRA</c>, made by tools\french-buttons.py), "en" = the template's own picture. A template without remakes shows its own either way.
+    /// </summary>
+    public string ButtonLanguage { get; set; } = "fr";
     /// <summary>Scene pages hold <see cref="Cols"/> x <see cref="Rows"/> buttons (3 x 2 = BurnSmith's original page).</summary>
     public int Cols { get; set; } = 3;
     public int Rows { get; set; } = 2;
@@ -192,11 +213,15 @@ public sealed class MenuDesign
     /// <summary>Takes the look of a template (picture, colours, font, button style, grid) and keeps this design's texts, title and music.</summary>
     public void TakeLook(MenuDesign t)
     {
+        var itsClip = TemplateDir is { } left && LoopFile != null && InstalledTemplate.LoopClip(left) == LoopFile; // the moving background of the template being left
         Name = t.Name; Category = t.Category; Kind = t.Kind; TemplateDir = t.TemplateDir; BackgroundImage = t.BackgroundImage;
         Top = t.Top; Bottom = t.Bottom; TextColor = t.TextColor; Accent = t.Accent; HighlightStyle = t.HighlightStyle; SelectionColor = t.SelectionColor; SelectionOpacity = t.SelectionOpacity; AnimatedThumbs = t.AnimatedThumbs; Font = t.Font;
         ButtonStyle = t.ButtonStyle; Cols = t.Cols; Rows = t.Rows; Thumbnails = t.Thumbnails; Square = t.Square;
-        CardFill = t.CardFill; Glow = t.Glow; Dim = t.Dim; BackgroundBlur = t.BackgroundBlur; ShowPreview = t.ShowPreview;
+        CardFill = t.CardFill; Glow = t.Glow; Dim = t.Dim; BackgroundBlur = t.BackgroundBlur; OwnBackdrop = t.OwnBackdrop; ShowPreview = t.ShowPreview;
         MarginX = t.MarginX; MarginY = t.MarginY; Gap = t.Gap; Header = t.Header; Footer = t.Footer;
+        // a template's own moving background comes with it, and leaves with it; a clip the user chose stays
+        if (t.Loop && t.LoopFile != null && t.TemplateDir != null) (Loop, LoopFile, LoopStart, LoopSeconds) = (true, t.LoopFile, 0, t.LoopSeconds);
+        else if (itsClip) (Loop, LoopFile, LoopSeconds) = (false, null, 30);
         // the veils and fades of the look change with it, under the elements the user placed
         Elements.RemoveAll(e => e.OfLook);
         Elements.InsertRange(0, t.Elements.Where(e => e.OfLook).Select(e => e.Copy()));

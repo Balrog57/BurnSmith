@@ -70,6 +70,7 @@ public partial class MenuEditorWindow : Window
         InitializeComponent();
         FontBox.ItemsSource = System.Windows.Media.Fonts.SystemFontFamilies.Select(f => f.Source).Order().ToList();
         StyleBox.ItemsSource = ElementLibrary.ButtonStyles.Select(b => new { b.Label, b.Value }).ToList();
+        LanguageBox.ItemsSource = new[] { new { Label = "Français (refaits par BurnSmith)", Value = "fr" }, new { Label = "Anglais (images d'origine)", Value = "en" } };
         HlBox.ItemsSource = new[] { new { Value = "box", Label = "Cadre (comme avant)" }, new { Value = "underline", Label = "Soulignement" }, new { Value = "textcolor", Label = "Texte en couleur" } };
         ColsBox.ItemsSource = new[] { 1, 2, 3, 4, 5 };
         RowsBox.ItemsSource = new[] { 1, 2, 3, 4 };
@@ -149,7 +150,7 @@ public partial class MenuEditorWindow : Window
         Props.DataContext = null;
         Props.DataContext = working;
         Look.IsEnabled = working.TemplateDir == null;
-        LookNote.Visibility = Detach.Visibility = working.TemplateDir == null ? Visibility.Collapsed : Visibility.Visible;
+        LookNote.Visibility = Detach.Visibility = Words.Visibility = working.TemplateDir == null ? Visibility.Collapsed : Visibility.Visible;
         SelectBackground();
         HlBox.SelectedValue = working.HighlightStyle;
         RefreshElemList();
@@ -285,7 +286,7 @@ public partial class MenuEditorWindow : Window
     static PageImages DrawPage(MenuDesign d, MenuPage p)
     {
         var focus = new Dictionary<string, BitmapImage>();
-        foreach (var b in p.Buttons) focus[b.Id] = Decode(MenuRenderer.Focus(d, b));
+        foreach (var b in p.Buttons) focus[b.Id] = Decode(MenuRenderer.Focus(d, b, written: p.Ops.OfType<BurnSmith.Core.Menu.Label>().FirstOrDefault(l => l.Rect == b.Rect)));
         return new PageImages(Decode(MenuRenderer.Background(d, p)), focus);
     }
 
@@ -296,7 +297,7 @@ public partial class MenuEditorWindow : Window
         "settings_audio" => "Réglages · Audio",
         "settings_sub" => "Réglages · Sous-titres",
         "credits" => "Crédits",
-        _ when id.StartsWith("scenes") => "Scènes " + id[6..],
+        _ when id.StartsWith("scenes") => "Chapitres " + id[6..],
         _ when id.StartsWith("bonus") => "Bonus " + id[5..],
         _ => id,
     };
@@ -376,7 +377,7 @@ public partial class MenuEditorWindow : Window
         StageCanvas.Children.Add(new System.Windows.Controls.Image { Source = currentImages.Background, Width = MenuBuilder.W, Height = MenuBuilder.H });
         if (current.Buttons.FirstOrDefault(b => b.Id == focusId) is { } selected && currentImages.Focus.TryGetValue(selected.Id, out var frame))
         {
-            var box = selected.Rect.Inflate(MenuBuilder.FocusMargin);
+            var box = MenuRenderer.FocusBox(selected);
             var image = new System.Windows.Controls.Image { Source = frame, Width = box.W, Height = box.H, IsHitTestVisible = false };
             System.Windows.Controls.Canvas.SetLeft(image, box.X);
             System.Windows.Controls.Canvas.SetTop(image, box.Y);
@@ -665,7 +666,7 @@ public partial class MenuEditorWindow : Window
 
     static readonly PageChoice[] PageChoices =
     [
-        new("all", "Toutes les pages"), new("root", "Menu principal"), new("scenes", "Scènes"), new("bonus", "Bonus"), new("settings", "Réglages"), new("credits", "Crédits"),
+        new("all", "Toutes les pages"), new("root", "Menu principal"), new("scenes", "Chapitres"), new("bonus", "Bonus"), new("settings", "Réglages"), new("credits", "Crédits"),
     ];
 
     void InitElements()

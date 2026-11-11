@@ -73,7 +73,38 @@ static partial class DvdtTemplate
     /// thumbnail and the shape that clips it (an ellipse, a rounded box); and its text, left out of the drawings because BurnSmith writes the
     /// words. Lengths are in the drawing's units: its viewBox, or the button's box on the menu.
     /// </summary>
-    sealed record Art(string? Under, string? Over, string? Mask, (double X, double Y, double W, double H)? Slot, XNode? Words, double[] Units);
+    sealed record Art(string? Under, string? Over, string? Mask, (double X, double Y, double W, double H)? Slot, XNode? Words, double[] Units, string? All);
+
+    // the colours a template gives a button under the remote are named per parameter of the button's file (the program's buttons\*.xml):
+    // the part of the drawing each parameter paints, by the part's id, and the property it sets
+    static readonly Dictionary<string, (string[] Ids, string Property)> States = new()
+    {
+        ["fill"] = (["main"], "fill"), ["stroke"] = (["main", "body_rect", "arrow"], "stroke"), ["ac"] = (["main"], "fill"), ["sc"] = (["main"], "stroke"),
+        ["arrow"] = (["arrow"], "fill"), ["circleFill"] = (["circle"], "fill"), ["underlineFill"] = (["underline"], "fill"),
+    };
+
+    /// <summary>
+    /// The button's drawing in the state the program shows under the remote: the template's own "highlighted" colours put on the parts they
+    /// paint. Null when the template changes nothing there. <paramref name="part"/> is the last part recoloured (a circle beside the words, a line under them).
+    /// </summary>
+    static XNode? Lit(XNode menu, string id, XNode def, out string part)
+    {
+        part = "";
+        XNode? lit = null;
+        var button = Walk(menu).Select(x => x.Node).FirstOrDefault(x => x.Name == "button" && x.Attr("id") == id);
+        foreach (var p in button?.Children("parameter") ?? [])
+        {
+            var colour = p.Attr("highlighted");
+            if (colour.Length == 0 || colour == p.Attr("normal") || !States.TryGetValue(p.Attr("name"), out var state)) continue;
+            lit ??= Copy(def);
+            if (Walk(lit).Select(x => x.Node).FirstOrDefault(x => state.Ids.Contains(x.Attr("id"))) is not { } painted) continue;
+            var css = Css(painted.Attr("style"));
+            if (css.ContainsKey(state.Property)) { css[state.Property] = colour; painted.Attrs["style"] = string.Concat(css.Select(c => $"{c.Key}:{c.Value};")); }
+            else painted.Attrs[state.Property] = colour;
+            part = painted.Attr("id");
+        }
+        return part.Length > 0 ? lit : null;
+    }
 
     static Art Draw(XNode def, double bw, double bh)
     {
@@ -102,7 +133,7 @@ static partial class DvdtTemplate
             foreach (var k in kids.Where(k => k.Name == "defs").Concat(shown)) Write(k, sb);
             return sb.Append("</svg>").ToString();
         }
-        if (picture < 0) return new Art(null, Whole(kids), null, null, words, box);
+        if (picture < 0) return new Art(null, Whole(kids), null, null, words, box, Whole(kids));
 
         var image = kids[picture];
         var slot = (X: Num(image.Attr("x")), Y: Num(image.Attr("y")), W: Num(image.Attr("width")), H: Num(image.Attr("height")));
@@ -116,7 +147,7 @@ static partial class DvdtTemplate
             foreach (var k in shape.Kids) Write(k, sb);
             mask = sb.Append("</g></svg>").ToString();
         }
-        return new Art(Whole(kids.Take(picture)), Whole(kids.Skip(picture + 1)), mask, slot, words, box);
+        return new Art(Whole(kids.Take(picture)), Whole(kids.Skip(picture + 1)), mask, slot, words, box, Whole(kids.Where(k => k.Name != "image")));
     }
 
     /// <summary>The template tree, or null when the file is not a menu template; <paramref name="problem"/> says why one cannot be drawn.</summary>
@@ -206,6 +237,16 @@ static partial class DvdtTemplate
             return node;
         }
 
+        // a text button under the remote: the circle beside its words keeps its place in the button's own box; a line under the words is as
+        // wide as the words BurnSmith writes, so that drawing stretches to them
+        XNode Lightable(XNode node, XNode menu, (string Id, XNode Def, double X, double Y, double W, double H) p)
+        {
+            if (Lit(menu, p.Id, p.Def, out var part) is not { } lit || Draw(lit, p.W, p.H).All is not { } drawing) return node;
+            if (part == "underline") node.Attrs["svg_focus"] = drawing.Replace("<svg ", "<svg preserveAspectRatio=\"none\" ");
+            else (node.Attrs["svg_focus"], node.Attrs["focus_rect"]) = (drawing, Rect(p.X, p.Y, p.W, p.H));
+            return node;
+        }
+
         var placed1 = Placed(main, svg1);
         var common = El("common");
         var title = placed1.FirstOrDefault(p => p.Id.StartsWith("obj"));
@@ -232,8 +273,9 @@ static partial class DvdtTemplate
             if (play.Def != null && TextStyle(play.Def) is { } ps)
             {
                 var below = play.Y + play.H + 12;
-                rootNode.Kids.Add(Decorated(Styled("play", ps, play.X, play.Y, play.W, play.H, true, OwnSize(main, play.Id)), play.Def));
-                rootNode.Kids.Add(Decorated(Styled("scenes", ps, play.X, below + play.H <= h ? below : play.Y - play.H - 12, play.W, play.H, true, OwnSize(main, play.Id)), play.Def));
+                var under = below + play.H <= h ? below : play.Y - play.H - 12;
+                rootNode.Kids.Add(Lightable(Decorated(Styled("play", ps, play.X, play.Y, play.W, play.H, true, OwnSize(main, play.Id)), play.Def), main, play));
+                rootNode.Kids.Add(Lightable(Decorated(Styled("scenes", ps, play.X, under, play.W, play.H, true, OwnSize(main, play.Id)), play.Def), main, play with { Y = under }));
                 if (title.Def == null) { uiColor = ps.Color; uiFont = ps.Font; }
             }
         }
@@ -243,9 +285,16 @@ static partial class DvdtTemplate
             for (var i = 0; i < buttons1.Count; i++)
                 if (TextStyle(buttons1[i].Def) is { } bs)
                 {
-                    rootNode.Kids.Add(Decorated(Styled(roles[i], bs, buttons1[i].X, buttons1[i].Y, buttons1[i].W, buttons1[i].H, true, OwnSize(main, buttons1[i].Id)), buttons1[i].Def));
+                    rootNode.Kids.Add(Lightable(Decorated(Styled(roles[i], bs, buttons1[i].X, buttons1[i].Y, buttons1[i].W, buttons1[i].H, true, OwnSize(main, buttons1[i].Id)), buttons1[i].Def), main, buttons1[i]));
                     if (i == 0 && title.Def == null) { uiColor = bs.Color; uiFont = bs.Font; }
                 }
+            // a main menu with two buttons has none for the audio and subtitles: BurnSmith's is written like them, one step further along
+            if (buttons1.Count == 2 && rootNode.Child("setup") == null && TextStyle(buttons1[1].Def) is { } third)
+            {
+                var at = buttons1[1] with { X = 2 * buttons1[1].X - buttons1[0].X, Y = 2 * buttons1[1].Y - buttons1[0].Y };
+                if (at.X >= 0 && at.Y >= 0 && at.X + at.W <= w && at.Y + at.H <= h)
+                    rootNode.Kids.Add(Lightable(Decorated(Styled("setup", third, at.X, at.Y, at.W, at.H, true, OwnSize(main, at.Id)), at.Def), main, at));
+            }
         }
         if (rootNode.Child("play") == null || rootNode.Child("scenes") == null) { problem = "boutons du menu principal illisibles"; return null; }
 
@@ -258,18 +307,42 @@ static partial class DvdtTemplate
         var scene = El("scene");
         scene.Kids.Add(Background(svg2));
         var videos = El("videoes");
-        var filenames = scenes == null ? new Dictionary<string, string>() : Walk(scenes).Where(x => x.Node.Name == "button").ToDictionary(x => x.Node.Attr("id"), x => x.Node.Child("filename")?.Text ?? "");
+        // one menu only (Wall: the title, a column of titles and "Play all"; travel: the title, four pictures with their names and "Play All"):
+        // that page is the whole menu, as in the program. Its titles are this page's scenes, its "Play all" stays where the template writes it,
+        // and the disc's title is its heading; BurnSmith's separate main menu only serves a disc with a single scene
+        var onePage = scenes == null;
+        scenes ??= main;
+        var playsAll = Walk(main).Select(x => x.Node).Where(x => x.Name == "button" && x.Child("action")?.Attr("playAll") == "true").Select(x => x.Attr("id")).ToHashSet();
+        if (onePage)
+        {
+            (rootNode.Attrs["allinone"], rootNode.Attrs["film"]) = ("1", "0");
+            if (rootNode.Child("label") is { } heading) scene.Kids.Add(Copy(heading));
+            if (rootNode.Child("play") is { } playAll) scene.Kids.Add(Copy(playAll));
+        }
+        var filenames = Walk(scenes).Where(x => x.Node.Name == "button").ToDictionary(x => x.Node.Attr("id"), x => x.Node.Child("filename")?.Text ?? "");
         // each button names the title it plays (pgci 1, 3, 5… = titles 1, 2, 3…): thumbnails go in that order, not the order they were drawn in
         // (ChristmasL1WS draws its third title last, BlueFractal swaps its bottom two)
-        var plays = scenes == null ? new Dictionary<string, double>() : Walk(scenes).Where(x => x.Node.Name == "button").ToDictionary(x => x.Node.Attr("id"), x => Num(x.Node.Child("action")?.Attr("pgci")));
-        var placed2 = scenes == null ? new() : Placed(scenes, svg2).Where(p => p.Id.StartsWith("button")).OrderBy(p => plays.GetValueOrDefault(p.Id)).ToList();
+        var plays = Walk(scenes).Where(x => x.Node.Name == "button").ToDictionary(x => x.Node.Attr("id"), x => Num(x.Node.Child("action")?.Attr("pgci")));
+        var placed2 = Placed(scenes, svg2).Where(p => p.Id.StartsWith("button") && !(onePage && playsAll.Contains(p.Id))).OrderBy(p => plays.GetValueOrDefault(p.Id)).ToList();
+        // the names a one-page template writes under its pictures are objects of their own, each under its picture
+        var captions = onePage ? placed1.Where(p => p.Id.StartsWith("obj") && p.Id != title.Id).ToList() : [];
         // the name BurnSmith writes under a thumbnail is its own addition (the program shows none): only when every one has room for it, between
         // the rows and above the arrows
         bool Thumbnail((string Id, XNode Def, double X, double Y, double W, double H) p) => Walk(p.Def).Any(x => x.Node.Name == "image");
         var named = placed2.Where(Thumbnail).All(p => p.Y + p.H + 21 <= h && !placed2.Any(o => o.Id != p.Id && o.X < p.X + p.W && p.X < o.X + o.W && o.Y < p.Y + p.H + 21 && p.Y + p.H + 1 < o.Y + o.H));
-        foreach (var p in placed2)
+        // a scene page that lists its titles as words (textAuto1: twelve lines, a circle beside the one under the remote): the same list
+        var listed = placed2.Any(Thumbnail) ? [] : placed2.Where(p => plays.GetValueOrDefault(p.Id) % 2 == 1 && TextStyle(p.Def) != null).ToList();
+        if (listed.Count > 0)
+        {
+            var items = El("list");
+            foreach (var p in listed)
+                items.Kids.Add(Lightable(Decorated(Styled("item", TextStyle(p.Def)!.Value, p.X, p.Y, p.W, p.H, false, true), p.Def), scenes!, p));
+            scene.Kids.Add(items);
+        }
+        foreach (var p in placed2.Except(listed))
         {
             var file = filenames.GetValueOrDefault(p.Id, "").ToLowerInvariant();
+            var lit = Lit(scenes!, p.Id, p.Def, out var litPart) is { } on ? Draw(on, p.W, p.H).All : null;
             // the button as the program draws it, in the template's colours. Its units on the menu: its viewBox fitted in the button's box, centred
             var art = Draw(p.Def, p.W, p.H);
             var u = Math.Min(p.W / art.Units[2], p.H / art.Units[3]);
@@ -279,9 +352,12 @@ static partial class DvdtTemplate
                 var video = El("video", ("rect", Rect(ux + slot.X * u, uy + slot.Y * u, slot.W * u, slot.H * u)), ("over_rect", Rect(p.X, p.Y, p.W, p.H)));
                 foreach (var (key, svg) in new[] { ("svg_under", art.Under), ("svg_over", art.Over), ("svg_mask", art.Mask) })
                     if (svg != null) video.Attrs[key] = svg;
+                if (lit != null) video.Attrs["svg_focus"] = lit;
                 // a frame with its caption: the name goes where the drawing has its text, under the frame. Its y is the top of the line: the button's
                 // own file leaves the frame at 77 % of the height and puts the text at 83 %, with just the room of its 20 units below (132 high)
-                if (art.Words != null && TextStyle(p.Def) is { } caption)
+                if (captions.FirstOrDefault(o => Math.Abs(o.X - p.X) < 4 && o.Y >= p.Y + p.H - 4 && o.Y < p.Y + p.H + 40) is { Def: not null } under && TextStyle(under.Def) is { } written)
+                    video.Kids.Add(Decorated(Styled("name", written with { Size = written.Size, Centre = true }, under.X, under.Y, under.W, under.H, false), under.Def));
+                else if (art.Words != null && TextStyle(p.Def) is { } caption)
                     video.Kids.Add(Decorated(Styled("name", caption with { Size = caption.Size * u, Centre = true }, p.X, uy + Num(art.Words.Attr("y")) * u, p.W, caption.Size * u * 1.2, false), p.Def));
                 else if (named) video.Kids.Add(Styled("name", ("Segoe UI", 15, uiColor, false, false, true, 0), p.X, p.Y + p.H + 1, p.W, 20, false));
                 videos.Kids.Add(video);
@@ -295,12 +371,18 @@ static partial class DvdtTemplate
             if (role == null) continue;
             var nav = El(role, ("rect", Rect(p.X, p.Y, p.W, p.H)));
             if (art.Over != null) nav.Attrs["svg"] = art.Over;
-            // a word for a button ("Back", "Next"): BurnSmith's own word or sign, where the template writes its own and in its style
-            if (art.Words != null && TextStyle(p.Def) is { } word) nav.Kids.Add(Decorated(Styled("text", word, p.X, p.Y, p.W, p.H, false, true), p.Def));
+            if (lit != null) nav.Attrs["svg_focus"] = litPart == "underline" ? lit.Replace("<svg ", "<svg preserveAspectRatio=\"none\" ") : lit;
+            // a word for a button ("Back", "Next"): where the template writes it and in its style; "word" is the template's own
+            if (art.Words != null && TextStyle(p.Def) is { } word)
+            {
+                var written = Decorated(Styled("text", word, p.X, p.Y, p.W, p.H, false, true), p.Def);
+                written.Attrs["word"] = art.Words.Text;
+                nav.Kids.Add(written);
+            }
             if (art.Over == null && art.Words == null) nav.Attrs["glyph"] = role == "home" ? "⌂" : role == "left" ? "<" : ">";
             scene.Kids.Add(nav);
         }
-        if (videos.Kids.Count == 0)
+        if (videos.Kids.Count == 0 && listed.Count == 0)
         {
             // no thumbnails to copy (one-menu templates, text-only lists): BurnSmith's own 3 x 2 grid on the template's background, in its colour and font
             scene.Kids.RemoveAll(k => k.Name is "left" or "home" or "right");

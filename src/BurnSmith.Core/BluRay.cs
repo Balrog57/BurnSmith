@@ -762,14 +762,17 @@ public static class BluRay
 
     /// <summary>
     /// How long the menu loop lasts: <see cref="MenuDesign.LoopSeconds"/>, or with 0 the music's length from <see cref="MenuDesign.MusicStart"/>
-    /// (the whole song, not cut), within 5 s and <paramref name="max"/> (300 on a Blu-ray, 120 on a DVD); 30 s when 0 and no music.
+    /// (the whole song, not cut), within 5 s and <paramref name="max"/> (300 on a Blu-ray, 120 on a DVD); when 0 and no music, the length of
+    /// the design's own clip, else 30 s.
     /// </summary>
     internal static int LoopLength(MenuDesign menu, int max)
     {
         if (menu.LoopSeconds > 0) return Math.Clamp(menu.LoopSeconds, 5, max);
-        var music = menu.ExistingMusic();
+        // without music, a moving menu with a clip of its own (a template's moving background) lasts as long as that clip
+        var music = menu.ExistingMusic() ?? (menu.Loop && menu.LoopFile is { Length: > 0 } clip && File.Exists(clip) ? clip : null);
         var shown = music == null ? "" : Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", music]).Trim();
-        return double.TryParse(shown, NumberStyles.Float, Inv, out var length) ? Math.Clamp((int)Math.Floor(length - Math.Max(0, menu.MusicStart)), 5, max) : Math.Min(30, max);
+        var from = menu.ExistingMusic() == null ? menu.LoopStart : menu.MusicStart;
+        return double.TryParse(shown, NumberStyles.Float, Inv, out var length) ? Math.Clamp((int)Math.Floor(length - Math.Max(0, from)), 5, max) : Math.Min(30, max);
     }
 
     /// <summary>

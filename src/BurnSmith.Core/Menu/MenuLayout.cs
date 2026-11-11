@@ -18,11 +18,17 @@ public sealed record Picture(string Path, Box Rect, int Radius, int BorderWidth)
 public sealed record Image(string Path, Box Rect, bool Backdrop = false, bool Cover = false) : Op;
 
 /// <summary>Template text: own font (optionally a .ttf next to the template), colour, outline.</summary>
+/// <param name="Tight">
+/// A Yuhan theme's text: the program draws the words into a picture with a 2 px margin and puts it at the theme's Left / Top, so the ink
+/// itself starts 2 px right of and under that point whatever the letters are (measured on a disc made by the program: 752,152 for 750,150).
+/// The zone starts 7/20 of the size above Top (ThemeSkin.Up), hence the ink's corner at X + 2, Y + Size * 7 / 20 + 2.
+/// </param>
 public sealed record Text(string Value, Box Rect, double Size, string Font, string? FontDir, string Color, bool Bold, bool Italic, string Align = "left",
-                          string? Stroke = null, double StrokeWidth = 0, bool Wrap = false, string? Shadow = null, double ShadowOffset = 0) : Op;
+                          string? Stroke = null, double StrokeWidth = 0, bool Wrap = false, string? Shadow = null, double ShadowOffset = 0, bool Tight = false) : Op;
 
 /// <summary>A picture (null = dark placeholder) cut by the template's mask, with its frame drawn on top.</summary>
-public sealed record Framed(Box Rect, string? Picture, string? Frame, string? Mask) : Op;
+/// <param name="Whole">The picture is shown whole, centred on black (a Yuhan theme), instead of filling the frame with its sides cut.</param>
+public sealed record Framed(Box Rect, string? Picture, string? Frame, string? Mask, bool Whole = false) : Op;
 
 /// <summary>
 /// What a button does. Kinds: play (Playlist), chapter (Playlist + Mark), page (Page),
@@ -41,6 +47,11 @@ public sealed record MenuButton(string Id, Box Rect, MenuAction Action)
     public string? FocusImage { get; init; }
     /// <summary>Where <see cref="FocusImage"/> goes when it is only a marker beside the button (a star next to text); null = it covers the button.</summary>
     public Box? FocusSlot { get; init; }
+    /// <summary>
+    /// Texts written on the page while the button is selected, at their own places (the summary of the episode under the remote, as the Streaming
+    /// template shows it). They are part of the button's selected picture, which then covers them and the button; a DVD cannot show them.
+    /// </summary>
+    public IReadOnlyList<Text>? FocusTexts { get; init; }
     /// <summary>
     /// The template's highlighted artwork for this button (<c>frame/0.dvd.sub.png</c> beside <c>frame/0.dvd.normal.png</c>): the picture a DVD
     /// subpicture is made from, composited at this button's place. Null = the design's own four-colour frame.
@@ -84,6 +95,8 @@ public sealed record MenuContent(int Playlist, string? PreviewPicture, IReadOnly
     public bool HasBonus => Bonus is { Count: > 0 };
     public IReadOnlyList<string> AudioNames => (Audio ?? []).Take(MenuBuilder.MaxAudio).ToList();
     public IReadOnlyList<string> SubtitleNames => (Subtitles ?? []).Take(MenuBuilder.MaxSubtitles).ToList();
+    /// <summary>The player only tints shapes under the remote (a DVD): nothing can be written with the selected button.</summary>
+    public bool PlainFocus { get; init; }
     /// <summary>The settings page exists when the viewer has something to choose.</summary>
     public bool HasSettings => AudioNames.Count > 1 || SubtitleNames.Count > 0;
 }
@@ -186,7 +199,7 @@ public static class MenuBuilder
         if (target is "movie" or "play" or "all" or "playall" or "") return Film();
         if (target.StartsWith("chapter", StringComparison.Ordinal))
             return new MenuAction("chapter", Playlist: c.Playlist, Mark: Math.Max(0, (int.TryParse(target[7..].TrimStart(':'), out var n) ? n : 1) - 1));
-        return new MenuAction("page", target == "settings" && SettingsIds(d, c) is [var entry, ..] ? entry : target);
+        return new MenuAction("page", target == "settings" && SettingsIds(d, c) is [var entry, ..] ? Pack(d)?.SettingsEntry(c) ?? entry : target);
     }
 
     /// <summary>
@@ -524,7 +537,7 @@ public static class MenuBuilder
         const int colW = 680, rowH = 84, pitch = 100, top = 300;
         var audio = c.AudioNames.Count > 1 ? c.AudioNames : [];
         var subs = c.SubtitleNames;
-        var ops = pack?.SetupBackdrop(c.PreviewPicture) ?? []; // a template without audio / subtitle rows: its background, BurnSmith's rows
+        var ops = pack?.SetupBackdrop(d, c.PreviewPicture) ?? []; // a template without audio / subtitle rows: its background, BurnSmith's rows
         // a template that places the page title or its Back button (a theme's ASLangTitleText / Return) has them used where it says
         ops.Add(new Label(d.SettingsLabel, pack?.SetupTitle ?? new Box(0, 60, W, 120), 80, true));
         var buttons = new List<MenuButton>();

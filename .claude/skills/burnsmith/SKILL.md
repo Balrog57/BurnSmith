@@ -62,6 +62,7 @@ burnsmith dvd --video ep1.mkv --name "Épisode 1" --video ep2.mkv --name "Épiso
 | Sans menu | `--no-menu` (une seule vidéo) |
 | Textes | `--title TEXTE`, `--titles "fra=Mon disque\|eng=My disc"`, `--credits "Ligne 1\|Ligne 2"` |
 | Fonds par page | `--page-bg root=fond.jpg` (répétable ; `root`, `scenes`, `settings`, `credits`, `bonus`) |
+| Mots des boutons d'un modèle | `--button-language fr` (défaut) ou `en` : les boutons dont le mot est dessiné dans l'image (Play, Scenes, Set Up, Main Menu chez DVDFab) en français, refaits par BurnSmith, ou tels que le modèle les a ; aussi dans `preview` et dans le JSON d'un design (`ButtonLanguage`) |
 | Flou du fond | `--background-blur 12` (0 à 40 : l'image de fond floutée, pour que le texte posé dessus se lise ; le modèle `Saison` en a 12) |
 | Menu animé | `--loop [--loop-file video] [--loop-start S] [--loop-seconds S\|music]` |
 | Musique | `--music morceau [--music-start S] [--music-volume 80] [--music-fade 2]` |
@@ -69,7 +70,7 @@ burnsmith dvd --video ep1.mkv --name "Épisode 1" --video ep2.mkv --name "Épiso
 | Pop-up Blu-ray | `--popup [--popup-main TEXTE] [--popup-resume TEXTE]` |
 | Élément libre | `--element "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;align=center"` (répétable ; `kind` = `text`, `image`, `box`, `button` ; un bouton prend `target=movie\|chapter:3\|scenes1\|settings\|bonus1\|credits`) |
 
-Pour modifier un modèle en profondeur : `burnsmith design-export NOM modele.json`, éditer le JSON, puis `--design modele.json`. `burnsmith preview NOM|modele.json dossier [--picture image.jpg] [--episodes N] [--overview "résumé"] [--title TEXTE] [--bonus N]` dessine toutes les pages d'un modèle avec un contenu d'exemple ; `burnsmith dump NOM` liste ce qui est dessiné, rectangle par rectangle.
+Pour modifier un modèle en profondeur : `burnsmith design-export NOM modele.json`, éditer le JSON, puis `--design modele.json`. `burnsmith preview NOM|modele.json dossier [--picture image.jpg] [--episodes N] [--overview "résumé"] [--title TEXTE] [--bonus N] [--focus]` dessine toutes les pages d'un modèle avec un contenu d'exemple (`--focus` : avec l'état sélectionné des boutons, tel que la télécommande le montre) ; `burnsmith dump NOM` liste ce qui est dessiné, rectangle par rectangle.
 
 ## Préparer des vidéos
 
@@ -90,7 +91,9 @@ Le résultat se donne ensuite à `--video`.
 
 ## Modèles de menu
 
-- `burnsmith templates` : tous les modèles trouvés, et ceux refusés avec la raison.
+- `burnsmith templates` : tous les modèles trouvés (ceux de l'utilisateur sous « Mes modèles »), et ceux refusés avec la raison.
+- `burnsmith template-save NOM|modele.json ["NOUVEAU NOM"]` : range un modèle dans « Mes modèles » (`Documents\BurnSmith\Templates\mine`), comme « Enregistrer le modèle… » de l'éditeur. Il se retrouve ensuite par son nom : `--design "NOUVEAU NOM"`, `preview`, `design-export`, et dans l'éditeur de l'application.
+- `burnsmith import-background image…` et `burnsmith import-button image [image-sélectionnée]` : copient des images (jpg, png, bmp, svg) dans la bibliothèque de l'utilisateur (onglets Fonds et Boutons de l'éditeur) et affichent le chemin de chaque copie. Ce chemin sert dans un modèle : `"BackgroundImage"` du JSON, `--page-bg root=CHEMIN`, ou un bouton `--element "kind=button;page=root;rect=120,600,300,100;target=movie;file=CHEMIN;focus=CHEMIN-SÉLECTION"`.
 - `burnsmith convert-templates [--out DOSSIER] [--force]` : convertit les modèles du PC au format unique (`template.json` + images) dans `Documents\BurnSmith\Templates\converted`. `--force` remplace les paquets existants, modifications de l'utilisateur comprises : demander avant.
 - Contrôles, tous à 0 quand tout va bien : `check-conversion` (paquets lisibles et complets), `check-fidelity` (chaque modèle d'origine et son paquet dessinent le même menu), `check-library`, `check-templates [--matrix] [--only NOM]` (pages, boutons, télécommande ; `--matrix` dure plus d'une heure).
 

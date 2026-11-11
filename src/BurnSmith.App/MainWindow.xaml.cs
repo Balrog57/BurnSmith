@@ -175,12 +175,7 @@ public partial class MainWindow : Window
         base.OnClosed(e);
     }
 
-    void FrenchLabels()
-    {
-        design.PlayLabel = "Lecture"; design.ScenesLabel = "Scènes"; design.HomeLabel = "Accueil"; design.ChapterLabel = "Chapitre";
-        design.PlayAllLabel = "Tout lire"; design.EpisodesLabel = "Épisodes"; design.SettingsLabel = "Réglages"; design.AudioLabel = "Audio";
-        design.SubtitlesLabel = "Sous-titres"; design.OffLabel = "Désactivés"; design.BackLabel = "Retour";
-    }
+    void FrenchLabels() => design.French();
 
     /// <summary>For the off-screen snapshot (<c>design=NAME</c>): the project starts from this template instead of the default one.</summary>
     public void UseDesign(MenuDesign d)

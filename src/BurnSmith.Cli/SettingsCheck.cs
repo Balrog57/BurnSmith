@@ -78,9 +78,10 @@ static class SettingsCheck
         var c = Content(3, 2);
         var pages = MenuBuilder.Build(d, c);
         var (audio, sub) = (pages.FirstOrDefault(p => p.Id == "settings_audio"), pages.FirstOrDefault(p => p.Id == "settings_sub"));
-        Check("deux pages, settings_audio et settings_sub, plus de page settings", audio != null && sub != null && pages.All(p => p.Id != "settings"));
-        if (audio == null || sub == null) return;
-        Check("le bouton Réglages de la racine mène à la page audio", pages[0].Buttons.Any(b => b.Id == "settings" && b.Action is { Kind: "page", Page: "settings_audio" }));
+        var words = pages.FirstOrDefault(p => p.Id == "settings");
+        Check("trois pages : settings (les deux mots du thème), settings_audio et settings_sub", audio != null && sub != null && words != null);
+        if (audio == null || sub == null || words == null) return;
+        Check("le bouton Réglages de la racine mène à la page des deux mots", pages[0].Buttons.Any(b => b.Id == "settings" && b.Action is { Kind: "page", Page: "settings" }));
 
         static bool At(MenuPage p, string value, int x, int y) => p.Ops.OfType<Text>().Any(t => t.Value == value && t.Rect.X == x && t.Rect.Y == y);
         static string Rows(MenuPage p, string prefix) => string.Join(' ', p.Buttons.Where(b => b.Id[0] == prefix[0] && char.IsDigit(b.Id[1])).Select(b => $"{b.Id}@{b.Rect.X},{b.Rect.Y}"));
@@ -88,19 +89,23 @@ static class SettingsCheck
         var six = MenuBuilder.Settings(d, Content(6, 5), null, null, "settings_audio");
         var offPlusFive = MenuBuilder.Settings(d, Content(6, 5), null, null, "settings_sub");
         // Top est le haut des lettres : la zone du texte commence 0,35 fois sa taille plus haut (ThemeSkin.Up), soit 15 pour le titre (45) et 12 pour une ligne (36)
+        if (name != "Birthday 01") // les places du thème d'essai ; un vrai thème a les siennes
+            Check("page des deux mots : « Audio » à 850,400 et « Sous-titres » à 850,540 (haut des lettres), chacun mène à sa liste, Retour à la racine, et aucun choix n'y est marqué",
+                  At(words, d.AudioLabel, 850, 382) && At(words, d.SubtitlesLabel, 850, 522) && words.Buttons.Count == 3
+                  && words.Buttons.First(b => b.Id == "audio").Action.Page == "settings_audio" && words.Buttons.First(b => b.Id == "subs").Action.Page == "settings_sub"
+                  && Rect(words, "back") == new Box(927, 900, 64, 64) && words.Buttons.First(b => b.Id == "back").Action.Page == "root");
         Check("page audio : la catégorie dans le titre, lettres à 750,150, six lignes à x 750, lettres à y 270 à 645 au pas de 75 (le plafond de pistes s'arrête à 6, les lignes 7 et 8 du thème ne servent pas)",
               At(audio, d.AudioLabel, 750, 135) && !audio.Ops.OfType<Text>().Any(t => t.Value == d.SettingsLabel)
               && Rows(six, "a") == "a1@750,258 a2@750,333 a3@750,408 a4@750,483 a5@750,558 a6@750,633");
-        Check("rien aux places des libellés du thème (850,400 et 850,540), sur aucune des deux pages",
+        Check("rien aux places des deux mots du thème (850,400 et 850,540), sur aucune des deux listes",
               !new[] { six, offPlusFive }.Any(p => p.Ops.OfType<Text>().Any(t => t.Rect.X == 850 && t.Rect.Y is 382 or 522 or 400 or 540)));
         Check("au pire cas (6 audio ; Désactivé + 5 sous-titres) aucun texte ne recouvre une ligne", Overlaps(six).Count == 0 && Overlaps(offPlusFive).Count == 0);
-        Check("page audio : Retour à 927,900, « Sous-titres » à 1227,900 et rien à 627,900",
-              Rect(audio, "back") == new Box(927, 900, 64, 64) && audio.Buttons.First(b => b.Id == "back").Action.Page == "root"
-              && Rect(audio, "next") == new Box(1227, 900, 64, 64) && audio.Buttons.First(b => b.Id == "next").Action.Page == "settings_sub" && Rect(audio, "prev") == null);
+        Check("page audio : Retour à 927,900 vers la page des deux mots, aucune flèche vers l'autre liste",
+              Rect(audio, "back") == new Box(927, 900, 64, 64) && audio.Buttons.First(b => b.Id == "back").Action.Page == "settings" && Rect(audio, "next") == null && Rect(audio, "prev") == null);
         Check("page sous-titres : la catégorie dans le titre, à 750,150, « Désactivé » puis les sous-titres sur les mêmes lignes",
               At(sub, d.SubtitlesLabel, 750, 135) && !sub.Ops.OfType<Text>().Any(t => t.Value == d.SettingsLabel) && Rows(sub, "s") == "s0@750,258 s1@750,333 s2@750,408" && At(sub, d.OffLabel, 750, 258));
-        Check("page sous-titres : Retour à 927,900, « Audio » à 627,900 et rien à 1227,900",
-              Rect(sub, "back") == new Box(927, 900, 64, 64) && Rect(sub, "prev") == new Box(627, 900, 64, 64) && sub.Buttons.First(b => b.Id == "prev").Action.Page == "settings_audio" && Rect(sub, "next") == null);
+        Check("page sous-titres : Retour à 927,900 vers la page des deux mots, aucune flèche vers l'autre liste",
+              Rect(sub, "back") == new Box(927, 900, 64, 64) && sub.Buttons.First(b => b.Id == "back").Action.Page == "settings" && Rect(sub, "prev") == null && Rect(sub, "next") == null);
 
         // une catégorie sans choix n'a pas de page : la racine ne doit pas mener à une page absente, et aucun bouton ne doit y conduire
         string Shape(int a, int s)
@@ -135,10 +140,10 @@ static class SettingsCheck
             var lines = File.ReadAllLines(Path.Combine(menu, "menu.txt"));
             bool Button(string page, string id, string action) => lines.Any(l => l.StartsWith($"button {page} {id} ", StringComparison.Ordinal) && l.EndsWith(" " + action, StringComparison.Ordinal));
             // Menu.java compare l'action du bouton au choix en cours : ce sont ces lignes, et le décalage du marqueur, qui font suivre le point
-            Check("menu.txt du xlet : les deux pages, la racine vers l'audio, l'action de chaque ligne (celle que suit le point), le décalage du marqueur, les images",
-                  lines.Contains("page settings_audio bg_settings_audio.jpg") && lines.Contains("page settings_sub bg_settings_sub.jpg")
-                  && Button("root", "settings", "page settings_audio") && Button("settings_audio", "a2", "audio 2") && Button("settings_sub", "s0", "sub 0") && Button("settings_sub", "s2", "sub 2")
-                  && Button("settings_audio", "next", "page settings_sub") && Button("settings_sub", "prev", "page settings_audio") && Button("settings_audio", "back", "page root")
+            Check("menu.txt du xlet : les trois pages, la racine vers les deux mots, chaque mot vers sa liste, l'action de chaque ligne (celle que suit le point), le décalage du marqueur, les images",
+                  lines.Contains("page settings bg_settings.jpg") && lines.Contains("page settings_audio bg_settings_audio.jpg") && lines.Contains("page settings_sub bg_settings_sub.jpg")
+                  && Button("root", "settings", "page settings") && Button("settings_audio", "a2", "audio 2") && Button("settings_sub", "s0", "sub 0") && Button("settings_sub", "s2", "sub 2")
+                  && Button("settings", "audio", "page settings_audio") && Button("settings", "subs", "page settings_sub") && Button("settings_audio", "back", "page settings") && Button("settings", "back", "page root")
                   && lines.Contains($"marker mark.png {MenuBuilder.MarkerSize} {MenuBuilder.MarkerSize} {MenuBuilder.MarkerOffset(d)}") && File.Exists(Path.Combine(menu, "mark.png")));
         }
         finally { if (Directory.Exists(menu)) Directory.Delete(menu, true); }
@@ -148,8 +153,8 @@ static class SettingsCheck
         placed.Elements.Add(MenuElement.Parse("kind=button;page=root;rect=100,100,300,90;text=Langues;target=settings"));
         placed.Elements.Add(MenuElement.Parse("kind=text;page=settings;rect=100,800,400,60;text=Note"));
         var withElements = MenuBuilder.Build(placed, c);
-        Check("un bouton posé qui vise « settings » mène à la page audio, un élément des Réglages est sur les deux pages et sur celles d'un DVD",
-              withElements[0].Buttons.Any(b => b.Id == "u0" && b.Action.Page == "settings_audio")
+        Check("un bouton posé qui vise « settings » mène à la page des deux mots, un élément des Réglages est sur les trois pages et sur celles d'un DVD",
+              withElements[0].Buttons.Any(b => b.Id == "u0" && b.Action.Page == "settings")
               && withElements.Where(p => MenuDesign.PageKind(p.Id) == "settings").All(p => p.Ops.OfType<Label>().Any(l => l.Value == "Note") || p.Ops.OfType<Text>().Any(t => t.Value == "Note"))
               && new MenuElement { Page = "settings" }.AppliesTo("settings_sub_1"));
     }
@@ -203,23 +208,23 @@ static class SettingsCheck
             }
             static string Jump(int page) => $"200400000000{page:X4}";
 
-            // numéros : 1 = racine, 2 et 3 = audio 1 et 2, 4 et 5 = sous-titres désactivés et 1
-            check("réglages, vrai DVD : la racine et quatre pages (2 audio + 2 choix de sous-titres), pas leur produit", pages.Count == 5);
-            if (pages.Count != 5) return; // la suite lit les pages par leur numéro
-            const string toAudio = "20A4000200010002 20A4000200020003", toSub = "20A4000300000004 20A4000300010005"; // si g2 = 1, page 2 ; si g2 = 2, page 3 ; si g3 = 0, page 4 ; si g3 = 1, page 5
-            static bool Goes(List<string> buttons) => buttons.Any(b => b.StartsWith("7101000F", StringComparison.Ordinal)); // le bouton part vers ses commandes dans la fin de chaîne
-            check("réglages, vrai DVD : le bouton de la racine compare g2 et saute à la page audio du choix en cours, sans regarder le sous-titre",
-                  Goes(Buttons(pages[0])) && Post(pages[0]).Contains(toAudio) && !Post(pages[0]).Contains(toSub));
-            check("réglages, vrai DVD : « Sous-titres » compare g3 sur chaque page audio, « Audio » compare g2 sur chaque page sous-titres, et Retour mène à la racine",
-                  new[] { 2, 3 }.All(n => Post(pages[n - 1]).Contains(toSub)) && new[] { 4, 5 }.All(n => Post(pages[n - 1]).Contains(toAudio)) && Enumerable.Range(2, 4).All(n => Buttons(pages[n - 1]).Contains(Jump(1))));
+            // numéros : 1 = racine, 2 = les deux mots (Audio, Sous-titres), 3 et 4 = audio 1 et 2, 5 et 6 = sous-titres désactivés et 1
+            check("réglages, vrai DVD : la racine, la page des deux mots et quatre pages (2 audio + 2 choix de sous-titres), pas leur produit", pages.Count == 6);
+            if (pages.Count != 6) return; // la suite lit les pages par leur numéro
+            const string toAudio = "20A4000200010003 20A4000200020004", toSub = "20A4000300000005 20A4000300010006"; // si g2 = 1, page 3 ; si g2 = 2, page 4 ; si g3 = 0, page 5 ; si g3 = 1, page 6
+            check("réglages, vrai DVD : le bouton de la racine saute à la page des deux mots, sans rien comparer",
+                  Buttons(pages[0]).Contains(Jump(2)) && !Post(pages[0]).Contains(toAudio) && !Post(pages[0]).Contains(toSub));
+            check("réglages, vrai DVD : sur la page des deux mots, « Audio » compare g2, « Sous-titres » compare g3, Retour mène à la racine ; chaque liste revient à cette page",
+                  Post(pages[1]).Contains(toAudio) && Post(pages[1]).Contains(toSub) && Buttons(pages[1]).Contains(Jump(1)) && Pre(pages[1]) == "5600000004000000"
+                  && Enumerable.Range(3, 4).All(n => Buttons(pages[n - 1]).Contains(Jump(2)) && !Post(pages[n - 1]).Contains(toAudio) && !Post(pages[n - 1]).Contains(toSub)));
             check("réglages, vrai DVD : choisir l'audio 2 écrit g2 et le flux 1, et mène à sa page ; choisir un sous-titre écrit g3 et le flux, et mène à sa page",
-                  Post(pages[1]).Contains("7100000200020000 5104008100000003") && Post(pages[4]).Contains("7100000300000000 51040000BE000004") && Post(pages[3]).Contains("7100000300010000 51040000C0000005"));
+                  Post(pages[2]).Contains("7100000200020000 5104008100000004") && Post(pages[5]).Contains("7100000300000000 51040000BE000005") && Post(pages[4]).Contains("7100000300010000 51040000C0000006"));
             check("réglages, vrai DVD : un choix laisse le rang de sa ligne (g4 = 2048 pour la ligne 2, g5 = 1) à la page où il saute, dont le pre le reprend, sinon le premier bouton ; la racine garde le premier",
-                  Post(pages[1]).Contains("7100000408000000 7100000500010000 7100000200020000 5104008100000003") && Post(pages[3]).Contains("7100000408000000 7100000500010000 7100000300010000 51040000C0000005")
-                  && Enumerable.Range(1, 4).All(n => Pre(pages[n]) == "00B1000500010005 4600000000040000 7100000500000000 0001000000000006 5600000004000000 0000000000000000") && Pre(pages[0]) == "5600000004000000");
+                  Post(pages[2]).Contains("7100000408000000 7100000500010000 7100000200020000 5104008100000004") && Post(pages[4]).Contains("7100000408000000 7100000500010000 7100000300010000 51040000C0000006")
+                  && Enumerable.Range(2, 4).All(n => Pre(pages[n]) == "00B1000500010005 4600000000040000 7100000500000000 0001000000000006 5600000004000000 0000000000000000") && Pre(pages[0]) == "5600000004000000");
             check("réglages, vrai DVD : un choix garde l'autre registre : la page audio n'écrit jamais g3, celle des sous-titres jamais g2",
-                  new[] { 2, 3 }.All(n => !Post(pages[n - 1]).Contains("71000003")) && new[] { 4, 5 }.All(n => !Post(pages[n - 1]).Contains("71000002")));
-            check("réglages, vrai DVD : la page audio porte ses 2 lignes, Retour et « Sous-titres » ; celle des sous-titres ses 2 lignes, « Audio » et Retour", Buttons(pages[1]).Count == 4 && Buttons(pages[3]).Count == 4);
+                  new[] { 3, 4 }.All(n => !Post(pages[n - 1]).Contains("71000003")) && new[] { 5, 6 }.All(n => !Post(pages[n - 1]).Contains("71000002")));
+            check("réglages, vrai DVD : la page audio porte ses 2 lignes et Retour, celle des sous-titres aussi", Buttons(pages[2]).Count == 3 && Buttons(pages[4]).Count == 3);
             check("réglages, vrai DVD : le disque passe le contrôle de structure", DiscCheck.Folder(disc).Count == 0);
 
             var (film6, worst) = (Path.Combine(dir, "film6.mkv"), Path.Combine(dir, "worst"));
@@ -231,7 +236,7 @@ static class SettingsCheck
             int Word(int o) => (int)BinaryPrimitives.ReadUInt32BigEndian(ifo.AsSpan(o));
             var chains = Word(0xD0) * 2048 + Word(Word(0xD0) * 2048 + 12);
             var count = Enumerable.Range(1, BinaryPrimitives.ReadUInt16BigEndian(ifo.AsSpan(chains))).Count(n => ifo[chains + Word(chains + 8 * n + 4) + 3] > 0);
-            check($"réglages, vrai DVD au pire cas (6 audio, 5 sous-titres) : la racine et 12 pages, pas 72 ({count} chaînes de menu)", count == 13);
+            check($"réglages, vrai DVD au pire cas (6 audio, 5 sous-titres) : la racine, les deux mots et 12 pages, pas 72 ({count} chaînes de menu)", count == 14);
         }
         catch (FileNotFoundException e) { check($"réglages, vrai DVD : {e.Message}", false); }
         catch (InvalidOperationException e) { check($"réglages, vrai DVD : {e.Message.Split('\n')[0]}", false); }

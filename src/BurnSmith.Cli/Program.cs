@@ -25,7 +25,7 @@ static List<int> SubsToKeep(List<int>? asked, int own, int files, string video, 
 }
 var videos = a.Select((v, i) => (v, i)).Where(x => x.v == "--video" && x.i + 1 < a.Count).Select(x => BluRay.MainClip(Path.GetFullPath(a[x.i + 1]))).ToList(); // a Blu-ray given whole (.iso, BDMV folder): its film
 
-// burnsmith preview <template name or folder> <out folder> [--picture frame.jpg] [--episodes N] [--bonus N]
+// burnsmith preview <template name or folder> <out folder> [--picture frame.jpg] [--episodes N] [--bonus N] [--focus]
 //   draws every page of a menu template with sample content (3 audio, 2 subtitles), to compare with the vendor's own thumbnail
 if (a.Count >= 3 && a[0] == "preview")
 {
@@ -43,9 +43,33 @@ if (a.Count >= 3 && a[0] == "preview")
     if (a.Contains("--list")) chosen.SceneList = true; // la page de scènes en liste, quand le modèle la décrit
     if (a.Contains("--scenes-only")) chosen.ScenesOnly = true;
     if (a.Contains("--bonus-text")) chosen.BonusText = true;
+    if (Opt("--button-language") is "fr" or "en") chosen.ButtonLanguage = Opt("--button-language")!;
     if (Opt("--credits") is { } sampleCredits) chosen.Credits = sampleCredits.Replace('|', '\n');
     foreach (var spec in OptAll("--element")) chosen.Elements.Add(MenuElement.Parse(spec));
-    var files = MenuRenderer.Sta(() => MenuBuilder.Build(chosen, sample).Select(page => (page.Id, Jpeg: MenuRenderer.Background(chosen, page))).ToList());
+    // --focus: every button drawn as it is under the remote (one at a time on the disc), to see the selected state of a template
+    byte[] Lit(MenuPage page, byte[] jpeg)
+    {
+        static System.Windows.Media.Imaging.BitmapSource Picture(byte[] data) => System.Windows.Media.Imaging.BitmapFrame.Create(new MemoryStream(data), System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+        var visual = new System.Windows.Media.DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawImage(Picture(jpeg), new System.Windows.Rect(0, 0, MenuBuilder.W, MenuBuilder.H));
+            // every button lit at once; of those that write a text when selected (an episode's summary), only the first, or the texts would pile up
+            foreach (var b in page.Buttons.Where(b => b.FocusTexts == null || b == page.Buttons.First(o => o.FocusTexts != null)))
+            {
+                var r = MenuRenderer.FocusBox(b);
+                dc.DrawImage(Picture(MenuRenderer.Focus(chosen, page, b)), new System.Windows.Rect(r.X, r.Y, r.W, r.H));
+            }
+        }
+        var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(MenuBuilder.W, MenuBuilder.H, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        bmp.Render(visual);
+        var encoder = new System.Windows.Media.Imaging.JpegBitmapEncoder { QualityLevel = 92 };
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+        using var ms = new MemoryStream();
+        encoder.Save(ms);
+        return ms.ToArray();
+    }
+    var files = MenuRenderer.Sta(() => MenuBuilder.Build(chosen, sample).Select(page => (page.Id, Jpeg: MenuRenderer.Background(chosen, page) is var jpeg && a.Contains("--focus") ? Lit(page, jpeg) : jpeg)).ToList());
     foreach (var (id, jpeg) in files) File.WriteAllBytes(Path.Combine(a[2], $"{chosen.Name}_{id}.jpg"), jpeg);
     Console.WriteLine(string.Join(", ", files.Select(f => f.Id)));
     return 0;
@@ -284,15 +308,17 @@ if (a.Count >= 1 && a[0] == "check-highlights")
     return hlFailed == 0 ? 0 : 1;
 }
 
-// burnsmith check-vectors [templates folder] [--max percent] [--write folder] : every picture that has a traced .svg beside it (tools\vectorize-buttons.ps1), drawn both ways at the picture's size.
+// burnsmith check-vectors [templates folder] [--max percent] [--write folder] : every picture that has a traced .svg beside it (tools\vectorize-buttons.py), drawn both ways at the picture's size.
 // Prints, worst first, the share of pixels the trace changes by more than 40 levels (colour or transparency) and the mean change; fails when a trace is over --max (default 100: it only measures).
 if (a.Count >= 1 && a[0] == "check-vectors")
 {
     var vecRoot = a.Skip(1).Where((x, i) => !x.StartsWith("--") && !a[i].StartsWith("--")).FirstOrDefault() ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "BurnSmith", "Templates", "sources");
     var vecMax = a.IndexOf("--max") is var at and >= 0 && at + 1 < a.Count ? double.Parse(a[at + 1], System.Globalization.CultureInfo.InvariantCulture) : 100;
     var vecWrite = a.IndexOf("--write") is var wr and >= 0 && wr + 1 < a.Count ? a[wr + 1] : null; // the traces as BurnSmith draws them, one PNG each: to look at
+    var vecAlone = Directory.CreateTempSubdirectory("burnsmith-vec").FullName; // each picture away from its drawing, which is drawn in its place wherever it stands beside it
     var rows = MenuRenderer.Sta(() => Directory.EnumerateFiles(vecRoot, "*.svg", SearchOption.AllDirectories)
-        .Select(svg => (Svg: svg, Png: Path.ChangeExtension(svg, ".png"))).Where(p => File.Exists(p.Png) && MenuRenderer.Size(p.Png) != null)
+        .Select(svg => (Svg: svg, Png: Path.ChangeExtension(svg, ".png"))).Where(p => File.Exists(p.Png))
+        .Select((p, n) => { var alone = Path.Combine(vecAlone, $"{n}.png"); File.Copy(p.Png, alone); return (p.Svg, Png: alone); }).Where(p => MenuRenderer.Size(p.Png) != null)
         .Select(p =>
         {
             var (w, h) = MenuRenderer.Size(p.Png)!.Value;
@@ -316,6 +342,7 @@ if (a.Count >= 1 && a[0] == "check-vectors")
             return (Off: 100.0 * off / (w * h), Mean: sum / (double)picture.Length, p.Svg);
         }).OrderByDescending(r => r.Off).ToList());
     foreach (var r in rows) Console.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{r.Off,6:F2} %  {r.Mean,6:F2}  {Path.GetRelativePath(vecRoot, r.Svg)}"));
+    Directory.Delete(vecAlone, true);
     var over = rows.Count(r => r.Off > vecMax);
     Console.WriteLine($"{rows.Count} tracés, {over} au-delà de {vecMax} %");
     return over == 0 ? 0 : 1;
@@ -402,9 +429,16 @@ if (a.Count >= 1 && a[0] == "check-elements")
         var told = streaming.Clone();
         told.Title = "Ma série";
         var season5 = new MenuContent(1, null, [], [.. Enumerable.Range(1, 5).Select(i => new TitleEntry(i == 2 ? "E02 - Déjà" : $"Épisode {i} · Nom {i}", i, null, i == 1 ? "Il était une fois" : null))]);
-        var told5 = MenuBuilder.Build(told, season5);
+        // a Blu-ray writes the summary of the episode under the remote, under its word, and leaves the first two zones to the user; a DVD cannot, and gives every episode its row
+        var lit5 = MenuBuilder.Build(told, season5)[0];
+        Check("Streaming on a Blu-ray: the summary comes with its episode's selected state, under \"Overview:\", in the template's last two zones; the first two stay the user's",
+              lit5.Buttons.First(b => b.Id == "e1").FocusTexts is [{ Value: "Il était une fois", Wrap: true, Rect: { X: 536, Y: 488 } }] && lit5.Buttons.First(b => b.Id == "e2").FocusTexts == null
+              && lit5.Ops.OfType<Text>().Any(t => t.Value == "Overview:" && t.Bold && t.Rect.Y == 432) && !lit5.Ops.OfType<Text>().Any(t => t.Value == "Il était une fois")
+              && lit5.Zones.Count(z => z.Key.StartsWith("slot:overview")) == 2
+              && MenuRenderer.FocusBox(lit5.Buttons.First(b => b.Id == "e1")) is { Y: 488 } whole && whole.X + whole.W == 1866 && MenuRenderer.FocusBox(lit5.Buttons.First(b => b.Id == "e2")).Y > 700);
+        var told5 = MenuBuilder.Build(told, season5 with { PlainFocus = true });
         var first = told5[0].Ops.OfType<Text>().ToList();
-        Check("Streaming: episodes numbered E01 - Name, a summary under its episode's name in place of the text zones, the disc's title on every episode page",
+        Check("Streaming on a DVD: episodes numbered E01 - Name, a summary under its episode's name in place of the text zones, the disc's title on every episode page",
               first.Any(t => t.Value == "E01 - Nom 1" && t.Bold && t.Rect.X == 536 && t.Rect.Y == 298) && first.Any(t => t.Value == "Il était une fois" && t.Wrap && t.Rect.Y == 332)
               && first.Count(t => t.Value == "E02 - Déjà") == 2 && !told5[0].Zones.Any(z => z.Key.StartsWith("slot:overview"))
               && told5.First(p => p.Id == "scenes2").Ops.OfType<Text>().Any(t => t.Value == "Ma série") && told5.First(p => p.Id == "scenes2").Zones.Any(z => z.Key == "slot:overview1"));
@@ -441,10 +475,9 @@ if (a.Count >= 1 && a[0] == "check-elements")
             return 0;
         });
         File.WriteAllText(Path.ChangeExtension(twinPng, ".svg"), """<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#ff0000"/></svg>""");
-        Check("traced twin: not used at the picture's own size or smaller, used when the button is drawn larger",
-              MenuRenderer.Traced(twinPng, 40, 20) == null && MenuRenderer.Traced(twinPng, 30, 15) == null && MenuRenderer.Traced(twinPng, 80, 40)?.EndsWith("b.svg") == true);
+        Check("traced twin: a picture with its drawing beside it has a twin, the drawing itself none", MenuRenderer.Traced(twinPng)?.EndsWith("b.svg") == true && MenuRenderer.Traced(Path.ChangeExtension(twinPng, ".svg")) == null);
         var (same, large) = MenuRenderer.Sta(() => (MenuRenderer.Raster(twinPng, null, 40, 20).Px, MenuRenderer.Raster(twinPng, null, 80, 40).Px));
-        Check("traced twin: the page shows the white picture at its size and the red drawing enlarged", same[0] == 255 && same[1] == 255 && large[0] == 0 && large[1] == 0 && large[2] == 255);
+        Check("traced twin: the page shows the red drawing, not the white picture, at its size and enlarged", same[0] == 0 && same[2] == 255 && large[0] == 0 && large[1] == 0 && large[2] == 255);
     }
     finally { Directory.Delete(twinDir, true); }
 
@@ -542,7 +575,7 @@ if (a.Count >= 1 && a[0] == "check-elements")
     Check("un élément bouton devient un vrai bouton du menu, avec son libellé et l'action choisie",
           elButtonOne.Count == 1 && elButtonOne[0].Action.Kind == "play" && elButtonPage.Ops.OfType<Label>().Any(l => l.Value == "Lire"));
 
-    elButton.Elements.Add(MenuElement.Parse("kind=button;page=root;rect=520,600,300,100;text=Scènes;target=scenes1"));
+    elButton.Elements.Add(MenuElement.Parse("kind=button;page=root;rect=520,600,300,100;text=Chapitres;target=scenes1"));
     var elTwoPage = MenuBuilder.Build(elButton, elContent).First(p => p.Id == "root");
     var elTwo = elTwoPage.Buttons.Where(b => b.Id.StartsWith("u")).ToList();
     Check("deux boutons posés côte à côte se pointent l'un l'autre à la télécommande, et la page visée est celle demandée",
@@ -552,7 +585,7 @@ if (a.Count >= 1 && a[0] == "check-elements")
     var elJson = System.Text.Json.JsonSerializer.Serialize(elButton);
     var elBack = System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(elJson)!;
     Check("un modèle enregistré revient entier (éléments, bouton ajouté et sa cible)",
-          elBack.Elements.Count == elButton.Elements.Count && elBack.Elements[^1] is { Kind: "button", Target: "scenes1", Text: "Scènes" }
+          elBack.Elements.Count == elButton.Elements.Count && elBack.Elements[^1] is { Kind: "button", Target: "scenes1", Text: "Chapitres" }
           && elBack.Elements[0].X == elButton.Elements[0].X && elBack.Title == elButton.Title);
 
     // la page de scènes en liste : les lignes se posent aux rectangles que le modèle donne
@@ -612,6 +645,8 @@ if (a.Count >= 1 && a[0] == "check-elements")
               elPicPage.Ops.OfType<Image>().Any(i => i.Path == normalPic && i.Rect == new Box(120, 600, 300, 100)) && elPicPage.Ops.OfType<Label>().Any(l => l.Value == "Lire"));
         Check("son image « sub » devient l'image de sélection Blu-ray et la surbrillance DVD",
               elPics.Count == 3 && elPics[0].FocusImage == focusPic && elPics[0].DvdHighlightImage == focusPic);
+        Check("le libellé d'un bouton image est réécrit sur son image de sélection, qui sinon le cacherait",
+              MenuRenderer.Sta(() => !MenuRenderer.Focus(elPic, elPicPage, elPics[0]).SequenceEqual(MenuRenderer.Focus(elPic, elPics[0]))));
         Check("sans image de sélection : le cadre du thème (rien n'est inventé)", elPics[1].FocusImage == null && elPics[1].DvdHighlightImage == null);
         Check("une image de bouton absente : le bouton garde le look du thème et ne vise pas une image de sélection absente",
               elPics[2].FocusImage == null && elPicPage.Ops.OfType<Label>().Any(l => l.Value == "Absent") && !elPicPage.Ops.OfType<Image>().Any(i => i.Path.Contains("bouton.png")));
@@ -644,6 +679,52 @@ if (a.Count >= 1 && a[0] == "check-elements")
         Check("retirer un bouton importé supprime l'image et sa sélection", !File.Exists(imported.Normal!) && !File.Exists(imported.Focus!));
         Check("un bouton de modèle n'est pas à la bibliothèque de le supprimer", Throws(() => ElementLibrary.RemoveButton(new ElementLibrary.ButtonItem("x", "Thème", normalPic))));
         Check("un fichier qui n'est pas une image est refusé à l'import", Throws(() => ElementLibrary.ImportButton(Path.GetFullPath("check-elements.txt"))));
+
+        // the user's own drawings: an SVG is a button like a PNG, and a PNG of the same name never becomes that drawing's picture
+        var ownSvg = Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(normalPic) + ".svg"); // same name as the picture, away from the library
+        File.WriteAllText(ownSvg, """<svg xmlns="http://www.w3.org/2000/svg" width="300" height="100"><rect width="300" height="100" rx="20" fill="#2060c0"/></svg>""");
+        var ownDrawing = ElementLibrary.ImportButton(ownSvg);
+        var ownPicture = ElementLibrary.ImportButton(normalPic);
+        var ownBackground = ElementLibrary.Import(ownSvg);
+        try
+        {
+            Check("un bouton SVG importé est listé et se dessine ; un PNG du même nom est rangé sous un autre nom, et reste une image",
+                  ElementLibrary.Buttons().Any(b => b.Normal == ownDrawing.Normal) && MenuRenderer.Size(ownDrawing.Normal!) != null
+                  && Path.GetFileNameWithoutExtension(ownPicture.Normal) != Path.GetFileNameWithoutExtension(ownDrawing.Normal) && MenuRenderer.Traced(ownPicture.Normal!) == null);
+            Check("un fond SVG importé est listé parmi les images de l'utilisateur", ElementLibrary.Backgrounds().Any(b => b.Path == ownBackground.Path && b.Removable));
+        }
+        finally
+        {
+            ElementLibrary.RemoveButton(ownDrawing);
+            ElementLibrary.RemoveButton(ownPicture);
+            ElementLibrary.Remove(ownBackground);
+            File.Delete(ownSvg);
+        }
+
+        // « Enregistrer le modèle » : the saved design is found by its name wherever a template is named, with its own pictures
+        var keptDesign = elPic.Clone();
+        keptDesign.Name = "check-" + Guid.NewGuid().ToString("N")[..8];
+        Templates.Save(keptDesign);
+        try
+        {
+            // a template whose buttons carry their word: French by default, the template's own picture on request, each with its chosen state
+            Func<MenuDesign, string, (string? Picture, string? Focus)> wordsOf = (t, language) =>
+            {
+                t.ButtonLanguage = language;
+                var page = InstalledTemplate.Load(t.TemplateDir!)?.Pages(t, elContent).FirstOrDefault();
+                var play = page?.Buttons.FirstOrDefault(b => b.Id == "play");
+                return (page?.Ops.OfType<BurnSmith.Core.Menu.Image>().FirstOrDefault(i => i.Rect == play?.Rect)?.Path, play?.FocusImage);
+            };
+            var inFrench = (string? f) => f != null && f.Contains(Path.DirectorySeparatorChar + InstalledTemplate.FrenchDir + Path.DirectorySeparatorChar);
+            var worded = TemplateCatalog.Scan().Usable.Select(f => f.Design).FirstOrDefault(t => t.TemplateDir != null && Directory.Exists(Path.Combine(t.TemplateDir, InstalledTemplate.FrenchDir)) && inFrench(wordsOf(t, "fr").Picture));
+            var (fr, en) = worded == null ? default : (wordsOf(worded, "fr"), wordsOf(worded, "en"));
+            Check($"boutons à mot dessiné : français par défaut, anglais sur demande ({worded?.Name ?? "aucun modèle avec ses boutons français"})",
+                  worded != null && new MenuDesign().ButtonLanguage == "fr" && en.Picture != null && !inFrench(en.Picture) && !inFrench(en.Focus)
+                  && MenuRenderer.Size(fr.Picture!) == MenuRenderer.Size(en.Picture) && (en.Focus == null) == (fr.Focus == null));
+            Check("un modèle enregistré se retrouve par son nom (Mes modèles), avec ses boutons image",
+                  TemplateCatalog.Find(keptDesign.Name) is { } again && again.Elements.Count == keptDesign.Elements.Count && again.Elements[^3].Image == normalPic && Templates.List().Any(t => t.Name == keptDesign.Name));
+        }
+        finally { File.Delete(Path.Combine(Templates.Dir, keptDesign.Name + ".json")); }
     }
 
     // what a design stores for a picture that travels in the exe works on any PC; a plain path is left alone
@@ -1562,6 +1643,7 @@ if (a.Count >= 1 && a[0] == "templates")
 {
     var (usable, skipped) = TemplateCatalog.Scan();
     foreach (var f in usable) Console.WriteLine($"OK    {f.Design.Category} | {f.Design.Name}");
+    foreach (var mine in Templates.List()) Console.WriteLine($"OK    Mes modèles | {mine.Name}"); // saved from the menu editor or by template-save
     foreach (var s in skipped) Console.WriteLine($"SKIP  {s.Name} | {s.Why} | {s.Dir}");
     Console.WriteLine($"{usable.Count} usable, {skipped.Count} skipped");
     return 0;
@@ -1595,10 +1677,34 @@ if (a.Count >= 2 && a[0] == "hold-tool")
 if (a.Count >= 3 && a[0] == "design-export")
 {
     var named = a[1].EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(File.ReadAllText(a[1]))
-        : TemplateCatalog.Find(a[1]) ?? Templates.List().FirstOrDefault(t => t.Name == a[1]);
+        : TemplateCatalog.Find(a[1]);
     if (named == null) { Console.Error.WriteLine($"unknown template: {a[1]} (burnsmith templates lists them)"); return 2; }
     File.WriteAllText(a[2], System.Text.Json.JsonSerializer.Serialize(named.Clone(), new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     Console.WriteLine($"template '{a[1]}' written to {a[2]}");
+    return 0;
+}
+// burnsmith template-save NAME|design.json [NEW NAME] : keeps a design in « Mes modèles » (Documents\BurnSmith\Templates\mine), as the editor's
+// « Enregistrer le modèle… » does; the editor lists it, and preview, design-export and --design find it by its name
+if (a.Count >= 2 && a[0] == "template-save")
+{
+    var kept = a[1].EndsWith(".json", StringComparison.OrdinalIgnoreCase) && File.Exists(a[1]) ? System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(File.ReadAllText(a[1])) : TemplateCatalog.Find(a[1])?.Clone();
+    if (kept == null) { Console.Error.WriteLine($"unknown template: {a[1]} (burnsmith templates lists them)"); return 2; }
+    if (a.Count >= 3) kept.Name = a[2];
+    Templates.Save(kept);
+    Console.WriteLine($"template '{kept.Name}' saved in {Templates.Dir}");
+    return 0;
+}
+// burnsmith import-background PICTURE... | import-button PICTURE [SELECTED PICTURE] : copies pictures (jpg, png, bmp, svg) into the user's library,
+// as the editor's « Importer… » does (Fonds, Boutons); prints where each copy is, the path a design or --element takes
+if (a.Count >= 2 && a[0] is "import-background" or "import-button")
+{
+    try
+    {
+        if (a[0] == "import-background") foreach (var picture in a.Skip(1)) Console.WriteLine(ElementLibrary.Import(Path.GetFullPath(picture)).Path);
+        else if (ElementLibrary.ImportButton(Path.GetFullPath(a[1]), a.Count >= 3 ? Path.GetFullPath(a[2]) : null) is var button)
+            Console.WriteLine(button.Normal + (button.Focus == null ? "" : Environment.NewLine + button.Focus));
+    }
+    catch (ArgumentException e) { Console.Error.WriteLine(e.Message); return 2; }
     return 0;
 }
 // burnsmith probe VIDEO : the video and its tracks as BurnSmith reads them (JSON); "Index" is the number --audio / --sub take, "Name" what the menu shows
@@ -1639,6 +1745,8 @@ foreach (var spec in OptAll("--page-bg"))
     if (design == null || eq < 1 || !File.Exists(spec[(eq + 1)..])) throw new ArgumentException($"--page-bg: kind=picture expected (root=fond.jpg), with an existing picture and a menu: '{spec}'");
     design.PageBackgrounds[spec[..eq].Trim().ToLowerInvariant()] = Path.GetFullPath(spec[(eq + 1)..]);
 }
+if (design != null && Opt("--button-language") is { } words) // fr (default) | en: the template buttons whose word is drawn in their picture, remade in French or as the template has them
+    design.ButtonLanguage = words is "fr" or "en" ? words : throw new ArgumentException($"--button-language: fr or en expected, not '{words}'");
 if (design != null && int.TryParse(Opt("--background-blur"), out var blurred)) design.BackgroundBlur = blurred; // 0-40: the background picture blurred, so the text over it reads well
 foreach (var spec in OptAll("--element")) design?.Elements.Add(MenuElement.Parse(spec)); // --element "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;align=center"
 if (design != null && Opt("--titles") is { } byLanguage) design.TitlesByLanguage = byLanguage.Replace('=', ':').Replace('|', '\n'); // --titles "fra=Mon disque|eng=My disc"

@@ -93,6 +93,15 @@ public sealed class InstalledTemplate
     public string? UiColor => common.Child("ui_color")?.Text is { Length: > 0 } c ? c : null;
     public string? UiFont => common.Child("font")?.Text is { Length: > 0 } f ? f : null;
     readonly string? thumbnail;
+    /// <summary>
+    /// The moving background a template ships (a clip the program plays behind its menu: <c>bdmv\STREAM\00099.m2ts</c> in the template's folder,
+    /// <c>loop.m2ts</c> in a converted pack); null for a still template.
+    /// </summary>
+    public static string? LoopClip(string dir) => File.Exists(dir) ? null
+        : File.Exists(Path.Combine(dir, PackedLoop)) ? Path.Combine(dir, PackedLoop)
+        : Directory.Exists(Path.Combine(dir, "bdmv", "STREAM")) ? Directory.EnumerateFiles(Path.Combine(dir, "bdmv", "STREAM"), "*.m2ts").Order(StringComparer.OrdinalIgnoreCase).FirstOrDefault() : null;
+    public const string PackedLoop = "loop.m2ts";
+
     /// <summary>The picture behind the main menu (null when the file is missing or unreadable).</summary>
     public string? BackgroundFile => Asset(template.Child("rootmenu")?.Child("bg")?.Child("image")?.Text);
 
@@ -388,7 +397,8 @@ public sealed class InstalledTemplate
         if (template.Child("rootmenu") is not { } root) return "pas de menu racine (modèle « tout en un »)";
         if (Asset(root.Child("bg")?.Child("image")?.Text) == null) return "image de fond introuvable";
         if (root.Child("play") is not { } play || (Asset(common.Child("playbuttontimage")?.Text) == null && play.Attr("textbutton") != "1")) return "bouton lecture introuvable";
-        if (template.Child("scenes")?.Child("tscenes")?.Child("scene")?.Child("videoes")?.Children("video").Any() != true) return "pas de grille de scènes";
+        // thumbnails, or the lines of a list (a template whose scene page is only words)
+        if (template.Child("scenes")?.Child("tscenes")?.Child("scene") is not { } scene || (scene.Child("videoes")?.Children("video").Any() != true && scene.Child("list")?.Children("item").Any() != true)) return "pas de grille de scènes";
         return null;
     }
 
@@ -413,7 +423,12 @@ public sealed class InstalledTemplate
     {
         if (normal == null) return null;
         var twin = normal.Replace(".normal.", ".sub.");
-        return IsImage(twin) ? twin : null;
+        if (IsImage(twin)) return twin;
+        // beside a traced button, a chosen state that could not be traced is still its picture
+        if (System.IO.Path.ChangeExtension(twin, ".png") is var png && png != twin && IsImage(png)) return png;
+        // a French remake without a chosen state of its own: the template's (a glow, the same whatever the word)
+        var own = normal.Replace(FrenchDir + System.IO.Path.DirectorySeparatorChar, "");
+        return own != normal ? Selected(own) : null;
     }
 
     /// <summary>
@@ -458,19 +473,37 @@ public sealed class InstalledTemplate
     public bool HasSetupPages => template.Child("setup")?.Child("langitems")?.Children("item").Any() ?? false;
 
     /// <summary>Les pages de réglages de ce disque, celle où mène le bouton « Réglages » d'abord : une catégorie sans choix n'a pas de page.</summary>
+    /// <summary>
+    /// A theme's Setup button opens a page of two words, Audio and Subtitles, each leading to its list; with one of the two only, the list opens
+    /// at once. That page takes the id "settings": it marks no choice, so it is not one of <see cref="SettingsIds"/>.
+    /// </summary>
+    bool HasSetupMenu(MenuContent c) => HasSetupPages && SettingsIds(c).Count > 1 && template.Child("setup") is { } s && s.Child("setupaudio") != null && s.Child("setupsub") != null;
+    /// <summary>The page a Settings button opens.</summary>
+    public string SettingsEntry(MenuContent c) => HasSetupMenu(c) ? "settings" : SettingsIds(c)[0];
+
     public List<string> SettingsIds(MenuContent c) => !HasSetupPages ? ["settings"]
         : [.. c.AudioNames.Count > 1 ? new[] { "settings_audio" } : [], .. c.SubtitleNames.Count > 0 ? new[] { "settings_sub" } : []];
 
     /// <summary>Artwork of the audio / subtitle page for BurnSmith's own rows: the template's background under a dark veil.</summary>
-    public List<Op> SetupBackdrop(string? film = null)
+    public List<Op> SetupBackdrop(MenuDesign d, string? film = null)
     {
         var ops = new List<Op>();
-        Background(ops, template.Child("setup") ?? template.Child("rootmenu")!, IsAllInOne ? film : null);
+        Background(ops, template.Child("setup") ?? template.Child("rootmenu")!, FilmBehind ? film : null, d);
         ops.Add(new Fill(new Box(0, 0, MenuBuilder.W, MenuBuilder.H), "#000000", 0.45, 0));
         return ops;
     }
 
-    string? Button(string key) => Asset(common.Child(key)?.Text);
+    /// <summary>The folder, beside a template's button pictures, of their French remakes: <c>LANG_FRA\play\0.normal.png</c> for <c>play\0.normal.png</c>.</summary>
+    public const string FrenchDir = "LANG_FRA";
+
+    /// <summary>A button picture of the template; its French remake when the design asks for French and the template has one (<see cref="MenuDesign.ButtonLanguage"/>).</summary>
+    string? Button(string key, MenuDesign d) =>
+        common.Child(key)?.Text is { Length: > 0 } relative && d.ButtonLanguage == "fr" && French(dir, relative) is { } french && IsImage(french) ? french : Asset(common.Child(key)?.Text);
+
+    /// <summary>The French remake of a button picture of the template in <paramref name="dir"/>, as a picture or as its traced drawing (a pack keeps one of the two).</summary>
+    public static string? French(string dir, string relative) =>
+        new[] { relative, System.IO.Path.ChangeExtension(relative, ".svg"), System.IO.Path.ChangeExtension(relative, ".png") }
+            .Select(r => TemplatePack.Inside(dir, FrenchDir + "/" + r)).FirstOrDefault(f => f != null && File.Exists(f));
 
     // ---- text -------------------------------------------------------------
 
@@ -485,7 +518,8 @@ public sealed class InstalledTemplate
             font, hasFiles ? dir : null, n.Attr("color", common.Child("font_color")?.Text ?? "#FFFFFF"),
             n.Attr("bold", common.Child("font_bold")?.Text ?? "0") == "1", n.Attr("italic", common.Child("font_italic")?.Text ?? "0") == "1", align,
             n.Attrs.ContainsKey("stroke_color") ? n.Attr("stroke_color") : null, double.TryParse(n.Attr("stroke_width"), System.Globalization.NumberStyles.Float, inv, out var sw) ? sw : 0,
-            Shadow: n.Attrs.ContainsKey("shadow") ? n.Attr("shadow") : null, ShadowOffset: double.TryParse(n.Attr("shadow_offset"), System.Globalization.NumberStyles.Float, inv, out var so) ? so : 0);
+            Shadow: n.Attrs.ContainsKey("shadow") ? n.Attr("shadow") : null, ShadowOffset: double.TryParse(n.Attr("shadow_offset"), System.Globalization.NumberStyles.Float, inv, out var so) ? so : 0,
+            Tight: n.Attr("tight") == "1");
     }
 
     // ---- shared page parts --------------------------------------------------
@@ -494,7 +528,8 @@ public sealed class InstalledTemplate
     /// The text zones this page of the template declares (the user writes in them, and an empty one draws nothing).
     /// <paramref name="autoInfo"/> stands in for an empty information line. A template that declares none has none.
     /// </summary>
-    void TemplateTexts(List<Op> ops, List<MenuZone> zones, XNode page, MenuDesign d, string? autoInfo = null, bool noOverview = false)
+    /// <param name="own">How many of the template's summary zones stay the user's to write in; the others are taken by the episodes' summaries.</param>
+    void TemplateTexts(List<Op> ops, List<MenuZone> zones, XNode page, MenuDesign d, string? autoInfo = null, int own = int.MaxValue)
     {
         var overview = 0;
         foreach (var t in page.Child("texts")?.Children("text") ?? [])
@@ -505,22 +540,38 @@ public sealed class InstalledTemplate
                 ops.Add(Txt(t, d.Title));
                 zones.Add(new("title", t.Rect()));
             }
-            if (kind != "volume_category" && (kind != "title_overview" || noOverview)) continue;
+            if (kind != "volume_category" && (kind != "title_overview" || overview >= own)) continue;
             var key = kind == "volume_category" ? "info" : $"overview{++overview}";
             zones.Add(new("slot:" + key, t.Rect()));
             var value = d.TextZones.GetValueOrDefault(key) is { Length: > 0 } written ? written : key == "info" ? autoInfo : null;
-            if (value != null) ops.Add(Txt(t, value) with { Wrap = t.Attr("wrap") == "1" });
+            if (value == null) continue;
+            // "Director: …" is written as the template's program writes it: the word in grey bold, what follows in the zone's own colour
+            if (key != "info" && t.Attr("wrap") != "1" && value.IndexOf(": ", StringComparison.Ordinal) is > 0 and var colon)
+            {
+                var word = Line(t, value[..(colon + 1)]) with { Color = Faint, Bold = true };
+                var wide = (int)Math.Ceiling(MenuRenderer.TextWidth(word)) + (int)(word.Size * 0.4);
+                ops.Add(word);
+                var said = Line(t, value[(colon + 2)..]);
+                ops.Add(said with { Rect = said.Rect with { X = said.Rect.X + wide, W = Math.Max(1, said.Rect.W - wide) } });
+            }
+            else ops.Add(t.Attr("wrap") == "1" ? Txt(t, value) with { Wrap = true } : Line(t, value));
         }
     }
+
+    /// <summary>One line of a zone the template writes from its top ("AlignTop"): the line sits at the top of the zone, not in its middle (6 px under it for a 34 px text, measured on the program's own page).</summary>
+    Text Line(XNode zone, string value) => Txt(zone, value) is var text && zone.Attr("vertical_alignment") == "AlignTop" ? text with { Rect = text.Rect with { H = (int)(text.Size * 1.3) } } : Txt(zone, value);
+
+    /// <summary>The grey of the words before a value ("Overview:") and of the names under the thumbnails in the Streaming template's own pages.</summary>
+    const string Faint = "#868686";
 
     /// <param name="film">
     /// A picture of the disc's own film, for the templates whose background is a frame of some film (a template can ship one as a sample and plays
     /// the real film there): it replaces the template's picture, the template's veil stays over it.
     /// </param>
-    void Background(List<Op> ops, XNode page, string? film = null)
+    void Background(List<Op> ops, XNode page, string? film = null, MenuDesign? d = null)
     {
         if (film != null && File.Exists(film)) ops.Add(new Image(film, new Box(0, 0, MenuBuilder.W, MenuBuilder.H), Backdrop: true, Cover: true));
-        else if (Asset(page.Child("bg")?.Child("image")?.Text) is { } bg)
+        else if (d?.OwnBackdrop != true && Asset(page.Child("bg")?.Child("image")?.Text) is { } bg) // a design with its own backdrop leaves the template's sample picture out
         {
             var node = page.Child("bg")!;
             var box = node.Attrs.ContainsKey("rect") ? node.Rect() : new Box(0, 0, MenuBuilder.W, MenuBuilder.H);
@@ -574,12 +625,30 @@ public sealed class InstalledTemplate
     /// <summary>A drawing the template carries as SVG text (a .dvdt keeps each button's own): read as written, entities included, since it is XML.</summary>
     static string? Drawing(XNode node, string name) => node.Attrs.TryGetValue(name, out var svg) && MenuRenderer.IsSvgText(svg) ? svg : null;
 
+    /// <summary>
+    /// A button whose template draws its own state under the remote ("svg_focus": a circle beside the words, a line under them, the frame in
+    /// another colour): that drawing, at the place the template gives it ("focus_rect") or over the button. Null when the template has none.
+    /// </summary>
+    static MenuButton? Lit(XNode node, Box r, string id, MenuAction action)
+    {
+        if (Drawing(node, "svg_focus") is not { } lit) return null;
+        if (!node.Attrs.ContainsKey("focus_rect")) return new MenuButton(id, r, action) { FocusImage = lit };
+        var slot = node.Rect("focus_rect");
+        int x0 = Math.Min(r.X, slot.X), y0 = Math.Min(r.Y, slot.Y);
+        // the button holds its marker: a DVD player lights nothing outside a button's rectangle
+        return new MenuButton(id, new Box(x0, y0, Math.Max(r.X + r.W, slot.X + slot.W) - x0, Math.Max(r.Y + r.H, slot.Y + slot.H) - y0), action) { FocusImage = lit, FocusSlot = slot };
+    }
+
+    /// <summary>The lines of a scene page shown as a list: when the user asks for the list, or when the template has no thumbnails at all.</summary>
+    static List<XNode> ListItems(MenuDesign d, XNode scene) =>
+        d.SceneList || scene.Child("videoes")?.Children("video").Any() != true ? scene.Child("list")?.Children("item").ToList() ?? [] : [];
+
     Framed Frame(XNode video, string? picture)
     {
         if (Drawing(video, "svg_mask") is { } shape) return new Framed(video.Rect(), picture, null, shape); // the frame is in the drawing put over it
         var frame = Asset(video.Attr("frame_image", common.Child("frame")?.Text ?? ""));
         var mask = frame == null ? null : Asset(System.IO.Path.GetRelativePath(dir, frame).Replace(".normal.", ".mask."));
-        return new Framed(video.Rect(), picture, frame, mask == frame || IsBlank(mask) ? null : mask);
+        return new Framed(video.Rect(), picture, frame, mask == frame || IsBlank(mask) ? null : mask, video.Attr("fit") == "whole");
     }
 
     static readonly Dictionary<string, bool> Blanks = [];
@@ -612,12 +681,12 @@ public sealed class InstalledTemplate
         var cells = MenuBuilder.Cells(d, c);
         var scene = template.Child("scenes")!.Child("tscenes")!.Child("scene")!;
         // the same page as a list of lines when the design asks for it and the template describes one
-        var listItems = d.SceneList ? scene.Child("list")?.Children("item").ToList() ?? [] : [];
+        var listItems = ListItems(d, scene);
         var perPage = listItems.Count > 0 ? listItems.Count : scene.Child("videoes")!.Children("video").Count();
         var total = cells.Count > 1 ? (cells.Count + perPage - 1) / perPage : 0;
         // a template with no menu of its own: its first page of thumbnails, with the poster and the title, is the menu
-        var pages = new List<MenuPage> { (IsAllInOne || d.ScenesOnly) && total > 0 ? Scenes(d, cells, 1, total, perPage, d.Title, c.PreviewPicture, c) : Root(d, c, cells.Count > 1) };
-        for (var i = (IsAllInOne || d.ScenesOnly) && total > 0 ? 2 : 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, IsAllInOne ? d.Title : c.Series ? d.EpisodesLabel : d.ScenesLabel, c.PreviewPicture)); // a one-piece template keeps the disc's title on every page
+        var pages = new List<MenuPage> { (IsAllInOne || d.ScenesOnly) && total > 0 ? Scenes(d, cells, 1, total, perPage, d.Title, c.PreviewPicture, c, plainFocus: c.PlainFocus) : Root(d, c, cells.Count > 1) };
+        for (var i = (IsAllInOne || d.ScenesOnly) && total > 0 ? 2 : 1; i <= total; i++) pages.Add(Scenes(d, cells, i, total, perPage, IsAllInOne ? d.Title : c.Series ? d.EpisodesLabel : d.ScenesLabel, c.PreviewPicture, plainFocus: c.PlainFocus)); // a one-piece template keeps the disc's title on every page
         if (c.HasBonus) // the template has no Bonus page: its scene page layout lists the extras
         {
             var bonus = MenuBuilder.BonusCells(c);
@@ -629,12 +698,15 @@ public sealed class InstalledTemplate
             var bonusPages = MenuBuilder.PageCount(bonus.Count, bonusPerPage);
             for (var i = 1; i <= bonusPages; i++) pages.Add(Scenes(look, bonus, i, bonusPages, bonusPerPage, d.BonusLabel, c.PreviewPicture, prefix: "bonus"));
         }
+        if (c.HasSettings && HasSetupMenu(c)) pages.Add(MenuBuilder.Settings(d, c, null, null, "settings"));
         if (c.HasSettings) pages.AddRange(SettingsIds(c).Select(id => MenuBuilder.Settings(d, c, null, null, id))); // BurnSmith's own rows when the template has none
-        if (d.CreditLines().Count > 0) pages.Add(MenuBuilder.Credits(d, SetupBackdrop(c.PreviewPicture))); // the template has no such page: its background under a veil
+        if (d.CreditLines().Count > 0) pages.Add(MenuBuilder.Credits(d, SetupBackdrop(d, c.PreviewPicture))); // the template has no such page: its background under a veil
         return pages;
     }
 
     bool IsAllInOne => template.Child("rootmenu")?.Attr("allinone") == "1";
+    /// <summary>A one-page template made to show the disc's own film behind it (Streaming); one that keeps its own picture says film="0".</summary>
+    bool FilmBehind => IsAllInOne && template.Child("rootmenu")?.Attr("film") != "0";
 
     /// <summary>An episode's name with its number in front, as streaming services show it: "Épisode 3 · Le dojo" → "E03 - Le dojo"; a name already numbered (E03…) is kept.</summary>
     internal static string Numbered(MenuBuilder.Cell cell)
@@ -760,7 +832,7 @@ public sealed class InstalledTemplate
     {
         var n = template.Child("rootmenu")!;
         var ops = new List<Op>();
-        Background(ops, n, IsAllInOne ? c.PreviewPicture : null);
+        Background(ops, n, FilmBehind ? c.PreviewPicture : null, d);
         Pictures(ops, n);
         var zones = new List<MenuZone>();
         if (n.Child("video") is { } video && d.ShowPreview)
@@ -787,9 +859,10 @@ public sealed class InstalledTemplate
             // written from one edge, the button is the word and not its whole zone: DVDFab's zones side by side run over each other
             if (text.Align != "center" && Math.Min(r.W, (int)Math.Ceiling(MenuRenderer.TextWidth(text))) is var wide)
                 r = new Box(text.Align == "right" ? r.X + r.W - wide : r.X, r.Y, wide, r.H);
+            ops.Add(text);
+            if (Lit(node, r, id, action) is { } lit) { buttons.Add(lit); return; }
             var star = Asset(common.Child("selection")?.Text);
             var slot = new Box(r.X - r.H, r.Y, r.H, r.H);
-            ops.Add(text);
             buttons.Add(Dvd(star == null ? new MenuButton(id, r, action) : new MenuButton(id, new Box(slot.X, r.Y, r.W + r.H, r.H), action) { FocusImage = star, FocusSlot = slot }));
         }
         void Add(string id, XNode? node, string? image, MenuAction action, string label)
@@ -810,9 +883,9 @@ public sealed class InstalledTemplate
         };
         if (withScenes) main.Add(("scenes", c.Series ? d.EpisodesLabel : d.ScenesLabel, new MenuAction("page", "scenes1")));
         // a DVDFab DVD menu is two words: the buttons BurnSmith adds are written with them further down, once they are all known
-        var words = Kind == TemplateKind.Dvd && Button("playbuttontimage") == null && n.Child("play")?.Attr("textbutton") == "1" && n.Child("scenes") != null;
+        var words = Kind == TemplateKind.Dvd && Button("playbuttontimage", d) == null && n.Child("play")?.Attr("textbutton") == "1" && n.Child("scenes") != null;
         if (!words)
-            foreach (var b in main) Add(b.Id, n.Child(b.Id), Button(b.Id == "play" ? "playbuttontimage" : "scenebuttontimage"), b.Action, b.Label);
+            foreach (var b in main) Add(b.Id, n.Child(b.Id), Button(b.Id == "play" ? "playbuttontimage" : "scenebuttontimage", d), b.Action, b.Label);
         // "none_setup" templates have no picture for Settings, and none has one for Bonus or Credits: plain capsules in a row under the other buttons, BurnSmith's own addition
         var pills = new List<(string Id, string Label, MenuAction Action)>();
         // a template that draws a Bonus button (<c>BonusText</c>) puts it where it says; the others get BurnSmith's capsule
@@ -823,8 +896,8 @@ public sealed class InstalledTemplate
         }
         if (c.HasSettings)
         {
-            var settings = new MenuAction("page", SettingsIds(c)[0]);
-            if (Button("setupbuttontimage") != null || n.Child("setup")?.Attr("textbutton") == "1") Add("settings", n.Child("setup"), Button("setupbuttontimage"), settings, d.SettingsLabel);
+            var settings = new MenuAction("page", SettingsEntry(c));
+            if (Button("setupbuttontimage", d) != null || n.Child("setup")?.Attr("textbutton") == "1") Add("settings", n.Child("setup"), Button("setupbuttontimage", d), settings, d.SettingsLabel);
             else pills.Add(("settings", d.SettingsLabel, settings));
         }
         if (d.CreditLines().Count > 0) pills.Add(("credits", d.CreditsLabel, new MenuAction("page", "credits")));
@@ -852,11 +925,11 @@ public sealed class InstalledTemplate
     }
 
     /// <param name="root">Not null when this page is the menu itself (a template laid out in one piece): it gets the disc's own lines and the Play / Settings / Credits capsules.</param>
-    MenuPage Scenes(MenuDesign d, List<MenuBuilder.Cell> cells, int number, int total, int perPage, string title, string? preview, MenuContent? root = null, string prefix = "scenes")
+    MenuPage Scenes(MenuDesign d, List<MenuBuilder.Cell> cells, int number, int total, int perPage, string title, string? preview, MenuContent? root = null, string prefix = "scenes", bool plainFocus = false)
     {
         var s = template.Child("scenes")!.Child("tscenes")!.Child("scene")!;
         var ops = new List<Op>();
-        Background(ops, s, IsAllInOne ? preview : null);
+        Background(ops, s, FilmBehind ? preview : null, d);
         Pictures(ops, s);
         var zones = new List<MenuZone>();
         if (s.Child("specialvideo")?.Child("video") is { } poster && d.ShowPreview) // a template laid out in one piece: the poster stays beside the thumbnails
@@ -867,9 +940,11 @@ public sealed class InstalledTemplate
         var buttons = new List<MenuButton>();
         if (s.Child("label") is { } heading)
         {
-            var text = Txt(heading, title);
-            ops.Add(root == null ? text : text with { Rect = text.Rect with { W = 700 } }); // the capsules take the right of the title line
-            if (root != null) zones.Add(new("title", heading.Rect() with { W = 700 }));
+            if (heading.Attr("counter") == "1" && total > 1) title = $"{title}  {number}/{total}"; // a Yuhan theme writes the page's number after its title
+            var text = Txt(heading, title, s.Child("play") != null ? heading.Attr("align", "left") : "left"); // a one-page template's heading is its title, placed as the template places it
+            var whole = root == null || s.Child("play") != null; // else the capsules take the right of the title line
+            ops.Add(whole ? text : text with { Rect = text.Rect with { W = 700 } });
+            if (root != null) zones.Add(new("title", whole ? heading.Rect() : heading.Rect() with { W = 700 }));
         }
         if (root != null)
         {
@@ -878,10 +953,31 @@ public sealed class InstalledTemplate
                 ("play", root.Series ? d.PlayAllLabel : d.PlayLabel, root.Series ? new MenuAction("playall", Playlist: root.Titles![0].Playlist, Mark: root.Titles.Count) : new MenuAction("play", Playlist: root.Playlist))
             };
             if (root.HasBonus) capsules.Add(("bonus", d.BonusLabel, new MenuAction("page", "bonus1")));
-            if (root.HasSettings) capsules.Add(("settings", d.SettingsLabel, new MenuAction("page", SettingsIds(root)[0])));
+            if (root.HasSettings) capsules.Add(("settings", d.SettingsLabel, new MenuAction("page", SettingsEntry(root))));
             if (d.CreditLines().Count > 0) capsules.Add(("credits", d.CreditsLabel, new MenuAction("page", "credits")));
             const int w = 190, gap = 12;
-            Capsules(ops, buttons, d, capsules, MenuBuilder.W - 60 - capsules.Count * w - (capsules.Count - 1) * gap, 118, w, 56, gap, 28);
+            if (s.Child("play") is { } own) // the template writes its own "Play all" on its one page: BurnSmith's other buttons are written like it, to its left
+            {
+                var at = own.Rect();
+                var x = at.X;
+                foreach (var (id, label, action) in capsules)
+                {
+                    var word = Txt(own, label, own.Attr("align", "left"));
+                    var wide = Math.Min(at.W, (int)Math.Ceiling(MenuRenderer.TextWidth(word)));
+                    if (id != "play") x -= wide + 48;
+                    var r = at with { X = x, W = wide };
+                    ops.Add(word with { Rect = r });
+                    var node = own;
+                    if (own.Attrs.ContainsKey("focus_rect") && x != at.X) // its marker (a circle beside the words) moves with the words
+                    {
+                        node = new XNode(own.Name, new Dictionary<string, string>(own.Attrs));
+                        var slot = own.Rect("focus_rect");
+                        node.Attrs["focus_rect"] = $"{slot.X + x - at.X},{slot.Y},{slot.W},{slot.H}";
+                    }
+                    buttons.Add(Lit(node, r, id, action) ?? new MenuButton(id, r, action));
+                }
+            }
+            else Capsules(ops, buttons, d, capsules, MenuBuilder.W - 60 - capsules.Count * w - (capsules.Count - 1) * gap, 118, w, 56, gap, 28);
         }
         string? autoInfo = null;
         if (root != null) // until the user writes the information line, it says what the disc holds
@@ -895,11 +991,17 @@ public sealed class InstalledTemplate
         var slots = s.Child("videoes")!.Children("video").ToList();
         var onPage = cells.Skip((number - 1) * perPage).Take(perPage).ToList();
         // a one-piece template's episodes are numbered (E01 - Name), and their summaries take the text zones' place: one row per episode, name over summary
-        var episodes = IsAllInOne && prefix == "scenes" && onPage.All(cell => cell.Id.StartsWith('e'));
+        var episodes = FilmBehind && prefix == "scenes" && onPage.All(cell => cell.Id.StartsWith('e'));
         string Shown(MenuBuilder.Cell cell) => episodes ? Numbered(cell) : cell.Label;
         var summaries = episodes && onPage.Any(cell => cell.Overview is { Length: > 0 });
-        TemplateTexts(ops, zones, s, d, autoInfo, summaries);
-        if (summaries && s.Child("texts")?.Children("text").FirstOrDefault(t => t.Attr("as") == "title_overview") is { } area)
+        // as the template's program shows them: the summary of the episode under the remote, alone, under its word ("Overview:"), in the last two
+        // of the template's four zones; the first two stay the user's (a director, a cast). A DVD cannot write with the selected button: there
+        // every episode of the page has its row, name over summary
+        var overviews = s.Child("texts")?.Children("text").Where(t => t.Attr("as") == "title_overview").ToList() ?? [];
+        var spoken = summaries && !plainFocus && overviews.Count >= 2;
+        TemplateTexts(ops, zones, s, d, autoInfo, spoken ? overviews.Count - 2 : summaries ? 0 : int.MaxValue);
+        if (spoken) ops.Add(Line(overviews[^2], d.OverviewLabel + ":") with { Color = Faint, Bold = true });
+        if (summaries && !spoken && overviews.FirstOrDefault() is { } area)
         {
             var top = area.Rect().Y;
             var row = ((slots.Count > 0 ? slots.Min(v => v.Rect().Y) - 12 : MenuBuilder.H - 120) - top) / perPage;
@@ -913,7 +1015,7 @@ public sealed class InstalledTemplate
                     ops.Add(Txt(area, summary) with { Rect = new Box(area.Rect().X, y + 34, area.Rect().W, row - 40), Size = 21, Bold = false, Color = grey, Wrap = true });
             }
         }
-        var lines = d.SceneList ? s.Child("list")?.Children("item").ToList() ?? [] : [];
+        var lines = ListItems(d, s);
         if (lines.Count > 0)
         {
             // the list style: one line of text per chapter, at the rectangles the template gives, without a frame
@@ -922,7 +1024,11 @@ public sealed class InstalledTemplate
                 var cell = cells[(number - 1) * perPage + i];
                 ops.Add(Txt(lines[i], Shown(cell), lines[i].Attr("align", "left")));
                 if (cell.Action.Kind == "play") zones.Add(new($"name:{cell.Action.Playlist}", lines[i].Rect()));
-                buttons.Add(new MenuButton(cell.Id, lines[i].Rect(), cell.Action));
+                // a line that has its own selected drawing (a line under the words) is a button as wide as its words, not as its whole zone
+                var line = lines[i].Rect();
+                if (lines[i].Attrs.ContainsKey("svg_focus") && lines[i].Attr("align", "left") == "left")
+                    line = line with { W = Math.Min(line.W, (int)Math.Ceiling(MenuRenderer.TextWidth(Txt(lines[i], Shown(cell))))) };
+                buttons.Add(Lit(lines[i], line, cell.Id, cell.Action) ?? new MenuButton(cell.Id, line, cell.Action));
             }
         }
         for (var i = 0; i < slots.Count && lines.Count == 0 && (number - 1) * perPage + i < cells.Count; i++)
@@ -937,7 +1043,9 @@ public sealed class InstalledTemplate
                 ops.Add(Txt(name, Shown(cell), name.Attr("align", "center")));
                 if (cell.Action.Kind == "play") zones.Add(new($"name:{cell.Action.Playlist}", name.Rect()));
             }
-            buttons.Add(Dvd(new MenuButton(cell.Id, slots[i].Rect(), cell.Action) { FocusImage = Selected(framed.Frame) })); // none for picture themes: the accent frame
+            var button = Drawing(slots[i], "svg_focus") is { } lit ? new MenuButton(cell.Id, slots[i].Rect(), cell.Action) { FocusImage = lit, FocusSlot = slots[i].Rect("over_rect") }
+                : Dvd(new MenuButton(cell.Id, slots[i].Rect(), cell.Action) { FocusImage = Selected(framed.Frame) }); // none for picture themes: the accent frame
+            buttons.Add(spoken && cell.Overview is { Length: > 0 } told ? button with { FocusTexts = [Txt(overviews[^1], told) with { Wrap = true }] } : button);
         }
         void Glyph(string id, Box r, string glyph, MenuAction action)
         {
@@ -951,26 +1059,31 @@ public sealed class InstalledTemplate
             if (Drawing(node, "svg") is var art && (art != null || node.Child("text") != null))
             {
                 if (art != null) ops.Add(new Image(art, node.Rect()));
-                if (node.Child("text") is { } word) ops.Add(Txt(word, id == "home" ? d.HomeLabel : id == "prev" ? "◄" : "►", word.Attr("align", "left")));
-                buttons.Add(new MenuButton(id, node.Rect(), action));
+                // the page before and the next one are named by the template's own word ("Previous", "Next"); the way home by the design's, which the user writes
+                if (node.Child("text") is { } word) ops.Add(Txt(word, id == "home" ? d.HomeLabel : word.Attr("word") is { Length: > 0 } own ? own : id == "prev" ? "◄" : "►", word.Attr("align", "left")));
+                buttons.Add(Lit(node, node.Rect(), id, action) ?? new MenuButton(id, node.Rect(), action));
                 return;
             }
             // some templates draw their arrows as vector art, and a template's picture can be missing or unreadable: BurnSmith draws a text button there
             var drawn = node.Attr("glyph");
-            if (Button(image) is not { } file || drawn.Length > 0) { Glyph(id, node.Rect(), drawn.Length > 0 ? drawn : fallbackGlyph, action); return; }
+            if (Button(image, d) is not { } file || drawn.Length > 0) { Glyph(id, node.Rect(), drawn.Length > 0 ? drawn : fallbackGlyph, action); return; }
             // a picture theme draws its arrows at the size its layout gives them (the "16-9-2" pictures are twice as large as their place)
             var box = Kind == TemplateKind.Pictures ? node.Rect() : Place(file, node.Rect());
             ops.Add(new Image(file, box));
             buttons.Add(Dvd(new MenuButton(id, box, action) { FocusImage = Selected(file) }));
         }
-        if (number > 1) Nav("prev", "left", "leftbuttontimage", "<", new MenuAction("page", PageId(d, prefix, number - 1)));
+        // a Yuhan theme shows both arrows on every page as soon as there are two: the first page goes back to the last, the last on to the first
+        var around = s.Attr("wrap") == "1" && total > 1;
+        if (number > 1 || around) Nav("prev", "left", "leftbuttontimage", "<", new MenuAction("page", PageId(d, prefix, number > 1 ? number - 1 : total)));
         if (root == null) Nav("home", "home", "homebuttontimage", "⌂", new MenuAction("page", "root"));
-        if (number < total) Nav("next", "right", "rightbuttontimage", ">", new MenuAction("page", PageId(d, prefix, number + 1)));
+        if (number < total || around) Nav("next", "right", "rightbuttontimage", ">", new MenuAction("page", PageId(d, prefix, number < total ? number + 1 : 1)));
         // whatever the template drew, a scene page must lead back to the menu and on to its neighbours: BurnSmith adds the missing buttons at the bottom
         bool Has(string id) => buttons.Any(b => b.Id == id);
-        if (root == null && !Has("home")) Glyph("home", new Box(MenuBuilder.W / 2 - 55, MenuBuilder.H - 110, 110, 70), "⌂", new MenuAction("page", "root"));
-        if (number > 1 && !Has("prev")) Glyph("prev", new Box(MenuBuilder.W / 2 - 195, MenuBuilder.H - 110, 110, 70), "<", new MenuAction("page", PageId(d, prefix, number - 1)));
-        if (number < total && !Has("next")) Glyph("next", new Box(MenuBuilder.W / 2 + 85, MenuBuilder.H - 110, 110, 70), ">", new MenuAction("page", PageId(d, prefix, number + 1)));
+        // in the middle of the bottom; on a one-page template, whose own buttons are down there on the right, at the left under its heading
+        var mid = s.Child("play") != null && s.Child("label") is { } under ? under.Rect().X + 195 : MenuBuilder.W / 2;
+        if (root == null && !Has("home")) Glyph("home", new Box(mid - 55, MenuBuilder.H - 110, 110, 70), "⌂", new MenuAction("page", "root"));
+        if (number > 1 && !Has("prev")) Glyph("prev", new Box(mid - 195, MenuBuilder.H - 110, 110, 70), "<", new MenuAction("page", PageId(d, prefix, number - 1)));
+        if (number < total && !Has("next")) Glyph("next", new Box(mid + 85, MenuBuilder.H - 110, 110, 70), ">", new MenuAction("page", PageId(d, prefix, number + 1)));
         return new MenuPage(PageId(d, prefix, number), ops, Link(buttons)) { Zones = zones };
     }
 
@@ -993,7 +1106,7 @@ public sealed class InstalledTemplate
         bool Hidden(Box r) => unused.Any(u => r.X + r.W / 2 >= u.X && r.X + r.W / 2 <= u.X + u.W);
 
         var ops = new List<Op>();
-        Background(ops, n);
+        Background(ops, n, null, d);
         Pictures(ops, n, Hidden, panelIfMissing: true);
         if (n.Child("video") is { } video && d.ShowPreview) ops.Add(Frame(video, c.PreviewPicture));
         var audioBox = n.Child("audiolist")?.Rect() ?? default;
@@ -1031,7 +1144,7 @@ public sealed class InstalledTemplate
             (Id: "play", Key: "play", Image: "playbuttontimage", Action: c.Series ? new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count) : new MenuAction("play", Playlist: c.Playlist)),
             (Id: "scenes", Key: likeRoot && MenuBuilder.Cells(d, c).Count > 1 ? "scenes" : "", Image: "scenebuttontimage", Action: new MenuAction("page", PageId(d, "scenes", 1))),
             (Id: "back", Key: likeRoot ? "setup" : "home", Image: likeRoot ? "setupbuttontimage" : "homebuttontimage", Action: new MenuAction("page", "root")),
-        }.Where(x => n.Child(x.Key) != null && Button(x.Image) != null).Select(x => (x.Id, x.Action, File: Button(x.Image)!, Rect: n.Child(x.Key)!.Rect())).ToList();
+        }.Where(x => n.Child(x.Key) != null && Button(x.Image, d) != null).Select(x => (x.Id, x.Action, File: Button(x.Image, d)!, Rect: n.Child(x.Key)!.Rect())).ToList();
         // these rectangles are sized for a small button (like "Set up"): at the pictures' own size Play and Home would cover one another, so they are shrunk to their rectangle
         var crowded = navs.Count == 2 && Meets(Place(navs[0].File, navs[0].Rect), Place(navs[1].File, navs[1].Rect));
         foreach (var (navId, action, file, rect) in navs)
@@ -1050,25 +1163,45 @@ public sealed class InstalledTemplate
     MenuPage SetupPage(MenuDesign d, MenuContent c, int? activeAudio, int? activeSub, string id)
     {
         var n = template.Child("setup")!;
+        if (id == "settings") // the two words, Audio and Subtitles, where the theme writes them; each is a button as wide as its word
+        {
+            var first = new List<Op>();
+            Background(first, n, null, d);
+            var words = new List<MenuButton>();
+            foreach (var (key, label, target) in new[] { ("setupaudio", d.AudioLabel, "settings_audio"), ("setupsub", d.SubtitlesLabel, "settings_sub") })
+            {
+                var word = Txt(n.Child(key)!, label);
+                word = word with { Rect = word.Rect with { W = Math.Min(word.Rect.W, (int)Math.Ceiling(MenuRenderer.TextWidth(word))) } };
+                first.Add(word);
+                words.Add(new MenuButton(key == "setupaudio" ? "audio" : "subs", word.Rect, new MenuAction("page", target)));
+            }
+            if (n.Child("Return") is { } way)
+            {
+                if (Asset(way.Attr("image")) is { } picture) first.Add(new Image(picture, way.Rect()));
+                else first.AddRange(MenuBuilder.Button(d, way.Rect(), "⌂", Math.Max(24, way.Rect().H * 2 / 3)));
+                words.Add(new MenuButton("back", way.Rect(), new MenuAction("page", "root")));
+            }
+            return new MenuPage(id, first, Link(words));
+        }
         var isSub = id.StartsWith("settings_sub", StringComparison.Ordinal);
         var rows = n.Child("langitems")!.Children("item").ToList();
         var names = isSub ? new[] { d.OffLabel }.Concat(c.SubtitleNames).ToList() : c.AudioNames.ToList();
         var ops = new List<Op>();
-        Background(ops, n);
+        Background(ops, n, null, d);
         // le titre nomme la catégorie : le libellé du thème (SetupAudioText, SetupSubtitleText) recouvrirait les lignes dès la 3e en audio, la 4e en sous-titres
         if (n.Child("setuptitle") is { } title) ops.Add(Txt(title, isSub ? d.SubtitlesLabel : d.AudioLabel));
 
         var buttons = new List<MenuButton>();
-        var first = isSub ? 0 : 1;
+        var from = isSub ? 0 : 1;
         var active = isSub ? activeSub : activeAudio;
         // les plafonds de MenuContent (6 pistes audio, 5 sous-titres) laissent moins de lignes que les huit du thème : pas de pagination à faire
         for (var i = 0; i < names.Count && i < rows.Count; i++)
         {
             var box = rows[i].Rect();
             ops.Add(Txt(rows[i], names[i]));
-            if (active == first + i)
+            if (active == from + i)
                 ops.Add(new Fill(new Box(box.X - MenuBuilder.MarkerSize - MenuBuilder.MarkerGap, box.Y + (box.H - MenuBuilder.MarkerSize) / 2, MenuBuilder.MarkerSize, MenuBuilder.MarkerSize), d.Accent, 1, MenuBuilder.MarkerSize / 2));
-            buttons.Add(new MenuButton((isSub ? "s" : "a") + (first + i), box, new MenuAction(isSub ? "sub" : "audio", Mark: first + i)));
+            buttons.Add(new MenuButton((isSub ? "s" : "a") + (from + i), box, new MenuAction(isSub ? "sub" : "audio", Mark: from + i)));
         }
         void Nav(string key, string glyph, MenuAction action, string? caption)
         {
@@ -1086,9 +1219,11 @@ public sealed class InstalledTemplate
             }
             buttons.Add(new MenuButton(key == "Return" ? "back" : key, r, action));
         }
-        var both = SettingsIds(c).Count > 1;
+        // from the page of the two words, a list leads back to it; a theme without that page links its two lists by its arrows instead
+        var menu = HasSetupMenu(c);
+        var both = SettingsIds(c).Count > 1 && !menu;
         if (both && isSub) Nav("prev", "<", new MenuAction("page", "settings_audio"), d.AudioLabel);
-        Nav("Return", "⌂", new MenuAction("page", "root"), null);
+        Nav("Return", "⌂", new MenuAction("page", menu ? "settings" : "root"), null);
         if (both && !isSub) Nav("next", ">", new MenuAction("page", "settings_sub"), d.SubtitlesLabel);
         return new MenuPage(id, ops, Link(buttons));
     }

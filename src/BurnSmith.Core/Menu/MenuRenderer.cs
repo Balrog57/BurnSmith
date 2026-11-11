@@ -69,17 +69,15 @@ public static partial class MenuRenderer
     /// does: a button in percentages stretches to its box, one with a viewBox keeps its proportions, and both stay sharp at any size.
     /// </summary>
     static ImageSource Load(string path, Rect? size = null) => IsSvg(path) ? Images.GetOrAdd($"{path}|{size?.Width:0}x{size?.Height:0}", _ => Svg(path, size))
-        : size is { } drawn && Traced(path, drawn.Width, drawn.Height) is { } vector ? Load(vector, size) : Bitmap(path);
+        : Traced(path) is { } vector ? Load(vector, size) : Bitmap(path);
 
     /// <summary>
-    /// The drawing traced from a picture (name.svg beside name.png, tools\vectorize-buttons.py), when the picture is drawn larger than its pixels.
-    /// At its own size or smaller the picture is the exact copy of the template; enlarged it would blur, where the drawing stays sharp.
+    /// The drawing traced from a button picture (name.svg beside name.png, tools\vectorize-buttons.py): a button is always drawn from it, at any
+    /// size. A converted template keeps the drawing only; a template read where its program put it has both files.
     /// </summary>
-    public static string? Traced(string picture, double width, double height) =>
-        Twins.GetOrAdd(picture, p => Path.ChangeExtension(p, ".svg") is var svg && !IsSvg(p) && File.Exists(svg) && Size(p) is var (w, h) ? (svg, w, h) : (null, 0, 0))
-            is (string twin, var pw, var ph) && (width > pw * 1.02 || height > ph * 1.02) ? twin : null;
+    public static string? Traced(string picture) => Twins.GetOrAdd(picture, p => !IsSvg(p) && Path.ChangeExtension(p, ".svg") is var svg && File.Exists(svg) ? svg : null);
 
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string? Svg, int W, int H)> Twins = new();
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string?> Twins = new();
 
     /// <summary>An SVG file as a frozen vector picture at its own size (for the editor's lists).</summary>
     public static ImageSource SvgPicture(string path) => Load(path);
@@ -430,17 +428,46 @@ public static partial class MenuRenderer
     /// design's highlight style draws it — three kinds: a box, an underline, or the label in the accent
     /// colour. <paramref name="label"/> is the button's text, needed by the last one; null = the frame.
     /// </summary>
-    public static byte[] Focus(MenuDesign d, MenuButton b, double scale = 1, string? label = null)
+    /// <summary>Where the picture <see cref="Focus"/> makes goes on the page: the button and its margin, and the texts written with it.</summary>
+    public static Box FocusBox(MenuButton b)
+    {
+        var box = b.Rect.Inflate(MenuBuilder.FocusMargin);
+        foreach (var t in b.FocusTexts ?? [])
+        {
+            int x0 = Math.Min(box.X, t.Rect.X), y0 = Math.Min(box.Y, t.Rect.Y);
+            box = new Box(x0, y0, Math.Max(box.X + box.W, t.Rect.X + t.Rect.W) - x0, Math.Max(box.Y + box.H, t.Rect.Y + t.Rect.H) - y0);
+        }
+        return box;
+    }
+
+    /// <summary>The selected state of a page's button, with the label the page writes over it.</summary>
+    public static byte[] Focus(MenuDesign d, MenuPage p, MenuButton b, double scale = 1)
+    {
+        var written = p.Ops.OfType<Label>().FirstOrDefault(l => l.Rect == b.Rect);
+        return Focus(d, b, scale, written?.Value, written);
+    }
+
+    public static byte[] Focus(MenuDesign d, MenuButton b, double scale = 1, string? label = null, Label? written = null)
     {
         var m = MenuBuilder.FocusMargin;
         var box = b.Rect.Inflate(m);
+        var whole = FocusBox(b);
         var style = label == null ? "box" : d.HighlightStyle;
-        return Encode(new PngBitmapEncoder(), box.W, box.H, dc =>
+        return Encode(new PngBitmapEncoder(), whole.W, whole.H, dc =>
         {
+            if (b.FocusTexts != null)
+            {
+                dc.PushTransform(new TranslateTransform(-whole.X, -whole.Y));
+                foreach (var t in b.FocusTexts) DrawText(dc, t);
+                dc.Pop();
+            }
+            dc.PushTransform(new TranslateTransform(box.X - whole.X, box.Y - whole.Y));
             if (b.FocusImage != null)
             {
                 var at = b.FocusSlot is { } s ? new Rect(s.X - box.X, s.Y - box.Y, s.W, s.H) : new Rect(m, m, b.Rect.W, b.Rect.H);
                 dc.DrawImage(Load(b.FocusImage, at), at);
+                // a picture button of the user's: its selected picture covers the label the page wrote, so the label is written again over it
+                if (written != null && b.FocusSlot == null) DrawLabel(dc, d, written with { Rect = new Box(m, m, b.Rect.W, b.Rect.H) });
                 return;
             }
             switch (style)
@@ -519,7 +546,7 @@ public static partial class MenuRenderer
         {
             if (d.TemplateDir == null && d.Dim > 0) dc.DrawRectangle(new SolidColorBrush(Col("#000000", d.Dim / 100.0)), null, full);
         }
-        else if (shown == null && d.TemplateDir != null) { /* the template's own artwork is the first op of every page */ }
+        else if (shown == null && d.TemplateDir != null && !d.OwnBackdrop) { /* the template's own artwork is the first op of every page */ }
         else if (shown != null)
         {
             dc.DrawRectangle(new ImageBrush(Backdrop(shown, d)) { Stretch = Stretch.UniformToFill }, null, full);
@@ -576,7 +603,8 @@ public static partial class MenuRenderer
         try { mask = f.Mask == null ? null : Load(f.Mask); }
         catch (InvalidDataException) { /* a mask WPF cannot decode (Holiday's): the picture is shown unmasked */ }
         if (mask != null) dc.PushOpacityMask(new ImageBrush(mask) { Stretch = Stretch.Fill, ViewportUnits = BrushMappingMode.Absolute, Viewport = rect });
-        dc.DrawRectangle(f.Picture != null ? new ImageBrush(Load(f.Picture)) { Stretch = Stretch.UniformToFill } : new SolidColorBrush(Col("#000000", 0.45)), null, rect);
+        if (f.Whole && f.Picture != null) dc.DrawRectangle(Brushes.Black, null, rect);
+        dc.DrawRectangle(f.Picture != null ? new ImageBrush(Load(f.Picture)) { Stretch = f.Whole ? Stretch.Uniform : Stretch.UniformToFill } : new SolidColorBrush(Col("#000000", 0.45)), null, rect);
         if (mask != null) dc.Pop();
         if (f.Frame != null) dc.DrawImage(Load(f.Frame, rect), rect);
     }
@@ -621,6 +649,8 @@ public static partial class MenuRenderer
         text.Trimming = TextTrimming.CharacterEllipsis;
         var x = t.Align == "left" ? t.Rect.X : t.Rect.X + (t.Rect.W - text.Width) / (t.Align == "right" ? 1 : 2);
         var at = new Point(x, t.Wrap ? t.Rect.Y : t.Rect.Y + (t.Rect.H - text.Height) / 2); // several lines start at the top of their zone
+        if (t.Tight && t.Align == "left" && lines == 1 && text.BuildGeometry(at).Bounds is { IsEmpty: false } ink)
+            at += new Vector(t.Rect.X + 2 - ink.X, t.Rect.Y + (int)t.Size * 7 / 20 + 2 - ink.Y);
         if (t.Shadow != null) // under everything; a blurred shadow is drawn sharp at half its strength, as for the pictures (Simplify)
         {
             var shade = Make(size);

@@ -236,10 +236,13 @@ public sealed class TemplatePack
         {
             var mapping = CopyAssets(pack, source.SourceDir, pack.Tree, targetDir, source.Thumbnail);
             Rewrite(pack.Tree, mapping);
+            // the template's moving background travels as it is: the menu's clip is encoded from it, so nothing is lost on the way
+            if (InstalledTemplate.LoopClip(source.SourceDir) is { } clip) File.Copy(clip, Path.Combine(targetDir, InstalledTemplate.PackedLoop), true);
         }
         pack.Design.Name = name;
         pack.Design.Category = pack.Category;
         pack.Design.TemplateDir = null;
+        pack.Design.LoopFile = null; // the template's own clip is found again beside the pack; this PC's path means nothing elsewhere
         return pack;
     }
 
@@ -268,20 +271,32 @@ public sealed class TemplatePack
         {
             var relative = Relative(sourceDir, file);
             if (mapping.ContainsKey(relative)) continue;
-            var target = Target(relative, role, mapping.Values, file);
+            var target = Copy(file, Target(relative, role, mapping.Values, file));
             mapping[relative] = target;
-            CopyImage(file, Path.Combine(targetDir, target.Replace('/', Path.DirectorySeparatorChar)));
-            CopyVector(file, Path.Combine(targetDir, target.Replace('/', Path.DirectorySeparatorChar)));
 
             string? focusTarget = null;
             var focus = FocusRelative(relative, sourceDir);
             if (focus is { } f && File.Exists(Path.Combine(sourceDir, f.Replace('/', Path.DirectorySeparatorChar))))
             {
-                focusTarget = Target(f, "button", mapping.Values.Append(target));
+                focusTarget = Copy(Path.Combine(sourceDir, f.Replace('/', Path.DirectorySeparatorChar)), Target(f, "button", mapping.Values.Append(target)));
                 mapping[f] = focusTarget;
-                CopyImage(Path.Combine(sourceDir, f.Replace('/', Path.DirectorySeparatorChar)), Path.Combine(targetDir, focusTarget.Replace('/', Path.DirectorySeparatorChar)));
-                CopyVector(Path.Combine(sourceDir, f.Replace('/', Path.DirectorySeparatorChar)), Path.Combine(targetDir, focusTarget.Replace('/', Path.DirectorySeparatorChar)));
             }
+            // a button traced into a drawing (tools\vectorize-buttons.py) goes as that drawing alone: it is what the menu draws, at any size
+            string Copy(string source, string name)
+            {
+                if (MenuRenderer.Traced(source) is { } svg)
+                {
+                    name = UniqueTarget(Path.ChangeExtension(name, ".svg").Replace('\\', '/'), mapping.Values);
+                    Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(targetDir, name))!);
+                    File.Copy(svg, Path.Combine(targetDir, name.Replace('/', Path.DirectorySeparatorChar)), true);
+                }
+                else CopyImage(source, Path.Combine(targetDir, name.Replace('/', Path.DirectorySeparatorChar)));
+                return name;
+            }
+            // the French remake of a button whose word is part of its picture travels under the same name, in its own folder (InstalledTemplate.Button)
+            foreach (var (from, to) in new[] { (relative, target), (focus, focusTarget) })
+                if (from != null && to != null && Path.Combine(sourceDir, InstalledTemplate.FrenchDir, from.Replace('/', Path.DirectorySeparatorChar)) is var french && File.Exists(french))
+                    Copy(french, InstalledTemplate.FrenchDir + "/" + to);
             // the shape a thumbnail or a DVD highlight is cut to: the template keeps it beside the "normal" picture and no value of the tree names it,
             // the "normal" / "sub" → "mask" name is how it is found again (a frame without a "sub" picture has one too)
             var mask = relative.Replace(".normal.", ".mask.", StringComparison.OrdinalIgnoreCase);
@@ -405,12 +420,6 @@ public sealed class TemplatePack
             });
         }
         catch (Exception e) when (e is NotSupportedException or System.IO.FileFormatException or IOException or InvalidDataException) { return false; }
-    }
-
-    /// <summary>The drawing traced from a button picture (tools\vectorize-buttons.py) travels with it: the menu draws it when the button is enlarged.</summary>
-    static void CopyVector(string source, string target)
-    {
-        if (Path.ChangeExtension(source, ".svg") is var svg && File.Exists(svg) && !MenuRenderer.IsSvg(source)) File.Copy(svg, Path.ChangeExtension(target, ".svg"), true);
     }
 
     /// <param name="maxWidth">A wider picture is made that wide (the gallery's thumbnail).</param>

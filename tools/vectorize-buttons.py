@@ -1,5 +1,5 @@
 # Traces the button pictures of the vendor templates into SVG with VectorCraft's Image Trace, one name.svg beside each name.png.
-# BurnSmith draws the .svg in place of the picture it stands beside (InstalledTemplate.Asset), and a converted pack carries both.
+# BurnSmith always draws the .svg in place of the picture it stands beside (MenuRenderer.Traced), and a converted pack carries the .svg alone.
 #
 #   python tools\vectorize-buttons.py [templates folder] [--force] [--only text]
 #
@@ -21,7 +21,7 @@ SMALL = 64  # a picture whose short side is under 64 px is enlarged (up to four 
 
 def is_button(path):
     folder, name = os.path.basename(os.path.dirname(path)), os.path.basename(path)
-    if not name.lower().endswith(".png") or ".mask." in name or any(p.startswith("LANG_") for p in path.split(os.sep)):
+    if not name.lower().endswith(".png") or ".mask." in name or any(p.startswith("LANG_") and p != "LANG_FRA" for p in path.split(os.sep)):  # the vendor's own languages are not pictures we can read; LANG_FRA is ours (tools/french-buttons.py)
         return False
     return folder in ("play", "scenes", "setup", "home", "left", "right") or (
         folder in ("Scene", "1920x1080") and os.path.splitext(name)[0] in ("back", "next", "previous"))
@@ -83,7 +83,17 @@ def trace(png, svg, work):
             if os.path.exists(svg):
                 os.remove(svg)
             return "échec : " + (run.stderr or run.stdout).strip()[-300:]
+    stretch(svg)
     return None
+
+
+def stretch(svg):
+    """The drawing fills its box whatever the box's proportions, as the picture it replaces did."""
+    with open(svg, encoding="utf-8") as f:
+        text = f.read()
+    if "preserveAspectRatio" not in text:
+        with open(svg, "w", encoding="utf-8") as f:
+            f.write(text.replace("<svg ", '<svg preserveAspectRatio="none" ', 1))
 
 
 def main():
@@ -100,6 +110,7 @@ def main():
         for png in buttons:
             svg = os.path.splitext(png)[0] + ".svg"
             if "--force" not in sys.argv and os.path.exists(svg) and os.path.getmtime(svg) >= os.path.getmtime(png):
+                stretch(svg)
                 continue
             problem = trace(png, svg, work)
             if problem:

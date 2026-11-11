@@ -48,7 +48,7 @@ static class ThemeSkin
             var size = I(t, "Size") > 0 ? I(t, "Size") : 40;
             return El(name, [("rect", Rect(I(t, "Left"), Up(I(t, "Top"), size), width, size * 3 / 2)), ("font", t?.Attr("Type", "Tahoma") ?? "Tahoma"), ("font_size", size.ToString()),
                 ("color", t?.Attr("Color", "#FFFFFF") ?? "#FFFFFF"), ("bold", t?.Attr("Bold") == "true" ? "1" : "0"), ("italic", t?.Attr("Italic") == "true" ? "1" : "0"),
-                ("align", align), .. more]);
+                ("align", align), ("tight", "1"), .. more]);
         }
         int Room(XNode? t, int limit = 1000) => Math.Max(200, Math.Min(limit, MenuBuilder.W - I(t, "Left") - 40));
 
@@ -64,7 +64,7 @@ static class ThemeSkin
         var root = El("rootmenu");
         root.Kids.AddRange([bg,
             El("video", ("rect", Rect(I(frame, "Left") + I(preview, "Left"), I(frame, "Top") + I(preview, "Top"), I(preview, "Width"), I(preview, "Height"))),
-                ("frame_under", Picture(frame)), ("under_rect", Rect(I(frame, "Left"), I(frame, "Top"), I(frame, "Width"), I(frame, "Height"))))]);
+                ("frame_under", Picture(frame)), ("under_rect", Rect(I(frame, "Left"), I(frame, "Top"), I(frame, "Width"), I(frame, "Height"))), ("fit", "whole"))]);
         var title = menu?.Child("TitleText");
         var overFrame = I(title, "Left") < I(frame, "Left") && I(title, "Top") < I(frame, "Top") + I(frame, "Height") && I(title, "Top") + I(title, "Size") * 3 / 2 > I(frame, "Top");
         root.Kids.Add(Text("label", title, overFrame ? Math.Max(200, I(frame, "Left") - I(title, "Left") - 20) : Room(title), "left"));
@@ -72,13 +72,13 @@ static class ThemeSkin
             root.Kids.Add(Text(role, menu?.Child(key), I(menu?.Child(key), "Size") * 7, "left", ("textbutton", "1")));
 
         // ---- scene page: a frame per thumbnail (the thumbnail's position is an offset inside it), its name under it, previous / back / next
-        var scene = El("scene");
+        var scene = El("scene", ("wrap", "1")); // previous and next on every page, the ends joined (seen on a disc made by the program)
         var sceneBg = El("bg");
         sceneBg.Kids.Add(Leaf("image", Picture(page?.Child("Background"))));
         scene.Kids.Add(sceneBg);
         foreach (var (role, key) in new[] { ("left", "ButtonPre"), ("home", "Return"), ("right", "ButtonNext") })
             if (page?.Child(key) is { } button) scene.Kids.Add(El(role, ("rect", Sized(button))));
-        scene.Kids.Add(Text("label", page?.Child("TitleText"), Room(page?.Child("TitleText")), "left"));
+        scene.Kids.Add(Text("label", page?.Child("TitleText"), Room(page?.Child("TitleText")), "left", ("counter", "1"))); // "Scenes  1/3" when there are several pages
         var videos = El("videoes");
         // in the order of the file, as the program reads them: theme 18 names its four frames Frame0, Frame1, Frame0, Frame1
         List<XNode> InOrder(string group, string prefix) => page?.Child(group)?.Kids.Where(k => k.Name.StartsWith(prefix, StringComparison.Ordinal)).ToList() ?? [];
@@ -87,11 +87,12 @@ static class ThemeSkin
         {
             var (box, offset, label) = (boxes[i], offsets.ElementAtOrDefault(i), labels.ElementAtOrDefault(i));
             var video = El("video", ("rect", Rect(I(box, "Left") + I(offset, "Left"), I(box, "Top") + I(offset, "Top"), I(offset, "Width"), I(offset, "Height"))),
-                ("frame_under", Picture(box)), ("under_rect", Rect(I(box, "Left"), I(box, "Top"), I(box, "Width"), I(box, "Height"))));
+                ("frame_under", Picture(box)), ("under_rect", Rect(I(box, "Left"), I(box, "Top"), I(box, "Width"), I(box, "Height"))),
+                ("fit", "whole")); // the program shows a picture whole, centred on black, never cut (read in BlurayDVDCreator.exe)
             var size = I(label, "Size") > 0 ? I(label, "Size") : 30;
             video.Kids.Add(El("name", ("rect", Rect(I(label, "Left"), Up(I(label, "Top"), size), I(box, "Width"), size * 3 / 2)), ("font", label?.Attr("Type", "Tahoma") ?? "Tahoma"),
                 ("font_size", size.ToString()), ("color", label?.Attr("Color", "#FFFFFF") ?? "#FFFFFF"), ("bold", label?.Attr("Bold") == "true" ? "1" : "0"),
-                ("align", "left"))); // the program writes a name from its Left, whatever Alignment the file gives (read in BlurayDVDCreator.exe)
+                ("align", "left"), ("tight", "1"))); // the program writes a name from its Left, whatever Alignment the file gives (read in BlurayDVDCreator.exe)
             videos.Kids.Add(video);
         }
         scene.Kids.Add(videos);
@@ -105,7 +106,7 @@ static class ThemeSkin
                 var width = item.Attr("Alignment", "Left") == "Center" ? 900 : 820;
                 items.Kids.Add(El("item", ("rect", Rect(I(item, "Left"), Up(I(item, "Top"), size), width, size * 3 / 2)), ("font", item.Attr("Type", "Tahoma") ?? "Tahoma"),
                     ("font_size", size.ToString()), ("color", item.Attr("Color", "#FFFFFF") ?? "#FFFFFF"), ("bold", item.Attr("Bold") == "true" ? "1" : "0"),
-                    ("align", item.Attr("Alignment", "Left").ToLowerInvariant())));
+                    ("align", item.Attr("Alignment", "Left").ToLowerInvariant()), ("tight", "1")));
             }
             if (items.Kids.Count > 0) scene.Kids.Add(items);
         }
@@ -123,6 +124,9 @@ static class ThemeSkin
         if (branch.Child("Setup") is { } lang && lang.Child("LangItemText")?.Child("ItemText0") != null)
         {
             setup.Kids.Add(Text("setuptitle", lang.Child("ASLangTitleText"), Room(lang.Child("ASLangTitleText")), "left"));
+            // the page the Setup button opens first: two words, each leading to its list
+            foreach (var (name, key) in new[] { ("setupaudio", "SetupAudioText"), ("setupsub", "SetupSubtitleText") })
+                if (lang.Child(key) is { } word) setup.Kids.Add(Text(name, word, Room(word, 800), "left"));
             var rows = El("langitems");
             for (var i = 0; lang.Child("LangItemText")!.Child($"ItemText{i}") is { } item; i++) rows.Kids.Add(Text("item", item, 600, "left"));
             setup.Kids.Add(rows);

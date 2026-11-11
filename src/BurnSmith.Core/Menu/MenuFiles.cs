@@ -5,7 +5,6 @@ namespace BurnSmith.Core.Menu;
 public static class MenuFiles
 {
     /// <summary>The text drawn on a button, for the highlight styles that recolour it (the text-colour highlight style). Null = no label of its own.</summary>
-    static string? LabelOf(MenuPage p, MenuButton b) => p.Ops.OfType<Label>().FirstOrDefault(l => l.Rect == b.Rect)?.Value;
 
     /// <summary>
     /// Writes what the BD-J xlet reads (bdj/.../Menu.java): menu.txt plus one JPEG per page and one PNG per button focus frame.
@@ -30,13 +29,13 @@ public static class MenuFiles
             foreach (var p in pages)
             {
                 list.Add(($"bg_{p.Id}.{ext}", overlay ? MenuRenderer.Overlay(design, p, scale) : MenuRenderer.Background(design, p, scale)));
-                foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", MenuRenderer.Focus(design, b, scale, LabelOf(p, b))));
+                foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", MenuRenderer.Focus(design, p, b, scale)));
             }
             // the pop-up pages go over the film: always transparent overlays, in BurnSmith's own layout
             foreach (var p in popup ?? [])
             {
                 list.Add(($"bg_{p.Id}.png", MenuRenderer.Overlay(look, p, scale)));
-                foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", MenuRenderer.Focus(look, b, scale, LabelOf(p, b))));
+                foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", MenuRenderer.Focus(look, p, b, scale)));
             }
             list.Add(("mark.png", MenuRenderer.Marker(design, MenuBuilder.MarkerSize, scale)));
             return list;
@@ -51,7 +50,7 @@ public static class MenuFiles
             txt.Append(pages.Contains(p) ? $"page {p.Id} bg_{p.Id}.{ext}\n" : $"page {p.Id} bg_{p.Id}.png {Px(MenuBuilder.MarkerOffset(look))}\n");
             foreach (var b in p.Buttons)
             {
-                var r = b.Rect.Inflate(MenuBuilder.FocusMargin);
+                var r = MenuRenderer.FocusBox(b);
                 string N(string? s) => s ?? "-";
                 var action = b.Action.Kind switch
                 {

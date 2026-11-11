@@ -60,6 +60,7 @@ public static class BuiltInTemplates
         if (streaming == null) return null;
         var d = streaming.Clone();
         (d.Name, d.Category, d.BackgroundBlur) = ("Saison", TemplateLabel.Own, 12);
+        (d.OwnBackdrop, d.Top, d.Bottom) = (true, "#141A24", "#07090D"); // no film of anyone's behind it: the template's sample frame stays out
         return d;
     }
 }

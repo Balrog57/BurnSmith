@@ -45,7 +45,7 @@ public partial class App : Application
         Window window = main;
         if (e.Args.FirstOrDefault(a => a == "editor" || a.StartsWith("editor=")) is { } editor)
         {
-            var win = main.CreateEditor(editor.Length > 7 ? TemplateCatalog.Find(editor[7..]) ?? Templates.List().FirstOrDefault(t => t.Name == editor[7..]) : null);
+            var win = main.CreateEditor(editor.Length > 7 ? TemplateCatalog.Find(editor[7..]) : null);
             window = win;
             OffScreen(window);
             window.Show();
