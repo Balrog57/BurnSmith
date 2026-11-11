@@ -164,9 +164,11 @@ public sealed class InstalledTemplate
             var doc = LooseXml.Parse(text);
             if (doc.Child("template") is { } t) parsed = new InstalledTemplate(dir, AllInOne(t), TemplateKind.BluRay);
             else if (doc.Child("Template") is { } s) parsed = new InstalledTemplate(dir, Simple(s, dir), TemplateKind.Dvd);
-            else if (doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect").StartsWith("16-9")) is { } def)
+            // the layout of the folder's own shape (…\4-3\business) when the file has it, else the 16-9 one
+            else if (doc.Children("TemplateDef").ToList() is var defs && (defs.FirstOrDefault(d => d.Attr("Aspect") == System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(dir)))
+                         ?? defs.FirstOrDefault(d => d.Attr("Aspect").StartsWith("16-9"))) is { } def)
             {
-                var layout = PictureLayout(def, doc.Children("TemplateDef").FirstOrDefault(d => d.Attr("Aspect") == "4-3"));
+                var layout = PictureLayout(def, def.Attr("Aspect") == "4-3" ? null : defs.FirstOrDefault(d => d.Attr("Aspect") == "4-3"));
                 // the thumbnail positions cover one another in a few files: its pictures are then laid out by BurnSmith
                 var skin = Directory.Exists(Path.Combine(dir, "Menu")) && Directory.Exists(Path.Combine(dir, "Scene")) && ThumbnailsOverlap(layout);
                 parsed = new InstalledTemplate(dir, skin ? PictureThemeSkin.Build(dir) : layout, TemplateKind.Pictures);
@@ -185,7 +187,7 @@ public sealed class InstalledTemplate
 
     static bool Meets(Box a, Box b) => Math.Min(a.X + a.W, b.X + b.W) - Math.Max(a.X, b.X) > a.W / 4 && Math.Min(a.Y + a.H, b.Y + b.H) - Math.Max(a.Y, b.Y) > a.H / 4;
 
-    static (int W, int H)? PngSize(string path)
+    internal static (int W, int H)? PngSize(string path)
     {
         if (!File.Exists(path)) return null;
         Span<byte> head = stackalloc byte[24];
@@ -292,44 +294,66 @@ public sealed class InstalledTemplate
     static XNode PictureLayout(XNode def, XNode? reference)
     {
         string A(XNode? n, string name, string fallback = "") => n?.Attr(name, fallback) is { Length: > 0 } v ? v : fallback;
-        var k = def.Attr("Aspect") == "16-9-2" ? 0.5 : 1.0; // the "16-9-2" files are laid out on a 3840x2160 canvas
-        int I(XNode? n, string name) => int.TryParse(A(n, name), out var v) ? (int)(v * k) : 0;
-        XNode El(string name, params (string Key, string Value)[] attrs) => new(name, attrs.ToDictionary(a => a.Key, a => a.Value));
-        XNode Leaf(string name, string text) { var n = El(name); n.Content.Append(text); return n; }
-        XNode Styled(string name, XNode? style, string rect, params (string, string)[] more) =>
-            El(name, [("rect", rect), ("font", A(style, "Type", "Tahoma")), ("font_size", (I(style, "Size") is > 0 and var px ? px : 38).ToString()), ("color", A(style, "Color", "#FFFFFF")),
-                ("bold", A(style, "Bold") == "true" ? "1" : "0"), ("italic", A(style, "Italic") == "true" ? "1" : "0"), .. more]);
-        string Rect(XNode? n) => $"{I(n, "Left")},{I(n, "Top")},{I(n, "Width")},{I(n, "Height")}";
-        string Text(XNode? style, bool centred, int width = 480) // Left / Top place the text: its left edge, or its centre when centred
-        {
-            var size = I(style, "Size") is > 0 and var s ? s : 38;
-            return $"{I(style, "Left") - (centred ? width / 2 : 0)},{I(style, "Top")},{width},{size * 3 / 2}";
-        }
-
+        int Raw(XNode? n, string name) => int.TryParse(A(n, name), out var v) ? v : 0;
         var menu = def.Child("Menu");
         var page = def.Child("Scene")?.Child("Page");
         var frame = menu?.Child("Frame");
         var screen = menu?.Child("videoscr");
         var buttonColors = def.Child("Color")?.Child("Button");
+        // the canvas the numbers are written on: 768x576 for the 4-3 set, drawn with its proportions between two bars; 1920x1080 for the others,
+        // "16-9-2" included in the program's own layouts (its pictures are only twice as large) — the loose files beside two themes use 3840x2160
+        var narrow = def.Attr("Aspect") == "4-3";
+        var k = narrow ? MenuBuilder.H / 576.0 : Raw(frame, "Left") + Raw(frame, "Width") > MenuBuilder.W || Raw(page?.Child("ButtonNext"), "Left") > MenuBuilder.W ? 0.5 : 1.0;
+        var dx = narrow ? (MenuBuilder.W - (int)(768 * k)) / 2 : 0;
+        int I(XNode? n, string name) => (int)(Raw(n, name) * k);
+        int X(XNode? n) => dx + I(n, "Left");
+        XNode El(string name, params (string Key, string Value)[] attrs) => new(name, attrs.ToDictionary(a => a.Key, a => a.Value));
+        XNode Leaf(string name, string text) { var n = El(name); n.Content.Append(text); return n; }
+        XNode Styled(string name, XNode? style, string rect, params (string, string)[] more) =>
+            El(name, [("rect", rect), ("font", A(style, "Type", "Tahoma")), ("font_size", (I(style, "Size") is > 0 and var px ? px : 38).ToString()), ("color", A(style, "Color", "#FFFFFF")),
+                ("bold", A(style, "Bold") == "true" ? "1" : "0"), ("italic", A(style, "Italic") == "true" ? "1" : "0"), .. more]);
+        string Rect(XNode? n) => $"{X(n)},{I(n, "Top")},{I(n, "Width")},{I(n, "Height")}";
+        string Text(XNode? style, int width = 700) // the scene page's title: written from Left
+        {
+            var size = I(style, "Size") is > 0 and var s ? s : 38;
+            return $"{X(style)},{I(style, "Top")},{width},{size * 3 / 2}";
+        }
+        // the menu's own texts end at a fixed distance from Left, whatever their length and their Alignment (which only matters for a text on
+        // several lines): the program gives them a right edge, Left + 327 for the title and Left + 172 for a button (173 and 85 on the 4-3
+        // canvas), and writes each one up to 4 px before it. Read in the program's code, not seen on one of its discs.
+        string Ending(XNode? style, int after)
+        {
+            var size = I(style, "Size") is > 0 and var s ? s : 38;
+            var right = dx + (int)((Raw(style, "Left") + after - 4) * k);
+            var left = Math.Max(dx + 20, right - 1000);
+            // a text placed to the right of the preview (education01) has only the room up to it: a longer title than the program's "My BD" is
+            // drawn smaller rather than over the frame
+            if (Raw(style, "Left") >= Raw(frame, "Left") + Raw(frame, "Width") / 2) left = Math.Min(right - 100, Math.Max(left, X(frame) + I(frame, "Width") + 8));
+            return $"{left},{I(style, "Top")},{right - left},{size * 3 / 2}";
+        }
+        string Picture(string folder, XNode? n) => folder + "/" + A(n, "FileName");
 
         var common = El("common");
-        common.Kids.AddRange([Leaf("accent", A(buttonColors, "High")), Leaf("leftbuttontimage", "Scene/" + A(page?.Child("ButtonPre"), "FileName")),
-            Leaf("rightbuttontimage", "Scene/" + A(page?.Child("ButtonNext"), "FileName")), Leaf("homebuttontimage", "Scene/" + A(page?.Child("Return"), "FileName"))]);
+        common.Kids.AddRange([Leaf("accent", A(buttonColors, "High")), Leaf("leftbuttontimage", Picture("Scene", page?.Child("ButtonPre"))),
+            Leaf("rightbuttontimage", Picture("Scene", page?.Child("ButtonNext"))), Leaf("homebuttontimage", Picture("Scene", page?.Child("Return")))]);
 
-        var bg = El("bg");
-        bg.Kids.Add(Leaf("image", "Menu/" + A(menu?.Child("Background"), "FileName")));
+        XNode Bg(string file)
+        {
+            var bg = narrow ? El("bg", ("rect", $"{dx},0,{MenuBuilder.W - 2 * dx},{MenuBuilder.H}")) : El("bg");
+            bg.Kids.Add(Leaf("image", file));
+            return bg;
+        }
+        // the frame picture is drawn over the film's picture, as the program does: its leaves or its snow overlap the picture's edge
         var root = El("rootmenu");
-        root.Kids.AddRange([bg, Styled("label", menu?.Child("TitleText"), Text(menu?.Child("TitleText"), false, 520)),
-            El("video", ("rect", $"{I(frame, "Left") + I(screen, "Left")},{I(frame, "Top") + I(screen, "Top")},{I(screen, "Width")},{I(screen, "Height")}"),
-                ("frame_under", "Menu/" + A(frame, "FileName")), ("under_rect", Rect(frame))),
-            Styled("play", menu?.Child("ButtonPlayText"), Text(menu?.Child("ButtonPlayText"), true), ("textbutton", "1")),
-            Styled("scenes", menu?.Child("ButtonScenesText"), Text(menu?.Child("ButtonScenesText"), true), ("textbutton", "1"))]);
+        root.Kids.AddRange([Bg(Picture("Menu", menu?.Child("Background"))), Styled("label", menu?.Child("TitleText"), Ending(menu?.Child("TitleText"), narrow ? 173 : 327), ("align", "right")),
+            El("video", ("rect", $"{X(frame) + I(screen, "Left")},{I(frame, "Top") + I(screen, "Top")},{I(screen, "Width")},{I(screen, "Height")}"),
+                ("frame_over", Picture("Menu", frame)), ("over_rect", Rect(frame))),
+            Styled("play", menu?.Child("ButtonPlayText"), Ending(menu?.Child("ButtonPlayText"), narrow ? 85 : 172), ("textbutton", "1"), ("align", "right")),
+            Styled("scenes", menu?.Child("ButtonScenesText"), Ending(menu?.Child("ButtonScenesText"), narrow ? 85 : 172), ("textbutton", "1"), ("align", "right"))]);
 
         var scene = El("scene");
-        var sceneBg = El("bg");
-        sceneBg.Kids.Add(Leaf("image", "Scene/" + A(page?.Child("Background"), "FileName")));
-        scene.Kids.AddRange([sceneBg, El("left", ("rect", Rect(page?.Child("ButtonPre")))), El("right", ("rect", Rect(page?.Child("ButtonNext")))),
-            El("home", ("rect", Rect(page?.Child("Return")))), Styled("label", page?.Child("TitleText"), Text(page?.Child("TitleText"), false, 700))]);
+        scene.Kids.AddRange([Bg(Picture("Scene", page?.Child("Background"))), El("left", ("rect", Rect(page?.Child("ButtonPre")))), El("right", ("rect", Rect(page?.Child("ButtonNext")))),
+            El("home", ("rect", Rect(page?.Child("Return")))), Styled("label", page?.Child("TitleText"), Text(page?.Child("TitleText")))]);
         var videos = El("videoes");
         for (var i = 0; page?.Child("Frame")?.Child($"Frame{i}") is { } box; i++)
         {
@@ -342,9 +366,9 @@ public sealed class InstalledTemplate
                 ? (I(refOffset, "Left") * I(box, "Width") / I(refBox, "Width"), I(refOffset, "Top") * I(box, "Height") / I(refBox, "Height"),
                    I(refOffset, "Width") * I(box, "Width") / I(refBox, "Width"), I(refOffset, "Height") * I(box, "Height") / I(refBox, "Height"))
                 : (I(offset, "Left"), I(offset, "Top"), I(offset, "Width"), I(offset, "Height"));
-            var video = El("video", ("rect", $"{I(box, "Left") + ox},{I(box, "Top") + oy},{ow},{oh}"),
-                ("frame_under", "Scene/" + A(box, "FileName")), ("under_rect", Rect(box)));
-            video.Kids.Add(Styled("name", page.Child("ButtonText")?.Child($"ButtonText{i}"), $"{I(box, "Left")},{I(box, "Top") + I(box, "Height") + 4},{I(box, "Width")},50"));
+            var video = El("video", ("rect", $"{X(box) + ox},{I(box, "Top") + oy},{ow},{oh}"),
+                ("frame_over", Picture("Scene", box)), ("over_rect", Rect(box)));
+            video.Kids.Add(Styled("name", page.Child("ButtonText")?.Child($"ButtonText{i}"), $"{X(box)},{I(box, "Top") + I(box, "Height") + (int)(20 * k)},{I(box, "Width")},50")); // 20 under its frame, centred
             videos.Kids.Add(video);
         }
         scene.Kids.Add(videos);
@@ -528,6 +552,12 @@ public sealed class InstalledTemplate
     void Under(List<Op> ops, XNode video)
     {
         if (Asset(video.Attr("frame_under")) is { } file) ops.Add(new Image(file, video.Rect("under_rect")));
+    }
+
+    /// <summary>The frame of a template that draws it after the picture, larger than the picture: its artwork overlaps the picture's edge.</summary>
+    void Over(List<Op> ops, XNode video)
+    {
+        if (Asset(video.Attr("frame_over")) is { } file) ops.Add(new Image(file, video.Rect("over_rect")));
     }
 
     Framed Frame(XNode video, string? picture)
@@ -722,6 +752,7 @@ public sealed class InstalledTemplate
         {
             Under(ops, video);
             ops.Add(Frame(video, d.PosterOr(c.PreviewPicture)));
+            Over(ops, video);
             zones.Add(new("poster", video.Rect()));
         }
         if (n.Child("label") is { } label)
@@ -738,8 +769,9 @@ public sealed class InstalledTemplate
         void Word(string id, XNode node, Box r, MenuAction action, string label)
         {
             var text = Written(node, label) with { Rect = r };
-            // written from the left, the button is the word and not its whole zone: DVDFab's zones side by side run over each other
-            if (text.Align == "left") r = r with { W = Math.Min(r.W, (int)Math.Ceiling(MenuRenderer.TextWidth(text))) };
+            // written from one edge, the button is the word and not its whole zone: DVDFab's zones side by side run over each other
+            if (text.Align != "center" && Math.Min(r.W, (int)Math.Ceiling(MenuRenderer.TextWidth(text))) is var wide)
+                r = new Box(text.Align == "right" ? r.X + r.W - wide : r.X, r.Y, wide, r.H);
             var star = Asset(common.Child("selection")?.Text);
             var slot = new Box(r.X - r.H, r.Y, r.H, r.H);
             ops.Add(text);
@@ -884,6 +916,7 @@ public sealed class InstalledTemplate
             Under(ops, slots[i]);
             var framed = Frame(slots[i], cell.Picture);
             ops.Add(framed);
+            Over(ops, slots[i]);
             if (slots[i].Child("name") is { } name)
             {
                 ops.Add(Txt(name, Shown(cell), "center"));
@@ -902,7 +935,8 @@ public sealed class InstalledTemplate
             // some templates draw their arrows as vector art, and a template's picture can be missing or unreadable: BurnSmith draws a text button there
             var drawn = node.Attr("glyph");
             if (Button(image) is not { } file || drawn.Length > 0) { Glyph(id, node.Rect(), drawn.Length > 0 ? drawn : fallbackGlyph, action); return; }
-            var box = Place(file, node.Rect());
+            // a picture theme draws its arrows at the size its layout gives them (the "16-9-2" pictures are twice as large as their place)
+            var box = Kind == TemplateKind.Pictures ? node.Rect() : Place(file, node.Rect());
             ops.Add(new Image(file, box));
             buttons.Add(Dvd(new MenuButton(id, box, action) { FocusImage = Selected(file) }));
         }
@@ -966,10 +1000,14 @@ public sealed class InstalledTemplate
         Rows(audioRows, audio, 1, "a", "audio", activeAudio);
         Rows(subRows, subs, 0, "s", "sub", activeSub);
 
+        // DVDFab's downloaded templates (The Fleeting Meteor…) lay this page out like the menu itself: Play, Scenes and Set up at the same places, no
+        // Home. Scenes leads to the scenes; Set up, the page one is on, closes it — BurnSmith's reading, DVDFab's own disc was not seen: a page needs a way back
+        var likeRoot = n.Child("home") == null;
         var navs = new[]
         {
             (Id: "play", Key: "play", Image: "playbuttontimage", Action: c.Series ? new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count) : new MenuAction("play", Playlist: c.Playlist)),
-            (Id: "back", Key: "home", Image: "homebuttontimage", Action: new MenuAction("page", "root")),
+            (Id: "scenes", Key: likeRoot && MenuBuilder.Cells(d, c).Count > 1 ? "scenes" : "", Image: "scenebuttontimage", Action: new MenuAction("page", PageId(d, "scenes", 1))),
+            (Id: "back", Key: likeRoot ? "setup" : "home", Image: likeRoot ? "setupbuttontimage" : "homebuttontimage", Action: new MenuAction("page", "root")),
         }.Where(x => n.Child(x.Key) != null && Button(x.Image) != null).Select(x => (x.Id, x.Action, File: Button(x.Image)!, Rect: n.Child(x.Key)!.Rect())).ToList();
         // these rectangles are sized for a small button (like "Set up"): at the pictures' own size Play and Home would cover one another, so they are shrunk to their rectangle
         var crowded = navs.Count == 2 && Meets(Place(navs[0].File, navs[0].Rect), Place(navs[1].File, navs[1].Rect));

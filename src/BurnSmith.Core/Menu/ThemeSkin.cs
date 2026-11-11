@@ -36,11 +36,17 @@ static class ThemeSkin
         var page = branch.Child("Scene");
         string Picture(XNode? n) => n?.Attr("FileName") is { Length: > 0 } f ? $"{Screen}/{f}" : "";
 
-        // Left / Top are the text's top-left corner; the box is only as wide as the text can be (a left-aligned title must not run under the preview frame)
+        // Left / Top are the corner of the letters themselves: the program draws each line as a picture cut to its ink (read in BlurayDVDCreator.exe).
+        // A text centred in a box 1.5 times its size has its capitals 0.35 of the size under the box's top (Tahoma, measured: 27 px at 72, 9 at 27),
+        // so the box starts that much higher. It is only as wide as the text can be (a left-aligned title must not run under the preview frame)
+        static int Up(int top, int size) => top - size * 7 / 20;
+        // a button's size is its picture's, not the Width / Height written beside it (64 x 64 for a 113 x 45 arrow in themes 25 to 30)
+        string Sized(XNode button) => InstalledTemplate.PngSize(Path.Combine(dir, Picture(button))) is var (pw, ph)
+            ? Rect(I(button, "Left"), I(button, "Top"), pw, ph) : Rect(I(button, "Left"), I(button, "Top"), I(button, "Width"), I(button, "Height"));
         XNode Text(string name, XNode? t, int width, string align, params (string, string)[] more)
         {
             var size = I(t, "Size") > 0 ? I(t, "Size") : 40;
-            return El(name, [("rect", Rect(I(t, "Left"), I(t, "Top"), width, size * 3 / 2)), ("font", t?.Attr("Type", "Tahoma") ?? "Tahoma"), ("font_size", size.ToString()),
+            return El(name, [("rect", Rect(I(t, "Left"), Up(I(t, "Top"), size), width, size * 3 / 2)), ("font", t?.Attr("Type", "Tahoma") ?? "Tahoma"), ("font_size", size.ToString()),
                 ("color", t?.Attr("Color", "#FFFFFF") ?? "#FFFFFF"), ("bold", t?.Attr("Bold") == "true" ? "1" : "0"), ("italic", t?.Attr("Italic") == "true" ? "1" : "0"),
                 ("align", align), .. more]);
         }
@@ -71,17 +77,19 @@ static class ThemeSkin
         sceneBg.Kids.Add(Leaf("image", Picture(page?.Child("Background"))));
         scene.Kids.Add(sceneBg);
         foreach (var (role, key) in new[] { ("left", "ButtonPre"), ("home", "Return"), ("right", "ButtonNext") })
-            if (page?.Child(key) is { } button) scene.Kids.Add(El(role, ("rect", Rect(I(button, "Left"), I(button, "Top"), I(button, "Width"), I(button, "Height")))));
+            if (page?.Child(key) is { } button) scene.Kids.Add(El(role, ("rect", Sized(button))));
         scene.Kids.Add(Text("label", page?.Child("TitleText"), Room(page?.Child("TitleText")), "left"));
         var videos = El("videoes");
-        for (var i = 0; page?.Child("ThumbFrame")?.Child($"Frame{i}") is { } box; i++)
+        // in the order of the file, as the program reads them: theme 18 names its four frames Frame0, Frame1, Frame0, Frame1
+        List<XNode> InOrder(string group, string prefix) => page?.Child(group)?.Kids.Where(k => k.Name.StartsWith(prefix, StringComparison.Ordinal)).ToList() ?? [];
+        var (boxes, offsets, labels) = (InOrder("ThumbFrame", "Frame"), InOrder("Thumb", "Thumb"), InOrder("ThumbText", "ThumbText"));
+        for (var i = 0; i < boxes.Count; i++)
         {
-            var offset = page.Child("Thumb")?.Child($"Thumb{i}");
+            var (box, offset, label) = (boxes[i], offsets.ElementAtOrDefault(i), labels.ElementAtOrDefault(i));
             var video = El("video", ("rect", Rect(I(box, "Left") + I(offset, "Left"), I(box, "Top") + I(offset, "Top"), I(offset, "Width"), I(offset, "Height"))),
                 ("frame_under", Picture(box)), ("under_rect", Rect(I(box, "Left"), I(box, "Top"), I(box, "Width"), I(box, "Height"))));
-            var label = page.Child("ThumbText")?.Child($"ThumbText{i}");
             var size = I(label, "Size") > 0 ? I(label, "Size") : 30;
-            video.Kids.Add(El("name", ("rect", Rect(I(label, "Left"), I(label, "Top"), I(box, "Width"), size * 3 / 2)), ("font", label?.Attr("Type", "Tahoma") ?? "Tahoma"),
+            video.Kids.Add(El("name", ("rect", Rect(I(label, "Left"), Up(I(label, "Top"), size), I(box, "Width"), size * 3 / 2)), ("font", label?.Attr("Type", "Tahoma") ?? "Tahoma"),
                 ("font_size", size.ToString()), ("color", label?.Attr("Color", "#FFFFFF") ?? "#FFFFFF"), ("bold", label?.Attr("Bold") == "true" ? "1" : "0")));
             videos.Kids.Add(video);
         }
@@ -94,7 +102,7 @@ static class ThemeSkin
             {
                 var size = I(item, "Size") > 0 ? I(item, "Size") : 30;
                 var width = item.Attr("Alignment", "Left") == "Center" ? 900 : 820;
-                items.Kids.Add(El("item", ("rect", Rect(I(item, "Left"), I(item, "Top"), width, size * 3 / 2)), ("font", item.Attr("Type", "Tahoma") ?? "Tahoma"),
+                items.Kids.Add(El("item", ("rect", Rect(I(item, "Left"), Up(I(item, "Top"), size), width, size * 3 / 2)), ("font", item.Attr("Type", "Tahoma") ?? "Tahoma"),
                     ("font_size", size.ToString()), ("color", item.Attr("Color", "#FFFFFF") ?? "#FFFFFF"), ("bold", item.Attr("Bold") == "true" ? "1" : "0"),
                     ("align", item.Attr("Alignment", "Left").ToLowerInvariant())));
             }
@@ -118,7 +126,7 @@ static class ThemeSkin
             for (var i = 0; lang.Child("LangItemText")!.Child($"ItemText{i}") is { } item; i++) rows.Kids.Add(Text("item", item, 600, "left"));
             setup.Kids.Add(rows);
             foreach (var (role, key) in new[] { ("prev", "ButtonPre"), ("Return", "Return"), ("next", "ButtonNext") })
-                if (lang.Child(key) is { } button) setup.Kids.Add(El(role, ("rect", Rect(I(button, "Left"), I(button, "Top"), I(button, "Width"), I(button, "Height"))), ("image", Picture(button))));
+                if (lang.Child(key) is { } button) setup.Kids.Add(El(role, ("rect", Sized(button)), ("image", Picture(button))));
         }
 
         var template = El("template");

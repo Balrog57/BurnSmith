@@ -72,9 +72,10 @@ static partial class DvdtTemplate
             var image = svg.Kids.FirstOrDefault(k => k.Name == "image" && k.Attr("id") == "background");
             if (image == null) return bg;
             bg.Kids.Add(Leaf("image", System.IO.Path.GetFileName(image.Attr("xlink:href"))));
-            // SVG default: the picture is fitted inside the page keeping its proportions ("meet"), centred unless the template says otherwise
+            // the program stretches the picture over the whole page unless the template asks to keep its proportions (Cake, Fireworks, CameraWS do):
+            // its own preview pictures show it, although SVG's rule for a missing attribute is "meet" — a 16:9 menu then had its picture in a column
             var aspect = image.Attr("preserveAspectRatio").ToLowerInvariant();
-            if (!aspect.Contains("none") && !aspect.Contains("slice")) bg.Attrs["fit"] = aspect.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "xmidymid";
+            if (aspect.Length > 0 && !aspect.Contains("none") && !aspect.Contains("slice")) bg.Attrs["fit"] = aspect.Split(' ', StringSplitOptions.RemoveEmptyEntries).First();
             return bg;
         }
 
@@ -96,7 +97,7 @@ static partial class DvdtTemplate
                 var fill = css.GetValueOrDefault("fill") ?? parents.AsEnumerable().Reverse().Select(p => Css(p.Attr("style")).GetValueOrDefault("fill")).FirstOrDefault(f => f != null) ?? "#FFFFFF";
                 if (!fill.StartsWith('#') || fill.Length != 7) fill = "#FFFFFF";
                 var font = css.GetValueOrDefault("font-family") ?? "Arial";
-                if (font.Contains("Shell Dlg")) font = "Segoe UI"; // a Windows alias, not a font name WPF knows
+                if (font.Contains("Shell Dlg")) font = "Tahoma"; // a Windows alias, not a font name WPF knows: Windows maps it to Tahoma (FontSubstitutes)
                 return (font.Trim('\'', '"'), Num(css.GetValueOrDefault("font-size")) is > 0 and var size ? size : 26, fill,
                         css.GetValueOrDefault("font-weight") == "bold", css.GetValueOrDefault("font-style") == "italic",
                         css.GetValueOrDefault("text-anchor") == "middle", node.Attr("x").EndsWith('%') ? 0 : Num(node.Attr("x")));
@@ -104,11 +105,16 @@ static partial class DvdtTemplate
             return null;
         }
 
-        XNode Styled(string name, (string Font, double Size, string Color, bool Bold, bool Italic, bool Centre, double TextX) t, double x, double y, double bw, double bh, bool textButton)
+        // an object the template lets size itself (defSize) is as wide as its text and keeps its left edge (DVDStyler's MenuObject): the box in the
+        // file is the one of the placeholder ("$DiscTitle", "Play All") and says nothing of the room a real title has, so the text is written at
+        // its size from that edge instead of being shrunk into that box
+        bool OwnSize(XNode menu, string id) => Walk(menu).Any(x => x.Node.Name is "object" or "button" && x.Node.Attr("id") == id && x.Node.Attr("defSize") == "true");
+        XNode Styled(string name, (string Font, double Size, string Color, bool Bold, bool Italic, bool Centre, double TextX) t, double x, double y, double bw, double bh, bool textButton, bool ownSize = false)
         {
             var inset = t.Centre ? 0 : t.TextX;
-            var node = El(name, ("rect", Rect(x + inset, y, bw - inset, bh)), ("font", t.Font), ("font_size", S(t.Size).ToString()), ("color", t.Color),
-                ("bold", t.Bold ? "1" : "0"), ("italic", t.Italic ? "1" : "0"), ("align", t.Centre ? "center" : "left"), ("fit", "1"));
+            var node = El(name, ("rect", ownSize ? Rect(x + inset, y, w - x - inset - 20, bh) : Rect(x + inset, y, bw - inset, bh)), ("font", t.Font), ("font_size", S(t.Size).ToString()), ("color", t.Color),
+                ("bold", t.Bold ? "1" : "0"), ("italic", t.Italic ? "1" : "0"), ("align", t.Centre && !ownSize ? "center" : "left"));
+            if (!ownSize) node.Attrs["fit"] = "1";
             if (textButton) node.Attrs["textbutton"] = "1";
             return node;
         }
@@ -124,7 +130,7 @@ static partial class DvdtTemplate
         {
             uiColor = ts.Color;
             uiFont = ts.Font;
-            rootNode.Kids.Add(Styled("label", ts, title.X, title.Y, title.W, title.H, false));
+            rootNode.Kids.Add(Styled("label", ts, title.X, title.Y, title.W, title.H, false, OwnSize(main, title.Id)));
             common.Kids.Add(Leaf("font", ts.Font));
         }
         string[] roles = ["play", "scenes", "setup"];
@@ -139,8 +145,8 @@ static partial class DvdtTemplate
             if (play.Def != null && TextStyle(play.Def) is { } ps)
             {
                 var below = play.Y + play.H + 12;
-                rootNode.Kids.Add(Styled("play", ps, play.X, play.Y, play.W, play.H, true));
-                rootNode.Kids.Add(Styled("scenes", ps, play.X, below + play.H <= h ? below : play.Y - play.H - 12, play.W, play.H, true));
+                rootNode.Kids.Add(Styled("play", ps, play.X, play.Y, play.W, play.H, true, OwnSize(main, play.Id)));
+                rootNode.Kids.Add(Styled("scenes", ps, play.X, below + play.H <= h ? below : play.Y - play.H - 12, play.W, play.H, true, OwnSize(main, play.Id)));
                 if (title.Def == null) { uiColor = ps.Color; uiFont = ps.Font; }
             }
         }
@@ -150,14 +156,14 @@ static partial class DvdtTemplate
             for (var i = 0; i < buttons1.Count; i++)
                 if (TextStyle(buttons1[i].Def) is { } bs)
                 {
-                    rootNode.Kids.Add(Styled(roles[i], bs, buttons1[i].X, buttons1[i].Y, buttons1[i].W, buttons1[i].H, true));
+                    rootNode.Kids.Add(Styled(roles[i], bs, buttons1[i].X, buttons1[i].Y, buttons1[i].W, buttons1[i].H, true, OwnSize(main, buttons1[i].Id)));
                     if (i == 0 && title.Def == null) { uiColor = bs.Color; uiFont = bs.Font; }
                 }
         }
         if (rootNode.Child("play") == null || rootNode.Child("scenes") == null) { problem = "boutons du menu principal illisibles"; return null; }
 
-        // the focus colour the template gives the buttons when selected
-        var accent = Walk(main).Select(x => x.Node).Where(x => x.Name == "parameter").Select(x => x.Attr("selected")).FirstOrDefault(c => c.StartsWith('#') && c.Length == 7);
+        // the colour the template gives a button the remote is on: "highlighted" ("selected" is the instant it is pressed, a DVD's select state)
+        var accent = Walk(main).Select(x => x.Node).Where(x => x.Name == "parameter").Select(x => x.Attr("highlighted")).FirstOrDefault(c => c.StartsWith('#') && c.Length == 7);
         common.Kids.Add(Leaf("accent", accent ?? "#FFC83D"));
         common.Kids.Add(Leaf("ui_color", uiColor));
         common.Kids.Add(Leaf("templatename", stem));
@@ -166,7 +172,10 @@ static partial class DvdtTemplate
         scene.Kids.Add(Background(svg2));
         var videos = El("videoes");
         var filenames = scenes == null ? new Dictionary<string, string>() : Walk(scenes).Where(x => x.Node.Name == "button").ToDictionary(x => x.Node.Attr("id"), x => x.Node.Child("filename")?.Text ?? "");
-        foreach (var p in scenes == null ? new() : Placed(scenes, svg2).Where(p => p.Id.StartsWith("button")).ToList())
+        // each button names the title it plays (pgci 1, 3, 5… = titles 1, 2, 3…): thumbnails go in that order, not the order they were drawn in
+        // (ChristmasL1WS draws its third title last, BlueFractal swaps its bottom two)
+        var plays = scenes == null ? new Dictionary<string, double>() : Walk(scenes).Where(x => x.Node.Name == "button").ToDictionary(x => x.Node.Attr("id"), x => Num(x.Node.Child("action")?.Attr("pgci")));
+        foreach (var p in scenes == null ? new() : Placed(scenes, svg2).Where(p => p.Id.StartsWith("button")).OrderBy(p => plays.GetValueOrDefault(p.Id)).ToList())
         {
             var file = filenames.GetValueOrDefault(p.Id, "").ToLowerInvariant();
             var image = Walk(p.Def).Select(x => x.Node).FirstOrDefault(x => x.Name == "image");

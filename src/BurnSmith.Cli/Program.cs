@@ -373,7 +373,24 @@ if (a.Count >= 1 && a[0] == "check-elements")
     }
 
     // DVDFab's DVD menus are words: written from the left of their zone, and the buttons BurnSmith adds are words beside them, not capsules
-    if (TemplateCatalog.Find("The Fleeting Meteor") is { } meteor && TemplateCatalog.Find("04baby") is { } baby)
+    // each template against the program it comes from (2026-11-11): the three faults that were plain to see
+    if (TemplateCatalog.Find("standard (16-9)") is { } leawo && TemplateCatalog.Find("Natural 18") is { } yuhan18 && TemplateCatalog.Find("blue 16-9") is { } styler)
+    {
+        var disc = new MenuContent(1, null, Enumerable.Repeat<string?>(null, 8).ToList(), null, ["Français", "English"], ["Français"]);
+        var lw = MenuBuilder.Build(leawo.Clone(), disc);
+        var lwTitle = lw[0].Ops.OfType<Text>().First();
+        Check("Leawo standard: the program's own layout — the title ends at 783 (Left 460 + 327 - 4), the frame at 819,110 is drawn over the preview, three thumbnails a page",
+              lwTitle.Align == "right" && lwTitle.Rect.X + lwTitle.Rect.W == 783 && lw[0].Ops.OfType<Image>().Last().Rect == new Box(819, 110, 751, 496)
+              && lw[0].Ops.FindIndex(o => o is Framed) < lw[0].Ops.FindLastIndex(o => o is Image) && lw.First(p => p.Id == "scenes1").Ops.OfType<Framed>().Count() == 3);
+        Check("Yuhan theme 18: four thumbnails a page, although its file names two of its four frames twice",
+              MenuBuilder.Build(yuhan18.Clone(), disc).First(p => p.Id == "scenes1").Ops.OfType<Framed>().Count() == 4);
+        Check("DVDStyler blue 16-9: the background covers the whole page, as the program stretches it",
+              MenuBuilder.Build(styler.Clone(), disc)[0].Ops.OfType<Image>().First().Rect == new Box(0, 0, 1920, 1080));
+    }
+
+    // by kind: DVDFab's Blu-ray template of the same name (picture buttons) comes first in the catalogue when the PC has it
+    if (TemplateCatalog.Scan().Usable.Select(f => f.Design).FirstOrDefault(d => d.Name == "The Fleeting Meteor" && d.Kind == TemplateKind.Dvd) is { } meteor
+        && TemplateCatalog.Find("04baby") is { } baby)
     {
         var wordDisc = new MenuContent(1, null, Enumerable.Repeat<string?>(null, 8).ToList(), null, ["Français", "English"], ["Français"]);
         var row = MenuBuilder.Build(meteor.Clone(), wordDisc)[0];
