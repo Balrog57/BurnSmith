@@ -743,10 +743,10 @@ if (a.Count >= 1 && a[0] == "check-elements")
                 File.WriteAllBytes(Path.Combine(handDir, f), pixel);
             }
             static string Node(string name, string attrs = "", string text = "", string kids = "") => $$"""{"name":"{{name}}","attrs":{{{attrs}}},"text":"{{text}}","kids":[{{kids}}]}""";
-            var rows = string.Join(",", Enumerable.Range(0, 3).Select(i => Node("item", $"\"rect\":\"300,{100 + i * 100},800,60\",\"icon\":\"tv/{{n}}.normal.png\",\"icon_rect\":\"200,{100 + i * 100},60,60\"")));
+            var rows = string.Join(",", Enumerable.Range(0, 3).Select(i => Node("item", $"\"rect\":\"300,{100 + i * 100},800,60\",\"icon\":\"tv/{{n}}.normal.png\",\"bonus_icon\":\"bonus/0.normal.png\",\"icon_rect\":\"200,{100 + i * 100},60,60\"")));
             var tree = Node("template", kids: string.Join(",",
                 Node("common", kids: Node("playbuttontimage", text: "play/0.normal.png") + "," + Node("bonusbuttontimage", text: "bonus/0.normal.png")),
-                Node("rootmenu", kids: string.Join(",", Node("bg", kids: Node("image", text: "bg.png")), Node("play", "\"rect\":\"100,900,100,100\""), Node("bonus", "\"rect\":\"400,900,100,100\""))),
+                Node("rootmenu", "\"row\":\"center\"", kids: string.Join(",", Node("bg", kids: Node("image", text: "bg.png")), Node("play", "\"rect\":\"100,900,100,100\""), Node("bonus", "\"rect\":\"400,900,100,100\""))),
                 Node("scenes", kids: Node("tscenes", kids: Node("scene", kids: string.Join(",", Node("bg", kids: Node("image", text: "bg.png")), Node("videoes"), Node("list", kids: rows)))))));
             File.WriteAllText(Path.Combine(handDir, TemplatePack.FileName), $$"""{"schema":"burnsmith/template/1","name":"hand","category":"BurnSmith","kind":"BluRay","design":{"sceneList":true},"assets":[],"tree":{{tree}}}""");
             var handDesign = TemplatePack.TryRead(handDir)?.Design ?? new MenuDesign();
@@ -758,6 +758,14 @@ if (a.Count >= 1 && a[0] == "check-elements")
                   handPages.FirstOrDefault(p => p.Id == "root")?.Buttons.FirstOrDefault(b => b.Id == "bonus") is { FocusImage: { } lit } && lit.EndsWith("0.sub.png")
                   && second is { FocusSlot: { X: 200, Y: 200, W: 60, H: 60 }, Rect.X: 200, FocusImage: { } chosen } && chosen.EndsWith("2.sub.png")
                   && handPages.First(p => p.Id == "scenes1").Buttons[0].FocusSlot == null);
+            int PlayAt(MenuContent content) => InstalledTemplate.Load(handDir)!.Pages(handDesign, content).First(p => p.Id == "root").Buttons.First(b => b.Id == "play").Rect.X;
+            Check("modèle fait main : la rangée (row=center) reste à sa place quand tout s'affiche, et se recentre quand le disque n'a pas de bonus",
+                  PlayAt(handContent) is var full && PlayAt(handContent with { Bonus = null }) == full + 150);
+            handDesign.BonusText = true;
+            Check("modèle fait main : une ligne de la page Bonus prend l'image bonus_icon du modèle, pas la pastille numérotée d'un épisode",
+                  InstalledTemplate.Load(handDir)!.Pages(handDesign, handContent).FirstOrDefault(p => p.Id == "bonus1")?.Buttons.FirstOrDefault() is { FocusImage: { } star }
+                  && Path.GetFileName(Path.GetDirectoryName(star)) == "bonus" && star.EndsWith("0.sub.png"));
+            handDesign.BonusText = false;
             var handZip = Path.Combine(handDir, "..", Path.GetFileName(handDir) + ".zip");
             try
             {

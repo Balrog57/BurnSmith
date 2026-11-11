@@ -448,15 +448,6 @@ public sealed class InstalledTemplate
     static Box Place(string picture, Box rect) =>
         PngSize(picture) is var (w, h) ? new Box(rect.X + (rect.W - w) / 2, rect.Y + (rect.H - h) / 2, w, h) : rect;
 
-    /// <summary>A button picture shrunk (never enlarged) to fit inside the rectangle of the XML, centred in it.</summary>
-    static Box Fit(string picture, Box rect)
-    {
-        if (PngSize(picture) is not var (w, h) || w <= 0 || h <= 0) return rect;
-        var s = Math.Min(1.0, Math.Min((double)rect.W / w, (double)rect.H / h));
-        int fw = (int)(w * s), fh = (int)(h * s);
-        return new Box(rect.X + (rect.W - fw) / 2, rect.Y + (rect.H - fh) / 2, fw, fh);
-    }
-
     /// <summary>The template has rows for the audio / subtitle choice (the UHD ones lay that page out differently).</summary>
     /// <summary>The page title the template places on its audio / subtitle page (<c>ASLangTitleText</c>), null when it has none.</summary>
     public Box? SetupTitle => template.Child("setup")?.Child("setuptitle") is { } n ? n.Rect() : null;
@@ -628,10 +619,11 @@ public sealed class InstalledTemplate
     /// <summary>
     /// A row with its own picture beside its words ("icon", at "icon_rect"; "{n}" in the name is the row's number: a numbered disc before
     /// each episode, a dot before each language): the picture, and a button that lights the picture's chosen twin there. Null without one.
+    /// A row of the Bonus pages takes "bonus_icon" when the template has one: an extra is not episode 3.
     /// </summary>
-    MenuButton? Iconed(List<Op> ops, XNode node, Box r, int number, string id, MenuAction action)
+    MenuButton? Iconed(List<Op> ops, XNode node, Box r, int number, string id, MenuAction action, bool bonus = false)
     {
-        if (Asset(node.Attr("icon").Replace("{n}", number.ToString(System.Globalization.CultureInfo.InvariantCulture))) is not { } file) return null;
+        if (Asset(node.Attr(bonus && node.Attr("bonus_icon") != "" ? "bonus_icon" : "icon").Replace("{n}", number.ToString(System.Globalization.CultureInfo.InvariantCulture))) is not { } file) return null;
         var slot = node.Rect("icon_rect");
         ops.Add(new Image(file, slot));
         int x0 = Math.Min(r.X, slot.X), y0 = Math.Min(r.Y, slot.Y);
@@ -878,16 +870,33 @@ public sealed class InstalledTemplate
             var slot = new Box(r.X - r.H, r.Y, r.H, r.H);
             buttons.Add(Dvd(star == null ? new MenuButton(id, r, action) : new MenuButton(id, new Box(slot.X, r.Y, r.W + r.H, r.H), action) { FocusImage = star, FocusSlot = slot }));
         }
+        // a row laid out for every button (row="center": Play, Episodes, Languages, Bonus) is centred again when the disc has nothing for one of
+        // them: the buttons shown keep the row's spacing, around its middle, instead of leaving a hole at one end
+        var moved = new Dictionary<string, int>();
+        if (n.Attr("row") == "center")
+        {
+            double Mid(string k) { var r = n.Child(k)!.Rect(); return r.X + r.W / 2.0; }
+            var row = new[] { "play", "scenes", "setup", "bonus" }.Where(k => n.Child(k) != null).OrderBy(Mid).ToList();
+            var shown = row.Where(k => k switch { "scenes" => withScenes, "setup" => c.HasSettings, "bonus" => c.HasBonus, _ => true }).ToList();
+            if (shown.Count < row.Count && row.Count > 1)
+            {
+                var pitch = (Mid(row[^1]) - Mid(row[0])) / (row.Count - 1);
+                var first = (Mid(row[0]) + Mid(row[^1])) / 2 - pitch * (shown.Count - 1) / 2;
+                for (var k = 0; k < shown.Count; k++) moved[shown[k]] = (int)Math.Round(first + k * pitch - Mid(shown[k]));
+            }
+        }
         void Add(string id, XNode? node, string? image, MenuAction action, string label)
         {
             if (node == null) return;
+            var rect = node.Rect();
+            if (moved.TryGetValue(node.Name, out var dx)) rect = rect with { X = rect.X + dx };
             if (image != null)
             {
-                var box = Place(image, node.Rect());
+                var box = Place(image, rect);
                 ops.Add(new Image(image, box));
                 buttons.Add(Dvd(new MenuButton(id, box, action) { FocusImage = Selected(image) }));
             }
-            else if (node.Attr("textbutton") == "1") Word(id, node, node.Rect(), action, label);
+            else if (node.Attr("textbutton") == "1") Word(id, node, rect, action, label);
         }
         var main = new List<(string Id, string Label, MenuAction Action)>
         {
@@ -1042,7 +1051,7 @@ public sealed class InstalledTemplate
                 var line = lines[i].Rect();
                 if (lines[i].Attrs.ContainsKey("svg_focus") && lines[i].Attr("align", "left") == "left")
                     line = line with { W = Math.Min(line.W, (int)Math.Ceiling(MenuRenderer.TextWidth(Txt(lines[i], Shown(cell))))) };
-                buttons.Add(Lit(lines[i], line, cell.Id, cell.Action) ?? Iconed(ops, lines[i], line, (number - 1) * perPage + i + 1, cell.Id, cell.Action) ?? new MenuButton(cell.Id, line, cell.Action));
+                buttons.Add(Lit(lines[i], line, cell.Id, cell.Action) ?? Iconed(ops, lines[i], line, (number - 1) * perPage + i + 1, cell.Id, cell.Action, prefix == "bonus") ?? new MenuButton(cell.Id, line, cell.Action));
             }
         }
         for (var i = 0; i < slots.Count && lines.Count == 0 && (number - 1) * perPage + i < cells.Count; i++)
@@ -1159,11 +1168,22 @@ public sealed class InstalledTemplate
             (Id: "scenes", Key: likeRoot && MenuBuilder.Cells(d, c).Count > 1 ? "scenes" : "", Image: "scenebuttontimage", Action: new MenuAction("page", PageId(d, "scenes", 1))),
             (Id: "back", Key: likeRoot ? "setup" : "home", Image: likeRoot ? "setupbuttontimage" : "homebuttontimage", Action: new MenuAction("page", "root")),
         }.Where(x => n.Child(x.Key) != null && Button(x.Image, d) != null).Select(x => (x.Id, x.Action, File: Button(x.Image, d)!, Rect: n.Child(x.Key)!.Rect())).ToList();
-        // these rectangles are sized for a small button (like "Set up"): at the pictures' own size Play and Home would cover one another, so they are shrunk to their rectangle
-        var crowded = navs.Count == 2 && Meets(Place(navs[0].File, navs[0].Rect), Place(navs[1].File, navs[1].Rect));
-        foreach (var (navId, action, file, rect) in navs)
+        // these rectangles are sized for a small button (like "Set up"): at the pictures' own size Play and Home would cover one another.
+        // They keep the size they have on the other pages and are moved apart, side by side around the middle of the two rectangles
+        var boxes = navs.Select(x => Place(x.File, x.Rect)).ToList();
+        if (navs.Count == 2 && Meets(boxes[0], boxes[1]))
         {
-            var box = crowded ? Fit(file, rect) : Place(file, rect);
+            const int gap = 40;
+            var (l, r) = boxes[0].X <= boxes[1].X ? (0, 1) : (1, 0);
+            var mid = (Math.Min(navs[0].Rect.X, navs[1].Rect.X) + Math.Max(navs[0].Rect.X + navs[0].Rect.W, navs[1].Rect.X + navs[1].Rect.W)) / 2;
+            var x = Math.Clamp(mid - (boxes[l].W + gap + boxes[r].W) / 2, 0, Math.Max(0, MenuBuilder.W - boxes[l].W - gap - boxes[r].W));
+            boxes[l] = boxes[l] with { X = x };
+            boxes[r] = boxes[r] with { X = x + boxes[l].W + gap };
+        }
+        for (var k = 0; k < navs.Count; k++)
+        {
+            var (navId, action, file, _) = navs[k];
+            var box = boxes[k];
             ops.Add(new Image(file, box));
             buttons.Add(Dvd(new MenuButton(navId, box, action) { FocusImage = Selected(file) }));
         }

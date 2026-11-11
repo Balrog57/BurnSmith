@@ -161,9 +161,12 @@ public static class ElementLibrary
     /// Every button, grouped by source: BurnSmith's own looks, the user's imports, then the button pictures of the templates
     /// (a picture several templates share is listed once). Unreadable pictures are left out.
     /// </summary>
+    /// <summary>The looks BurnSmith draws itself: the head of <see cref="Buttons"/>, known without reading a file.</summary>
+    public static List<ButtonItem> StyleButtons() => ButtonStyles.Select(s => new ButtonItem(s.Label, Styles, Style: s.Value)).ToList();
+
     public static List<ButtonItem> Buttons((List<TemplateCatalog.Found> Usable, List<TemplateCatalog.Skipped> Skipped)? scan = null)
     {
-        var list = ButtonStyles.Select(s => new ButtonItem(s.Label, Styles, Style: s.Value)).ToList();
+        var list = StyleButtons();
         if (Directory.Exists(UserButtonsDir))
             list.AddRange(Directory.EnumerateFiles(UserButtonsDir).Where(f => IsPicture(f) && !IsSub(f)).Order()
                 .Select(f => new ButtonItem(System.IO.Path.GetFileNameWithoutExtension(f), MyButtons, f, SubOf(f), Removable: true)));

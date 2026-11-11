@@ -204,10 +204,34 @@ public partial class MenuEditorWindow : Window
 
     void LoadButtons((List<TemplateCatalog.Found>, List<TemplateCatalog.Skipped>)? scan = null)
     {
-        var thumb = new ThumbConverter();
-        buttons = ElementLibrary.Buttons(scan).Select(i => new ButtonCard(i, i.Normal == null ? null : thumb.Convert(i.Normal, typeof(System.Windows.Media.ImageSource), "", System.Globalization.CultureInfo.InvariantCulture) as System.Windows.Media.ImageSource)).ToList();
+        buttons = ElementLibrary.StyleButtons().Select(i => new ButtonCard(i, null)).ToList();
         BtnList.ItemsSource = BySource(buttons);
         _ = FillButtonSamples();
+        _ = FillButtonPictures(scan);
+    }
+
+    int buttonLoad;
+
+    /// <summary>
+    /// The picture buttons of the library are hundreds of traced drawings to read (seconds of work): they join the list from behind the window,
+    /// so the editor and its preview open at once.
+    /// </summary>
+    async Task FillButtonPictures((List<TemplateCatalog.Found>, List<TemplateCatalog.Skipped>)? scan)
+    {
+        var mine = ++buttonLoad;
+        try
+        {
+            var cards = await Task.Run(() => MenuRenderer.Sta(() =>
+            {
+                var thumb = new ThumbConverter();
+                return ElementLibrary.Buttons(scan).Where(i => i.Style == null)
+                    .Select(i => new ButtonCard(i, thumb.Convert(i.Normal!, typeof(System.Windows.Media.ImageSource), "", System.Globalization.CultureInfo.InvariantCulture) as System.Windows.Media.ImageSource)).ToList();
+            }));
+            if (mine != buttonLoad) return; // the library was read again meanwhile
+            buttons = [.. buttons.Where(c => c.Item.Style != null), .. cards];
+            BtnList.ItemsSource = BySource(buttons);
+        }
+        catch (Exception ex) { AppFiles.LogError("Boutons de la bibliothèque", ex); } // the looks BurnSmith draws stay listed
     }
 
     /// <summary>The looks BurnSmith draws have no picture file: one sample of each is drawn (in this design's colours) behind the list.</summary>
