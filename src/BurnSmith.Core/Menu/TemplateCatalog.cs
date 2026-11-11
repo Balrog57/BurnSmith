@@ -196,6 +196,21 @@ public static class TemplateCatalog
                 pack.Save(target);
                 log?.Invoke($"{design.Category}/{design.Name}: {pack.Backgrounds} fonds, {pack.Buttons} boutons");
             }
+            // a pack written by hand (Vamp: no vendor template behind it) is carried as it is
+            foreach (var root in (roots ?? UserRoots()).Where(Directory.Exists))
+                foreach (var file in Directory.EnumerateFiles(root, TemplatePack.FileName, SearchOption.AllDirectories))
+                {
+                    var dir = Path.GetDirectoryName(file)!;
+                    if (TemplatePack.TryRead(dir) is not { Source: "" } made || !done.Add($"{made.Category}|{made.Name}")) continue; // a pack with a source was converted from it above
+                    var target = TemplatePack.PackDir(work, made.Category, made.Name);
+                    foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                    {
+                        var to = Path.Combine(target, Path.GetRelativePath(dir, f));
+                        Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                        File.Copy(f, to, true);
+                    }
+                    log?.Invoke($"{made.Category}/{made.Name}: tel quel");
+                }
             if (done.Count == 0) throw new InvalidOperationException("aucun modèle de menu trouvé : ajoutez un dossier dans template-folders.txt, une version publiée doit les porter");
             File.WriteAllText(Path.Combine(work, "NOTICE.txt"),
                 "Pictures and moving backgrounds of menu templates, converted to BurnSmith's template format; the pictures belong to their authors and are not part of BurnSmith's own code, which is MIT-licensed (LICENSE).\nNo program, font or interface of these products is included.\n");

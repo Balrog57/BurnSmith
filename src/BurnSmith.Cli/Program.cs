@@ -731,6 +731,43 @@ if (a.Count >= 1 && a[0] == "check-elements")
                   TemplateCatalog.Find(keptDesign.Name) is { } again && again.Elements.Count == keptDesign.Elements.Count && again.Elements[^3].Image == normalPic && Templates.List().Any(t => t.Name == keptDesign.Name));
         }
         finally { File.Delete(Path.Combine(Templates.Dir, keptDesign.Name + ".json")); }
+
+        // a pack written by hand (Vamp): the bonus has its picture button, a row has its own picture ({n} = its number), lit in place when chosen
+        var handDir = Path.Combine(Path.GetTempPath(), "burnsmith-hand-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var pixel = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+            foreach (var f in new[] { "bg.png", "play/0.normal.png", "bonus/0.normal.png", "bonus/0.sub.png", "tv/2.normal.png", "tv/2.sub.png" })
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(handDir, f))!);
+                File.WriteAllBytes(Path.Combine(handDir, f), pixel);
+            }
+            static string Node(string name, string attrs = "", string text = "", string kids = "") => $$"""{"name":"{{name}}","attrs":{{{attrs}}},"text":"{{text}}","kids":[{{kids}}]}""";
+            var rows = string.Join(",", Enumerable.Range(0, 3).Select(i => Node("item", $"\"rect\":\"300,{100 + i * 100},800,60\",\"icon\":\"tv/{{n}}.normal.png\",\"icon_rect\":\"200,{100 + i * 100},60,60\"")));
+            var tree = Node("template", kids: string.Join(",",
+                Node("common", kids: Node("playbuttontimage", text: "play/0.normal.png") + "," + Node("bonusbuttontimage", text: "bonus/0.normal.png")),
+                Node("rootmenu", kids: string.Join(",", Node("bg", kids: Node("image", text: "bg.png")), Node("play", "\"rect\":\"100,900,100,100\""), Node("bonus", "\"rect\":\"400,900,100,100\""))),
+                Node("scenes", kids: Node("tscenes", kids: Node("scene", kids: string.Join(",", Node("bg", kids: Node("image", text: "bg.png")), Node("videoes"), Node("list", kids: rows)))))));
+            File.WriteAllText(Path.Combine(handDir, TemplatePack.FileName), $$"""{"schema":"burnsmith/template/1","name":"hand","category":"BurnSmith","kind":"BluRay","design":{"sceneList":true},"assets":[],"tree":{{tree}}}""");
+            var handDesign = TemplatePack.TryRead(handDir)?.Design ?? new MenuDesign();
+            handDesign.TemplateDir = handDir;
+            var handContent = new MenuContent(1, null, [], [.. Enumerable.Range(1, 3).Select(i => new TitleEntry($"Épisode {i}", i, null))], null, null, [new TitleEntry("Making-of", 4, null)]);
+            var handPages = InstalledTemplate.Load(handDir)?.Pages(handDesign, handContent) ?? [];
+            var second = handPages.FirstOrDefault(p => p.Id == "scenes1")?.Buttons.ElementAtOrDefault(1);
+            Check("modèle fait main : bouton image des bonus, image par ligne (la deuxième a la sienne, allumée à sa place ; les autres, sans image, restent des lignes)",
+                  handPages.FirstOrDefault(p => p.Id == "root")?.Buttons.FirstOrDefault(b => b.Id == "bonus") is { FocusImage: { } lit } && lit.EndsWith("0.sub.png")
+                  && second is { FocusSlot: { X: 200, Y: 200, W: 60, H: 60 }, Rect.X: 200, FocusImage: { } chosen } && chosen.EndsWith("2.sub.png")
+                  && handPages.First(p => p.Id == "scenes1").Buttons[0].FocusSlot == null);
+            var handZip = Path.Combine(handDir, "..", Path.GetFileName(handDir) + ".zip");
+            try
+            {
+                var packed = TemplateCatalog.Pack(handZip, null, [handDir]);
+                using var z = System.IO.Compression.ZipFile.OpenRead(handZip);
+                Check("un modèle fait main est embarqué tel quel avec les modèles publiés", packed == 1 && z.Entries.Any(e => e.FullName.Replace('\\', '/').EndsWith("hand/tv/2.sub.png")));
+            }
+            finally { File.Delete(handZip); }
+        }
+        finally { Tools.TryDelete(handDir); }
     }
 
     // what a design stores for a picture that travels in the exe works on any PC; a plain path is left alone
