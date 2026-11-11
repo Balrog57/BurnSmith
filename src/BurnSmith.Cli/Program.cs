@@ -39,7 +39,8 @@ if (a.Count >= 3 && a[0] == "preview")
         episodes > 1 ? Enumerable.Range(1, episodes).Select(i => new TitleEntry($"Episode {i}", i, pic, Opt("--overview"))).ToList() : null,
         ["Français AC-3 mono", "English AC-3 mono", "Español AC-3 mono"], ["Français", "English"],
         int.TryParse(Opt("--bonus"), out var extras) && extras > 0 ? Enumerable.Range(0, extras).Select(i => new TitleEntry($"Bonus {i + 1}", Math.Max(episodes, 1) + 1 + i, pic)).ToList() : null);
-    chosen.Title = Opt("--title") ?? "My Blu-ray";
+    chosen.Language(Opt("--menu-language") is "fr" or "en" ? Opt("--menu-language")! : chosen.ButtonLanguage); // as bd and dvd: French unless asked or the design says "en"
+    chosen.Title = Opt("--title") ?? (chosen.ButtonLanguage == "en" ? "My Blu-ray" : "Mon Blu-ray");
     if (a.Contains("--list")) chosen.SceneList = true; // la page de scènes en liste, quand le modèle la décrit
     if (a.Contains("--scenes-only")) chosen.ScenesOnly = true;
     if (a.Contains("--bonus-text")) chosen.BonusText = true;
@@ -718,6 +719,10 @@ if (a.Count >= 1 && a[0] == "check-elements")
             var inFrench = (string? f) => f != null && f.Contains(Path.DirectorySeparatorChar + InstalledTemplate.FrenchDir + Path.DirectorySeparatorChar);
             var worded = TemplateCatalog.Scan().Usable.Select(f => f.Design).FirstOrDefault(t => t.TemplateDir != null && Directory.Exists(Path.Combine(t.TemplateDir, InstalledTemplate.FrenchDir)) && inFrench(wordsOf(t, "fr").Picture));
             var (fr, en) = worded == null ? default : (wordsOf(worded, "fr"), wordsOf(worded, "en"));
+            var inWords = new MenuDesign { PlayLabel = "Lancer" }.Language("fr");
+            Check("langue du menu : tous les mots en français, celui écrit par l'utilisateur gardé, puis de retour en anglais",
+                  inWords is { ScenesLabel: "Chapitres", ResumeLabel: "Reprendre", MainMenuLabel: "Menu principal", CreditsLabel: "Crédits", Title: "Mon disque", PlayLabel: "Lancer", ButtonLanguage: "fr" }
+                  && inWords.Untitled() && inWords.Language("en") is { ScenesLabel: "Scenes", ResumeLabel: "Resume", Title: "My Disc", PlayLabel: "Lancer", ButtonLanguage: "en" });
             if (worded == null) Console.WriteLine("skip boutons à mot dessiné : aucun modèle avec ses boutons français sur ce PC"); // the vendor's pictures are not in the repository
             else Check($"boutons à mot dessiné : français par défaut, anglais sur demande ({worded.Name})",
                   new MenuDesign().ButtonLanguage == "fr" && en.Picture != null && !inFrench(en.Picture) && !inFrench(en.Focus)
@@ -1728,6 +1733,10 @@ var design = a.Contains("--no-menu") ? null
     : Opt("--design") is { } saved && saved.EndsWith(".json", StringComparison.OrdinalIgnoreCase) // a template saved from the menu editor (Mes modèles)
         ? System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(File.ReadAllText(saved)) ?? throw new InvalidOperationException($"not a template: {saved}")
     : (TemplateCatalog.Find(Opt("--design")) ?? (Opt("--design") is { } unknown ? throw new InvalidOperationException($"unknown template: {unknown}") : TemplateCatalog.Default())).Clone();
+// the menu's language: --menu-language fr|en, else the design's own (French unless its file says "ButtonLanguage": "en"): its written words
+// (a word of one's own in the design's file is kept) and those drawn in a template's buttons
+if (design != null) design.Language(Opt("--menu-language") is not { } spoken ? design.ButtonLanguage
+    : spoken is "fr" or "en" ? spoken : throw new ArgumentException($"--menu-language: fr or en expected, not '{spoken}'"));
 if (design != null && Opt("--title") is { } title) design.Title = title;
 if (design != null && Opt("--highlight") is { } hlStyle) design.HighlightStyle = hlStyle; // box | underline | textcolor
 if (design != null && a.Contains("--list")) design.SceneList = true; // page de scènes en liste (modèles qui la décrivent)

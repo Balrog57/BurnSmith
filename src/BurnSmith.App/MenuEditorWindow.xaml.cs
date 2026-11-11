@@ -56,6 +56,9 @@ public partial class MenuEditorWindow : Window
         if (to is { } y) panel.ScrollToVerticalOffset(y); else panel.ScrollToEnd();
     }
 
+    /// <summary>For the off-screen snapshot: the menu's language chosen in its list, as a click does ("fr" or "en").</summary>
+    public void PickLanguage(string language) => LanguageBox.SelectedValue = language;
+
     /// <summary>For the off-screen snapshot: which tab of the library (0 templates, 1 mine, 2 backgrounds, 3 buttons) and of the properties (0 element, 1 menu, 2 animation, 3 look) is on show.</summary>
     public void ShowTabs(int? library, int? props, bool withButton = false)
     {
@@ -70,7 +73,7 @@ public partial class MenuEditorWindow : Window
         InitializeComponent();
         FontBox.ItemsSource = System.Windows.Media.Fonts.SystemFontFamilies.Select(f => f.Source).Order().ToList();
         StyleBox.ItemsSource = ElementLibrary.ButtonStyles.Select(b => new { b.Label, b.Value }).ToList();
-        LanguageBox.ItemsSource = new[] { new { Label = "Français (refaits par BurnSmith)", Value = "fr" }, new { Label = "Anglais (images d'origine)", Value = "en" } };
+        LanguageBox.ItemsSource = new[] { new { Label = "Français", Value = "fr" }, new { Label = "Anglais", Value = "en" } };
         HlBox.ItemsSource = new[] { new { Value = "box", Label = "Cadre (comme avant)" }, new { Value = "underline", Label = "Soulignement" }, new { Value = "textcolor", Label = "Texte en couleur" } };
         ColsBox.ItemsSource = new[] { 1, 2, 3, 4, 5 };
         RowsBox.ItemsSource = new[] { 1, 2, 3, 4 };
@@ -150,9 +153,10 @@ public partial class MenuEditorWindow : Window
         Props.DataContext = null;
         Props.DataContext = working;
         Look.IsEnabled = working.TemplateDir == null;
-        LookNote.Visibility = Detach.Visibility = Words.Visibility = working.TemplateDir == null ? Visibility.Collapsed : Visibility.Visible;
+        LookNote.Visibility = Detach.Visibility = working.TemplateDir == null ? Visibility.Collapsed : Visibility.Visible;
         SelectBackground();
         HlBox.SelectedValue = working.HighlightStyle;
+        LanguageBox.SelectedValue = working.ButtonLanguage;
         RefreshElemList();
         ShowElem();
         Dirty();
@@ -1205,6 +1209,15 @@ public partial class MenuEditorWindow : Window
     {
         if (HlBox.SelectedValue is not string style) return;
         working.HighlightStyle = style;
+        Dirty();
+    }
+
+    /// <summary>The whole menu in French or in English: the words of the Menu tab and those drawn in a template's buttons.</summary>
+    void OnPickLanguage(object s, SelectionChangedEventArgs e)
+    {
+        if (LanguageBox.SelectedValue is not string language || language == working.ButtonLanguage) return; // shown by Rebind, not chosen
+        working.Language(language);
+        Rebind(); // the words are in the boxes
         Dirty();
     }
 

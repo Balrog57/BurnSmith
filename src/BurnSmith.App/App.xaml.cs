@@ -10,7 +10,7 @@ public partial class App : Application
 {
     /// <summary>
     /// burnsmith.exe [video]                      opens the window, optionally with a video already loaded
-    /// burnsmith.exe [video] --snapshot out.png [design=template name] [editor[=template name]] [scroll[=pixels]] [lib=N] [tab=N] [button] [zones] | [advanced] | [edit] [focus]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; lib / tab = the library / properties tab on show; button = the first library button dropped on the page; or the advanced settings; or the video edit)
+    /// burnsmith.exe [video] --snapshot out.png [design=template name] [editor[=template name]] [scroll[=pixels]] [lib=N] [tab=N] [button] [english] [zones] | [advanced] | [edit] [focus]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; lib / tab = the library / properties tab on show; button = the first library button dropped on the page; or the advanced settings; or the video edit)
     ///                                            off screen to a PNG and exits; lets the UI be checked without touching the desktop
     /// burnsmith.exe --try-install file.exe       runs that file as the update's installer: how a stand-in proves the window's side of an update
     /// </summary>
@@ -50,6 +50,7 @@ public partial class App : Application
             OffScreen(window);
             window.Show();
             int? Number(string name) => e.Args.FirstOrDefault(a => a.StartsWith(name + "=")) is { } a && int.TryParse(a[(name.Length + 1)..], out var n) ? n : null;
+            if (e.Args.Contains("english")) win.PickLanguage("en");
             win.ShowTabs(Number("lib"), Number("tab"), e.Args.Contains("button"));
             if (e.Args.FirstOrDefault(a => a == "scroll" || a.StartsWith("scroll=")) is { } scroll) win.ScrollProps(scroll.Length > 7 ? double.Parse(scroll[7..], System.Globalization.CultureInfo.InvariantCulture) : null);
         }

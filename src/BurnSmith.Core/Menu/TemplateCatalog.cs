@@ -92,7 +92,7 @@ public static class TemplateCatalog
     // ---- designs BurnSmith ships (open source) ----
 
     static string ThumbDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BurnSmith", "thumbs");
-    const int ThumbVersion = 3; // bump when the menu engine draws differently, so cached pictures are redone (3: the words in French, as the application writes them)
+    const int ThumbVersion = 4; // bump when the menu engine draws differently, so cached pictures are redone (3, 4: the words in French, as the application writes them)
 
     static string ThumbFile(MenuDesign d) =>
         Path.Combine(ThumbDir, string.Concat($"{d.Category}_{d.Name}_v{ThumbVersion}".Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)) + ".jpg");

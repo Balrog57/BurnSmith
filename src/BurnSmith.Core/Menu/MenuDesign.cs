@@ -33,14 +33,34 @@ public sealed class MenuDesign
     /// <summary>Button and heading of the page that lists the extras (videos marked Bonus).</summary>
     public string BonusLabel { get; set; } = "Bonus";
 
-    /// <summary>The menu's words in French, as the application writes them: a new project, and the gallery's pictures of the designs.</summary>
-    public MenuDesign French()
+    /// <summary>The menu's words in English (what a new design holds) and in French. "Audio" and "Bonus" are the same in both.</summary>
+    static readonly (string Property, string En, string Fr)[] Words =
+    [
+        (nameof(Title), "My Disc", "Mon disque"), (nameof(PlayLabel), "Play", "Lecture"), (nameof(ScenesLabel), "Scenes", "Chapitres"),
+        (nameof(HomeLabel), "Home", "Accueil"), (nameof(ChapterLabel), "Chapter", "Chapitre"), (nameof(PlayAllLabel), "Play all", "Tout lire"),
+        (nameof(EpisodesLabel), "Episodes", "Épisodes"), (nameof(OverviewLabel), "Overview", "Aperçu"), (nameof(SettingsLabel), "Settings", "Réglages"),
+        (nameof(SubtitlesLabel), "Subtitles", "Sous-titres"), (nameof(OffLabel), "Off", "Désactivés"), (nameof(BackLabel), "Back", "Retour"),
+        (nameof(CreditsLabel), "Credits", "Crédits"), (nameof(ResumeLabel), "Resume", "Reprendre"), (nameof(MainMenuLabel), "Main menu", "Menu principal"),
+    ];
+
+    /// <summary>
+    /// The whole menu in one language, "fr" or "en": its written words and the words drawn in a template's buttons (<see cref="ButtonLanguage"/>).
+    /// A word the user wrote themself (neither the English nor the French one) is kept.
+    /// </summary>
+    public MenuDesign Language(string language)
     {
-        PlayLabel = "Lecture"; ScenesLabel = "Chapitres"; HomeLabel = "Accueil"; ChapterLabel = "Chapitre";
-        PlayAllLabel = "Tout lire"; EpisodesLabel = "Épisodes"; OverviewLabel = "Aperçu"; SettingsLabel = "Réglages"; AudioLabel = "Audio";
-        SubtitlesLabel = "Sous-titres"; OffLabel = "Désactivés"; BackLabel = "Retour";
+        foreach (var (property, en, fr) in Words)
+            if (typeof(MenuDesign).GetProperty(property)!.GetValue(this) is string now && (now == en || now == fr))
+                typeof(MenuDesign).GetProperty(property)!.SetValue(this, language == "fr" ? fr : en);
+        ButtonLanguage = language == "fr" ? "fr" : "en";
         return this;
     }
+
+    /// <summary>The menu in French, as the application writes it: a new project, and the gallery's pictures of the designs.</summary>
+    public MenuDesign French() => Language("fr");
+
+    /// <summary>No name was given to the disc yet: the title is the sample one, in either language.</summary>
+    public bool Untitled() => Title is "My Disc" or "Mon disque";
     /// <summary>
     /// Blu-ray pop-up menu: the remote's Pop-up key opens a menu over the title that plays, without stopping it (resume, chapters of that title,
     /// audio and subtitles, back to the main menu). A DVD has none.

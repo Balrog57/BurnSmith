@@ -543,7 +543,7 @@ public partial class MainWindow : Window
             }
             var name = DiscTitle.Readable(MainEntry!.Path).Series ?? MainEntry.Name; // a season is named after its series, not after its first episode
             if (!labelEdited) volume = Regex.Replace(name.ToUpperInvariant(), "[^A-Z0-9_]+", "_").Trim('_') is { Length: > 0 } l ? l[..Math.Min(32, l.Length)] : "MON_DISQUE";
-            if (design.Title == new MenuDesign().Title) design.Title = name;
+            if (design.Untitled()) design.Title = name;
         }
         ProjectTitle.Text = titles.Count == 0 ? "Aucune source" : design.Title;
         UpdateMenuState();

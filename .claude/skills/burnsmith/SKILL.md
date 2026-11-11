@@ -62,7 +62,8 @@ burnsmith dvd --video ep1.mkv --name "Épisode 1" --video ep2.mkv --name "Épiso
 | Sans menu | `--no-menu` (une seule vidéo) |
 | Textes | `--title TEXTE`, `--titles "fra=Mon disque\|eng=My disc"`, `--credits "Ligne 1\|Ligne 2"` |
 | Fonds par page | `--page-bg root=fond.jpg` (répétable ; `root`, `scenes`, `settings`, `credits`, `bonus`) |
-| Mots des boutons d'un modèle | `--button-language fr` (défaut) ou `en` : les boutons dont le mot est dessiné dans l'image (Play, Scenes, Set Up, Main Menu chez DVDFab) en français, refaits par BurnSmith, ou tels que le modèle les a ; aussi dans `preview` et dans le JSON d'un design (`ButtonLanguage`) |
+| Langue du menu | `--menu-language fr` (défaut) ou `en` : tous les mots du menu (Lecture / Play, Chapitres / Scenes, Réglages / Settings, Reprendre / Resume, Menu principal / Main menu, Crédits / Credits, titre d'exemple Mon disque / My Disc) et les mots dessinés dans les boutons d'un modèle. Sans l'option, c'est la langue du design (`"ButtonLanguage"` de son JSON, `fr` par défaut). Un mot écrit autrement dans le JSON du design est gardé ; aussi dans `preview` |
+| Mots des boutons d'un modèle | `--button-language fr` ou `en`, après la langue du menu, pour les seuls mots dessinés : les boutons dont le mot est dessiné dans l'image (Play, Scenes, Set Up, Main Menu chez DVDFab) en français, refaits par BurnSmith, ou tels que le modèle les a ; aussi dans `preview` et dans le JSON d'un design (`ButtonLanguage`) |
 | Flou du fond | `--background-blur 12` (0 à 40 : l'image de fond floutée, pour que le texte posé dessus se lise ; le modèle `Saison` en a 12) |
 | Menu animé | `--loop [--loop-file video] [--loop-start S] [--loop-seconds S\|music]` |
 | Musique | `--music morceau [--music-start S] [--music-volume 80] [--music-fade 2]` |
