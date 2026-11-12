@@ -544,6 +544,14 @@ static class BdCheck
                 plays > 0 && At(Nav.GoTo(plays)) == plays - 3 && At(Nav.GoTo(plays + 1)) == plays - 1 && At(Nav.JumpTitle(2)) == plays + 3 && At(Nav.JumpTitle(0)) == title.Count - 1);
             Check("HDMV title: subtitles off shows the forced track of the audio's language", At(Nav.SelectStreams(1, 3)) > 0 && At(Nav.SelectStreams(1, 3)) < plays);
 
+            // two highlights that share 20 lines, and a dot on the first one's left edge
+            var zones = new List<(uint[] Argb, int X, int Y, int W, int H)> { (new uint[600 * 100], 100, 200, 600, 100), (new uint[600 * 100], 100, 280, 600, 100), (new uint[24 * 24], 110, 238, 24, 24) };
+            HdmvMenu.Separate(zones, 2);
+            Check("HDMV: no two buttons of a page overlap (a player hides those that do), the dot kept whole",
+                zones[2].W == 24 && zones.All(z => z.Argb.Length == z.W * z.H)
+                && zones.SelectMany((a, i) => zones.Skip(i + 1).Select(b => (a, b))).All(p => p.a.X + p.a.W <= p.b.X || p.b.X + p.b.W <= p.a.X || p.a.Y + p.a.H <= p.b.Y || p.b.Y + p.b.H <= p.a.Y),
+                string.Join(" ", zones.Select(z => $"{z.X},{z.Y} {z.W}x{z.H}")));
+
             var film = Clip("hdmvfilm.mkv", "testsrc2=s=1280x720:r=24000/1001:d=6", 48000, Fine, Ac3At48);
             Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", film, "-map", "0", "-map", "0:a", "-c", "copy", F("hdmv2audio.mkv")]); // two audio tracks: the settings page exists
             var log = new List<string>();

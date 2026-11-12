@@ -33,7 +33,7 @@ Tous ces modèles sont déjà dans **un seul format modifiable**, portés par l'
 
 ### Des menus à votre image
 
-![L'éditeur de menu : bibliothèque à gauche, aperçu au centre, réglages à droite](docs/images/editeur-de-menu.png)
+![L'éditeur de menu : les cinq étapes en haut, la page du menu à gauche, à droite la galerie des modèles par famille](docs/images/editeur-de-menu.png)
 
 L'éditeur dessine **en direct** les pages du disque (menu, scènes, réglages, crédits) et se parcourt comme sur le disque, à la souris ou aux flèches.
 

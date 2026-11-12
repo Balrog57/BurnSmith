@@ -46,6 +46,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 ; An update started by the app is silent and keeps the language of the first install
 Root: HKLM; Subkey: "Software\BurnSmith"; ValueType: string; ValueName: "Language"; ValueData: "fr"; Languages: french; Flags: uninsdeletevalue uninsdeletekeyifempty
 Root: HKLM; Subkey: "Software\BurnSmith"; ValueType: string; ValueName: "Language"; ValueData: "en"; Languages: english; Flags: uninsdeletevalue uninsdeletekeyifempty
+; a language picked by hand in the setup replaces the one picked in the app before; a silent update keeps it
+Root: HKCU; Subkey: "Software\BurnSmith"; ValueType: none; ValueName: "Language"; Flags: deletevalue; Check: not WizardSilent
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

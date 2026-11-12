@@ -105,7 +105,7 @@ public sealed class MenuElement
                 {
                     // a library button: its picture is the look, the label (if any) goes over it
                     yield return new Image(art, box);
-                    if (Text.Length > 0) yield return new Label(Text, box, Math.Clamp(Size, 20, 80), true);
+                    if (Text.Length > 0) yield return new Label(Text, box, Math.Clamp(Size, 20, 80), true, Ink: MenuRenderer.InkOn(art, d.TextColor));
                     break;
                 }
                 // the button's own look, else the design's (card, label), so a hand-placed button sits beside the template's own

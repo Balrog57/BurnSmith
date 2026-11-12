@@ -10,7 +10,8 @@ public abstract record Op;
 public sealed record Fill(Box Rect, string Color, double Opacity, int Radius) : Op;
 /// <summary>An outline around <paramref name="Rect"/> (the edge of a free element).</summary>
 public sealed record Border(Box Rect, string Color, int Width, int Radius) : Op;
-public sealed record Label(string Value, Box Rect, int Size, bool Bold, string Align = "center") : Op;
+/// <param name="Ink">The label's colour when it is not the design's text colour (written over a picture button: see <see cref="MenuRenderer.InkOn"/>).</param>
+public sealed record Label(string Value, Box Rect, int Size, bool Bold, string Align = "center", string? Ink = null) : Op;
 public sealed record Picture(string Path, Box Rect, int Radius, int BorderWidth) : Op;
 
 /// <summary>Template artwork (transparent PNG / JPEG) stretched to <paramref name="Rect"/>. <paramref name="Backdrop"/> = the page's background picture, which a moving menu replaces by its video.</summary>

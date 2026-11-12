@@ -157,6 +157,23 @@ public static class HdmvMenu
         // choosing a stream moves the dot of its kind at once
         IEnumerable<byte[]> Dot(MenuButton b) => dots.Where(d => d.Button.Action.Kind == b.Action.Kind).Select(d => Nav.EnableButton(d.Id, d.Button == b));
 
+        // Where each picture goes: the highlights, then the dots. No two may share a pixel: a living-room player erases or hides buttons that overlap
+        // (a software player draws them anyway). So a dot stands just left of its button's highlight, not on it as in the BD-J menu, and what still
+        // overlaps is trimmed: two highlights at the middle of what they share, a highlight alone where it meets a dot.
+        var boxes = new List<(uint[] Argb, int X, int Y, int W, int H)>();
+        for (var i = 0; i < count; i++)
+        {
+            var box = MenuRenderer.FocusBox(page.Buttons[i]);
+            boxes.Add(Crop(focus[i].Argb, focus[i].W, focus[i].H, Px(box.X), Px(box.Y), planeW, planeH));
+        }
+        foreach (var (b, _, _) in dots)
+        {
+            var box = MenuRenderer.FocusBox(b);
+            var left = Px(box.X) - marker.W - Px(4);
+            boxes.Add(Crop(marker.Argb, marker.W, marker.H, left >= 0 ? left : Px(box.X) + Px(markerOffset), Px(box.Y) + (Px(box.H) - marker.H) / 2, planeW, planeH));
+        }
+        Separate(boxes, count);
+
         var buttons = new List<IgButton>();
         for (var i = 0; i < count; i++)
         {
@@ -174,15 +191,12 @@ public static class HdmvMenu
                 // a page this disc does not have: the first one
                 _ => [Nav.Set(Selected, 0), Nav.Set(Page, playlists.GetValueOrDefault(a.Page ?? "", FirstPlaylist)), Nav.JumpObject(1)],
             };
-            var box = MenuRenderer.FocusBox(b);
-            var (argb, x, y, w, h) = Crop(focus[i].Argb, focus[i].W, focus[i].H, Px(box.X), Px(box.Y), planeW, planeH);
+            var (argb, x, y, w, h) = boxes[i];
             buttons.Add(new IgButton(i + 1, x, y, w, h, argb, null, Number(b.Up, i + 1), Number(b.Down, i + 1), Number(b.Left, i + 1), Number(b.Right, i + 1), commands));
         }
-        foreach (var (b, _, id) in dots)
+        foreach (var (_, _, id) in dots)
         {
-            // where the BD-J menu draws it: from the left edge of the button's highlight, half-way up
-            var box = MenuRenderer.FocusBox(b);
-            var (argb, x, y, w, h) = Crop(marker.Argb, marker.W, marker.H, Px(box.X) + Px(markerOffset), Px(box.Y) + (Px(box.H) - marker.H) / 2, planeW, planeH);
+            var (argb, x, y, w, h) = boxes[id - 1];
             buttons.Add(new IgButton(id, x, y, w, h, null, argb, id, id, id, id, [], Enabled: false));
         }
         var start = Math.Min(1, count); // a page without button keeps the opener selected
@@ -198,6 +212,50 @@ public static class HdmvMenu
         var pixels = buttons.Where(b => b.Selected != null).Sum(b => (long)b.W * b.H);
         if (pixels > 16 << 20) log($"warning: page {page.Id}: its highlights are {pixels >> 20} MB of pictures, more than the 16 MB a player decodes at once");
         return IgStream.Write(planeW, planeH, rateCode, buttons, opener);
+    }
+
+    /// <summary>
+    /// Trims the pictures until no two overlap. The first <paramref name="highlights"/> give way to each other half and half, on the side where they share
+    /// the least; the others (dots) are kept whole and the highlight under one loses the smallest side that frees it.
+    /// </summary>
+    public static void Separate(List<(uint[] Argb, int X, int Y, int W, int H)> boxes, int highlights)
+    {
+        void Keep(int i, int x0, int y0, int x1, int y1)
+        {
+            var (argb, x, y, w, h) = boxes[i];
+            (x0, y0, x1, y1) = (Math.Max(x0, x), Math.Max(y0, y), Math.Min(x1, x + w), Math.Min(y1, y + h));
+            if (x1 - x0 < 8 || y1 - y0 < 8) return; // shortcut: a highlight that would vanish stays whole and overlaps, never seen on a real template
+            var cut = new uint[(x1 - x0) * (y1 - y0)];
+            for (var row = y0; row < y1; row++) Array.Copy(argb, (row - y) * w + x0 - x, cut, (row - y0) * (x1 - x0), x1 - x0);
+            boxes[i] = (cut, x0, y0, x1 - x0, y1 - y0);
+        }
+        const int All = int.MaxValue;
+        for (var i = 0; i < highlights; i++)
+            for (var j = i + 1; j < boxes.Count; j++)
+            {
+                var (a, b) = (boxes[i], boxes[j]);
+                int x0 = Math.Max(a.X, b.X), x1 = Math.Min(a.X + a.W, b.X + b.W), y0 = Math.Max(a.Y, b.Y), y1 = Math.Min(a.Y + a.H, b.Y + b.H);
+                if (x0 >= x1 || y0 >= y1) continue;
+                if (j >= highlights) // a dot: the side of the highlight that costs it the least
+                {
+                    int left = (b.X + b.W - a.X) * a.H, right = (a.X + a.W - b.X) * a.H, top = (b.Y + b.H - a.Y) * a.W, bottom = (a.Y + a.H - b.Y) * a.W;
+                    var least = Math.Min(Math.Min(left, right), Math.Min(top, bottom));
+                    if (least == left) Keep(i, b.X + b.W, 0, All, All);
+                    else if (least == right) Keep(i, 0, 0, b.X, All);
+                    else if (least == top) Keep(i, 0, b.Y + b.H, All, All);
+                    else Keep(i, 0, 0, All, b.Y);
+                }
+                else if (x1 - x0 < y1 - y0) // side by side
+                {
+                    var middle = (x0 + x1) / 2;
+                    if (a.X <= b.X) { Keep(i, 0, 0, middle, All); Keep(j, middle, 0, All, All); } else { Keep(j, 0, 0, middle, All); Keep(i, middle, 0, All, All); }
+                }
+                else // one above the other
+                {
+                    var middle = (y0 + y1) / 2;
+                    if (a.Y <= b.Y) { Keep(i, 0, 0, All, middle); Keep(j, 0, middle, All, All); } else { Keep(j, 0, 0, All, middle); Keep(i, 0, middle, All, All); }
+                }
+            }
     }
 
     /// <summary>The part of a picture placed at <paramref name="x"/>, <paramref name="y"/> that lies on the screen (a highlight's margin can pass the edge), at least 8 pixels a side.</summary>

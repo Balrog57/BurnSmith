@@ -672,6 +672,11 @@ if (a.Count >= 1 && a[0] == "check-elements")
         var houseButtons = elButtons.Where(b => b.Source.StartsWith(TemplateLabel.Own + " · ")).ToList();
         Check($"les boutons de BurnSmith ({houseButtons.Count}) sont listés avec leur sélection, et se lisent", houseButtons.Count >= 80
               && houseButtons.All(b => b.Focus != null && MenuRenderer.Size(b.Normal!) != null && MenuRenderer.Size(b.Focus) != null));
+        var paperTag = houseButtons.FirstOrDefault(b => b.Source.EndsWith("Papier") && b.Name == "Étiquette")?.Normal;
+        var inkTag = houseButtons.FirstOrDefault(b => b.Source.EndsWith("Encre") && b.Name == "Rectangle")?.Normal;
+        Check("un libellé sur un bouton image se lit : foncé sur l'étiquette claire, la couleur du modèle gardée sur le bouton sombre",
+              paperTag != null && inkTag != null && MenuRenderer.InkOn(paperTag, "#FFF4DC") == "#141414" && MenuRenderer.InkOn(inkTag, "#FFF4DC") == null
+              && MenuElement.Parse($"kind=button;rect=0,0,400,120;text=Chapitres;file={paperTag}").Ops(new MenuDesign { TextColor = "#FFF4DC" }).OfType<Label>().Single().Ink == "#141414");
         Check("seuls les boutons de l'utilisateur peuvent être retirés", elButtons.Where(b => b.Removable).All(b => b.Source == ElementLibrary.MyButtons));
         var imported = ElementLibrary.ImportButton(normalPic, focusPic);
         try

@@ -29,6 +29,31 @@ public static partial class MenuRenderer
         return error == null ? result : throw new InvalidOperationException(error.Message, error);
     }
 
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, string), string?> Inks = new();
+
+    /// <summary>
+    /// The colour of a label written over a button picture: null (the design's <paramref name="text"/> colour) when it stands out from the
+    /// picture, else near-black on a light picture and white on a dark one. A cream word on a cream paper label could not be read.
+    /// </summary>
+    public static string? InkOn(string picture, string text) => Inks.GetOrAdd((picture, text), key => Sta(() =>
+    {
+        // the middle of the picture, where the label goes, shrunk to 32x16: its mean brightness over the pixels that show
+        var bmp = new RenderTargetBitmap(32, 16, 96, 96, PixelFormats.Pbgra32);
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen()) dc.DrawImage(Load(key.Item1, new Rect(0, 0, 32, 16)), new Rect(-8, -4, 48, 24));
+        bmp.Render(visual);
+        var px = new byte[32 * 16 * 4];
+        bmp.CopyPixels(px, 32 * 4, 0);
+        double sum = 0, weight = 0;
+        for (var i = 0; i < px.Length; i += 4)
+            if (px[i + 3] > 0) { sum += px[i + 2] * 0.3 + px[i + 1] * 0.59 + px[i] * 0.11; weight += px[i + 3]; } // premultiplied: each pixel already weighed by how much it shows
+        if (weight < 32 * 16 * 255 * 0.25) return null; // mostly see-through: the page behind decides, as for any label
+        var under = sum * 255 / weight;
+        var t = Col(key.Item2);
+        var ink = t.R * 0.3 + t.G * 0.59 + t.B * 0.11;
+        return Math.Abs(ink - under) >= 100 ? null : under > 128 ? "#141414" : "#FFFFFF";
+    }));
+
     static Color Col(string hex, double opacity = 1)
     {
         var c = (Color)ColorConverter.ConvertFromString(hex);
@@ -467,7 +492,7 @@ public static partial class MenuRenderer
                 var at = b.FocusSlot is { } s ? new Rect(s.X - box.X, s.Y - box.Y, s.W, s.H) : new Rect(m, m, b.Rect.W, b.Rect.H);
                 dc.DrawImage(Load(b.FocusImage, at), at);
                 // a picture button of the user's: its selected picture covers the label the page wrote, so the label is written again over it
-                if (written != null && b.FocusSlot == null) DrawLabel(dc, d, written with { Rect = new Box(m, m, b.Rect.W, b.Rect.H) });
+                if (written != null && b.FocusSlot == null) DrawLabel(dc, d, written with { Rect = new Box(m, m, b.Rect.W, b.Rect.H), Ink = written.Ink == null ? null : InkOn(b.FocusImage, d.TextColor) });
                 return;
             }
             switch (style)
@@ -700,7 +725,7 @@ public static partial class MenuRenderer
     {
         var face = new Typeface(new FontFamily(d.Font), FontStyles.Normal, l.Bold ? FontWeights.Bold : FontWeights.SemiBold, FontStretches.Normal);
         var text = new FormattedText(Shown(d, l.Value), System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                                     face, l.Size, new SolidColorBrush(colour ?? Col(d.TextColor)), 1.0)
+                                     face, l.Size, new SolidColorBrush(colour ?? Col(l.Ink ?? d.TextColor)), 1.0)
         { MaxTextWidth = l.Rect.W, MaxLineCount = 1, Trimming = TextTrimming.CharacterEllipsis };
         var x = l.Align == "left" ? l.Rect.X : l.Rect.X + (l.Rect.W - text.Width) / 2;
         var at = new Point(x, l.Rect.Y + (l.Rect.H - text.Height) / 2);
