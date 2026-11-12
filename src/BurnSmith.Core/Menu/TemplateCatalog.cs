@@ -10,7 +10,13 @@ public static class TemplateCatalog
     public sealed record Found(MenuDesign Design, string? Thumbnail)
     {
         public override string ToString() => Design.Name; // what a screen reader says for a list item
+        /// <summary>The name the gallery shows: without the screen shape, which the « 16:9 / 4:3 » choice gives.</summary>
+        public string Label => TemplateShape.Base(Design.Name);
+        public string Usage => TemplateUsage.Of(Design.Name);
     }
+
+    /// <summary>The version of <paramref name="design"/> for a 4:3 screen (<paramref name="narrow"/>) or a 16:9 one, when the template has both (--menu-aspect).</summary>
+    public static MenuDesign Shaped(MenuDesign design, bool narrow) => TemplateShape.Pick(design, narrow, Scan().Usable.Select(f => f.Design));
     public sealed record Skipped(string Name, string Why, string Dir);
 
     static string AppData => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);

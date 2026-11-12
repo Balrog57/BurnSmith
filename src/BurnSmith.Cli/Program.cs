@@ -26,7 +26,7 @@ static List<int> SubsToKeep(List<int>? asked, int own, int files, string video, 
 }
 var videos = a.Select((v, i) => (v, i)).Where(x => x.v == "--video" && x.i + 1 < a.Count).Select(x => BluRay.MainClip(Path.GetFullPath(a[x.i + 1]))).ToList(); // a Blu-ray given whole (.iso, BDMV folder): its film
 
-// burnsmith preview <template name or folder> <out folder> [--picture frame.jpg] [--episodes N] [--bonus N] [--focus]
+// burnsmith preview <template name or folder> <out folder> [--picture frame.jpg] [--episodes N] [--bonus N] [--focus] [--menu-aspect 16:9|4:3]
 //   draws every page of a menu template with sample content (3 audio, 2 subtitles), to compare with the vendor's own thumbnail
 if (a.Count >= 3 && a[0] == "preview")
 {
@@ -40,6 +40,7 @@ if (a.Count >= 3 && a[0] == "preview")
         episodes > 1 ? Enumerable.Range(1, episodes).Select(i => new TitleEntry($"Episode {i}", i, pic, Opt("--overview"))).ToList() : null,
         ["Français AC-3 mono", "English AC-3 mono", "Español AC-3 mono"], ["Français", "English"],
         int.TryParse(Opt("--bonus"), out var extras) && extras > 0 ? Enumerable.Range(0, extras).Select(i => new TitleEntry($"Bonus {i + 1}", Math.Max(episodes, 1) + 1 + i, pic)).ToList() : null);
+    if (Opt("--menu-aspect") is { } screen) chosen = TemplateCatalog.Shaped(chosen, screen == "4:3"); // as bd and dvd: the template's 4:3 or 16:9 version
     chosen.Language(Opt("--menu-language") is "fr" or "en" ? Opt("--menu-language")! : chosen.ButtonLanguage); // as bd and dvd: French unless asked or the design says "en"
     chosen.Title = Opt("--title") ?? (chosen.ButtonLanguage == "en" ? "My Blu-ray" : "Mon Blu-ray");
     if (a.Contains("--list")) chosen.SceneList = true; // la page de scènes en liste, quand le modèle la décrit
@@ -677,6 +678,15 @@ if (a.Count >= 1 && a[0] == "check-elements")
         Check("un libellé sur un bouton image se lit : foncé sur l'étiquette claire, la couleur du modèle gardée sur le bouton sombre",
               paperTag != null && inkTag != null && MenuRenderer.InkOn(paperTag, "#FFF4DC") == "#141414" && MenuRenderer.InkOn(inkTag, "#FFF4DC") == null
               && MenuElement.Parse($"kind=button;rect=0,0,400,120;text=Chapitres;file={paperTag}").Ops(new MenuDesign { TextColor = "#FFF4DC" }).OfType<Label>().Single().Ink == "#141414");
+        Check("les modèles se rangent par usage, Original quand le nom ne dit rien",
+              TemplateUsage.Of("UHD Birthday1") == "Anniversaire" && TemplateUsage.Of("01movie") == "Film" && TemplateUsage.Of("Saison") == "Série"
+              && TemplateUsage.Of("Natural 18") == "Voyage et nature" && TemplateUsage.Of("blue 16-9") == TemplateUsage.Original && TemplateUsage.Of("Wedding2") == "Mariage");
+        MenuDesign wide169 = new() { Name = "Autumn 16-9", Category = "Libres" }, narrow43 = new() { Name = "Autumn 4-3", Category = "Libres" }, alone = new() { Name = "Sun 4-3", Category = "Libres" };
+        Check("un modèle en 16:9 et en 4:3 n'en fait qu'un, le choix de l'écran prend sa version ; un modèle d'une seule forme reste",
+              TemplateShape.Base("Autumn 4-3") == "Autumn" && TemplateShape.Base("business (16-9-2)") == "business 2" && TemplateShape.Base("business (4-3)") == "business"
+              && TemplateShape.IsNarrow("ocean 4-3") && !TemplateShape.IsNarrow("business (16-9-2)") && TemplateShape.Base("Birthday1") == "Birthday1"
+              && TemplateShape.Pick(wide169, true, [wide169, narrow43, alone]) == narrow43 && TemplateShape.Pick(narrow43, false, [wide169, narrow43]) == wide169
+              && TemplateShape.Pick(alone, false, [wide169, narrow43, alone]) == alone);
         Check("seuls les boutons de l'utilisateur peuvent être retirés", elButtons.Where(b => b.Removable).All(b => b.Source == ElementLibrary.MyButtons));
         var imported = ElementLibrary.ImportButton(normalPic, focusPic);
         try
@@ -1782,7 +1792,7 @@ if (a.Count >= 1 && a[0] == "check-library")
 if (a.Count >= 1 && a[0] == "templates")
 {
     var (usable, skipped) = TemplateCatalog.Scan();
-    foreach (var f in usable) Console.WriteLine($"OK    {f.Design.Category} | {f.Design.Name}");
+    foreach (var f in usable) Console.WriteLine($"OK    {f.Design.Category} | {f.Design.Name} | {f.Usage}"); // the program it came from, its name, its use (the gallery's groups)
     foreach (var mine in Templates.List()) Console.WriteLine($"OK    Mes modèles | {mine.Name}"); // saved from the menu editor or by template-save
     foreach (var s in skipped) Console.WriteLine($"SKIP  {s.Name} | {s.Why} | {s.Dir}");
     Console.WriteLine($"{usable.Count} usable, {skipped.Count} skipped");
@@ -1901,7 +1911,7 @@ if (a.Count >= 2 && a[0] == "queue")
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] [--copies N]");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] [--copies N]");
     return 2;
 }
 
@@ -1909,6 +1919,10 @@ var design = a.Contains("--no-menu") ? null
     : Opt("--design") is { } saved && saved.EndsWith(".json", StringComparison.OrdinalIgnoreCase) // a template saved from the menu editor (Mes modèles)
         ? System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(File.ReadAllText(saved)) ?? throw new InvalidOperationException($"not a template: {saved}")
     : (TemplateCatalog.Find(Opt("--design")) ?? (Opt("--design") is { } unknown ? throw new InvalidOperationException($"unknown template: {unknown}") : TemplateCatalog.Default())).Clone();
+// --menu-aspect 16:9|4:3: the version of the template for that screen, when it has both (« Autumn 16-9 » / « Autumn 4-3 »); one made for a single shape stays
+if (design != null && Opt("--menu-aspect") is { } shape)
+    design = shape is "4:3" or "16:9" ? TemplateCatalog.Shaped(design, shape == "4:3") is var twin && twin != design ? twin.Clone() : design
+        : throw new ArgumentException($"--menu-aspect: 4:3 or 16:9 expected, not '{shape}'");
 // the menu's language: --menu-language fr|en, else the design's own (French unless its file says "ButtonLanguage": "en"): its written words
 // (a word of one's own in the design's file is kept) and those drawn in a template's buttons
 if (design != null) design.Language(Opt("--menu-language") is not { } spoken ? design.ButtonLanguage

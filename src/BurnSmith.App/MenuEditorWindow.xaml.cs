@@ -1284,19 +1284,30 @@ public partial class MenuEditorWindow : Window
     List<TemplateCatalog.Found> catalog = [];
     string? family;
 
-    /// <summary>One chip per family of templates (their category), « Tous » before and « Mes modèles » after; the family of the menu's own template is the one open.</summary>
+    /// <summary>The screen shape the gallery shows the templates for: a template with a 16:9 and a 4:3 version shows the chosen one.</summary>
+    bool narrow;
+
+    /// <summary>The gallery as shown: one template per name, in the chosen shape when it has both.</summary>
+    List<TemplateCatalog.Found> Shown => [.. catalog.GroupBy(f => (f.Design.Category, f.Label.ToLowerInvariant()))
+        .Select(g => g.FirstOrDefault(f => TemplateShape.IsNarrow(f.Design.Name) == narrow) ?? g.First())];
+
+    /// <summary>One chip per use of the templates (Film, Série…, Original), « Tous » before and « Mes modèles » after; the use of the menu's own template is the one open.</summary>
     void FillFamilies(List<TemplateCatalog.Found> usable)
     {
         catalog = usable;
-        var names = catalog.Select(f => f.Design.Category).Distinct().ToList();
+        narrow = TemplateShape.IsNarrow(working.Name);
+        (narrow ? Shape43 : Shape169).IsChecked = true;
+        var shown = Shown;
+        var names = TemplateUsage.All.Where(u => shown.Any(f => f.Usage == u)).ToList();
+        var own = TemplateUsage.Of(working.Name);
         if (family is null || (family != AllFamilies && family != Mine && !names.Contains(family)))
-            family = names.Contains(working.Category) ? working.Category : names.FirstOrDefault() ?? AllFamilies;
+            family = names.Contains(own) ? own : names.FirstOrDefault() ?? AllFamilies;
         Families.Children.Clear();
         foreach (var name in names.Prepend(AllFamilies).Append(Mine))
         {
             var chip = new RadioButton
             {
-                Content = name == AllFamilies ? $"Tous ({catalog.Count})" : name == Mine ? "Mes modèles" : $"{name} ({catalog.Count(f => f.Design.Category == name)})",
+                Content = name == AllFamilies ? $"Tous ({shown.Count})" : name == Mine ? "Mes modèles" : $"{name} ({shown.Count(f => f.Usage == name)})",
                 GroupName = "family", Style = (Style)FindResource("Step"), Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 6), IsChecked = name == family,
             };
             chip.Checked += (_, _) => { family = name; ShowFamily(); };
@@ -1309,7 +1320,19 @@ public partial class MenuEditorWindow : Window
     {
         MinePanel.Visibility = family == Mine ? Visibility.Visible : Visibility.Collapsed;
         BuiltInList.Visibility = family == Mine ? Visibility.Collapsed : Visibility.Visible;
-        BuiltInList.ItemsSource = catalog.Where(f => family == AllFamilies || f.Design.Category == family).ToList();
+        BuiltInList.ItemsSource = Shown.Where(f => family == AllFamilies || f.Usage == family).ToList();
+    }
+
+    /// <summary>16:9 or 4:3: the gallery shows that version of each template, and the menu's own template takes it when it has one.</summary>
+    void OnShape(object s, RoutedEventArgs e)
+    {
+        if (Shape43.IsChecked == narrow) return; // set by FillFamilies, not chosen
+        narrow = Shape43.IsChecked == true;
+        ShowFamily();
+        var twin = TemplateShape.Pick(working, narrow, catalog.Select(f => f.Design));
+        if (twin == working) return;
+        working.TakeLook(twin);
+        Rebind();
     }
 
     /// <summary>The remote's keys: the arrows go to the neighbour button, Enter does what the disc would.</summary>

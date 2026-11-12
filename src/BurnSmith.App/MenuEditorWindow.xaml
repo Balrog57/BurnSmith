@@ -97,6 +97,13 @@
       <!-- 1 · Modèle -->
       <TabItem>
         <DockPanel>
+          <!-- every template makes a DVD, a Blu-ray and a 4K menu: the gallery groups them by use, the shape picks the version of those that have two -->
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8"
+                      ToolTip="Les modèles qui existent en 16:9 et en 4:3 prennent la version de l'écran choisi ; les autres restent tels qu'ils sont dessinés">
+            <TextBlock Text="Écran :" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <RadioButton x:Name="Shape169" Content="16:9" GroupName="shape" Style="{StaticResource Step}" Padding="10,4" Checked="OnShape"/>
+            <RadioButton x:Name="Shape43" Content="4:3" GroupName="shape" Style="{StaticResource Step}" Padding="10,4" Checked="OnShape"/>
+          </StackPanel>
           <WrapPanel x:Name="Families" DockPanel.Dock="Top"/>
           <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
             <Button Content="Ajouter un dossier de modèles…" HorizontalAlignment="Stretch" Click="OnAddFolder"
@@ -117,7 +124,7 @@
                         <Image Source="{Binding Thumbnail, Converter={StaticResource Thumb}}" Stretch="Uniform"/>
                       </Border>
                     </Viewbox>
-                    <TextBlock Text="{Binding Design.Name}" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="12" Margin="0,3,0,0"/>
+                    <TextBlock Text="{Binding Label}" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="12" Margin="0,3,0,0"/>
                   </StackPanel>
                 </DataTemplate>
               </ListBox.ItemTemplate>
