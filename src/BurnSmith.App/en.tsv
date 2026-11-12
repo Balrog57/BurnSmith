@@ -46,9 +46,6 @@ Graveur	Burner
 Vitesse de gravure	Burning speed
 Vitesse de gravure. Plus lent est souvent plus sûr pour un DVD lu sur une vieille platine. Une vitesse que le disque n'offre pas laisse le choix au graveur.	Burning speed. Slower is often safer for a DVD played on an old player. A speed the disc does not offer leaves the choice to the burner.
 Vitesse max	Max speed
-Nombre de copies	Number of copies
-Nombre de disques à graver : la même image sur chacun, BurnSmith demande le disque vierge suivant entre deux.	Number of discs to burn: the same image on each, BurnSmith asks for the next blank disc in between.
-1 copie	1 copy
 Démarrer	Start
 Journal	Log
 
@@ -161,7 +158,6 @@ ERREUR : {0}	ERROR: {0}
 ERREUR	ERROR
 Ajoutez d'abord une vidéo.	Add a video first.
 Choisissez un dossier de sortie.	Choose an output folder.
-Après la création, graver « {0} » sur {1}, en {2} copies ?\n\nInsérez un disque vierge adapté ({3}). Le disque sera écrit définitivement.	After it is created, burn "{0}" on {1}, in {2} copies?\n\nInsert a suitable blank disc ({3}). The disc will be written for good.
 Après la création, graver « {0} » sur {1} ?\n\nInsérez un disque vierge adapté ({2}). Le disque sera écrit définitivement.	After it is created, burn "{0}" on {1}?\n\nInsert a suitable blank disc ({2}). The disc will be written for good.
 Création du disque…	Creating the disc…
 Disque d'essai : {0} minutes de chaque vidéo, un passage à chaque chapitre, dans {1}	Trial disc: {0} minutes of each video, one passage at each chapter, in {1}
@@ -174,7 +170,6 @@ Vérification de l'image ISO : {0}	ISO image check: {0}
 Le disque n'est pas gravé, l'image ISO a des anomalies : {0}	The disc is not burned, the ISO image has problems: {0}
 Terminé.	Done.
 Disque d'essai terminé. Ouvrez {0} dans VLC (Média > Ouvrir un disque) pour vérifier le menu, puis décochez « Essai » pour le vrai disque.	Trial disc done. Open {0} in VLC (Media > Open Disc) to check the menu, then untick "Trial" for the real disc.
-Copie {0} sur {1} : retirez le disque gravé, insérez un disque vierge dans {2}, puis OK.	Copy {0} of {1}: remove the burned disc, insert a blank disc in {2}, then OK.
 Ajouter ce disque à la file	Add this disc to the queue
 Ajouter des projets enregistrés…	Add saved projects…
 Retirer « {0} »  ({1}, {2})	Remove "{0}"  ({1}, {2})
@@ -194,7 +189,6 @@ File d'attente terminée : {0} disque(s) fait(s).	Queue done: {0} disc(s) made.
 Aucun graveur détecté.	No burner found.
 Image à graver	Image to burn
 Images disque	Disc images
-Graver « {0} » sur {1}, en {2} copies ?\n\nInsérez un disque vierge adapté à la taille de l'image. Le disque sera écrit définitivement.	Burn "{0}" on {1}, in {2} copies?\n\nInsert a blank disc that suits the size of the image. The disc will be written for good.
 Graver « {0} » sur {1} ?\n\nInsérez un disque vierge adapté à la taille de l'image. Le disque sera écrit définitivement.	Burn "{0}" on {1}?\n\nInsert a blank disc that suits the size of the image. The disc will be written for good.
 Gravure…	Burning…
 Effacer le disque réinscriptible de {0} ?\n\nToutes les données du disque seront perdues.	Erase the rewritable disc in {0}?\n\nAll the data on the disc will be lost.

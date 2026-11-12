@@ -91,11 +91,11 @@ public static class Bdmv
     }
 
     /// <summary>
-    /// The index.bdmv of a disc with a native (HDMV) menu: First Playback runs movie object 0, the Top Menu object 1, and title N (of <paramref name="titles"/>)
+    /// The index.bdmv of a disc with a native (HDMV) menu: First Playback runs movie object 0, the Top Menu object <paramref name="topMenu"/>, and title N (of <paramref name="titles"/>)
     /// object N + 1. Header, app info and extension data are kept.
     /// </summary>
-    public static byte[] HdmvIndex(byte[] original, int titles) =>
-        ReplaceTable(original, Disc.MovieObjectFile.IndexTable([.. Enumerable.Range(2, titles)], firstPlay: 0, topMenu: 1));
+    public static byte[] HdmvIndex(byte[] original, int titles, int topMenu = 1) =>
+        ReplaceTable(original, Disc.MovieObjectFile.IndexTable([.. Enumerable.Range(2, titles)], firstPlay: 0, topMenu: topMenu));
 
     /// <summary>An index.bdmv with its index table (length included) replaced by <paramref name="table"/>.</summary>
     static byte[] ReplaceTable(byte[] original, byte[] table)

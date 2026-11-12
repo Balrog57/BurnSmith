@@ -60,18 +60,6 @@ public static class Iso
         ["/MODE", "ISOWRITE", "/WAITFORMEDIA", "/START", "/CLOSESUCCESS", "/IGNORELOCKVOLUME", "/NOIMAGEDETAILS", "/VERIFY", "YES",
          "/DEST", drive[..1].ToUpperInvariant(), "/SPEED", speed > 0 ? $"{speed}x" : "MAX", "/LOG", logFile, "/SRC", iso];
 
-    /// <summary>The same image on <paramref name="copies"/> discs, one after the other: <paramref name="nextDisc"/>(n) returns once the blank disc of copy n (2, 3...) is in the drive.</summary>
-    public static void Burn(string isoFile, string drive, int copies, Action<int> nextDisc, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default, int speed = 0)
-    {
-        for (var n = 1; n <= Math.Max(1, copies); n++)
-        {
-            cancel.ThrowIfCancellationRequested();
-            if (n > 1) nextDisc(n);
-            if (copies > 1) log?.Invoke($"copy {n} of {copies}");
-            Burn(isoFile, drive, log, progress, cancel, speed);
-        }
-    }
-
     /// <summary>Burns an image to the blank disc in <paramref name="drive"/> ("F:") at <paramref name="speed"/> (× 1x, 0 = fastest) and verifies it.</summary>
     public static void Burn(string isoFile, string drive, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default, int speed = 0)
     {

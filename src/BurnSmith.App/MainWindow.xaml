@@ -269,14 +269,6 @@
             <ComboBoxItem Content="6x"/>
             <ComboBoxItem Content="4x"/>
           </ComboBox>
-          <ComboBox x:Name="CopiesBox" Margin="6,0,0,0" VerticalAlignment="Center" SelectedIndex="0" AutomationProperties.Name="Nombre de copies"
-                    ToolTip="Nombre de disques à graver : la même image sur chacun, BurnSmith demande le disque vierge suivant entre deux.">
-            <ComboBoxItem Content="1 copie"/>
-            <ComboBoxItem Content="2 copies"/>
-            <ComboBoxItem Content="3 copies"/>
-            <ComboBoxItem Content="4 copies"/>
-            <ComboBoxItem Content="5 copies"/>
-          </ComboBox>
         </StackPanel>
         <Button x:Name="StartButton" Style="{StaticResource Primary}" Grid.Column="6" Content="Démarrer" Margin="16,0,0,0"
                 MinWidth="150" Padding="24,10" FontSize="16" FontWeight="SemiBold" Click="OnStart"/>

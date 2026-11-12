@@ -1301,10 +1301,9 @@ public partial class MainWindow : Window
         var drive = DriveBox.SelectedItem as Imapi.Drive;
         var speed = Iso.Speeds[Math.Max(0, SpeedBox.SelectedIndex)];
         var burn = BurnCheck.IsChecked == true && drive != null;
-        var copies = Copies;
         if (burn && cap.Unlimited) { MessageBox.Show(this, "« Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.", "BurnSmith"); return; }
         if (burn && MessageBox.Show(this,
-                $"Après la création, graver « {label} » sur {drive!.Letter}{(Copies > 1 ? $", en {Copies} copies" : "")} ?\n\nInsérez un disque vierge adapté ({cap.Name}). Le disque sera écrit définitivement.",
+                $"Après la création, graver « {label} » sur {drive!.Letter} ?\n\nInsérez un disque vierge adapté ({cap.Name}). Le disque sera écrit définitivement.",
                 "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
 
         var minutes = chapterMinutes;
@@ -1341,7 +1340,7 @@ public partial class MainWindow : Window
             {
                 writing = true;
                 token.ThrowIfCancellationRequested();
-                Iso.Burn(iso, drive!.Letter, copies, n => NextDisc(n, copies, drive.Letter), log, progress, token, speed);
+                Iso.Burn(iso, drive!.Letter, log, progress, token, speed);
             }
             if (!withIso) File.Delete(iso); // only made to burn
         });
@@ -1349,16 +1348,6 @@ public partial class MainWindow : Window
     }
 
     static string IsoFile(string folder) => Project.IsoFile(folder);
-
-    /// <summary>How many discs « Graver » writes: the same image on each.</summary>
-    int Copies => Math.Max(1, CopiesBox.SelectedIndex + 1);
-
-    /// <summary>Between two copies, from the working thread: waits for the next blank disc; « Annuler » stops the copies there.</summary>
-    void NextDisc(int n, int copies, string drive)
-    {
-        if (!Dispatcher.Invoke(() => MessageBox.Show(this, $"Copie {n} sur {copies} : retirez le disque gravé, insérez un disque vierge dans {drive}, puis OK.",
-                "BurnSmith", MessageBoxButton.OKCancel, MessageBoxImage.Information) == MessageBoxResult.OK)) throw new OperationCanceledException();
-    }
 
     // ---- queue ----
 
@@ -1469,13 +1458,12 @@ public partial class MainWindow : Window
         if (dlg.ShowDialog(this) != true) return;
         var iso = dlg.FileName;
         var answer = MessageBox.Show(this,
-            $"Graver « {Path.GetFileName(iso)} » sur {drive.Letter}{(Copies > 1 ? $", en {Copies} copies" : "")} ?\n\nInsérez un disque vierge adapté à la taille de l'image. Le disque sera écrit définitivement.",
+            $"Graver « {Path.GetFileName(iso)} » sur {drive.Letter} ?\n\nInsérez un disque vierge adapté à la taille de l'image. Le disque sera écrit définitivement.",
             "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (answer != MessageBoxResult.Yes) return;
         writing = true;
         var speed = Iso.Speeds[Math.Max(0, SpeedBox.SelectedIndex)];
-        var copies = Copies;
-        if (await Work("Gravure…", (log, progress, token) => Iso.Burn(iso, drive.Letter, copies, n => NextDisc(n, copies, drive.Letter), log, progress, token, speed))) Append("Terminé.");
+        if (await Work("Gravure…", (log, progress, token) => Iso.Burn(iso, drive.Letter, log, progress, token, speed))) Append("Terminé.");
     }
 
     async void OnErase(object s, RoutedEventArgs e)

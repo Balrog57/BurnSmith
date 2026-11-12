@@ -59,7 +59,6 @@ burnsmith dvd --video ep1.mkv --name "Épisode 1" --video ep2.mkv --name "Épiso
 | File d'attente | `burnsmith queue un.burnsmith deux.burnsmith [--trial]` : les projets fabriqués l'un après l'autre, chacun dans son dossier (`Out` du projet, `_essai` au bout pour un essai), avec son ISO s'il la demande ; un échec n'arrête pas les suivants, code de sortie 1 si l'un a échoué |
 | Noms de chapitres (par vidéo) | `--chapter-names "Prologue\|Le duel\|\|Final"` : les noms écrits sur le menu, dans l'ordre de `--chapter-at` ou des chapitres du fichier (un nom vide = « Chapitre N ») ; sans l'option, les noms que le fichier donne sont gardés |
 | Son sans perte (bd) | `--lossless` : TrueHD gardé tel quel avec un cœur AC-3, FLAC / PCM en LPCM, au lieu d'AC-3 ; DTS et DTS-HD toujours copiés. `probe` dit `"Lossless": true` pour une piste concernée |
-| Copies gravées | `burnsmith burn image.iso F: [--speed 4] --copies 3` : la même image sur trois disques, Entrée quand le disque vierge suivant est en place |
 | Lecture | `--play-mode 0\|1\|2` (menu puis tout \| premier titre puis tout \| retour au menu), `--no-rewind` |
 
 ## Le menu

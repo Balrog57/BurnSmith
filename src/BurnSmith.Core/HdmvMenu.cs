@@ -22,7 +22,8 @@ public static class HdmvMenu
 
     // registers: the playlist of the page to show, the button to select on it (0 = its first), the audio and subtitle streams chosen (subtitle 0 = off),
     // the chapter mark to start the title at, whether the next title follows this one, and a scratch one
-    const int Page = 10, Selected = 11, Audio = 12, Subtitle = 13, Chapter = 14, Chain = 15, Scratch = 16;
+    public const int Page = 10, Selected = 11; // GPRs: the page shown, the button selected there (index + 1)
+    const int Audio = 12, Subtitle = 13, Chapter = 14, Chain = 15, Scratch = 16;
 
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
@@ -106,16 +107,23 @@ public static class HdmvMenu
         List<byte[]> topMenu = [Nav.PlayPlaylistIn(Page), Nav.CopyPlayer(Selected, 10), Nav.GoTo(0)];
         var objects = new List<IReadOnlyList<byte[]>> { firstPlay, topMenu };
         for (var t = 1; t <= job.Titles.Count; t++) objects.Add(TitleObject(t, mainCount, forced, play));
+        // the remote's Top Menu key, and the end of a title that goes back to the menu: always the main page, as the BD-J menu and the DVD do (the page
+        // register still named the chapters page a chapter was started from); the button remembered there only if it was one of the main page's
+        objects.Add(TopMenuKey());
 
         var bdmv = Path.Combine(job.OutDir, "BDMV");
         var movieObject = MovieObjectFile.Write(objects, job.Uhd ? "0300" : "0200");
-        var index = Bdmv.HdmvIndex(File.ReadAllBytes(Path.Combine(bdmv, "index.bdmv")), job.Titles.Count);
+        var index = Bdmv.HdmvIndex(File.ReadAllBytes(Path.Combine(bdmv, "index.bdmv")), job.Titles.Count, topMenu: objects.Count - 1);
         foreach (var dir in new[] { bdmv, Path.Combine(bdmv, "BACKUP") })
         {
             File.WriteAllBytes(Path.Combine(dir, "MovieObject.bdmv"), movieObject);
             File.WriteAllBytes(Path.Combine(dir, "index.bdmv"), index);
         }
     }
+
+    /// <summary>The Top Menu object: the main page (then the page object, 1), on the button selected there, else on its first one.</summary>
+    public static List<byte[]> TopMenuKey() =>
+        [Nav.IfEqual(Page, FirstPlaylist), Nav.GoTo(3), Nav.Set(Selected, 0), Nav.Set(Page, FirstPlaylist), Nav.JumpObject(1)];
 
     /// <summary>
     /// What title <paramref name="title"/> (1 = the first) runs: the audio and subtitle chosen in the menu (the forced track of the audio's language while

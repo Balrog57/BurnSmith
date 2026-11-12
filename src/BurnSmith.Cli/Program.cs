@@ -1864,8 +1864,8 @@ if (a.Count >= 2 && a[0] == "probe")
     return 0;
 }
 if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BURNSMITH", a.Contains("--dvd"), Console.WriteLine); return 0; }
-// burnsmith burn IMAGE.iso F: [--speed 4] [--copies 3] : the speed is × 1x, absent = the drive's fastest; --copies: the same image on several discs, Enter once the next blank one is in
-if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], int.TryParse(Opt("--copies"), out var copies) ? copies : 1, n => { Console.WriteLine($"copy {n}: put the next blank disc in {a[2]}, then press Enter"); Console.ReadLine(); }, Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0); return 0; }
+// burnsmith burn IMAGE.iso F: [--speed 4] : the speed is × 1x, absent = the drive's fastest (one disc: a second one is a second run)
+if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0); return 0; }
 
 // --trial [SECONDS] (bd, dvd, project): a trial disc, each video cut to SECONDS in all (300 = five minutes), a passage at each chapter: the whole menu, made in minutes, to try in VLC before the real build
 // --menu-mode bdj|hdmv (bd): the Blu-ray menu as the BD-J program (default: everything the menu can do) or as native HDMV navigation (every player runs it
@@ -1911,7 +1911,7 @@ if (a.Count >= 2 && a[0] == "queue")
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] [--copies N]");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N]");
     return 2;
 }
 

@@ -564,9 +564,13 @@ static class BdCheck
             var table = (int)BinaryPrimitives.ReadUInt32BigEndian(indexFile.AsSpan(8)) + 4;
             int Word(byte[] file, int at) => BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(at));
             // 12-byte entries (kind, then the movie object at +6): First Playback, Top Menu, the number of titles, the titles
-            Check("HDMV: First Playback runs object 0, the Top Menu object 1, the two titles objects 2 and 3",
-                indexFile[table] == 0x40 && Word(indexFile, table + 6) == 0 && Word(indexFile, table + 18) == 1 && Word(indexFile, table + 24) == 2 && Word(indexFile, table + 32) == 2 && Word(indexFile, table + 44) == 3);
-            Check("HDMV: four movie objects", Word(File.ReadAllBytes(Path.Combine(bdmv, "MovieObject.bdmv")), 48) == 4);
+            Check("HDMV: First Playback runs object 0, the Top Menu key object 4 (the main page), the two titles objects 2 and 3",
+                indexFile[table] == 0x40 && Word(indexFile, table + 6) == 0 && Word(indexFile, table + 18) == 4 && Word(indexFile, table + 24) == 2 && Word(indexFile, table + 32) == 2 && Word(indexFile, table + 44) == 3);
+            Check("HDMV: five movie objects", Word(File.ReadAllBytes(Path.Combine(bdmv, "MovieObject.bdmv")), 48) == 5);
+            var key = HdmvMenu.TopMenuKey();
+            Check("HDMV: the Top Menu key shows the main page, its remembered button kept only when it was the main page's",
+                key[^2].AsSpan().SequenceEqual(Nav.Set(HdmvMenu.Page, HdmvMenu.FirstPlaylist)) && key[^1].AsSpan().SequenceEqual(Nav.JumpObject(1))
+                && key[0].AsSpan().SequenceEqual(Nav.IfEqual(HdmvMenu.Page, HdmvMenu.FirstPlaylist)) && key[1].AsSpan().SequenceEqual(Nav.GoTo(3)) && key[2].AsSpan().SequenceEqual(Nav.Set(HdmvMenu.Selected, 0)));
         });
     }
 
