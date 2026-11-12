@@ -1317,17 +1317,19 @@ if (a.Count >= 1 && a[0] == "check-edit")
               && goodImage.Count == 0 && cutImage.Count == 1 && cutImage[0].Contains("tronquée") && oddImage.Any(p => p.Contains("secteurs")) && DiscCheck.Folder(Path.Combine(discDir, "nothing")).Count == 1);
     }
     finally { Directory.Delete(discDir, true); }
-    // the intro: a movie object added after the others (the film's keep their numbers), and First Playback pointing at it without moving a byte of the index
+    // a BD-J menu disc: two movie objects added after the film's (which keep their numbers), First Playback and Top Menu pointing at them, title 1 the BD-J menu
     var films = BurnSmith.Core.Disc.MovieObjectFile.Write([[BurnSmith.Core.Disc.Nav.PlayPlaylist(1)], [BurnSmith.Core.Disc.Nav.PlayPlaylist(2)]]);
-    var withIntro = Bdmv.AppendObject(films, out var introObject, BurnSmith.Core.Disc.Nav.PlayPlaylist(98), BurnSmith.Core.Disc.Nav.JumpTitle(0));
+    var withIntro = Bdmv.AppendObject(films, out var introObject, BurnSmith.Core.Disc.Nav.PlayPlaylist(98), BurnSmith.Core.Disc.Nav.JumpTitle(1));
     var plain = BurnSmith.Core.Disc.MovieObjectFile.Index([0, 1], 2, 3, 6, 1);
-    var started = Bdmv.FirstPlayToObject(plain, 7);
-    var tableAt = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(plain.AsSpan(8)) + 4;
-    Check("an intro adds a movie object (number 2 after the film's 0 and 1, which keep their commands) that plays playlist 98 then jumps to the top menu; the index then starts on that object and nothing else of it changes",
+    var started = Bdmv.PatchIndex(plain, firstPlay: 3, topMenu: 2);
+    var tableAt = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(started.AsSpan(8)) + 4;
+    ushort At(int k) => System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(started.AsSpan(tableAt + k));
+    Check("a BD-J menu disc: an object is added after the film's 0 and 1 (number 2, they keep their commands); First Playback and Top Menu run HDMV objects 3 and 2, title 1 is BD-J object 00000",
           introObject == 2 && System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(withIntro.AsSpan(48)) == 3 && withIntro.Length == films.Length + 4 + 24
           && Bdmv.PrependToFilm(withIntro, BurnSmith.Core.Disc.Nav.SelectStreams(subtitle: 1)).Length == withIntro.Length + 12
-          && System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(started.AsSpan(tableAt + 6)) == 7 && started.Length == plain.Length
-          && Enumerable.Range(0, plain.Length).Where(k => plain[k] != started[k]).All(k => k >= tableAt && k < tableAt + 12));
+          && started[tableAt] >> 6 == 1 && At(6) == 3 && started[tableAt + 12] >> 6 == 1 && At(18) == 2 && At(24) == 1
+          && started[tableAt + 26] >> 6 == 2 && System.Text.Encoding.ASCII.GetString(started, tableAt + 32, 5) == "00000"
+          && started.AsSpan(0, 8).SequenceEqual("INDX0200"u8));
     var dts = new AudioTrack(0, "dts", 6, "", "");
     Check("audio copied only while it stays in step with the picture: a DTS track is kept when the title starts at 0, becomes AC-3 with a later start or another volume, and stays on a 4K disc",
           BluRay.BdAudio(dts, new DiscTitle("x"), false) == "dts" && BluRay.BdAudio(dts, new DiscTitle("x", Start: 90), false) == "ac3" && BluRay.BdAudio(dts, new DiscTitle("x", Volume: 120), false) == "ac3"

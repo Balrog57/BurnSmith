@@ -441,8 +441,7 @@ public static class BluRay
                 return;
             }
             MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, Math.Min(1, VideoSize(job).H / 1080.0), job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, popup: popup, forced: forced); // the xlet chains only the main titles
-            AddMenu(job, menuDir, log);
-            if (intro != null) StartWithIntro(job.OutDir, job.Playback?.StartAtFirstTitle == true);
+            AddMenu(job, menuDir, intro != null, log);
         }
         else if (muxed[0].DefaultSubtitle > 0 || intro != null)
         {
@@ -455,21 +454,6 @@ public static class BluRay
             if (intro != null) log($"intro: {intro.DisplayName} plays first");
             if (muxed[0].DefaultSubtitle > 0) log($"subtitle {muxed[0].DefaultSubtitle} shown from the start");
         }
-    }
-
-    /// <summary>
-    /// A menu disc that starts with the intro: First Playback becomes a new movie object that plays <see cref="IntroPlaylist"/> and then jumps to the top menu (the BD-J menu),
-    /// in MovieObject.bdmv and index.bdmv and their BACKUP copies. When the disc starts on the first title it jumps to title 1 instead, the same BD-J object:
-    /// the top menu sets the title register to 0, which the xlet reads as the Top Menu key and so shows the menu.
-    /// </summary>
-    static void StartWithIntro(string outDir, bool startAtFirstTitle)
-    {
-        var bdmv = Path.Combine(outDir, "BDMV");
-        var number = -1;
-        foreach (var file in new[] { Path.Combine(bdmv, "MovieObject.bdmv"), Path.Combine(bdmv, "BACKUP", "MovieObject.bdmv") })
-            File.WriteAllBytes(file, Bdmv.AppendObject(File.ReadAllBytes(file), out number, Disc.Nav.PlayPlaylist(IntroPlaylist), Disc.Nav.JumpTitle(startAtFirstTitle ? 1 : 0)));
-        foreach (var file in new[] { Path.Combine(bdmv, "index.bdmv"), Path.Combine(bdmv, "BACKUP", "index.bdmv") })
-            File.WriteAllBytes(file, Bdmv.FirstPlayToObject(File.ReadAllBytes(file), number));
     }
 
     /// <summary>
@@ -1311,7 +1295,10 @@ public static class BluRay
     }
 
     /// <summary>Adds the BD-J menu on top of the tsMuxeR disc: jar, BDJO, and an index.bdmv that starts the menu (BACKUP copies included).</summary>
-    static void AddMenu(BluRayJob job, string menuDir, Action<string> log)
+    /// <summary>GPR the disc's start sets to 1 and the Top Menu key to 0 before they jump to title 1, the BD-J menu: the xlet starts on the first title only when it reads 1.</summary>
+    public const int BdjStartRegister = 109;
+
+    static void AddMenu(BluRayJob job, string menuDir, bool intro, Action<string> log)
     {
         log("menu: BD-J");
         var bdmv = Path.Combine(job.OutDir, "BDMV");
@@ -1333,8 +1320,16 @@ public static class BluRay
         var bdjo = Bdmv.Bdjo("org.burnsmith.menu.Menu", job.Uhd ? Bdmv.HaviUhd1080 : job.Encode?.Hd720 == true ? Bdmv.HaviHd720 : Bdmv.HaviHd1080);
         File.WriteAllBytes(Path.Combine(bdmv, "BDJO", "00000.bdjo"), bdjo);
         File.WriteAllBytes(Path.Combine(bdmv, "BACKUP", "BDJO", "00000.bdjo"), bdjo);
+        // First Playback and the Top Menu key are two HDMV objects that start the menu in title 1, as DVDFab's discs do: the menu and the episodes it plays are then
+        // never "the top menu title", where a player refuses the Top Menu key ("opération interdite") while an episode plays. The intro plays before the jump.
+        int topMenu = -1, firstPlay = -1;
+        foreach (var file in new[] { Path.Combine(bdmv, "MovieObject.bdmv"), Path.Combine(bdmv, "BACKUP", "MovieObject.bdmv") }.Where(File.Exists))
+        {
+            var objects = Bdmv.AppendObject(File.ReadAllBytes(file), out topMenu, Disc.Nav.Set(BdjStartRegister, 0), Disc.Nav.JumpTitle(1));
+            File.WriteAllBytes(file, Bdmv.AppendObject(objects, out firstPlay, [Disc.Nav.Set(BdjStartRegister, 1), .. intro ? [Disc.Nav.PlayPlaylist(IntroPlaylist)] : Array.Empty<byte[]>(), Disc.Nav.JumpTitle(1)]));
+        }
         foreach (var index in new[] { Path.Combine(bdmv, "index.bdmv"), Path.Combine(bdmv, "BACKUP", "index.bdmv") })
-            if (File.Exists(index)) File.WriteAllBytes(index, Bdmv.PatchIndex(File.ReadAllBytes(index)));
+            if (File.Exists(index)) File.WriteAllBytes(index, Bdmv.PatchIndex(File.ReadAllBytes(index), firstPlay, topMenu));
     }
 }
 

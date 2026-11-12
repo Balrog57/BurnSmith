@@ -52,41 +52,23 @@ public static class Bdmv
     }
 
     /// <summary>
-    /// An index.bdmv whose First Playback is the HDMV movie object <paramref name="movieObject"/> instead of whatever it was (the top menu and the titles are left as they are).
-    /// The entry keeps its 12 bytes, so nothing after it moves.
+    /// Replaces the index table of an index.bdmv by: First Playback and Top Menu = the HDMV movie objects <paramref name="firstPlay"/> and <paramref name="topMenu"/>
+    /// (each jumps to title 1), and title 1 = BD-J object <paramref name="bdjoName"/>, the menu. Header, app info and extension data (UHD flags) are kept.
     /// </summary>
-    public static byte[] FirstPlayToObject(byte[] index, int movieObject)
+    public static byte[] PatchIndex(byte[] original, int firstPlay, int topMenu, string bdjoName = "00000")
     {
-        var at = (int)BinaryPrimitives.ReadUInt32BigEndian(index.AsSpan(8)) + 4; // after the length of the index table
-        var res = index.ToArray();
-        BinaryPrimitives.WriteUInt32BigEndian(res.AsSpan(at), 1u << 30);        // object_type = HDMV
-        BinaryPrimitives.WriteUInt16BigEndian(res.AsSpan(at + 4), 1 << 14);     // interactive, as the other HDMV entries of the library
-        BinaryPrimitives.WriteUInt16BigEndian(res.AsSpan(at + 6), (ushort)movieObject);
-        BinaryPrimitives.WriteUInt32BigEndian(res.AsSpan(at + 8), 0);
-        return res;
-    }
-
-    /// <summary>
-    /// Replaces the index table of an index.bdmv by: First Playback = Top Menu = BD-J title <paramref name="bdjoName"/>,
-    /// plus that same BD-J object as title 1. Header, app info and extension data (UHD flags) are kept.
-    /// </summary>
-    public static byte[] PatchIndex(byte[] original, string bdjoName = "00000")
-    {
-        static void BdjObject(BinaryWriterBE w, string name, int playbackType)
-        {
-            w.U8(playbackType << 6); w.U8(0); w.Str(name, 5); w.U8(0);
-        }
-
         var table = new BinaryWriterBE();
         table.U32(38); // length of what follows: 2 x 12 + 2 + 12
-        foreach (var _ in new[] { 0, 1 }) // first playback, top menu
+        foreach (var movieObject in new[] { firstPlay, topMenu })
         {
-            table.U32(2u << 30);            // object_type = BD-J
-            BdjObject(table, bdjoName, 3);  // interactive
+            table.U32(1u << 30);            // object_type = HDMV
+            table.U16(1 << 14);             // interactive
+            table.U16(movieObject);
+            table.U32(0);
         }
         table.U16(1); // one title
-        table.U32((2u << 30));              // object_type = BD-J, access_type 0
-        BdjObject(table, bdjoName, 2);      // movie
+        table.U32(2u << 30);                // object_type = BD-J, access_type 0
+        table.U8(2 << 6); table.U8(0); table.Str(bdjoName, 5); table.U8(0); // movie
         return ReplaceTable(original, table.ToArray());
     }
 

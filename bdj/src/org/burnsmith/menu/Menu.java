@@ -178,18 +178,15 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     }
 
     /**
-     * The player's Top Menu key restarts this same xlet: the disc only starts on the first title the first time (title number register
-     * PSR4 is 0xFFFF in First Playback and 0 once the Top Menu is called), so the menu stays reachable. 1: an intro played first, then jumped to title 1
-     * (this same xlet) because the disc starts on the first title; nothing else jumps there.
+     * The xlet runs in title 1: First Playback and the Top Menu key are two HDMV objects that jump there (BluRay.AddMenu), the first after it set
+     * GPR109 to 1, the Top Menu key after it set it to 0. So the disc only starts on the first title the first time and the menu stays reachable.
+     * The register is cleared at once: anything else that restarts title 1 shows the menu.
      */
     private boolean firstPlayback() {
-        try {
-            int title = RegisterAccess.getInstance().getPSR(4);
-            return title == 0xFFFF || title == 1;
-        } catch (Throwable t) {
-            log("title number register unreadable: " + t);
-            return true;
-        }
+        int start = readGpr(109);
+        if (start < 0) return true; // no register access: as if the disc had just started
+        writeGpr(109, 0);
+        return start == 1;
     }
 
     /** "Start from the first title": no menu, the titles play one after the other. */

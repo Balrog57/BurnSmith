@@ -501,8 +501,21 @@ static class BdCheck
             Check("pop-up: transparent over the film, solid on the bar", Alpha(0, 0) == 0 && Alpha(5, bgra.PixelHeight - 5) > 100, $"alpha {Alpha(0, 0)} / {Alpha(5, bgra.PixelHeight - 5)}");
             var bars = MenuBuilder.Popup(new MenuDesign { MainMenuLabel = "Main" }, new MenuContent(1, null, []), [(1, 1)]);
             Check("pop-up: the main menu button says what the design sets", bars[0].Ops.OfType<Label>().Any(l => l.Value == "Main"));
-            var without = Jar(Bd("nopopup", titles, menu: new MenuDesign()));
+            var plainDisc = Bd("nopopup", titles, menu: new MenuDesign());
+            var without = Jar(plainDisc);
             Check("no pop-up option: no pop-up page, the menu file as before", !without.Keys.Any(k => k.Contains("pop")) && !System.Text.Encoding.UTF8.GetString(without["menu.txt"]).Contains(" pop"));
+            // the menu runs in title 1, reached from two HDMV objects: a player refuses the Top Menu key inside the top menu title, where the menu used to play the episodes
+            var index = File.ReadAllBytes(Path.Combine(plainDisc, "BDMV", "index.bdmv"));
+            var table = (int)BinaryPrimitives.ReadUInt32BigEndian(index.AsSpan(8)) + 4;
+            var objects = File.ReadAllBytes(Path.Combine(plainDisc, "BDMV", "MovieObject.bdmv"));
+            int Word(byte[] file, int at) => BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(at));
+            var count = Word(objects, 48);
+            Check("BD-J menu: First Playback and Top Menu are HDMV objects (the last two), title 1 the BD-J menu",
+                index[table] >> 6 == 1 && index[table + 12] >> 6 == 1 && Word(index, table + 6) == count - 1 && Word(index, table + 18) == count - 2
+                && index[table + 26] >> 6 == 2 && System.Text.Encoding.ASCII.GetString(index, table + 32, 5) == "00000", $"{count} objects");
+            Check("BD-J menu: the Top Menu object sets the start register to 0 and jumps to title 1, First Playback sets it to 1",
+                objects.AsSpan().IndexOf(Nav.Set(BluRay.BdjStartRegister, 0)) > 0 && objects.AsSpan().IndexOf(Nav.Set(BluRay.BdjStartRegister, 1)) > 0
+                && objects.AsSpan().IndexOf(Nav.JumpTitle(1)) > 0);
         });
     }
 
