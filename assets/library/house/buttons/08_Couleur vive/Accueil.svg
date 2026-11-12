@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100">
+<defs><linearGradient id="face" x1="6" y1="6" x2="58.8" y2="94" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ff7a59"/><stop offset="0.55" stop-color="#ff3d6e"/><stop offset="1" stop-color="#b5179e"/></linearGradient><linearGradient id="gloss" x1="0" y1="6" x2="0" y2="50" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient><linearGradient id="tail" x1="0" y1="22" x2="0" y2="100" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#9d1584"/><stop offset="1" stop-color="#5e0b50"/></linearGradient></defs>
+<rect x="6" y="6" width="88" height="88" rx="22" ry="22" fill="url(#face)"/>
+<rect x="12.6" y="9" width="74.8" height="37.72" rx="18.86" ry="18.86" fill="url(#gloss)"/>
+<path d="M50 26 L76 48 L69 48 L69 72 L56 72 L56 58 L44 58 L44 72 L31 72 L31 48 L24 48 Z" fill="#5e0b50" fill-rule="evenodd" stroke="#5e0b50" stroke-width="3" stroke-linejoin="round" fill-opacity="0.4" stroke-opacity="0.4" transform="translate(0 1.8)"/>
+<path d="M50 26 L76 48 L69 48 L69 72 L56 72 L56 58 L44 58 L44 72 L31 72 L31 48 L24 48 Z" fill="#ffffff" fill-rule="evenodd" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>
+</svg>

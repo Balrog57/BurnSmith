@@ -23,7 +23,8 @@ public static class ElementLibrary
 
     /// <summary>The button looks the generic layout can draw (value = <see cref="MenuDesign.ButtonStyle"/>).</summary>
     public static readonly (string Label, string Value)[] ButtonStyles =
-        [("Capsules", "Pill"), ("Texte seul", "Text"), ("Cartes", "Card"), ("Cadre classique", "Frame"), ("Verre néon", "Glass"), ("Métal (logo)", "Metal")];
+        [("Capsules", "Pill"), ("Texte seul", "Text"), ("Cartes", "Card"), ("Cadre classique", "Frame"), ("Verre néon", "Glass"), ("Métal (logo)", "Metal"),
+         ("Contour", "Outline"), ("Souligné", "Underline"), ("Ruban", "Ribbon"), ("Bandeau", "Band"), ("Relief", "Raised"), ("Crochets", "Brackets")];
 
     /// <summary>The pictures that travel in the exe, by the prefix a design stores them with: the open-source library and the carried template pictures.</summary>
     static IEnumerable<(string Prefix, string? Root)> Carried() => [("lib:", OpenLibrary.Dir()), ("carried:", Tools.TemplatesDir())];
@@ -60,6 +61,12 @@ public static class ElementLibrary
         var list = new List<Element>();
         if (Directory.Exists(UserDir))
             list.AddRange(Directory.EnumerateFiles(UserDir).Where(IsPicture).Order().Select(f => new Element(System.IO.Path.GetFileNameWithoutExtension(f), Mine, f, true)));
+
+        // BurnSmith's own backgrounds (tools/house-backgrounds.py draws them), one group per theme: "01_Cinéma" is listed as « BurnSmith · Cinéma »
+        if (OpenLibrary.Dir() is { } own && System.IO.Path.Combine(own, "house", "backgrounds") is var house && Directory.Exists(house))
+            foreach (var theme in Directory.EnumerateDirectories(house).Order())
+                list.AddRange(Directory.EnumerateFiles(theme).Where(IsPicture).Order()
+                    .Select(f => new Element(System.IO.Path.GetFileNameWithoutExtension(f), $"{TemplateLabel.Own} · {Pretty(System.IO.Path.GetFileName(theme))}", f)));
 
         if (OpenLibrary.Dir() is { } lib && Directory.Exists(System.IO.Path.Combine(lib, "open", "backgrounds")))
             list.AddRange(Directory.EnumerateFiles(System.IO.Path.Combine(lib, "open", "backgrounds")).Where(IsPicture).Order()
@@ -170,6 +177,12 @@ public static class ElementLibrary
         if (Directory.Exists(UserButtonsDir))
             list.AddRange(Directory.EnumerateFiles(UserButtonsDir).Where(f => IsPicture(f) && !IsSub(f)).Order()
                 .Select(f => new ButtonItem(System.IO.Path.GetFileNameWithoutExtension(f), MyButtons, f, SubOf(f), Removable: true)));
+
+        // BurnSmith's own SVG buttons (tools/house-buttons.py draws them), one group per set: "01_Or" is listed as « BurnSmith · Or »
+        if (OpenLibrary.Dir() is { } own && System.IO.Path.Combine(own, "house", "buttons") is var house && Directory.Exists(house))
+            foreach (var set in Directory.EnumerateDirectories(house).Order())
+                list.AddRange(Directory.EnumerateFiles(set, "*.svg").Where(f => !IsSub(f)).Order()
+                    .Select(f => new ButtonItem(System.IO.Path.GetFileNameWithoutExtension(f), $"{TemplateLabel.Own} · {Pretty(System.IO.Path.GetFileName(set))}", f, SubOf(f))));
 
         // DVDStyler's buttons, as SVG: redrawn sharp at any size (tools/dvdstyler-buttons.py made them)
         if (OpenLibrary.Dir() is { } lib && System.IO.Path.Combine(lib, "open", "buttons") is var svgDir && Directory.Exists(svgDir))

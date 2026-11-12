@@ -135,7 +135,8 @@ public sealed class MenuDesign
     public bool ShowPreview { get; set; } = true;
     /// <summary>
     /// "Pill" = translucent rounded buttons, "Text" = bare labels (only the focus frame shows the selection),
-    /// "Card" = solid card in <see cref="CardFill"/>, "Frame" = double frame in the accent colour, "Glass" = card with a <see cref="Glow"/> outline.
+    /// "Card" = solid card in <see cref="CardFill"/>, "Frame" = double frame in the accent colour, "Glass" = card with a <see cref="Glow"/> outline;
+    /// the others (Outline, Underline, Ribbon, Band, Raised, Brackets, Metal) are listed by <see cref="ElementLibrary.ButtonStyles"/> and drawn by MenuBuilder.Card.
     /// </summary>
     public string ButtonStyle { get; set; } = "Pill";
     /// <summary>

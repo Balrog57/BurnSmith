@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100">
+<defs><linearGradient id="rim" x1="0" y1="6" x2="0" y2="94" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffd2ae"/><stop offset="0.35" stop-color="#c46a3c"/><stop offset="0.7" stop-color="#5e2610"/><stop offset="1" stop-color="#e0925f"/></linearGradient><linearGradient id="face" x1="0" y1="6" x2="0" y2="94" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#a9532a"/><stop offset="0.5" stop-color="#eaa26f"/><stop offset="1" stop-color="#7f3a19"/></linearGradient><linearGradient id="gloss" x1="0" y1="6" x2="0" y2="50" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff" stop-opacity="0.4"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient><linearGradient id="tail" x1="0" y1="22" x2="0" y2="100" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#a85a30"/><stop offset="1" stop-color="#55220d"/></linearGradient></defs>
+<rect x="6" y="6" width="88" height="88" rx="44" ry="44" fill="url(#rim)"/>
+<rect x="9" y="9" width="82" height="82" rx="41" ry="41" fill="url(#face)" stroke="#55220d" stroke-width="0.8"/>
+<rect x="19.2" y="10" width="61.6" height="36.8" rx="18.4" ry="18.4" fill="url(#gloss)"/>
+<path d="M70 50 H31 M48 33 L31 50 L48 67" fill="none" stroke="#ffd9bd" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 1.6)"/>
+<path d="M70 50 H31 M48 33 L31 50 L48 67" fill="none" stroke="#3a1406" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

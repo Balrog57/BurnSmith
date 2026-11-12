@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100">
+<defs><linearGradient id="rim" x1="0" y1="6" x2="0" y2="94" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff"/><stop offset="0.3" stop-color="#9aa3ae"/><stop offset="0.55" stop-color="#eef1f5"/><stop offset="0.8" stop-color="#5d6571"/><stop offset="1" stop-color="#c9cfd6"/></linearGradient><linearGradient id="face" x1="0" y1="6" x2="0" y2="94" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7d8794"/><stop offset="0.48" stop-color="#e4e8ed"/><stop offset="0.52" stop-color="#b4bcc6"/><stop offset="1" stop-color="#f2f4f7"/></linearGradient><linearGradient id="gloss" x1="0" y1="6" x2="0" y2="50" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff" stop-opacity="0.4"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient><linearGradient id="tail" x1="0" y1="22" x2="0" y2="100" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#a3abb5"/><stop offset="1" stop-color="#4f5660"/></linearGradient></defs>
+<rect x="6" y="6" width="88" height="88" rx="44" ry="44" fill="url(#rim)"/>
+<rect x="9" y="9" width="82" height="82" rx="41" ry="41" fill="url(#face)" stroke="#4b525c" stroke-width="0.8"/>
+<rect x="19.2" y="10" width="61.6" height="36.8" rx="18.4" ry="18.4" fill="url(#gloss)"/>
+<path d="M33 29 H67 A7 7 0 0 1 74 36 V57 A7 7 0 0 1 67 64 H47 L36 73 L37 64 H33 A7 7 0 0 1 26 57 V36 A7 7 0 0 1 33 29 ZM34 39 H66 V45.5 H34 Z M34 49.5 H56 V56 H34 Z" fill="#ffffff" fill-rule="evenodd" transform="translate(0 1.6)"/>
+<path d="M33 29 H67 A7 7 0 0 1 74 36 V57 A7 7 0 0 1 67 64 H47 L36 73 L37 64 H33 A7 7 0 0 1 26 57 V36 A7 7 0 0 1 33 29 ZM34 39 H66 V45.5 H34 Z M34 49.5 H56 V56 H34 Z" fill="#1c232d" fill-rule="evenodd"/>
+</svg>

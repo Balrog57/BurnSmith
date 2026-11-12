@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100">
+<defs><linearGradient id="rim" x1="0" y1="6" x2="0" y2="94" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff3b8"/><stop offset="0.35" stop-color="#d9a93c"/><stop offset="0.7" stop-color="#7d5512"/><stop offset="1" stop-color="#e8c460"/></linearGradient><linearGradient id="face" x1="0" y1="6" x2="0" y2="94" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#e6b443"/><stop offset="0.5" stop-color="#fff0b0"/><stop offset="1" stop-color="#c2892a"/></linearGradient><linearGradient id="gloss" x1="0" y1="6" x2="0" y2="50" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff" stop-opacity="0.65"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient><linearGradient id="tail" x1="0" y1="22" x2="0" y2="100" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#b8862b"/><stop offset="1" stop-color="#6a470d"/></linearGradient></defs>
+<rect x="4.5" y="4.5" width="91" height="91" rx="45.5" ry="45.5" fill="none" stroke="#fff3c2" stroke-width="3" stroke-opacity="0.75"/>
+<rect x="2" y="2" width="96" height="96" rx="48" ry="48" fill="none" stroke="#ffd75e" stroke-width="3" stroke-opacity="0.35"/>
+<rect x="6" y="6" width="88" height="88" rx="44" ry="44" fill="url(#rim)"/>
+<rect x="9" y="9" width="82" height="82" rx="41" ry="41" fill="url(#face)" stroke="#6b470c" stroke-width="0.8"/>
+<rect x="19.2" y="10" width="61.6" height="36.8" rx="18.4" ry="18.4" fill="url(#gloss)"/>
+<path d="M28 42 H37 L50 31 V69 L37 58 H28 Z" fill="#fff0b5" fill-rule="evenodd" stroke="#fff0b5" stroke-width="3" stroke-linejoin="round" transform="translate(0 1.6)"/>
+<path d="M58 42 A11 11 0 0 1 58 58 M64 34 A20 20 0 0 1 64 66" fill="none" stroke="#fff0b5" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 1.6)"/>
+<path d="M28 42 H37 L50 31 V69 L37 58 H28 Z" fill="#3a2002" fill-rule="evenodd" stroke="#3a2002" stroke-width="3" stroke-linejoin="round"/>
+<path d="M58 42 A11 11 0 0 1 58 58 M64 34 A20 20 0 0 1 64 66" fill="none" stroke="#3a2002" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

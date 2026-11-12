@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100">
+<rect x="6" y="6" width="88" height="88" rx="22" ry="22" fill="#0d0818" fill-opacity="0.9"/>
+<rect x="10" y="10" width="80" height="80" rx="18" ry="18" fill="none" stroke="#ff2bc4" stroke-width="12" stroke-opacity="0.18"/>
+<rect x="10" y="10" width="80" height="80" rx="18" ry="18" fill="none" stroke="#ff3ccf" stroke-width="6" stroke-opacity="0.4"/>
+<rect x="10" y="10" width="80" height="80" rx="18" ry="18" fill="none" stroke="#ff4fd8" stroke-width="2.6"/>
+<rect x="10" y="10" width="80" height="80" rx="18" ry="18" fill="none" stroke="#fff0fb" stroke-width="0.9"/>
+<path d="M28 42 H37 L50 31 V69 L37 58 H28 Z" fill="#ff2bc4" fill-rule="evenodd" stroke="#ff2bc4" stroke-width="13" stroke-linejoin="round" fill-opacity="0.18" stroke-opacity="0.18"/>
+<path d="M58 42 A11 11 0 0 1 58 58 M64 34 A20 20 0 0 1 64 66" fill="none" stroke="#ff2bc4" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill-opacity="0.18" stroke-opacity="0.18"/>
+<path d="M28 42 H37 L50 31 V69 L37 58 H28 Z" fill="#ff3ccf" fill-rule="evenodd" stroke="#ff3ccf" stroke-width="7" stroke-linejoin="round" fill-opacity="0.4" stroke-opacity="0.4"/>
+<path d="M58 42 A11 11 0 0 1 58 58 M64 34 A20 20 0 0 1 64 66" fill="none" stroke="#ff3ccf" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill-opacity="0.4" stroke-opacity="0.4"/>
+<path d="M28 42 H37 L50 31 V69 L37 58 H28 Z" fill="#fff0fb" fill-rule="evenodd" stroke="#fff0fb" stroke-width="3" stroke-linejoin="round"/>
+<path d="M58 42 A11 11 0 0 1 58 58 M64 34 A20 20 0 0 1 64 66" fill="none" stroke="#fff0fb" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

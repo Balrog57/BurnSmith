@@ -23,7 +23,32 @@ public static class BuiltInTemplates
         T("Tube cathodique", 2, 2, true, "Glass", false, "#0A0F14", "#FF2E88", "Courier New", "#D7FFE9", "#121A22", "#2BFF88", 0.065, 0.08, 0.023, 0.105, 0.105, 18),
         T("Papier", 4, 2, false, "Text", true, "#FAFAF7", "#4B5563", "Segoe UI", "#0F172A", "#F1F5F9", "#FFFFFF", 0.045, 0.065, 0.017, 0.10, 0.09, 0),
         Metal(),
+        // one per theme of BurnSmith's own backgrounds: the picture, a button style, a font and colours that go with it
+        H("Rideau rouge", "01_Cinéma/Rideau rouge", 3, 2, "Brackets", "#F2C14E", "Georgia", "#FFF4DC", "#2A0508", 30),
+        H("Salle obscure", "01_Cinéma/Salle obscure", 4, 2, "Band", "#9CC3FF", "Segoe UI", "#FFFFFF", "#0E1422", 25),
+        H("Fête", "02_Fête/Confettis", 3, 2, "Pill", "#FFC83D", "Segoe UI", "#FFFFFF", "#1B1F4B", 20),
+        H("Mariage", "03_Mariage/Bokeh rose", 3, 2, "Underline", "#C2345C", "Georgia", "#5A2A3A", "#FFFFFF", 0),
+        H("Naissance", "04_Enfants/Nuages pastel", 3, 2, "Pill", "#FF8FA3", "Segoe UI", "#2B4A6B", "#FFFFFF", 0),
+        H("Noël", "05_Noël et hiver/Noël rouge et or", 3, 2, "Raised", "#FFD27A", "Georgia", "#FFF4DC", "#5E0A10", 15),
+        H("Hiver", "05_Noël et hiver/Flocons", 3, 2, "Outline", "#BFE0FF", "Segoe UI", "#FFFFFF", "#0E2A52", 15),
+        H("Voyage", "06_Voyage et nature/Coucher de soleil", 3, 2, "Ribbon", "#FFB05C", "Segoe UI", "#FFFFFF", "#2A1238", 15),
+        H("Montagne", "06_Voyage et nature/Montagnes", 3, 2, "Card", "#FFD98A", "Segoe UI", "#FFFFFF", "#10283F", 10),
+        H("Synthwave", "07_Science-fiction/Synthwave", 3, 2, "Glass", "#FFE45C", "Consolas", "#FFE9FB", "#14052B", 20, "#FF4FD8"),
+        H("Espace", "07_Science-fiction/Nébuleuse", 3, 2, "Brackets", "#3ED3C4", "Consolas", "#EAF6FF", "#04040C", 20),
+        H("Stade", "08_Sport/Pelouse", 4, 2, "Band", "#FFE45C", "Impact", "#FFFFFF", "#0E2A12", 30),
+        H("Concert", "09_Musique/Scène", 3, 2, "Underline", "#FF4FB0", "Segoe UI", "#FFFFFF", "#0E0A16", 10),
+        H("Tableau noir", "10_Matières/Tableau noir", 2, 3, "Outline", "#FFE27A", "Segoe Print", "#F4F4EC", "#16241E", 0),
+        H("Bois", "10_Matières/Bois", 3, 2, "Raised", "#FFC25A", "Georgia", "#FFF1DC", "#3F2413", 30),
+        H("Marbre", "03_Mariage/Marbre noir", 3, 2, "Frame", "#D9B45A", "Georgia", "#F5EFE6", "#121214", 10),
     ];
+
+    /// <summary>A design over one of BurnSmith's own backgrounds (<paramref name="picture"/>: its theme folder and name in the library).</summary>
+    static MenuDesign H(string name, string picture, int cols, int rows, string style, string accent, string font, string text, string fill, int dim, string glow = "#000000")
+    {
+        var d = T(name, cols, rows, true, style, false, fill, accent, font, text, fill, glow, 0.07, 0.08, 0.025, 0.12, 0.10, dim);
+        d.BackgroundImage = $"lib:house/backgrounds/{picture}.jpg";
+        return d;
+    }
 
     /// <summary>
     /// The menu made for a film (Bright), without what belonged to that film (its logo, its pictures): steel letters for buttons, an orange

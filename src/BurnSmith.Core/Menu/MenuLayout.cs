@@ -97,6 +97,9 @@ public sealed record MenuContent(int Playlist, string? PreviewPicture, IReadOnly
     public IReadOnlyList<string> SubtitleNames => (Subtitles ?? []).Take(MenuBuilder.MaxSubtitles).ToList();
     /// <summary>The player only tints shapes under the remote (a DVD): nothing can be written with the selected button.</summary>
     public bool PlainFocus { get; init; }
+    /// <summary>The chapters' own names, one for one with <see cref="ChapterPictures"/> (null entry or null list = "Chapitre N").</summary>
+    public IReadOnlyList<string?>? ChapterNames { get; init; }
+    public string ChapterName(MenuDesign d, int i) => ChapterNames?.ElementAtOrDefault(i) ?? $"{d.ChapterLabel} {i + 1}";
     /// <summary>The settings page exists when the viewer has something to choose.</summary>
     public bool HasSettings => AudioNames.Count > 1 || SubtitleNames.Count > 0;
 }
@@ -113,7 +116,7 @@ public static class MenuBuilder
 
     internal static List<Cell> Cells(MenuDesign d, MenuContent c) => c.Series
         ? c.Titles!.Select((t, i) => new Cell($"e{i + 1}", t.Name, t.Picture, new MenuAction("play", Playlist: t.Playlist), t.Overview)).Skip(d.SkipFirstScene ? 1 : 0).ToList()
-        : c.ChapterPictures.Select((p, i) => new Cell($"c{i + 1}", $"{d.ChapterLabel} {i + 1}", p, new MenuAction("chapter", Playlist: c.Playlist, Mark: i))).ToList();
+        : c.ChapterPictures.Select((p, i) => new Cell($"c{i + 1}", c.ChapterName(d, i), p, new MenuAction("chapter", Playlist: c.Playlist, Mark: i))).ToList();
 
     /// <summary>The Bonus page's buttons: each plays its video on its own and the disc then comes back to the menu.</summary>
     internal static List<Cell> BonusCells(MenuContent c) =>
@@ -274,6 +277,18 @@ public static class MenuBuilder
             case "Card": return [new Fill(r, d.CardFill, 0.92, radius)];
             case "Frame": return [new Fill(r, d.Accent, 1, 0), new Fill(r.Inflate(-3), d.CardFill, 1, 0), new Fill(r.Inflate(-9), d.Accent, 1, 0), new Fill(r.Inflate(-12), d.CardFill, 1, 0)];
             case "Glass": return [new Fill(r.Inflate(3), d.Glow, 0.9, radius + 3), new Fill(r, d.CardFill, 0.85, radius)];
+            case "Outline": return [new Fill(r, "#000000", 0.25, radius), new Border(r, d.TextColor, 3, radius)];
+            case "Underline": return [new Fill(new Box(r.X + r.W / 6, r.Y + r.H - 5, r.W - r.W / 3, 4), d.Accent, 1, 2)];
+            case "Ribbon": return [new Fill(r, d.CardFill, 0.92, 0), new Fill(r with { W = 10 }, d.Accent, 1, 0)];
+            case "Band": return [new Fill(r, "#000000", 0.55, 0), new Fill(r with { H = 2 }, d.Accent, 1, 0), new Fill(r with { Y = r.Y + r.H - 2, H = 2 }, d.Accent, 1, 0)];
+            case "Raised": // a card lifted off the page: its shadow under it, a sheen on its upper half
+                return [new Fill(r with { X = r.X + 5, Y = r.Y + 7 }, "#000000", 0.45, radius), new Fill(r, d.CardFill, 1, radius), new Fill(new Box(r.X + 3, r.Y + 3, r.W - 6, r.H / 2 - 3), "#FFFFFF", 0.07, Math.Max(0, radius - 3))];
+            case "Brackets": // the four corners of a viewfinder, in the accent colour
+                var (arm, t) = (Math.Clamp(Math.Min(r.W, r.H) / 3, 12, 40), 4);
+                var corners = new List<Op> { new Fill(r, "#000000", 0.22, 0) };
+                foreach (var x in new[] { r.X, r.X + r.W - arm }) foreach (var y in new[] { r.Y, r.Y + r.H - t }) corners.Add(new Fill(new Box(x, y, arm, t), d.Accent, 1, 0));
+                foreach (var x in new[] { r.X, r.X + r.W - t }) foreach (var y in new[] { r.Y, r.Y + r.H - arm }) corners.Add(new Fill(new Box(x, y, t, arm), d.Accent, 1, 0));
+                return corners;
             default: // translucent capsule: white on dark designs, black on light ones (dark text), so it shows on any background
                 var lightText = IsLight(d.TextColor);
                 return [new Fill(r, lightText ? "#FFFFFF" : "#000000", lightText ? 0.14 : 0.10, radius)];
@@ -518,7 +533,7 @@ public static class MenuBuilder
             }
             pages.Add(new MenuPage($"pop{playlist}", ops, buttons));
             if (chapters <= 1) continue;
-            var cells = Enumerable.Range(0, chapters).Select(i => new Cell($"c{i + 1}", $"{d.ChapterLabel} {i + 1}", null, new MenuAction("chapter", Playlist: playlist, Mark: i))).ToList();
+            var cells = Enumerable.Range(0, chapters).Select(i => new Cell($"c{i + 1}", playlist == c.Playlist ? c.ChapterName(d, i) : $"{d.ChapterLabel} {i + 1}", null, new MenuAction("chapter", Playlist: playlist, Mark: i))).ToList();
             var total = PageCount(cells.Count, PerPage(g));
             for (var i = 1; i <= total; i++) pages.Add(Popped(Grid(g, c, cells, i, total, $"popc{playlist}_", d.ScenesLabel), $"popc{playlist}_{i}"));
         }

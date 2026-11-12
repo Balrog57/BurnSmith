@@ -68,10 +68,17 @@ def trace(png, svg, work):
         opacity = 100 if level >= 250 else 100 * (1 - (1 - level / 255) / (1 - below / 255))
         # BurnSmith's SVG reader gives a group's opacity to each of its paths: in a see-through group they must not lie over one another
         how = dict(TRACE, params=dict(TRACE["params"], method="overlapping" if opacity == 100 else "abutting", noise=int(os.environ.get("VECTORIZE_NOISE", 0)) or zoom * zoom))
-        steps += [{"command": "file.place", "params": {"path": file, "link": False, "rect": [0, 0, im.width, im.height]}},
-                  {"command": "imageTrace.makeAndExpand", "params": how},
-                  {"command": "object.group", "params": {}},
-                  {"command": "transparency.set", "params": {"opacity": round(opacity, 2)}}]
+        place = {"command": "file.place", "params": {"path": file, "link": False, "rect": [0, 0, im.width, im.height]}}
+        if opacity == 100:
+            # an opaque level is traced twice, overlapping then abutting, the second laid over the first: the stacked trace leaves
+            # thin gaps and halos where two colours meet (lettering on a plate, a rim), which the abutting one fills edge to edge
+            n = len(steps)
+            steps += [place, {"command": "imageTrace.makeAndExpand", "params": how},
+                      place, {"command": "imageTrace.makeAndExpand", "params": dict(how, params=dict(how["params"], method="abutting"))},
+                      {"command": "object.group", "params": {"ids": [f"${n + 1}.id", f"${n + 3}.id"]}}]
+        else:
+            steps += [place, {"command": "imageTrace.makeAndExpand", "params": how}, {"command": "object.group", "params": {}}]
+        steps.append({"command": "transparency.set", "params": {"opacity": round(opacity, 2)}})
         below = level
     commands = os.path.join(work, "steps.json")
     with open(commands, "w", encoding="utf-8") as f:

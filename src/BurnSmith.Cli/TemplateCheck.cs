@@ -147,10 +147,10 @@ static class TemplateCheck
         new(1, picture, Enumerable.Repeat(picture, 3).ToList(), Enumerable.Range(1, episodes).Select(i => new TitleEntry($"Episode {i}", i, picture)).ToList(),
             Langs.Take(audio).Select(l => l + " AC-3 5.1").ToList(), Langs.Take(subs).ToList(), Extras(picture, episodes + 1, bonus));
 
-    /// <summary>What the menu editor can make without a template: 5 button styles x 5 grids x thumbnails x square corners x preview.</summary>
+    /// <summary>What the menu editor can make without a template: every button style but Metal x 5 grids x thumbnails x square corners x preview.</summary>
     static IEnumerable<MenuDesign> ComposedDesigns()
     {
-        foreach (var style in new[] { "Pill", "Text", "Card", "Frame", "Glass" })
+        foreach (var style in ElementLibrary.ButtonStyles.Select(s => s.Value).Where(s => s != "Metal"))
             foreach (var (cols, rows) in new[] { (1, 1), (2, 1), (3, 2), (4, 3), (6, 4) })
                 foreach (var thumbs in new[] { true, false })
                     foreach (var square in new[] { false, true })

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="90" viewBox="0 0 300 90" preserveAspectRatio="none">
+<defs><linearGradient id="rim" x1="0" y1="6" x2="0" y2="68" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffd2ae"/><stop offset="0.35" stop-color="#c46a3c"/><stop offset="0.7" stop-color="#5e2610"/><stop offset="1" stop-color="#e0925f"/></linearGradient><linearGradient id="face" x1="0" y1="6" x2="0" y2="68" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#c8663a"/><stop offset="0.5" stop-color="#ffc89a"/><stop offset="1" stop-color="#a24c22"/></linearGradient><linearGradient id="gloss" x1="0" y1="6" x2="0" y2="37" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff" stop-opacity="0.6"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient><linearGradient id="tail" x1="0" y1="22" x2="0" y2="74" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#a85a30"/><stop offset="1" stop-color="#55220d"/></linearGradient></defs>
+<polygon points="6,22 36,22 36,68 60,68 60,84 6,84 22,53" fill="url(#tail)"/>
+<polygon points="36,68 60,68 60,84" fill="#3c1708"/>
+<polygon points="294,22 264,22 264,68 240,68 240,84 294,84 278,53" fill="url(#tail)"/>
+<polygon points="264,68 240,68 240,84" fill="#3c1708"/>
+<rect x="34.5" y="4.5" width="231" height="65" rx="4.5" ry="4.5" fill="none" stroke="#ffe0c4" stroke-width="3" stroke-opacity="0.75"/>
+<rect x="32" y="2" width="236" height="70" rx="7" ry="7" fill="none" stroke="#ff9a52" stroke-width="3" stroke-opacity="0.35"/>
+<rect x="36" y="6" width="228" height="62" rx="3" ry="3" fill="url(#rim)"/>
+<rect x="39" y="9" width="222" height="56" rx="0" ry="0" fill="url(#face)" stroke="#55220d" stroke-width="0.8"/>
+<rect x="40" y="10" width="220" height="24.84" rx="0" ry="0" fill="url(#gloss)"/>
+</svg>

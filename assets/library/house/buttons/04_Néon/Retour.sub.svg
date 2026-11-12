@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100">
+<rect x="6" y="6" width="88" height="88" rx="22" ry="22" fill="#0d0818" fill-opacity="0.9"/>
+<rect x="10" y="10" width="80" height="80" rx="18" ry="18" fill="none" stroke="#ff2bc4" stroke-width="12" stroke-opacity="0.18"/>
+<rect x="10" y="10" width="80" height="80" rx="18" ry="18" fill="none" stroke="#ff3ccf" stroke-width="6" stroke-opacity="0.4"/>
+<rect x="10" y="10" width="80" height="80" rx="18" ry="18" fill="none" stroke="#ff4fd8" stroke-width="2.6"/>
+<rect x="10" y="10" width="80" height="80" rx="18" ry="18" fill="none" stroke="#fff0fb" stroke-width="0.9"/>
+<path d="M33 42 H55 A13 13 0 0 1 55 68 H42 M45 30 L33 42 L45 54" fill="none" stroke="#ff2bc4" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" fill-opacity="0.18" stroke-opacity="0.18"/>
+<path d="M33 42 H55 A13 13 0 0 1 55 68 H42 M45 30 L33 42 L45 54" fill="none" stroke="#ff3ccf" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" fill-opacity="0.4" stroke-opacity="0.4"/>
+<path d="M33 42 H55 A13 13 0 0 1 55 68 H42 M45 30 L33 42 L45 54" fill="none" stroke="#fff0fb" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

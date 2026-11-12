@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100">
+<g transform="translate(0 3)"><rect x="6" y="6" width="88" height="88" rx="44" ry="44" fill="#8c7f68" fill-opacity="0.45"/></g>
+<rect x="6" y="6" width="88" height="88" rx="44" ry="44" fill="#fffdf8" stroke="#d9472b" stroke-width="3.5"/>
+<rect x="11" y="11" width="78" height="78" rx="39" ry="39" fill="none" stroke="#efc9bd" stroke-width="1"/>
+<path d="M31 34 a3 3 0 0 1 3 -3 h11 a3 3 0 0 1 3 3 v11 a3 3 0 0 1 -3 3 h-11 a3 3 0 0 1 -3 -3 ZM52 34 a3 3 0 0 1 3 -3 h11 a3 3 0 0 1 3 3 v11 a3 3 0 0 1 -3 3 h-11 a3 3 0 0 1 -3 -3 ZM31 55 a3 3 0 0 1 3 -3 h11 a3 3 0 0 1 3 3 v11 a3 3 0 0 1 -3 3 h-11 a3 3 0 0 1 -3 -3 ZM52 55 a3 3 0 0 1 3 -3 h11 a3 3 0 0 1 3 3 v11 a3 3 0 0 1 -3 3 h-11 a3 3 0 0 1 -3 -3 Z" fill="#d9472b" fill-rule="evenodd"/>
+</svg>

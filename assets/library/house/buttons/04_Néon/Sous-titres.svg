@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100">
+<rect x="6" y="6" width="88" height="88" rx="22" ry="22" fill="#0d0818" fill-opacity="0.9"/>
+<rect x="10" y="10" width="80" height="80" rx="18" ry="18" fill="none" stroke="#8a2573" stroke-width="8" stroke-opacity="0.12"/>
+<rect x="10" y="10" width="80" height="80" rx="18" ry="18" fill="none" stroke="#9b2a80" stroke-width="6" stroke-opacity="0.25"/>
+<rect x="10" y="10" width="80" height="80" rx="18" ry="18" fill="none" stroke="#b0308f" stroke-width="2.6"/>
+<rect x="10" y="10" width="80" height="80" rx="18" ry="18" fill="none" stroke="#d77cc0" stroke-width="0.9"/>
+<path d="M33 29 H67 A7 7 0 0 1 74 36 V57 A7 7 0 0 1 67 64 H47 L36 73 L37 64 H33 A7 7 0 0 1 26 57 V36 A7 7 0 0 1 33 29 ZM34 39 H66 V45.5 H34 Z M34 49.5 H56 V56 H34 Z" fill="#8a2573" fill-rule="evenodd" stroke="#8a2573" stroke-width="6" stroke-linejoin="round" fill-opacity="0.12" stroke-opacity="0.12"/>
+<path d="M33 29 H67 A7 7 0 0 1 74 36 V57 A7 7 0 0 1 67 64 H47 L36 73 L37 64 H33 A7 7 0 0 1 26 57 V36 A7 7 0 0 1 33 29 ZM34 39 H66 V45.5 H34 Z M34 49.5 H56 V56 H34 Z" fill="#9b2a80" fill-rule="evenodd" stroke="#9b2a80" stroke-width="4" stroke-linejoin="round" fill-opacity="0.25" stroke-opacity="0.25"/>
+<path d="M33 29 H67 A7 7 0 0 1 74 36 V57 A7 7 0 0 1 67 64 H47 L36 73 L37 64 H33 A7 7 0 0 1 26 57 V36 A7 7 0 0 1 33 29 ZM34 39 H66 V45.5 H34 Z M34 49.5 H56 V56 H34 Z" fill="#b0308f" fill-rule="evenodd"/>
+</svg>
