@@ -67,7 +67,8 @@ public sealed record SourceInfo(string VideoCodec, int Width, int Height, double
                                 bool DvProfile5 = false, // Dolby Vision whose base is not HDR10 (IPT): nothing of it can be kept on a disc
                                 string Stereo = "", // 3D packed in one picture: "sbs" (side by side), "tab" (top and bottom), "" = 2D
                                 IReadOnlyList<double>? Chapters = null, // the file's own chapter starts, in seconds (an mkv's or mp4's); null = it has none
-                                IReadOnlyList<string?>? ChapterNames = null) // their titles, one for one (null = the file names none)
+                                IReadOnlyList<string?>? ChapterNames = null, // their titles, one for one (null = the file names none)
+                                bool Rotated = false) // shown turned (a phone's video): a disc has no such tag, so the picture is made again, turned (ffmpeg does it when decoding)
 {
     /// <summary>
     /// A full-size 3D picture (each view as large as a 2D one: 3840x1080 side by side) made half-size, the frame-packed 3D a 3D TV reads from a 2D disc:
@@ -171,7 +172,8 @@ public static class BluRay
             Profile: v.TryGetProperty("profile", out var pr) ? pr.GetString() ?? "" : "",
             Level: v.TryGetProperty("level", out var lv) && lv.TryGetInt32(out var level) ? level : 0, DualLayer: dual, DvProfile5: p5, Stereo: stereo,
             Chapters: marks.Any(c => c.At > 0) ? [.. marks.Select(c => c.At)] : null,
-            ChapterNames: marks.Any(c => c.At > 0) && marks.Any(c => c.Name.Length > 0) ? [.. marks.Select(c => c.Name.Length > 0 ? c.Name : null)] : null);
+            ChapterNames: marks.Any(c => c.At > 0) && marks.Any(c => c.Name.Length > 0) ? [.. marks.Select(c => c.Name.Length > 0 ? c.Name : null)] : null,
+            Rotated: v.TryGetProperty("side_data_list", out var turns) && turns.EnumerateArray().Any(d => d.TryGetProperty("rotation", out var deg) && deg.TryGetDouble(out var a) && Math.Abs(a) % 360 != 0));
     }
 
     /// <summary>
@@ -1007,7 +1009,7 @@ public static class BluRay
         return !enc.ForceReencode && kbps == 0 && copyCut && (job.Uhd ? s.VideoCodec == "hevc" && s.PixFmt is "yuv420p10le" or "yuv420p" && s.Level <= 153 // 4:2:0 up to level 5.1, all a 4K player takes
                       // a file above 48 Mb/s on average, sound included, cannot hold a video within a Blu-ray's 40
                       : (s.PlayerReadyH264 || s.PlayerReadyMpeg2) && s.Hdr == "SDR" && Tools.SizeOf(title.Video) * 8.0 / Math.Max(1, s.FileDuration > 0 ? s.FileDuration : s.Duration) <= 48e6)
-               && s.Width == w && s.Height == h && fpsOk
+               && s.Width == w && s.Height == h && fpsOk && !s.Rotated
                && title.Effects is null or { IsEmpty: true } // effects are drawn into the picture, so it is made again
                && title.Gaps.Count == 0 // several clips are joined frame by frame
                // 1080 at 25 or 29.97 exists on a Blu-ray only as fields: a progressive stream is made again with the flags (last: it reads the file)
