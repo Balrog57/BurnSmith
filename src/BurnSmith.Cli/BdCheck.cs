@@ -516,6 +516,24 @@ static class BdCheck
             Check("BD-J menu: the Top Menu object sets the start register to 0 and jumps to title 1, First Playback sets it to 1",
                 objects.AsSpan().IndexOf(Nav.Set(BluRay.BdjStartRegister, 0)) > 0 && objects.AsSpan().IndexOf(Nav.Set(BluRay.BdjStartRegister, 1)) > 0
                 && objects.AsSpan().IndexOf(Nav.JumpTitle(1)) > 0);
+            // a disc of before 1.0.32: First Playback and Top Menu were the BD-J title itself; the repair puts it on today's start, its menu kept, signed again
+            var old = F("oldtopmenu");
+            foreach (var f in Directory.EnumerateFiles(plainDisc, "*", SearchOption.AllDirectories))
+            {
+                var to = Path.Combine(old, Path.GetRelativePath(plainDisc, f));
+                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                File.Copy(f, to, true);
+            }
+            var oldIndex = index.ToArray();
+            for (var k = 0; k < 2; k++) { oldIndex[table + 12 * k] = 0x80; oldIndex[table + 12 * k + 4] = 0xC0; "00000"u8.CopyTo(oldIndex.AsSpan(table + 12 * k + 6)); }
+            File.WriteAllBytes(Path.Combine(old, "BDMV", "index.bdmv"), oldIndex);
+            var repaired = BluRay.RepairTopMenu(old);
+            var oldBdmv = Path.Combine(old, "BDMV");
+            var cert = (string file) => File.ReadAllBytes(Path.Combine(old, "CERTIFICATE", file));
+            var newIndex = File.ReadAllBytes(Path.Combine(oldBdmv, "index.bdmv"));
+            Check("repair-top-menu: an old BD-J disc gets HDMV First Playback / Top Menu, its menu kept, the jar signed again; a second run does nothing",
+                repaired && newIndex[table + 12] >> 6 == 1 && Jar(old)["menu.txt"].SequenceEqual(without["menu.txt"])
+                && BdjSign.Verify(Path.Combine(oldBdmv, "JAR", "00000.jar"), cert("app.discroot.crt"), cert("id.bdmv")).Count == 0 && !BluRay.RepairTopMenu(old));
         });
     }
 

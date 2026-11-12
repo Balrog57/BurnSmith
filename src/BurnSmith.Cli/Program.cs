@@ -1865,6 +1865,8 @@ if (a.Count >= 2 && a[0] == "probe")
     Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(BluRay.Probe(a[1]), new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
     return 0;
 }
+// burnsmith repair-top-menu FOLDER : a BD-J menu disc made before 1.0.32 (the Top Menu key refused during an episode) put on today's start and xlet, its menu kept; then "burnsmith iso" for a new image
+if (a.Count >= 2 && a[0] == "repair-top-menu") { var fixedIt = BluRay.RepairTopMenu(a[1]); Console.WriteLine(fixedIt ? "repaired: Top Menu now starts the menu in title 1" : "nothing to repair (not a BD-J menu disc of the old kind)"); return 0; }
 if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BURNSMITH", a.Contains("--dvd"), Console.WriteLine); return 0; }
 // burnsmith burn IMAGE.iso F: [--speed 4] : the speed is × 1x, absent = the drive's fastest (one disc: a second one is a second run)
 if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0); return 0; }
@@ -1913,7 +1915,7 @@ if (a.Count >= 2 && a[0] == "queue")
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N]");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER");
     return 2;
 }
 

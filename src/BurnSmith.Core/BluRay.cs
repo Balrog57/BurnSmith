@@ -1294,34 +1294,47 @@ public static class BluRay
         catch (System.Text.DecoderFallbackException) { return false; }
     }
 
-    /// <summary>Adds the BD-J menu on top of the tsMuxeR disc: jar, BDJO, and an index.bdmv that starts the menu (BACKUP copies included).</summary>
     /// <summary>GPR the disc's start sets to 1 and the Top Menu key to 0 before they jump to title 1, the BD-J menu: the xlet starts on the first title only when it reads 1.</summary>
     public const int BdjStartRegister = 109;
 
+    /// <summary>The files of a jar but its manifest and signature (fresh archive: ZipArchiveMode.Update corrupted entries of the prebuilt jar; its manifest gives way to the signed one).</summary>
+    static List<(string Name, byte[] Data)> JarFiles(string jar)
+    {
+        var entries = new List<(string, byte[])>();
+        using var z = ZipFile.OpenRead(jar);
+        foreach (var e in z.Entries.Where(e => e.Length > 0 && !e.FullName.StartsWith("META-INF/", StringComparison.Ordinal)))
+        {
+            using var from = e.Open();
+            using var bytes = new MemoryStream();
+            from.CopyTo(bytes);
+            entries.Add((e.FullName, bytes.ToArray()));
+        }
+        return entries;
+    }
+
+    /// <summary>Adds the BD-J menu on top of the tsMuxeR disc: jar, BDJO, and an index.bdmv that starts the menu (BACKUP copies included).</summary>
     static void AddMenu(BluRayJob job, string menuDir, bool intro, Action<string> log)
     {
         log("menu: BD-J");
         var bdmv = Path.Combine(job.OutDir, "BDMV");
         foreach (var d in new[] { "JAR", "BDJO", "AUXDATA", @"BACKUP\BDJO" }) Directory.CreateDirectory(Path.Combine(bdmv, d));
 
-        // fresh archive: ZipArchiveMode.Update corrupted entries of the prebuilt jar; its manifest gives way to the signed one
-        var entries = new List<(string, byte[])>();
-        using (var baseJar = ZipFile.OpenRead(Assets.Find(@"bdj\menu.jar")))
-            foreach (var e in baseJar.Entries.Where(e => e.Length > 0 && !e.FullName.StartsWith("META-INF/", StringComparison.Ordinal)))
-            {
-                using var from = e.Open();
-                using var bytes = new MemoryStream();
-                from.CopyTo(bytes);
-                entries.Add((e.FullName, bytes.ToArray()));
-            }
+        var entries = JarFiles(Assets.Find(@"bdj\menu.jar"));
         foreach (var f in Directory.EnumerateFiles(menuDir)) entries.Add((Path.GetFileName(f), File.ReadAllBytes(f)));
         BdjSign.Write(Path.Combine(bdmv, "JAR", "00000.jar"), entries, job.OutDir);
 
         var bdjo = Bdmv.Bdjo("org.burnsmith.menu.Menu", job.Uhd ? Bdmv.HaviUhd1080 : job.Encode?.Hd720 == true ? Bdmv.HaviHd720 : Bdmv.HaviHd1080);
         File.WriteAllBytes(Path.Combine(bdmv, "BDJO", "00000.bdjo"), bdjo);
         File.WriteAllBytes(Path.Combine(bdmv, "BACKUP", "BDJO", "00000.bdjo"), bdjo);
-        // First Playback and the Top Menu key are two HDMV objects that start the menu in title 1, as DVDFab's discs do: the menu and the episodes it plays are then
-        // never "the top menu title", where a player refuses the Top Menu key ("opération interdite") while an episode plays. The intro plays before the jump.
+        StartInTitle1(bdmv, intro);
+    }
+
+    /// <summary>
+    /// First Playback and the Top Menu key become two HDMV objects that start the menu in title 1, as DVDFab's discs do: the menu and the episodes it plays are then
+    /// never "the top menu title", where a player refuses the Top Menu key ("opération interdite") while an episode plays. The intro plays before the jump.
+    /// </summary>
+    static void StartInTitle1(string bdmv, bool intro)
+    {
         int topMenu = -1, firstPlay = -1;
         foreach (var file in new[] { Path.Combine(bdmv, "MovieObject.bdmv"), Path.Combine(bdmv, "BACKUP", "MovieObject.bdmv") }.Where(File.Exists))
         {
@@ -1330,6 +1343,26 @@ public static class BluRay
         }
         foreach (var index in new[] { Path.Combine(bdmv, "index.bdmv"), Path.Combine(bdmv, "BACKUP", "index.bdmv") })
             if (File.Exists(index)) File.WriteAllBytes(index, Bdmv.PatchIndex(File.ReadAllBytes(index), firstPlay, topMenu));
+    }
+
+    /// <summary>
+    /// A BD-J menu disc made before 1.0.32 (its Top Menu was the BD-J title itself, refused by a player during an episode) put on today's start and xlet, in its folder
+    /// <paramref name="discRoot"/>: the menu it carries (menu.txt and its pictures) is kept, the jar is signed again. Returns false for a disc that does not need it.
+    /// </summary>
+    public static bool RepairTopMenu(string discRoot)
+    {
+        var bdmv = Path.Combine(discRoot, "BDMV");
+        var index = File.ReadAllBytes(Path.Combine(bdmv, "index.bdmv"));
+        var table = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(index.AsSpan(8)) + 4;
+        var jar = Path.Combine(bdmv, "JAR", "00000.jar");
+        if (index[table + 12] >> 6 != 2 || !File.Exists(jar)) return false; // the Top Menu is not a BD-J title: nothing of the old kind
+        var xlet = JarFiles(Assets.Find(@"bdj\menu.jar"));
+        var menu = JarFiles(jar).Where(e => !e.Name.EndsWith(".class", StringComparison.Ordinal)).ToList();
+        File.Delete(jar); // read above; the signer writes a new file
+        BdjSign.Write(jar, [.. xlet, .. menu], discRoot);
+        // an intro made the old First Playback an HDMV object of its own: it stays in the file, unused
+        StartInTitle1(bdmv, File.Exists(Path.Combine(bdmv, "PLAYLIST", $"{IntroPlaylist:00000}.mpls")));
+        return true;
     }
 }
 
