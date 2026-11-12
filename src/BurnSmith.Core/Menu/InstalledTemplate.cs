@@ -109,7 +109,7 @@ public sealed class InstalledTemplate
     {
         this.dir = dir;
         this.thumbnail = thumbnail;
-        this.template = template;
+        this.template = UhdSetup(template);
         Kind = kind;
         IsPack = pack;
         Category = TemplateLabel.Of(kind);
@@ -231,6 +231,37 @@ public sealed class InstalledTemplate
         if (page.Child("texts") is { } texts) root.Kids.Add(texts);
         t.Kids.Add(root);
         page.Kids.AddRange([Heading(), El("home", ("rect", "1740,120,110,70"), ("glyph", "⌂"))]);
+        return t;
+    }
+
+    /// <summary>
+    /// The UHD templates lay their setup out as three pages: Audio, Subtitles and Back as picture buttons (<c>setup/buttons</c>), then one list
+    /// on a panel per category (<c>audio_setup</c>, <c>subtitle_setup</c>). Rewritten as a theme's setup pages (<see cref="HasSetupPages"/>),
+    /// so <see cref="SetupPage"/>, the discs and the editor draw them with the template's own pictures.
+    /// </summary>
+    static XNode UhdSetup(XNode t)
+    {
+        if (t.Child("setup") is not { } setup || setup.Child("langitems") != null || setup.Child("buttons") is not { } buttons
+            || t.Child("audio_setup") is not { } list || list.Child("audiolist")?.Children("title").ToList() is not { Count: > 0 } titles) return t;
+        XNode Copy(string name, XNode from, params (string Key, string Value)[] extra)
+        {
+            var n = new XNode(name, new Dictionary<string, string>(from.Attrs, StringComparer.OrdinalIgnoreCase));
+            foreach (var (k, v) in extra) n.Attrs[k] = v;
+            return n;
+        }
+        foreach (var b in buttons.Children("button"))
+            if (b.Attr("type") switch { "audio" => "setupaudio", "subtitle" => "setupsub", "back" => "Return", _ => null } is { } role) setup.Kids.Add(Copy(role, b, ("align", "center")));
+        setup.Kids.RemoveAll(k => k.Name is "pics" or "texts");
+        if (list.Child("pics") is { } pics) setup.Kids.Add(pics); // the panel under the list
+        if (list.Child("texts")?.Children("text").FirstOrDefault() is { } title) setup.Kids.Add(Copy("setuptitle", title, ("align", "center")));
+        var rows = new XNode("langitems", []);
+        // the row is the frame's height (the button), the text where the template writes it
+        foreach (var row in titles)
+        {
+            Box r = row.Rect(), f = row.Rect("frame_rect");
+            rows.Kids.Add(Copy("item", row, ("rect", $"{r.X},{f.Y},{r.W},{f.H}")));
+        }
+        setup.Kids.Add(rows);
         return t;
     }
 
@@ -1204,10 +1235,20 @@ public sealed class InstalledTemplate
             var words = new List<MenuButton>();
             foreach (var (key, label, target) in new[] { ("setupaudio", d.AudioLabel, "settings_audio"), ("setupsub", d.SubtitlesLabel, "settings_sub") })
             {
-                var word = Txt(n.Child(key)!, label);
+                var node = n.Child(key)!;
+                var id2 = key == "setupaudio" ? "audio" : "subs";
+                // a UHD template's picture button: its word is part of the picture (« Subtitle »), its French remake when there is one
+                if (Asset(node.Attr("image")) is { } english)
+                {
+                    var plate = d.ButtonLanguage == "fr" && French(dir, node.Attr("image")) is { } fr && IsImage(fr) ? fr : english;
+                    first.Add(new Image(plate, node.Rect()));
+                    words.Add(new MenuButton(id2, node.Rect(), new MenuAction("page", target)) { FocusImage = Selected(plate) });
+                    continue;
+                }
+                var word = Txt(node, label);
                 word = word with { Rect = word.Rect with { W = Math.Min(word.Rect.W, (int)Math.Ceiling(MenuRenderer.TextWidth(word))) } };
                 first.Add(word);
-                words.Add(new MenuButton(key == "setupaudio" ? "audio" : "subs", word.Rect, new MenuAction("page", target)));
+                words.Add(new MenuButton(id2, word.Rect, new MenuAction("page", target)));
             }
             if (n.Child("Return") is { } way)
             {
@@ -1222,8 +1263,9 @@ public sealed class InstalledTemplate
         var names = isSub ? new[] { d.OffLabel }.Concat(c.SubtitleNames).ToList() : c.AudioNames.ToList();
         var ops = new List<Op>();
         Background(ops, n, null, d);
+        Pictures(ops, n); // a UHD template's panel under the list
         // le titre nomme la catégorie : le libellé du thème (SetupAudioText, SetupSubtitleText) recouvrirait les lignes dès la 3e en audio, la 4e en sous-titres
-        if (n.Child("setuptitle") is { } title) ops.Add(Txt(title, isSub ? d.SubtitlesLabel : d.AudioLabel));
+        if (n.Child("setuptitle") is { } title) ops.Add(Txt(title, isSub ? d.SubtitlesLabel : d.AudioLabel, title.Attr("align", "left")));
 
         var buttons = new List<MenuButton>();
         var from = isSub ? 0 : 1;
