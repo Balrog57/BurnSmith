@@ -301,6 +301,34 @@ def right_of(hole, x):
     return out
 
 
+def setup_button(tdir, style):
+    """A UHD template's setup page: "Subtitle" remade as « Sous-titres » from the pair Audio / Subtitle, which share their plate ("Audio" is French already)."""
+    files = {r: os.path.join(tdir, "picture", r + ".png") for r in ("audio_btn", "subtitle_btn")}
+    if not all(map(os.path.exists, files.values())): return None
+    group = {r: load(f) for r, f in files.items()}
+    if group["audio_btn"].shape != group["subtitle_btn"].shape: return None
+    hole = hole_of(gap_of(group["audio_btn"], group["subtitle_btn"]))
+    if hole is None: return None
+    # where both words have a letter alike ("Su" / "Au", "i" / "i") nothing changes: the gaps between the changed letters are wiped too
+    hole = ndimage.binary_closing(hole, np.ones((1, 41), bool)) | hole
+    ink = {r: ink_of(im, hole) for r, im in group.items()}
+    orn = sides(ink, {r: ink_of(group[r], hole, 8) for r in ink})
+    rows, xs = np.nonzero(hole)[0], np.flatnonzero(np.any([i.any(axis=0) for i in ink.values()], axis=0))
+    band, x0, x1 = (int(rows.min()), int(rows.max())), int(xs[0]), int(xs[-1])
+    r, w = "subtitle_btn", group["subtitle_btn"].shape[1]
+    o = orn.get(r)
+    letters = ink[r] if o is None else right_of(ink[r], o[2][0] - 2) & ~right_of(ink[r], o[2][1] + 3)
+    look = Look(group[r], letters, wipe(group[r], hole))
+    # the word keeps to where the old ones were (with their glow): sparkles, chevrons, hearts beside it are part of the plate, never covered
+    cols = np.flatnonzero(hole.any(axis=0))
+    room = int(cols[-1] - cols[0] + 1) if o is None else w - 2 * o[2][0]
+    picture = remake(group[r], wipe(group[r], hole), look, "Sous-titres", style, None, (x0 + x1 + 1) / 2, room, o, band)
+    target = os.path.join(tdir, "LANG_FRA", "picture", r + ".png")
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    picture.save(target)
+    return files[r], target
+
+
 def main():
     args = [a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith("--") and sys.argv[i - 1] not in ("--only", "--sheet")]
     opt = lambda name: sys.argv[sys.argv.index(name) + 1] if name in sys.argv else None
@@ -318,6 +346,7 @@ def main():
         style = STYLES.get(folder)
         if style is None or only not in folder: continue
         tdir = os.path.join(root, "Blu-ray", folder)
+        if (pair := setup_button(tdir, style)) is not None: pairs.append(pair)
         wordy = lambda im: im.shape[1] >= 200 and im.shape[1] >= 2 * im.shape[0]  # a round pictogram has no word in it
         every = {s: {r: load(f) for r in WORDS if os.path.exists(f := os.path.join(tdir, r, f"0.{s}.png"))} for s in ("normal", "sub")}
         capitals, begins = {}, {}
