@@ -52,23 +52,19 @@ public static class Bdmv
     }
 
     /// <summary>
-    /// Replaces the index table of an index.bdmv by: First Playback and Top Menu = the HDMV movie objects <paramref name="firstPlay"/> and <paramref name="topMenu"/>
-    /// (each jumps to title 1), and title 1 = BD-J object <paramref name="bdjoName"/>, the menu. Header, app info and extension data (UHD flags) are kept.
+    /// Replaces the index table of an index.bdmv by: First Playback = the HDMV movie object <paramref name="firstPlay"/>, Top Menu = BD-J object 00000 (the menu),
+    /// titles 1 to <paramref name="videos"/> = BD-J object 00001 (title N plays video N), and one more title, the menu again. Header, app info and extension data (UHD flags) are kept.
     /// </summary>
-    public static byte[] PatchIndex(byte[] original, int firstPlay, int topMenu, string bdjoName = "00000")
+    public static byte[] PatchIndex(byte[] original, int firstPlay, int videos)
     {
         var table = new BinaryWriterBE();
-        table.U32(38); // length of what follows: 2 x 12 + 2 + 12
-        foreach (var movieObject in new[] { firstPlay, topMenu })
-        {
-            table.U32(1u << 30);            // object_type = HDMV
-            table.U16(1 << 14);             // interactive
-            table.U16(movieObject);
-            table.U32(0);
-        }
-        table.U16(1); // one title
-        table.U32(2u << 30);                // object_type = BD-J, access_type 0
-        table.U8(2 << 6); table.U8(0); table.Str(bdjoName, 5); table.U8(0); // movie
+        void Bdj(string name, int playbackType) { table.U32(2u << 30); table.U8(playbackType << 6); table.U8(0); table.Str(name, 5); table.U8(0); } // object_type = BD-J
+        table.U32(12 + 12 + 2 + 12 * (videos + 1));
+        table.U32(1u << 30); table.U16(1 << 14); table.U16(firstPlay); table.U32(0); // HDMV, interactive
+        Bdj("00000", 3);                                                      // the Top Menu: interactive
+        table.U16(videos + 1);
+        for (var n = 1; n <= videos; n++) Bdj("00001", 2);                   // movie
+        Bdj("00000", 2);
         return ReplaceTable(original, table.ToArray());
     }
 

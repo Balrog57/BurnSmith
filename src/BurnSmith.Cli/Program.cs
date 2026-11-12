@@ -1317,18 +1317,18 @@ if (a.Count >= 1 && a[0] == "check-edit")
               && goodImage.Count == 0 && cutImage.Count == 1 && cutImage[0].Contains("tronquée") && oddImage.Any(p => p.Contains("secteurs")) && DiscCheck.Folder(Path.Combine(discDir, "nothing")).Count == 1);
     }
     finally { Directory.Delete(discDir, true); }
-    // a BD-J menu disc: two movie objects added after the film's (which keep their numbers), First Playback and Top Menu pointing at them, title 1 the BD-J menu
+    // a BD-J menu disc: a movie object added after the film's (which keep their numbers) for First Playback; the Top Menu is the BD-J menu, title N plays video N, the last title is the menu
     var films = BurnSmith.Core.Disc.MovieObjectFile.Write([[BurnSmith.Core.Disc.Nav.PlayPlaylist(1)], [BurnSmith.Core.Disc.Nav.PlayPlaylist(2)]]);
     var withIntro = Bdmv.AppendObject(films, out var introObject, BurnSmith.Core.Disc.Nav.PlayPlaylist(98), BurnSmith.Core.Disc.Nav.JumpTitle(1));
     var plain = BurnSmith.Core.Disc.MovieObjectFile.Index([0, 1], 2, 3, 6, 1);
-    var started = Bdmv.PatchIndex(plain, firstPlay: 3, topMenu: 2);
+    var started = Bdmv.PatchIndex(plain, firstPlay: 3, videos: 2);
     var tableAt = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(started.AsSpan(8)) + 4;
     ushort At(int k) => System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(started.AsSpan(tableAt + k));
-    Check("a BD-J menu disc: an object is added after the film's 0 and 1 (number 2, they keep their commands); First Playback and Top Menu run HDMV objects 3 and 2, title 1 is BD-J object 00000",
+    Check("a BD-J menu disc: an object is added after the film's 0 and 1 (number 2, they keep their commands); First Playback runs HDMV object 3, the Top Menu and title 3 are BD-J object 00000, titles 1 and 2 BD-J object 00001",
           introObject == 2 && System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(withIntro.AsSpan(48)) == 3 && withIntro.Length == films.Length + 4 + 24
           && Bdmv.PrependToFilm(withIntro, BurnSmith.Core.Disc.Nav.SelectStreams(subtitle: 1)).Length == withIntro.Length + 12
-          && started[tableAt] >> 6 == 1 && At(6) == 3 && started[tableAt + 12] >> 6 == 1 && At(18) == 2 && At(24) == 1
-          && started[tableAt + 26] >> 6 == 2 && System.Text.Encoding.ASCII.GetString(started, tableAt + 32, 5) == "00000"
+          && started[tableAt] >> 6 == 1 && At(6) == 3 && At(24) == 3
+          && string.Join(",", new[] { 12, 26, 38, 50 }.Select(o => $"{started[tableAt + o] >> 6}{started[tableAt + o + 4] >> 6}{System.Text.Encoding.ASCII.GetString(started, tableAt + o + 6, 5)}")) == "2300000,2200001,2200001,2200000"
           && started.AsSpan(0, 8).SequenceEqual("INDX0200"u8));
     var dts = new AudioTrack(0, "dts", 6, "", "");
     Check("audio copied only while it stays in step with the picture: a DTS track is kept when the title starts at 0, becomes AC-3 with a later start or another volume, and stays on a 4K disc",
@@ -1866,7 +1866,7 @@ if (a.Count >= 2 && a[0] == "probe")
     return 0;
 }
 // burnsmith repair-top-menu FOLDER : a BD-J menu disc made before 1.0.32 (the Top Menu key refused during an episode) put on today's start and xlet, its menu kept; then "burnsmith iso" for a new image
-if (a.Count >= 2 && a[0] == "repair-top-menu") { var fixedIt = BluRay.RepairTopMenu(a[1]); Console.WriteLine(fixedIt ? "repaired: Top Menu now starts the menu in title 1" : "nothing to repair (not a BD-J menu disc of the old kind)"); return 0; }
+if (a.Count >= 2 && a[0] == "repair-top-menu") { var fixedIt = BluRay.RepairTopMenu(a[1]); Console.WriteLine(fixedIt ? "repaired: the Top Menu is the menu, each video plays in its own title" : "nothing to repair (not a BD-J menu disc of the old kind)"); return 0; }
 if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BURNSMITH", a.Contains("--dvd"), Console.WriteLine); return 0; }
 // burnsmith burn IMAGE.iso F: [--speed 4] : the speed is × 1x, absent = the drive's fastest (one disc: a second one is a second run)
 if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0); return 0; }

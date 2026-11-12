@@ -24,6 +24,8 @@ import javax.media.Manager;
 import javax.media.MediaLocator;
 import javax.media.Player;
 import javax.media.StartEvent;
+import javax.tv.service.SIManager;
+import javax.tv.service.selection.ServiceContextFactory;
 import javax.tv.xlet.Xlet;
 import javax.tv.xlet.XletContext;
 import javax.tv.xlet.XletStateChangeException;
@@ -55,6 +57,10 @@ import org.havi.ui.event.HRcEvent;
  *   playback menu|first CHAIN REWIND FIRST_PLAYLIST COUNT   (CHAIN, REWIND: 1 or 0; absent = menu, no chaining, back to the menu)
  *   defaults AUDIO SUB   (the audio / subtitle stream number the disc starts with; absent = 1 and 0, no subtitles)
  *   forced AUDIO SUB     (repeatable: with subtitles off and that audio stream playing, subtitle stream SUB is shown, a forced track the menu does not list)
+ * Titles (BluRay.TitleLayout): the Top Menu and the last title run this xlet as the menu; title N (1 to the last but one) runs it to play playlist N, so a
+ * video never plays inside the Top Menu title, where a player refuses the Top Menu key. What crosses a change of title goes through GPRs: 108 the menu button
+ * to reopen on, 109 "the disc has just started", 110 the audio stream, 111 the subtitle stream + 1, 112 the chapter mark + 1, 113 the end of a run of videos
+ * (exclusive), 114 the menu title (written by First Playback; 0 on a disc without that layout, where everything plays in the menu's title as before).
  * ACTION is "play PLAYLIST", "chapter PLAYLIST MARK", "page PAGE", "playall FIRST_PLAYLIST COUNT" (plays them one
  * after the other), "audio N" (stream number, 1-based) or "sub N" (0 = no subtitles). The first page is shown
  * first and the first button of a page has the initial focus. The marker image is drawn DX pixels from the left
@@ -126,6 +132,9 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private boolean hasPopup, popupOpen; // the disc has "pop" pages / one of them is shown over the film
     private int playing; // playlist of the running player
     private int popupKey = org.bluray.ui.event.HRcEvent.VK_POPUP_MENU;
+    private static final int GPR_AUDIO = 110, GPR_SUB = 111, GPR_MARK = 112, GPR_END = 113, GPR_MENU_TITLE = 114;
+    private int menuTitle; // the title that holds the menu again (GPR114), 0: no title per video, everything plays here
+    private int videoTitle; // the title this xlet plays (title N = playlist N), 0 in the menu
 
     public void initXlet(XletContext c) throws XletStateChangeException {
         ctx = c;
@@ -173,14 +182,67 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         // the pages are decoded one at a time, when shown (see pictures): all of them at once (~8 MB each at 1920x1080) filled the player's
         // image memory, and the pages decoded last stayed empty on screen
         lastButton = readGpr(108) - 1; // the register holds index + 1, so 0 means "nothing remembered"
-        if (startFirst && titleCount > 0 && firstPlayback()) startSequence();
+        if (readGpr(GPR_AUDIO) > 0) audio = readGpr(GPR_AUDIO); // the choice made in another title
+        if (readGpr(GPR_SUB) > 0) sub = readGpr(GPR_SUB) - 1;
+        menuTitle = readGpr(GPR_MENU_TITLE);
+        int title = psr(4);
+        if (menuTitle > 1 && title >= 1 && title < menuTitle) {
+            videoTitle = title;
+            int mark = readGpr(GPR_MARK) - 1, end = readGpr(GPR_END);
+            writeGpr(GPR_MARK, 0); // a later jump to this title by its number starts it from the beginning, alone
+            writeGpr(GPR_END, 0);
+            log("title " + title + ": video");
+            nextPlaylist = end > title + 1 ? title + 1 : 0;
+            endPlaylist = nextPlaylist > 0 ? end : 0;
+            play(title, mark);
+        } else if (startFirst && titleCount > 0 && firstPlayback()) startSequence();
         else showMenu();
     }
 
+    private int psr(int n) {
+        try {
+            return RegisterAccess.getInstance().getPSR(n);
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
+    /** Selects title <code>title</code>: this xlet stops, the title's own starts. False when the player refuses; the caller then plays here. */
+    private boolean selectTitle(int title) {
+        try {
+            log("select title " + title);
+            ServiceContextFactory.getInstance().getServiceContext(ctx).select(SIManager.createInstance().getService(new BDLocator(null, title, -1)));
+            return true;
+        } catch (Throwable t) {
+            log("title " + title + " not selected: " + t);
+            return false;
+        }
+    }
+
     /**
-     * The xlet runs in title 1: First Playback and the Top Menu key are two HDMV objects that jump there (BluRay.AddMenu), the first after it set
-     * GPR109 to 1, the Top Menu key after it set it to 0. So the disc only starts on the first title the first time and the menu stays reachable.
-     * The register is cleared at once: anything else that restarts title 1 shows the menu.
+     * Plays <code>playlist</code> from chapter <code>mark</code> (-1: the start), followed by the next ones up to <code>end</code> (exclusive, 0: alone).
+     * Each video plays in its own title (the next of a run too); a chapter picked in the pop-up plays in the title already running.
+     */
+    private void start(int playlist, int mark, int end) {
+        if (playlist != videoTitle && menuTitle > 1 && playlist >= 1 && playlist < menuTitle) {
+            writeGpr(GPR_MARK, mark + 1);
+            writeGpr(GPR_END, end);
+            if (selectTitle(playlist)) return;
+        }
+        nextPlaylist = end > playlist + 1 ? playlist + 1 : 0;
+        endPlaylist = nextPlaylist > 0 ? end : 0;
+        play(playlist, mark);
+    }
+
+    /** Back to the menu: its title when the video plays in its own, else on this page. */
+    private void toMenu() {
+        if (videoTitle > 0 && selectTitle(menuTitle)) return;
+        showMenu();
+    }
+
+    /**
+     * First Playback is an HDMV object that sets GPR109 to 1 before it jumps to the menu title (BluRay.TitleLayout), so the disc only starts on the
+     * first title the first time. The register is cleared at once: the Top Menu key, or a video that ends, shows the menu.
      */
     private boolean firstPlayback() {
         int start = readGpr(109);
@@ -191,9 +253,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
 
     /** "Start from the first title": no menu, the titles play one after the other. */
     private void startSequence() {
-        nextPlaylist = titleFirst + 1;
-        endPlaylist = titleFirst + titleCount;
-        play(titleFirst, -1);
+        start(titleFirst, -1, titleFirst + titleCount);
     }
 
     /**
@@ -206,7 +266,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             log("rewind: first title again");
             startSequence();
         } else if (!normalEnd || !chain || rewind) {
-            showMenu();
+            toMenu();
         } else {
             log("playback finished: stopped");
         }
@@ -314,24 +374,22 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             if (p != null) show(p);
         } else if (b.action.equals("play")) {
             remember(b);
-            follow(b.n1);
-            play(b.n1, -1);
+            start(b.n1, -1, follow(b.n1));
         } else if (b.action.equals("chapter")) {
             remember(b);
-            follow(b.n1);
-            play(b.n1, b.n2);
+            start(b.n1, b.n2, follow(b.n1));
         } else if (b.action.equals("playall")) {
             remember(b);
-            nextPlaylist = b.n1 + 1;
-            endPlaylist = b.n1 + b.n2;
-            play(b.n1, -1);
+            start(b.n1, -1, b.n1 + b.n2);
         } else if (b.action.equals("audio")) {
             audio = b.n1;
+            writeGpr(GPR_AUDIO, audio);
             log("audio choice " + audio);
             if (player != null) applyTracks(player); // chosen in the pop-up: the film changes at once
             view.repaint();
         } else if (b.action.equals("sub")) {
             sub = b.n1;
+            writeGpr(GPR_SUB, sub + 1);
             log("subtitle choice " + sub);
             if (player != null) applyTracks(player);
             view.repaint();
@@ -343,7 +401,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             log("pop-up: main menu");
             nextPlaylist = endPlaylist = 0;
             closePlayer();
-            showMenu();
+            toMenu();
         }
     }
 
@@ -373,13 +431,9 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         writeGpr(108, i + 1);
     }
 
-    /** The title picked in the menu is followed by the next ones when the disc plays everything in a row. */
-    private void follow(int playlist) {
-        nextPlaylist = endPlaylist = 0;
-        if (chain && titleCount > 0 && playlist >= titleFirst && playlist < titleFirst + titleCount) {
-            nextPlaylist = playlist + 1;
-            endPlaylist = titleFirst + titleCount;
-        }
+    /** Where a run that starts at the title picked in the menu ends (exclusive): the disc's last title when it plays everything in a row, else 0 (alone). */
+    private int follow(int playlist) {
+        return chain && titleCount > 0 && playlist >= titleFirst && playlist < titleFirst + titleCount ? titleFirst + titleCount : 0;
     }
 
     /** Applies the audio / subtitle choice to a playlist that is running. Failures only cost the choice, never the playback. */
@@ -442,7 +496,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         } catch (Exception ex) {
             ex.printStackTrace();
             closePlayer();
-            showMenu();
+            toMenu();
         }
     }
 
@@ -504,7 +558,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         } else if (e instanceof EndOfMediaEvent || e instanceof ControllerErrorEvent) {
             log("playback ended: " + e.getClass().getName());
             closePlayer();
-            if (e instanceof EndOfMediaEvent && nextPlaylist > 0 && nextPlaylist < endPlaylist) play(nextPlaylist++, -1);
+            if (e instanceof EndOfMediaEvent && nextPlaylist > 0 && nextPlaylist < endPlaylist) start(nextPlaylist, -1, endPlaylist);
             else finished(e instanceof EndOfMediaEvent);
         }
     }

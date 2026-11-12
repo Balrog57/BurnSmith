@@ -92,6 +92,7 @@ Le résultat se donne ensuite à `--video`.
 
 - `burnsmith drives` : les graveurs et le disque qu'ils contiennent.
 - `burnsmith iso DOSSIER sortie.iso [--label X] [--dvd]`
+- `burnsmith repair-top-menu DOSSIER` : remet un Blu-ray à menu BD-J fait avant 1.0.33 (menu et épisodes dans un seul titre, Top Menu refusé pendant un épisode) sur la disposition d'aujourd'hui : le menu en Top Menu, un titre par vidéo ; son menu est gardé, le jar signé de nouveau. Refaire l'image ensuite avec `burnsmith iso`.
 - `burnsmith burn image.iso F: [--speed 4]` : grave un disque vierge puis le relit.
 - `burnsmith verify image.iso F:` : compare un disque à son image.
 - `burnsmith erase F:` : efface un disque réinscriptible.
