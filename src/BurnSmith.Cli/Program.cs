@@ -1768,8 +1768,8 @@ if (a.Count >= 1 && a[0] == "check-library")
     // a machine whose templates carry pictures only (the open library) has no button picture to give back: the styles alone are then the whole
     // button list, and asking for one more would fail that machine for having fewer templates, not for losing a picture
     var pictureButtonsNeeded = packButtonPictures.Count > 0;
-    // the templates' own button pictures only: DVDStyler's SVG buttons and the user's are there on every machine
-    var pictureButtonsOffered = libraryButtons.Any(b => b.Source is not (ElementLibrary.Styles or ElementLibrary.DvdStyler or ElementLibrary.MyButtons));
+    // the templates' own button pictures only: DVDStyler's SVG buttons, BurnSmith's own sets (« BurnSmith · Or »…) and the user's are there on every machine
+    var pictureButtonsOffered = libraryButtons.Any(b => b.Source is not (ElementLibrary.Styles or ElementLibrary.DvdStyler or ElementLibrary.MyButtons) && !b.Source.StartsWith(TemplateLabel.Own + " · ", StringComparison.Ordinal));
     return libraryProblems == 0 && libraryBackgrounds.Count > 0 && pictureButtonsNeeded == pictureButtonsOffered ? 0 : 1;
 }
 
