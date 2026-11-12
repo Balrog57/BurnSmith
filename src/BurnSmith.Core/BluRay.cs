@@ -1364,6 +1364,8 @@ public static class BluRay
         var jar = Path.Combine(bdmv, "JAR", "00000.jar");
         var menuBdjo = Path.Combine(bdmv, "BDJO", "00000.bdjo");
         if (!File.Exists(jar) || !File.Exists(menuBdjo) || File.Exists(Path.Combine(bdmv, "BDJO", "00001.bdjo"))) return false; // no BD-J menu, or already one title per video
+        foreach (var f in Directory.EnumerateFiles(discRoot, "*", SearchOption.AllDirectories)) // files copied out of an image are read-only
+            File.SetAttributes(f, File.GetAttributes(f) & ~FileAttributes.ReadOnly);
         var old = File.ReadAllBytes(menuBdjo);
         var havi = old[(int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(old.AsSpan(8)) + 4 + 5] >> 4; // terminal info: length, font name, then the HAVi configuration
         var videos = Enumerable.Range(MoviePlaylist, IntroPlaylist - MoviePlaylist).TakeWhile(n => File.Exists(Path.Combine(bdmv, "PLAYLIST", $"{n:00000}.mpls"))).Count();
