@@ -99,7 +99,7 @@
         <DockPanel>
           <!-- every template makes a DVD, a Blu-ray and a 4K menu: the gallery groups them by use, the shape picks the version of those that have two -->
           <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8"
-                      ToolTip="Les modèles qui existent en 16:9 et en 4:3 prennent la version de l'écran choisi ; les autres restent tels qu'ils sont dessinés">
+                      ToolTip="La galerie ne montre que les modèles dessinés pour cet écran ; un modèle livré dans les deux formes passe à l'autre version">
             <TextBlock Text="Écran :" VerticalAlignment="Center" Margin="0,0,8,0"/>
             <RadioButton x:Name="Shape169" Content="16:9" GroupName="shape" Style="{StaticResource Step}" Padding="10,4" Checked="OnShape"/>
             <RadioButton x:Name="Shape43" Content="4:3" GroupName="shape" Style="{StaticResource Step}" Padding="10,4" Checked="OnShape"/>

@@ -1287,9 +1287,8 @@ public partial class MenuEditorWindow : Window
     /// <summary>The screen shape the gallery shows the templates for: a template with a 16:9 and a 4:3 version shows the chosen one.</summary>
     bool narrow;
 
-    /// <summary>The gallery as shown: one template per name, in the chosen shape when it has both.</summary>
-    List<TemplateCatalog.Found> Shown => [.. catalog.GroupBy(f => (f.Design.Category, f.Label.ToLowerInvariant()))
-        .Select(g => g.FirstOrDefault(f => TemplateShape.IsNarrow(f.Design.Name) == narrow) ?? g.First())];
+    /// <summary>The gallery as shown: the templates of the chosen shape only (a name without « 4-3 » is a 16:9 one).</summary>
+    List<TemplateCatalog.Found> Shown => [.. catalog.Where(f => TemplateShape.IsNarrow(f.Design.Name) == narrow)];
 
     /// <summary>One chip per use of the templates (Film, Série…, Original), « Tous » before and « Mes modèles » after; the use of the menu's own template is the one open.</summary>
     void FillFamilies(List<TemplateCatalog.Found> usable)

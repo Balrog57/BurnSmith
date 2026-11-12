@@ -752,8 +752,10 @@ public static class BluRay
             } + $", lang={Languages.Iso2(audio[j].Lang)}" + (shift != 0 ? $", timeshift={shift}ms" : ""));
         }
         foreach (var (s, file) in subs)
+            // no fps on a picture track: given one, tsMuxeR re-times the pictures by (rate written in the track) / fps, and a track made here says 23.976
+            // whatever the video is, so on a 25 fps title every line came 4 % early (70 s at the end of a 28-minute bonus)
             lines.Add(s.IsPicture
-                ? $"S_HDMV/PGS, \"{file}\", fps={fps}, lang={Languages.Iso2(s.Lang)}" + (s.Index >= 0 && s.File == null && s.Index < planes.Count && planes[s.Index] >= 0 ? $", 3d-plane={planes[s.Index]}" : "")
+                ? $"S_HDMV/PGS, \"{file}\", lang={Languages.Iso2(s.Lang)}" + (s.Index >= 0 && s.File == null && s.Index < planes.Count && planes[s.Index] >= 0 ? $", 3d-plane={planes[s.Index]}" : "")
                 : $"S_TEXT/UTF8, \"{file}\", {TextSubtitleLook(job.Subtitles, h)}, font-border=5, text-align=center, video-width={w}, video-height={h}, fps={fps}, lang={Languages.Iso2(s.Lang)}");
         var meta = Path.Combine(work, $"disc{playlist}.meta");
         File.WriteAllLines(meta, lines);
@@ -994,6 +996,7 @@ public static class BluRay
     /// a second early. So a title that starts later has its sound re-encoded too (decoded, then cut exactly); a 4K disc copies both from the same keyframe and stays in step.
     /// Only 48 kHz is copied: a disc does not take 44.1 kHz.
     /// </summary>
+    const string OverlapDrop = "noise=drop='if(lt(pts+duration/2,ld(0)),1,0*st(0,pts+duration))'"; // ld(0): where the last frame kept ends
     static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && (t.Start == 0 || uhd) && t.Gaps.Count == 0 && a.SampleRate == 48000 && a.Codec is "ac3" or "dts"; // not TrueHD: a disc wants its AC-3 core, which an mkv or ffmpeg never carries (tsMuxeR: "the disk will not play")
 
     /// <summary>Whether the title's video goes on the disc as it is (stream copy) instead of being re-encoded; <see cref="TargetKbps"/> and <see cref="Prepare"/> must agree on it.</summary>
@@ -1094,7 +1097,10 @@ public static class BluRay
         var af = string.Join(",", new[] { title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "" }.Where(f => f.Length > 0));
         for (var j = 0; j < audio.Count; j++)
         {
-            if (CopiesAudio(audio[j], title, job.Uhd)) args.AddRange([$"-c:a:{j}", "copy"]);
+            // a DVD rip joins its scenes with sound frames that overlap (the same time written two or three times); tsMuxeR plays every frame one after the
+            // other, so the sound fell behind the picture at each join (0.55 s at the end of 13 deleted scenes): a frame that starts before the last one ends is left out
+            // shortcut: overlaps under half a frame are kept and add up, and a hole in the sound is not filled; re-encode such a track (aresample=async=1) if one turns up
+            if (CopiesAudio(audio[j], title, job.Uhd)) args.AddRange([$"-c:a:{j}", "copy", $"-bsf:a:{j}", OverlapDrop]);
             else
             {
                 args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", audio[j].Channels > 2 ? "640k" : "448k", $"-ar:a:{j}", "48000"]);

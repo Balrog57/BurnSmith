@@ -617,6 +617,28 @@ static class BdCheck
             var cues = PgsSubtitles.Cues(output.ToArray(), out var skipped);
             Check("a .sup with one picture cut short: that one is left out, the other stays", cues.Count == 1 && skipped == 1, $"{cues.Count} cues, {skipped} skipped");
         });
+        Part("a picture subtitle on a 25 fps title", () =>
+        {
+            var writer = new PgsSubtitles.Writer(1280, 720);
+            (byte, byte, byte, byte)[] palette = [(0, 0, 0, 0), (255, 255, 255, 255)];
+            writer.Add(4.0, 4.5, 600, 600, 64, 32, [.. Enumerable.Repeat((byte)1, 64 * 32)], palette);
+            File.WriteAllBytes(F("late.sup"), writer.Finish());
+            var clip = Clip("sub25.mkv", "testsrc=s=320x180:r=25:d=6", 48000, ["-pix_fmt", "yuv420p"], Aac);
+            var ts = Stream(Bd("sub25", [new DiscTitle(clip, Subtitles: [0], External: [new ExternalSubtitle(F("late.sup"), "fre")])], Small("ultrafast")), 1);
+            double First(string kind) => double.Parse(Tools.Run(ffprobe, ["-v", "error", "-select_streams", kind, "-show_entries", "packet=pts_time", "-of", "csv=p=0", ts])
+                .Split('\n')[0].Trim().TrimEnd(','), CultureInfo.InvariantCulture);
+            var at = First("s:0") - First("v:0");
+            Check("its picture shows when the file says (given a frame rate, tsMuxeR re-timed it by 23.976 / 25: 3.84 s for 4)", Math.Abs(at - 4.0) < 0.1, at.ToString(CultureInfo.InvariantCulture));
+        });
+        Part("sound frames that overlap (scenes joined in a DVD rip)", () =>
+        {
+            // frames 50 and 51 carry the time of frame 49, and the rest follows two frames early: what a rip writes where two scenes meet
+            var clip = Clip("overlap.mkv", "testsrc=s=320x180:r=25:d=4", 48000, ["-pix_fmt", "yuv420p"],
+                [.. Ac3At48, "-bsf:a", "setts=ts='if(between(N,50,51),PREV_OUTPTS,if(gt(N,51),PTS-3072,PTS))'"]);
+            int Frames(string file) => Tools.Run(ffprobe, ["-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", file]).Split('\n').Count(l => l.Trim().Length > 0);
+            var (before, after) = (Frames(clip), Frames(Stream(Bd("overlap", [new DiscTitle(clip)], Small("ultrafast")), 1)));
+            Check("the two frames that play over the one before are left out (kept, the sound came 64 ms late from there on)", before - after == 2, $"{before} -> {after}");
+        });
         DvdPart("a DVD with a damaged .sup", () =>
         {
             var lines = new List<string>();
