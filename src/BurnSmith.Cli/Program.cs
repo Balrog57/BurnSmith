@@ -1330,6 +1330,11 @@ if (a.Count >= 1 && a[0] == "check-edit")
           && started[tableAt] >> 6 == 1 && At(6) == 3 && At(24) == 3
           && string.Join(",", new[] { 12, 26, 38, 50 }.Select(o => $"{started[tableAt + o] >> 6}{started[tableAt + o + 4] >> 6}{System.Text.Encoding.ASCII.GetString(started, tableAt + o + 6, 5)}")) == "2300000,2200001,2200001,2200000"
           && started.AsSpan(0, 8).SequenceEqual("INDX0200"u8));
+    var oldMenu = "page root bg.jpg\nbutton root play 0 0 9 9 - - - - - playall 1 7\nbutton b b1 0 0 9 9 - - - - - play 8\n"u8.ToArray();
+    var chained = System.Text.Encoding.UTF8.GetString(BluRay.ChainEpisodes(oldMenu));
+    Check("repair: an old menu with no play mode gets the default one over the episodes of its play-all button (7, the bonus 8 left alone); one that has a mode, or no play-all button, is kept",
+          chained.StartsWith("playback menu 1 1 1 7\npage root", StringComparison.Ordinal) && BluRay.ChainEpisodes(BluRay.ChainEpisodes(oldMenu)).Length == chained.Length
+          && BluRay.ChainEpisodes("page root bg.jpg\n"u8.ToArray()).Length == 17);
     var dts = new AudioTrack(0, "dts", 6, "", "");
     Check("audio copied only while it stays in step with the picture: a DTS track is kept when the title starts at 0, becomes AC-3 with a later start or another volume, and stays on a 4K disc",
           BluRay.BdAudio(dts, new DiscTitle("x"), false) == "dts" && BluRay.BdAudio(dts, new DiscTitle("x", Start: 90), false) == "ac3" && BluRay.BdAudio(dts, new DiscTitle("x", Volume: 120), false) == "ac3"
@@ -1446,7 +1451,7 @@ if (a.Count >= 1 && a[0] == "check-edit")
         Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=2", "-f", "lavfi", "-i", "sine=f=440:d=2", "-f", "lavfi", "-i", "sine=f=880:d=2", "-map", "0:v", "-map", "1:a", "-map", "2:a", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "ac3", palFilm]);
         Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "smptebars=s=320x240:r=30000/1001:d=2", "-f", "lavfi", "-i", "sine=f=220:d=2", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "ac3", ntscIntro]);
         File.WriteAllText(srt, "1\n00:00:00,500 --> 00:00:01,500\nBonjour\n");
-        Dvd.Build(new DvdJob([new DiscTitle(palFilm, Audio: [0, 1], Subtitles: [0], External: [new ExternalSubtitle(srt, "fre")], DefaultSubtitle: 0), new DiscTitle(ntscIntro, Intro: true)], mixedDisc, new MenuDesign()));
+        Dvd.Build(new DvdJob([new DiscTitle(palFilm, Audio: [0, 1], Subtitles: [0], External: [new ExternalSubtitle(srt, "fre")], DefaultSubtitle: 0), new DiscTitle(ntscIntro, Intro: true)], mixedDisc, new MenuDesign(), Playback: new PlaybackOptions(PlayAll: false)));
         var vmg = File.ReadAllBytes(Path.Combine(mixedDisc, "VIDEO_TS", "VIDEO_TS.IFO"));
         var vts = File.ReadAllBytes(Path.Combine(mixedDisc, "VIDEO_TS", "VTS_01_0.IFO"));
         static int U16(byte[] d, int o) => System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(d.AsSpan(o));
@@ -2034,7 +2039,7 @@ var titles = videos.Select((v, k) =>
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
 // --cpu (encode and decode on the processor; default: the NVIDIA card when there is one), --fps 23.976|24|25|29.97|50|59.94 (bd: the disc's rate; default: as the source)
 // bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5|MiniBD, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (default fit = "Adapter au disque"; up to 60000 with --uhd, where --reencode = "Conversion"),
-//     --capacity GB (usable size, instead of the profile's), --play-mode 0|1|2 (menu then all titles | first title then all | back to the menu) [--no-rewind] (DVD too)
+//     --capacity GB (usable size, instead of the profile's), --play-mode 0|1|2 (menu then all titles, the default | first title then all | back to the menu) [--no-rewind] (DVD too)
 // dvd: --pal | --ntsc (default: as the first video), --4x3 (4:3 titles, the menu stays 16:9)
 var profile = BdProfile.Find(Opt("--profile") ?? "BD25");
 var quality = Opt("--quality") ?? "fit"; // as the app: "Adapter au disque"
@@ -2045,7 +2050,7 @@ var encode = new EncodeOptions(a.Contains("--reencode"), int.TryParse(Opt("--crf
                                Fps: double.TryParse(Opt("--fps"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var fps) ? fps : null,
                                Lossless: a.Contains("--lossless")); // bd: --lossless = "Son sans perte" (TrueHD kept, FLAC and PCM as LPCM, instead of AC-3)
 var capacity = double.TryParse(Opt("--capacity"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var gb) ? gb : profile.UsableGb;
-var playback = int.TryParse(Opt("--play-mode"), out var mode) ? PlaybackOptions.FromMode(mode, !a.Contains("--no-rewind")) : null;
+var playback = int.TryParse(Opt("--play-mode"), out var mode) ? PlaybackOptions.FromMode(mode, !a.Contains("--no-rewind")) : a.Contains("--no-rewind") ? new PlaybackOptions(Rewind: false) : null;
 // the text subtitles of the disc (SRT, ASS...): --sub-font NAME (a font of this PC), --sub-size PERCENT (100 = the usual size), --sub-color RRGGBB, --sub-position 0-100 (0 = bottom, 100 = top)
 var subtitleLook = Opt("--sub-font") == null && Opt("--sub-size") == null && Opt("--sub-color") == null && Opt("--sub-position") == null ? null
     : new SubtitleStyle(Opt("--sub-font"), int.TryParse(Opt("--sub-size"), out var subSize) ? subSize : 100, Opt("--sub-color")?.TrimStart('#') ?? "FFFFFF", int.TryParse(Opt("--sub-position"), out var subPosition) ? subPosition : 0);

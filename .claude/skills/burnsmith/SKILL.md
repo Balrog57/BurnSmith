@@ -59,7 +59,7 @@ burnsmith dvd --video ep1.mkv --name "Épisode 1" --video ep2.mkv --name "Épiso
 | File d'attente | `burnsmith queue un.burnsmith deux.burnsmith [--trial]` : les projets fabriqués l'un après l'autre, chacun dans son dossier (`Out` du projet, `_essai` au bout pour un essai), avec son ISO s'il la demande ; un échec n'arrête pas les suivants, code de sortie 1 si l'un a échoué |
 | Noms de chapitres (par vidéo) | `--chapter-names "Prologue\|Le duel\|\|Final"` : les noms écrits sur le menu, dans l'ordre de `--chapter-at` ou des chapitres du fichier (un nom vide = « Chapitre N ») ; sans l'option, les noms que le fichier donne sont gardés |
 | Son sans perte (bd) | `--lossless` : TrueHD gardé tel quel avec un cœur AC-3, FLAC / PCM en LPCM, au lieu d'AC-3 ; DTS et DTS-HD toujours copiés. `probe` dit `"Lossless": true` pour une piste concernée |
-| Lecture | `--play-mode 0\|1\|2` (menu puis tout \| premier titre puis tout \| retour au menu), `--no-rewind` |
+| Lecture | `--play-mode 0\|1\|2` (menu puis tout, le défaut : un épisode choisi enchaîne les suivants, menu après le dernier, bonus seuls \| premier titre puis tout \| retour au menu), `--no-rewind` |
 
 ## Le menu
 
@@ -92,7 +92,7 @@ Le résultat se donne ensuite à `--video`.
 
 - `burnsmith drives` : les graveurs et le disque qu'ils contiennent.
 - `burnsmith iso DOSSIER sortie.iso [--label X] [--dvd]`
-- `burnsmith repair-top-menu DOSSIER` : remet un Blu-ray à menu BD-J fait avant 1.0.33 (menu et épisodes dans un seul titre, Top Menu refusé pendant un épisode) sur la disposition d'aujourd'hui : le menu en Top Menu, un titre par vidéo ; son menu est gardé, le jar signé de nouveau. Refaire l'image ensuite avec `burnsmith iso`.
+- `burnsmith repair-top-menu DOSSIER` : remet un Blu-ray à menu BD-J fait avant 1.0.33 (menu et épisodes dans un seul titre, Top Menu refusé pendant un épisode) sur la disposition d'aujourd'hui : le menu en Top Menu, un titre par vidéo ; son menu est gardé, le jar signé de nouveau. Un menu sans mode de lecture reçoit celui d'aujourd'hui (un épisode choisi enchaîne les suivants de son bouton « tout lire », menu après le dernier) ; un disque déjà rangé ne reçoit que ce mode. Refaire l'image ensuite avec `burnsmith iso`.
 - `burnsmith burn image.iso F: [--speed 4]` : grave un disque vierge puis le relit.
 - `burnsmith verify image.iso F:` : compare un disque à son image.
 - `burnsmith erase F:` : efface un disque réinscriptible.

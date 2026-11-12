@@ -31,8 +31,9 @@ public sealed record EncodeOptions(bool ForceReencode = false, int Crf = 17, str
 /// The play mode (Blu-ray menu). <see cref="StartAtFirstTitle"/>: the disc starts on the first title instead of the menu.
 /// <see cref="PlayAll"/>: the titles follow each other. <see cref="Rewind"/>: when everything has played, go back to the start (the menu, or the
 /// first title) instead of stopping. Without <see cref="PlayAll"/> the disc returns to the menu after the title that was picked.
+/// The default is the studios' series discs (Warner): the menu, a picked episode followed by the next ones, the menu after the last; bonuses never chain.
 /// </summary>
-public sealed record PlaybackOptions(bool StartAtFirstTitle = false, bool PlayAll = false, bool Rewind = true)
+public sealed record PlaybackOptions(bool StartAtFirstTitle = false, bool PlayAll = true, bool Rewind = true)
 {
     /// <summary>The 3 radio buttons: 0 = menu then all titles, 1 = first title then all, 2 = back to the menu after the picked title.</summary>
     public int Mode => PlayAll ? (StartAtFirstTitle ? 1 : 0) : 2;
@@ -440,7 +441,7 @@ public static class BluRay
                 HdmvMenu.Add(job, menuPages, mainCount, muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, forced, intro != null, work, log);
                 return;
             }
-            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, Math.Min(1, VideoSize(job).H / 1080.0), job.Playback, mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, popup: popup, forced: forced); // the xlet chains only the main titles
+            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, Math.Min(1, VideoSize(job).H / 1080.0), job.Playback ?? new(), mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, popup: popup, forced: forced); // the xlet chains only the main titles
             AddMenu(job, menuDir, intro != null, log);
         }
         else if (muxed[0].DefaultSubtitle > 0 || intro != null)
@@ -1355,26 +1356,43 @@ public static class BluRay
     }
 
     /// <summary>
+    /// A menu.txt with no "playback" line (a disc made with the old default: back to the menu after the picked title) gets today's default, the studios' series discs:
+    /// a picked episode goes on to the next ones, back to the menu after the last. The episodes are those of the menu's "play all" button, so bonuses stay alone; without one it is kept.
+    /// </summary>
+    public static byte[] ChainEpisodes(byte[] menuTxt)
+    {
+        var text = Encoding.UTF8.GetString(menuTxt);
+        var lines = text.Split('\n');
+        if (lines.Any(l => l.StartsWith("playback ", StringComparison.Ordinal))) return menuTxt;
+        var all = lines.Select(l => l.Trim().Split(' ')).Where(w => w.Length >= 3 && w[^3] == "playall").Select(w => (First: int.Parse(w[^2], Inv), Count: int.Parse(w[^1], Inv))).OrderByDescending(t => t.Count).FirstOrDefault(); // none: (0, 0)
+        return all.Count > 1 ? Encoding.UTF8.GetBytes($"playback menu 1 1 {all.First} {all.Count}\n" + text) : menuTxt;
+    }
+
+    /// <summary>
     /// A BD-J menu disc made before 1.0.33 (the menu and every video in one title, where a player refuses the Top Menu key during a video) put on today's titles and
-    /// xlet, in its folder <paramref name="discRoot"/>: the menu it carries (menu.txt and its pictures) is kept, the jar is signed again. Returns false for a disc that does not need it.
+    /// xlet, in its folder <paramref name="discRoot"/>: the menu it carries (menu.txt and its pictures) is kept, with today's default play mode when it had none (see ChainEpisodes),
+    /// and the jar is signed again. A disc already on today's titles only gets that play mode. Returns false for a disc that does not need anything.
     /// </summary>
     public static bool RepairTopMenu(string discRoot)
     {
         var bdmv = Path.Combine(discRoot, "BDMV");
         var jar = Path.Combine(bdmv, "JAR", "00000.jar");
         var menuBdjo = Path.Combine(bdmv, "BDJO", "00000.bdjo");
-        if (!File.Exists(jar) || !File.Exists(menuBdjo) || File.Exists(Path.Combine(bdmv, "BDJO", "00001.bdjo"))) return false; // no BD-J menu, or already one title per video
+        if (!File.Exists(jar) || !File.Exists(menuBdjo)) return false; // no BD-J menu
+        var layout = !File.Exists(Path.Combine(bdmv, "BDJO", "00001.bdjo")); // not yet one title per video
+        var files = JarFiles(jar);
+        var menu = files.Where(e => !e.Name.EndsWith(".class", StringComparison.Ordinal)).Select(e => e.Name == "menu.txt" ? (e.Name, ChainEpisodes(e.Data)) : e).ToList();
+        if (!layout && menu.SequenceEqual(files.Where(e => !e.Name.EndsWith(".class", StringComparison.Ordinal)))) return false;
         foreach (var f in Directory.EnumerateFiles(discRoot, "*", SearchOption.AllDirectories)) // files copied out of an image are read-only
             File.SetAttributes(f, File.GetAttributes(f) & ~FileAttributes.ReadOnly);
         var old = File.ReadAllBytes(menuBdjo);
         var havi = old[(int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(old.AsSpan(8)) + 4 + 5] >> 4; // terminal info: length, font name, then the HAVi configuration
         var videos = Enumerable.Range(MoviePlaylist, IntroPlaylist - MoviePlaylist).TakeWhile(n => File.Exists(Path.Combine(bdmv, "PLAYLIST", $"{n:00000}.mpls"))).Count();
         var xlet = JarFiles(Assets.Find(@"bdj\menu.jar"));
-        var menu = JarFiles(jar).Where(e => !e.Name.EndsWith(".class", StringComparison.Ordinal)).ToList();
         File.Delete(jar); // read above; the signer writes a new file
         BdjSign.Write(jar, [.. xlet, .. menu], discRoot);
         // the objects an earlier start left in MovieObject.bdmv stay there, unused
-        TitleLayout(bdmv, videos, havi, File.Exists(Path.Combine(bdmv, "PLAYLIST", $"{IntroPlaylist:00000}.mpls")));
+        if (layout) TitleLayout(bdmv, videos, havi, File.Exists(Path.Combine(bdmv, "PLAYLIST", $"{IntroPlaylist:00000}.mpls")));
         return true;
     }
 }

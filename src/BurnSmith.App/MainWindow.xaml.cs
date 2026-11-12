@@ -103,7 +103,7 @@ public partial class MainWindow : Window
     string volume = "MON_DISQUE";
     int chapterMinutes = 5;
     EncodeOptions encode = new(FitDisc: true); // "Adapter au disque": the video stays as it is while it fits
-    PlaybackOptions playback = new(); // back to the menu after the title that was picked, as before the option existed
+    PlaybackOptions playback = new(); // menu, a picked video followed by the next ones, back to the menu after the last (as the studios' series discs)
     bool hdmvMenu; // Blu-ray: the menu as native HDMV navigation instead of the BD-J program (Paramètres avancés)
     string? previewFrame, previewFor;
     bool labelEdited, outEdited, busy, refreshingDrives;
