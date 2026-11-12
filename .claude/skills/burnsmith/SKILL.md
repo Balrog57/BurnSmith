@@ -44,15 +44,22 @@ burnsmith dvd --video ep1.mkv --name "Épisode 1" --video ep2.mkv --name "Épiso
 | But | Options |
 |---|---|
 | Type de disque | `bd` (Blu-ray), `bd --uhd` (4K), `dvd` |
-| Taille | bd : `--profile BD25\|BD50\|BD9\|BD5` (ajouter ` 720p`), `--capacity GO` (taille utilisable : 46.5 = BD-50, 7.6 = DVD-9) |
+| Taille | bd : `--profile BD25\|BD50\|BD9\|BD5\|MiniBD` (ajouter ` 720p`), `--capacity GO` (taille utilisable : 46.5 = BD-50, 7.6 = DVD-9, 1.3 = Mini DVD 8 cm ; `0` = sans limite, rien n'est adapté ni contrôlé en taille) |
 | Qualité | bd : `--quality fit` (défaut, « Adapter au disque ») `\|source\|15\|20\|30\|KBPS` ; `--reencode --crf N --preset NOM` ; dvd : `--dvd-kbps N` ; `--cpu` (sans carte NVIDIA) ; `--fps R` |
 | DVD | `--pal` \| `--ntsc`, `--4x3` |
-| Pistes (par vidéo) | `--audio N,N`, `--sub N,N` \| `--sub none`, `--default-audio N`, `--default-sub N`, `--track-lang a0=fre,s1=eng`, `--sub-file fra=film.srt` (srt, ass, vtt, sup, idx) |
+| Pistes (par vidéo) | `--audio N,N`, `--sub N,N` | `--sub none`, `--default-audio N`, `--default-sub N`, `--track-lang a0=fre,s1=eng`, `--sub-file fra=film.srt` (srt, ass, vtt, sup, idx), `--sub-delay 0=1.5,2=-0.4` (le sous-titre N plus tard de tant de secondes, plus tôt si négatif), `--audio-delay 0=0.2` (pareil pour la piste audio N) |
+| Sous-titres en texte (disque) | `--sub-font Arial`, `--sub-size 125` (% de la taille habituelle), `--sub-color FFE600`, `--sub-position 10` (0 = en bas, 100 = en haut) |\| `--sub none`, `--default-audio N`, `--default-sub N`, `--track-lang a0=fre,s1=eng`, `--sub-file fra=film.srt` (srt, ass, vtt, sup, idx) |
 | Coupe et son (par vidéo) | `--trim 90-1:30:00` (ou `A-B,C-D`), `--volume 120` |
-| Chapitres | `--chapters MIN` (disque), par vidéo : `--chapter-every MIN`, `--chapter-at 0,300,725`, `--no-chapters` |
+| Chapitres | les chapitres que le fichier contient (`Chapters` de `probe`) sont gardés par défaut ; sinon un toutes les 5 minutes. `--chapters MIN` (disque), par vidéo : `--chapter-every MIN`, `--chapter-at 0,300,725`, `--no-chapters` |
 | Rôle d'une vidéo | `--bonus` (page Bonus), `--intro` (lue au démarrage, avant le menu) |
 | Au menu (par vidéo) | `--name TEXTE`, `--overview TEXTE`, `--thumb-at 12:30` \| `--thumb image.jpg` |
 | Effets (par vidéo) | `--effects reglages.json` (les réglages de l'éditeur vidéo : recadrage, filigrane, sous-titre incrusté…) |
+| Disque d'essai | `--trial [SECONDES]` : chaque vidéo réduite à SECONDES en tout (300 par défaut), un passage à chaque chapitre ; le menu est complet, le disque prêt en quelques minutes. À fabriquer dans un autre `--out` que le vrai disque |
+| Projet | `--save-project disque.burnsmith` : n'encode rien, écrit le disque décrit par les options dans un projet que la fenêtre ouvre ; `burnsmith project disque.burnsmith [--out DOSSIER] [--trial]` fabrique le disque d'un projet (enregistré par la fenêtre ou par `--save-project`) |
+| File d'attente | `burnsmith queue un.burnsmith deux.burnsmith [--trial]` : les projets fabriqués l'un après l'autre, chacun dans son dossier (`Out` du projet, `_essai` au bout pour un essai), avec son ISO s'il la demande ; un échec n'arrête pas les suivants, code de sortie 1 si l'un a échoué |
+| Noms de chapitres (par vidéo) | `--chapter-names "Prologue\|Le duel\|\|Final"` : les noms écrits sur le menu, dans l'ordre de `--chapter-at` ou des chapitres du fichier (un nom vide = « Chapitre N ») ; sans l'option, les noms que le fichier donne sont gardés |
+| Son sans perte (bd) | `--lossless` : TrueHD gardé tel quel avec un cœur AC-3, FLAC / PCM en LPCM, au lieu d'AC-3 ; DTS et DTS-HD toujours copiés. `probe` dit `"Lossless": true` pour une piste concernée |
+| Copies gravées | `burnsmith burn image.iso F: [--speed 4] --copies 3` : la même image sur trois disques, Entrée quand le disque vierge suivant est en place |
 | Lecture | `--play-mode 0\|1\|2` (menu puis tout \| premier titre puis tout \| retour au menu), `--no-rewind` |
 
 ## Le menu
@@ -69,6 +76,7 @@ burnsmith dvd --video ep1.mkv --name "Épisode 1" --video ep2.mkv --name "Épiso
 | Musique | `--music morceau [--music-start S] [--music-volume 80] [--music-fade 2]` |
 | Présentation | `--list` (scènes en liste), `--scenes-only`, `--skip-first-scene`, `--bonus-text`, `--animated-thumbs` (DVD), `--highlight box\|underline\|textcolor` |
 | Pop-up Blu-ray | `--popup [--popup-main TEXTE] [--popup-resume TEXTE]` |
+| Type de menu Blu-ray | `--menu-mode bdj` (défaut : programme Java, toutes les fonctions) `\|hdmv` (menu natif que toute platine lit ; pages fixes : pas de `--loop`, pas de `--popup`) |
 | Élément libre | `--element "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;align=center"` (répétable ; `kind` = `text`, `image`, `box`, `button` ; un bouton prend `target=movie\|chapter:3\|scenes1\|settings\|bonus1\|credits`) |
 
 Pour modifier un modèle en profondeur : `burnsmith design-export NOM modele.json`, éditer le JSON, puis `--design modele.json`. `burnsmith preview NOM|modele.json dossier [--picture image.jpg] [--episodes N] [--overview "résumé"] [--title TEXTE] [--bonus N] [--focus]` dessine toutes les pages d'un modèle avec un contenu d'exemple (`--focus` : avec l'état sélectionné des boutons, tel que la télécommande le montre) ; `burnsmith dump NOM` liste ce qui est dessiné, rectangle par rectangle.
@@ -94,7 +102,7 @@ Le résultat se donne ensuite à `--video`.
 
 - `burnsmith templates` : tous les modèles trouvés (ceux de l'utilisateur sous « Mes modèles »), et ceux refusés avec la raison.
 - `burnsmith template-save NOM|modele.json ["NOUVEAU NOM"]` : range un modèle dans « Mes modèles » (`Documents\BurnSmith\Templates\mine`), comme « Enregistrer le modèle… » de l'éditeur. Il se retrouve ensuite par son nom : `--design "NOUVEAU NOM"`, `preview`, `design-export`, et dans l'éditeur de l'application.
-- `burnsmith import-background image…` et `burnsmith import-button image [image-sélectionnée]` : copient des images (jpg, png, bmp, svg) dans la bibliothèque de l'utilisateur (onglets Fonds et Boutons de l'éditeur) et affichent le chemin de chaque copie. Ce chemin sert dans un modèle : `"BackgroundImage"` du JSON, `--page-bg root=CHEMIN`, ou un bouton `--element "kind=button;page=root;rect=120,600,300,100;target=movie;file=CHEMIN;focus=CHEMIN-SÉLECTION"`.
+- `burnsmith import-background image…` et `burnsmith import-button image [image-sélectionnée]` : copient des images (jpg, png, bmp, svg) dans la bibliothèque de l'utilisateur (bibliothèques de fonds et de boutons de l'éditeur) et affichent le chemin de chaque copie. Ce chemin sert dans un modèle : `"BackgroundImage"` du JSON, `--page-bg root=CHEMIN`, ou un bouton `--element "kind=button;page=root;rect=120,600,300,100;target=movie;file=CHEMIN;focus=CHEMIN-SÉLECTION"`.
 - `burnsmith convert-templates [--out DOSSIER] [--force]` : convertit les modèles du PC au format unique (`template.json` + images) dans `Documents\BurnSmith\Templates\converted`. `--force` remplace les paquets existants, modifications de l'utilisateur comprises : demander avant.
 - Contrôles, tous à 0 quand tout va bien : `check-conversion` (paquets lisibles et complets), `check-fidelity` (chaque modèle d'origine et son paquet dessinent le même menu), `check-library`, `check-templates [--matrix] [--only NOM]` (pages, boutons, télécommande ; `--matrix` dure plus d'une heure).
 

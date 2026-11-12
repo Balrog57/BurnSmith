@@ -123,10 +123,10 @@ static class BdCheck
 
     static EncodeOptions Small(string preset = "veryfast", bool reencode = false, bool fit = false) => new(reencode, Preset: preset, FitDisc: fit, Hd720: true);
 
-    static string Bd(string name, IReadOnlyList<DiscTitle> titles, EncodeOptions? encode = null, MenuDesign? menu = null, double capacity = 23.3, Action<string>? log = null, bool uhd = false)
+    static string Bd(string name, IReadOnlyList<DiscTitle> titles, EncodeOptions? encode = null, MenuDesign? menu = null, double capacity = 23.3, Action<string>? log = null, bool uhd = false, bool hdmv = false)
     {
         var disc = F(name);
-        BluRay.Build(new BluRayJob(titles, disc, menu, uhd, "CHECK", 5, encode ?? Small(), capacity), log);
+        BluRay.Build(new BluRayJob(titles, disc, menu, uhd, "CHECK", 5, encode ?? Small(), capacity, HdmvMenu: hdmv), log);
         Check($"{name}: structure", DiscCheck.Folder(disc).Count == 0, string.Join(" ; ", DiscCheck.Folder(disc)));
         return disc;
     }
@@ -146,6 +146,7 @@ static class BdCheck
             FitDisc();
             Signature();
             Popup();
+            Hdmv();
             Damaged();
             WorkFolder();
             DvdRefusals();
@@ -182,6 +183,14 @@ static class BdCheck
     /// <summary>Finding 3: only what a player takes is copied; what it takes still is. The intro goes the same way as a title.</summary>
     static void Video()
     {
+        Part("MPEG-2", () =>
+        {
+            var film = F("mpeg2.mkv");
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", Size720, "-f", "lavfi", "-i", "sine=f=440:r=48000:d=2", "-map", "0:v", "-map", "1:a",
+                               "-c:v", "mpeg2video", "-b:v", "8M", "-pix_fmt", "yuv420p", .. Ac3At48, film]);
+            var codec = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0", Stream(Bd("mpeg2", [new DiscTitle(film)]), 1)]).Trim();
+            Check("a Blu-ray-ready MPEG-2 video is copied, not made again as H.264", codec.StartsWith("mpeg2video", StringComparison.Ordinal), codec);
+        });
         Part("10-bit", () =>
         {
             var s = Look(Stream(Bd("tenbit", [new DiscTitle(Clip("tenbit.mkv", Size720, 48000, ["-pix_fmt", "yuv420p10le"], Ac3At48))]), 1));
@@ -494,6 +503,62 @@ static class BdCheck
             Check("pop-up: the main menu button says what the design sets", bars[0].Ops.OfType<Label>().Any(l => l.Value == "Main"));
             var without = Jar(Bd("nopopup", titles, menu: new MenuDesign()));
             Check("no pop-up option: no pop-up page, the menu file as before", !without.Keys.Any(k => k.Contains("pop")) && !System.Text.Encoding.UTF8.GetString(without["menu.txt"]).Contains(" pop"));
+        });
+    }
+
+    /// <summary>
+    /// The native (HDMV) menu: its graphics stream (colours brought down to what a page takes, a big picture cut into segments and read back whole), the
+    /// commands a title runs, and a real disc: no BD-J on it, a playlist with a video clip and a graphics clip per page, the index and the movie objects.
+    /// How a player shows it is read in libbluray's log (toolslctest.ps1), not here.
+    /// </summary>
+    static void Hdmv()
+    {
+        Part("HDMV menu", () =>
+        {
+            var noise = new Random(1);
+            var big = new uint[1200 * 600]; // noise does not compress: more than one segment holds
+            for (var i = 0; i < big.Length; i++) big[i] = i % 7 == 0 ? 0 : 0xFF000000u | (uint)noise.Next(1 << 24);
+            var (palette, index) = IgStream.Quantize([big], IgStream.MaxColours);
+            Check("HDMV: 254 colours at most, one for every pixel", palette.Length == IgStream.MaxColours && big.All(c => c >> 24 == 0 || index[c] >= 1), $"{palette.Length} colours");
+            var stream = IgStream.Write(1920, 1080, 1, [new IgButton(1, 10, 20, 1200, 600, big, null, 1, 1, 1, 1, [Nav.JumpTitle(1)])], 1);
+            var kinds = new List<byte>();
+            var picture = new MemoryStream();
+            var framed = true;
+            for (var at = 0; at < stream.Length;)
+            {
+                var length = BinaryPrimitives.ReadUInt16BigEndian(stream.AsSpan(at + 11));
+                framed &= stream[at] == 'I' && stream[at + 1] == 'G';
+                kinds.Add(stream[at + 10]);
+                if (stream[at + 10] == 0x15) picture.Write(stream, at + 17, length - 4); // after the picture's number, version and flags
+                at += 13 + length;
+            }
+            var back = PgsStream.Unpack(picture.ToArray().AsSpan(7), 1200, 600); // after its length and size
+            Check("HDMV: composition, palette, the picture in several segments, end mark", framed && kinds[0] == 0x18 && kinds[1] == 0x14 && kinds.Count(k => k == 0x15) > 1 && kinds[^1] == 0x80,
+                string.Join(" ", kinds.Select(k => k.ToString("X2"))));
+            Check("HDMV: the picture reads back pixel for pixel", Enumerable.Range(0, big.Length).All(i => back[i] == (big[i] >> 24 == 0 ? 0 : index[big[i]])));
+
+            var title = HdmvMenu.TitleObject(1, 2, [(1, 3)], new PlaybackOptions(PlayAll: true));
+            int At(byte[] command) => title.FindIndex(c => c.AsSpan().SequenceEqual(command));
+            var plays = At(Nav.PlayPlaylist(1));
+            Check("HDMV title: from the start or from the chapter asked for, then the next title, else the menu",
+                plays > 0 && At(Nav.GoTo(plays)) == plays - 3 && At(Nav.GoTo(plays + 1)) == plays - 1 && At(Nav.JumpTitle(2)) == plays + 3 && At(Nav.JumpTitle(0)) == title.Count - 1);
+            Check("HDMV title: subtitles off shows the forced track of the audio's language", At(Nav.SelectStreams(1, 3)) > 0 && At(Nav.SelectStreams(1, 3)) < plays);
+
+            var film = Clip("hdmvfilm.mkv", "testsrc2=s=1280x720:r=24000/1001:d=6", 48000, Fine, Ac3At48);
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", film, "-map", "0", "-map", "0:a", "-c", "copy", F("hdmv2audio.mkv")]); // two audio tracks: the settings page exists
+            var log = new List<string>();
+            var bdmv = Path.Combine(Bd("hdmv", [new DiscTitle(F("hdmv2audio.mkv"), Audio: [0, 1], ChapterAt: [0, 2, 4]), new DiscTitle(film, Bonus: true)],
+                                       menu: new MenuDesign { Popup = true }, log: log.Add, hdmv: true), "BDMV");
+            Check("HDMV: no BD-J on the disc, and the log says what the menu leaves out", !new[] { "JAR", "BDJO" }.Any(d => Directory.Exists(Path.Combine(bdmv, d)) && Directory.EnumerateFiles(Path.Combine(bdmv, d)).Any()) && log.Any(l => l.Contains("pop-up")));
+            var pages = Directory.GetFiles(Path.Combine(bdmv, "PLAYLIST"), "001??.mpls").Length;
+            Check("HDMV: a playlist, a video clip and a graphics clip per page", pages >= 3 && Enumerable.Range(0, pages * 2).All(k => File.Exists(Path.Combine(bdmv, "STREAM", $"{HdmvMenu.FirstClip + k:00000}.m2ts"))), $"{pages} pages");
+            var indexFile = File.ReadAllBytes(Path.Combine(bdmv, "index.bdmv"));
+            var table = (int)BinaryPrimitives.ReadUInt32BigEndian(indexFile.AsSpan(8)) + 4;
+            int Word(byte[] file, int at) => BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(at));
+            // 12-byte entries (kind, then the movie object at +6): First Playback, Top Menu, the number of titles, the titles
+            Check("HDMV: First Playback runs object 0, the Top Menu object 1, the two titles objects 2 and 3",
+                indexFile[table] == 0x40 && Word(indexFile, table + 6) == 0 && Word(indexFile, table + 18) == 1 && Word(indexFile, table + 24) == 2 && Word(indexFile, table + 32) == 2 && Word(indexFile, table + 44) == 3);
+            Check("HDMV: four movie objects", Word(File.ReadAllBytes(Path.Combine(bdmv, "MovieObject.bdmv")), 48) == 4);
         });
     }
 

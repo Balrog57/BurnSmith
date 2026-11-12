@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="BurnSmith" Width="1280" Height="800" MinWidth="1140" MinHeight="640"
-        Background="{StaticResource BgBrush}" WindowStartupLocation="CenterScreen" AllowDrop="True" Drop="OnDrop">
+        Background="{StaticResource BgBrush}" WindowStartupLocation="CenterScreen" AllowDrop="True" Drop="OnDrop" KeyDown="OnWindowKey">
   <Window.Resources>
     <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
     <Style x:Key="Card" TargetType="Border">
@@ -90,9 +90,21 @@
       <!-- title bar: the logo, then the disc tools (burn an image, erase) and the project buttons -->
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <!-- the project: open, save, undo, redo (Ctrl+O, Ctrl+S, Ctrl+Z, Ctrl+Y) -->
+          <Button Style="{StaticResource IconBtn}" Content="&#xE8E5;" Width="38" Height="36" FontSize="16" Click="OnOpenProject" AutomationProperties.Name="Ouvrir un projet"
+                  ToolTip="Ouvrir un projet enregistré : ses vidéos, leurs réglages, le menu et les options du disque (Ctrl+O)"/>
+          <Button Style="{StaticResource IconBtn}" Content="&#xE74E;" Width="38" Height="36" FontSize="16" Click="OnSaveProject" AutomationProperties.Name="Enregistrer le projet"
+                  ToolTip="Enregistrer le projet dans un fichier, pour le reprendre plus tard (Ctrl+S enregistre dans le même fichier)"/>
+          <Button x:Name="QueueButton" Style="{StaticResource IconBtn}" Content="&#xE8FD;" Width="38" Height="36" FontSize="16" Click="OnQueue" AutomationProperties.Name="File d'attente"
+                  ToolTip="File d'attente : plusieurs disques fabriqués l'un après l'autre, sans rester devant l'écran"/>
+          <TextBlock x:Name="QueueCount" VerticalAlignment="Top" Margin="-8,2,4,0" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" IsHitTestVisible="False"/>
+          <Button x:Name="UndoButton" Style="{StaticResource IconBtn}" Content="&#xE7A7;" Width="38" Height="36" FontSize="16" IsEnabled="False" Click="OnUndo" AutomationProperties.Name="Annuler"
+                  ToolTip="Annuler la dernière modification (Ctrl+Z)"/>
+          <Button x:Name="RedoButton" Style="{StaticResource IconBtn}" Content="&#xE7A6;" Width="38" Height="36" FontSize="16" IsEnabled="False" Click="OnRedo" Margin="0,0,16,0" AutomationProperties.Name="Rétablir"
+                  ToolTip="Rétablir ce qui a été annulé (Ctrl+Y)"/>
           <Button x:Name="BurnButton" IsEnabled="False" Click="OnBurnIso" Padding="14,8" Margin="0,0,8,0" ToolTip="Grave une image ISO existante sur le disque du graveur choisi">
             <StackPanel Orientation="Horizontal">
-              <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE74E;" Margin="0,0,8,0" VerticalAlignment="Center"/>
+              <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE958;" Margin="0,0,8,0" VerticalAlignment="Center"/>
               <TextBlock Text="Graver une image"/>
             </StackPanel>
           </Button>
@@ -236,7 +248,11 @@
                  ToolTip="Dossier du disque : BDMV (ou VIDEO_TS) y est créé"/>
         <TextBlock x:Name="FreeText" Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.6"/>
         <Button Grid.Column="3" Style="{StaticResource IconBtn}" Content="&#xE8B7;" Margin="6,0,0,0" Width="38" Height="34" Click="OnBrowseOut" ToolTip="Choisir le dossier"/>
-        <ToggleButton x:Name="IsoCheck" Grid.Column="4" Content="ISO" Margin="10,0,0,0" Padding="16,8" ToolTip="Créer aussi une image ISO (UDF) à côté du dossier"/>
+        <StackPanel Grid.Column="4" Orientation="Horizontal" Margin="10,0,0,0">
+          <ToggleButton x:Name="TrialCheck" Content="Essai" Padding="16,8" Margin="0,0,10,0"
+                        ToolTip="Disque d'essai : cinq minutes de chaque vidéo, un passage à chaque chapitre. Le menu est complet et le disque est prêt en quelques minutes, dans un dossier à part (son nom finit par _essai), pour le vérifier dans VLC avant la vraie fabrication."/>
+          <ToggleButton x:Name="IsoCheck" Content="ISO" Padding="16,8" ToolTip="Créer aussi une image ISO (UDF) à côté du dossier"/>
+        </StackPanel>
         <StackPanel Grid.Column="5" Orientation="Horizontal" Margin="10,0,0,0">
           <ToggleButton x:Name="BurnCheck" Content="Graver" Padding="16,8" IsEnabled="False" ToolTip="Grave le disque sur le graveur choisi après la création (une ISO temporaire est utilisée)"/>
           <ComboBox x:Name="DriveBox" MinWidth="120" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Graveur">
@@ -252,6 +268,14 @@
             <ComboBoxItem Content="8x"/>
             <ComboBoxItem Content="6x"/>
             <ComboBoxItem Content="4x"/>
+          </ComboBox>
+          <ComboBox x:Name="CopiesBox" Margin="6,0,0,0" VerticalAlignment="Center" SelectedIndex="0" AutomationProperties.Name="Nombre de copies"
+                    ToolTip="Nombre de disques à graver : la même image sur chacun, BurnSmith demande le disque vierge suivant entre deux.">
+            <ComboBoxItem Content="1 copie"/>
+            <ComboBoxItem Content="2 copies"/>
+            <ComboBoxItem Content="3 copies"/>
+            <ComboBoxItem Content="4 copies"/>
+            <ComboBoxItem Content="5 copies"/>
           </ComboBox>
         </StackPanel>
         <Button x:Name="StartButton" Style="{StaticResource Primary}" Grid.Column="6" Content="Démarrer" Margin="16,0,0,0"

@@ -1,8 +1,8 @@
 # Builds the installer .\dist\BurnSmith-Setup-<version>.exe, the only file of a GitHub release and the one the in-app update downloads (Program Files; Inno Setup 6 is required).
 # It wraps .\dist\BurnSmith.exe, an intermediate step: self-contained, one file, with tsMuxeR inside. The installer itself carries ffmpeg and ffprobe
 # (installer\ffmpeg.iss) and ImgBurn's own setup (installer\imgburn.iss), taken from this PC once their SHA-256 matches: nothing is downloaded at install.
-# tsMuxeR is not in this repository: it is taken from this PC and zipped
-# into obj\payload\tools.zip, which the BurnSmith.Payload assembly embeds, with tsMuxeR's Apache-2.0 licence.
+# tsMuxeR is not in this repository: it is taken from this PC, with the four DLLs beside it (the build BDMV Author 0.1.133 ships, tools\tsmuxer\ORIGINE.txt), and zipped
+# into obj\payload\tools.zip, which the BurnSmith.Payload assembly embeds, with tsMuxeR's Apache-2.0 licence and the notices of its DLLs.
 # None of the templates below stops the script.
 # Likewise the pictures and layout files of the menu templates found on this PC (no fonts, no programs) go into
 # obj\payload\templates.zip. The first time it runs, the installed exe unpacks the tools into %LOCALAPPDATA%\BurnSmith\files
@@ -20,12 +20,19 @@ param(
 $ErrorActionPreference = 'Stop' # a missing licence file must fail the build, not ship without it
 $root = $PSScriptRoot
 if (-not (Test-Path $TsMuxer)) { throw "missing: $TsMuxer" }
+$tsDir = Split-Path $TsMuxer
+$tsDlls = 'libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll', 'zlib1.dll'
 # the setup carries exactly what was tested: the ffmpeg build CI pins (.github\workflows\ci.yml), ImgBurn's setup as Chocolatey's moderated package checks it
 $pins = @{
     "$Ffmpeg\ffmpeg.exe" = '09948D4CDD0650DA6FF5A87577469F2A218DC2615AE379F8F734D24C49DE0F73'
     "$Ffmpeg\ffprobe.exe" = 'A6618E99BB58869DED3C6F37B53AA1A8D701C3591DBB7B5B317D47369C112BE2'
     $ImgBurnSetup = '49AA06EAFFE431F05687109FEE25F66781ABBE1108F3F8CA78C79BDEC8753420'
-    $TsMuxer = '12434DB81E879927D78FAD932BF37B5BE5DCA911B4BF741B1D8E0D98609CC2AB' # tsMuxeR 2.7.0, the build CI pins
+    # tsMuxeR as BDMV Author 0.1.133 patched and built it (2.7.0's source, a native menu track accepted, insertSEI's 9.5 s start delay fixed), the build CI pins, and its MSYS2 DLLs
+    $TsMuxer = '785C40C2B232B3F167D9C58842EB688C354FC289C09E9C7B8A057D644E540F31'
+    "$tsDir\libgcc_s_seh-1.dll" = '266670EA259731F061D77A1EE6721266C8D1EF8200C15BB09ADB65C86EAC8591'
+    "$tsDir\libstdc++-6.dll" = '0C7C8EFE66A3879AE6200CC3B0709647DFCBE7E0AA19F1F6EEA030B1229E8C5E'
+    "$tsDir\libwinpthread-1.dll" = '2225E5C6887837D58E8CEEC7380A95D9EB74D8DF49B24A787EE5BC864C0FA279'
+    "$tsDir\zlib1.dll" = 'A6BDF5EECC69D86264820F45D04FC9B8113DAC7EDC4C34377DFF05E2F27DDF7B'
     $DoviTool = '8CD1262B4EDAC2DF219448D3450FF8E810C775E8025CDBE5E031D8F5EFD55DB8'
     $Hdr10PlusTool = '04E4478208949EF89DDD90B4E6A8B2616ADD79E2EBD0379448329613970FCA1A'
 }
@@ -46,7 +53,8 @@ if ($LASTEXITCODE -ne 0) { if (Test-Path $tz) { [IO.File]::Delete($tz) }; throw 
 $zip = "$payload\tools.zip"
 if (Test-Path $zip) { [IO.File]::Delete($zip) }
 $z = [IO.Compression.ZipFile]::Open($zip, 'Create')
-foreach ($e in @(@($TsMuxer, 'tsMuxeR.exe'), @("$root\installer\tsMuxeR-LICENSE.txt", 'tsMuxeR-LICENSE.txt'),
+foreach ($e in @($tsDlls | ForEach-Object { , @("$tsDir\$_", $_) }) +
+               @(@($TsMuxer, 'tsMuxeR.exe'), @("$root\installer\tsMuxeR-LICENSE.txt", 'tsMuxeR-LICENSE.txt'), @("$root\installer\tsMuxeR-NOTICES.txt", 'tsMuxeR-NOTICES.txt'),
                  @($DoviTool, 'dovi_tool.exe'), @("$root\installer\dovi_tool-LICENSE.txt", 'dovi_tool-LICENSE.txt'),
                  @($Hdr10PlusTool, 'hdr10plus_tool.exe'), @("$root\installer\hdr10plus_tool-LICENSE.txt", 'hdr10plus_tool-LICENSE.txt'))) {
     [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, $e[0], $e[1], 'Optimal')

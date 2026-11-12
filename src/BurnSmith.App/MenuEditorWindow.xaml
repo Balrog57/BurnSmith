@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:BurnSmith.App"
-        Title="Menu du disque" Width="1440" Height="800" MinWidth="1200" MinHeight="700"
+        Title="Menu du disque" Width="1440" Height="820" MinWidth="1200" MinHeight="720"
         Background="{StaticResource BgBrush}" WindowStartupLocation="CenterOwner" PreviewKeyDown="OnWindowKey">
   <Window.Resources>
     <local:ThumbConverter x:Key="Thumb"/>
@@ -19,119 +19,187 @@
       <Setter Property="Margin" Value="0,0,8,0"/>
       <Setter Property="DockPanel.Dock" Value="Left"/>
     </Style>
+    <!-- a step of the bar, a family of templates: one of several, shown as a button that stays down -->
+    <Style x:Key="Step" TargetType="RadioButton" BasedOn="{StaticResource {x:Type ToggleButton}}">
+      <Setter Property="Padding" Value="10,8"/>
+      <Setter Property="Margin" Value="0,0,8,0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
+    <Style x:Key="Head" TargetType="TextBlock">
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{StaticResource AccentHoverBrush}"/>
+      <Setter Property="Margin" Value="0,14,0,6"/>
+    </Style>
   </Window.Resources>
 
+  <!-- as Yuhan's window: the page always at the same place, its pages under it; as TMPGEnc's stages: the work in its order along the top,
+       the panel on the right showing what that step needs and nothing else -->
   <Grid Margin="20">
     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="*" MinWidth="270"/>
-      <ColumnDefinition Width="3*"/>
-      <ColumnDefinition Width="330"/>
+      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="410"/>
     </Grid.ColumnDefinitions>
 
-    <!-- the library: templates, then backgrounds and buttons apart -->
-    <TabControl x:Name="Library">
-      <!-- the 4 tabs in a fixed 2 × 2 grid: none moves when another is picked, each name on one line -->
+    <UniformGrid x:Name="StepBar" Grid.ColumnSpan="2" Columns="5" Margin="0,0,-8,14">
+      <RadioButton Style="{StaticResource Step}" GroupName="step" Tag="0" Content="1 · Modèle" IsChecked="True" Checked="OnStep" ToolTip="Choisir l'habillage du menu parmi les modèles"/>
+      <RadioButton Style="{StaticResource Step}" GroupName="step" Tag="1" Content="2 · Structure" Checked="OnStep" ToolTip="Les pages du menu et ce que fait le disque"/>
+      <RadioButton Style="{StaticResource Step}" GroupName="step" Tag="2" Content="3 · Pages" Checked="OnStep" ToolTip="Boutons, textes et couleurs de chaque page"/>
+      <RadioButton Style="{StaticResource Step}" GroupName="step" Tag="3" Content="4 · Fond et musique" Checked="OnStep" ToolTip="L'image ou la vidéo derrière le menu, et sa musique"/>
+      <RadioButton Style="{StaticResource Step}" GroupName="step" Tag="4" Content="5 · Aperçu" Checked="OnStep" ToolTip="Parcourir le menu comme avec la télécommande"/>
+    </UniformGrid>
+
+    <DockPanel Grid.Row="1" Margin="0,0,16,0">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DockPanel.Dock="Bottom" Margin="0,10,0,0">
+        <Button x:Name="UndoButton" Content="↶ Annuler" Click="OnUndo" Padding="10,4" Margin="0,0,8,0" IsEnabled="False" ToolTip="Annuler la dernière modification (Ctrl+Z)"/>
+        <Button x:Name="RedoButton" Content="↷ Rétablir" Click="OnRedo" Padding="10,4" Margin="0,0,24,0" IsEnabled="False" ToolTip="Rétablir ce qui a été annulé (Ctrl+Y)"/>
+        <Button Content="◀" Width="40" Click="OnPrev" AutomationProperties.Name="Page précédente"/>
+        <TextBlock x:Name="PageText" Margin="16,0" VerticalAlignment="Center"/>
+        <Button Content="▶" Width="40" Click="OnNext" AutomationProperties.Name="Page suivante"/>
+      </StackPanel>
+      <TextBlock x:Name="Status" DockPanel.Dock="Bottom" Foreground="{StaticResource AccentHoverBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+      <TextBlock x:Name="Hint" DockPanel.Dock="Bottom" TextWrapping="Wrap" Opacity="0.65" Margin="0,8,0,0"/>
+      <ListBox x:Name="PageStrip" DockPanel.Dock="Bottom" Margin="0,10,0,0" MaxHeight="96" SelectionChanged="OnStripPick"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+        <ListBox.ItemsPanel>
+          <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+        </ListBox.ItemsPanel>
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <StackPanel Width="112" Margin="2">
+              <Image Source="{Binding Thumb}" Width="112" Height="63" Stretch="Uniform"/>
+              <TextBlock Text="{Binding Name}" FontSize="11" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <Border x:Name="Stage" Background="Black" CornerRadius="12" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Focusable="True" FocusVisualStyle="{x:Null}"
+              AllowDrop="True" PreviewKeyDown="OnStageKey" MouseDown="OnStageMouse" DragOver="OnStageDragOver" Drop="OnStageDrop">
+        <Viewbox Stretch="Uniform">
+          <Canvas x:Name="StageCanvas" Width="1920" Height="1080" ClipToBounds="True" RenderOptions.BitmapScalingMode="HighQuality"
+                  MouseMove="OnCanvasMove" MouseLeftButtonUp="OnCanvasUp" LostMouseCapture="OnCanvasLost"/>
+        </Viewbox>
+      </Border>
+    </DockPanel>
+
+    <!-- one panel per step, no tab strip of its own: the bar above picks it -->
+    <TabControl x:Name="Props" Grid.Row="1" Grid.Column="1">
       <TabControl.Template>
         <ControlTemplate TargetType="TabControl">
-          <DockPanel>
-            <UniformGrid DockPanel.Dock="Top" Columns="2" IsItemsHost="True" Margin="0,0,0,4"/>
-            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                    BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
-              <ContentPresenter ContentSource="SelectedContent"/>
-            </Border>
-          </DockPanel>
+          <ContentPresenter ContentSource="SelectedContent"/>
         </ControlTemplate>
       </TabControl.Template>
-      <TabControl.Resources>
-        <Style TargetType="TabItem" BasedOn="{StaticResource {x:Type TabItem}}">
-          <Setter Property="Margin" Value="2"/>
-          <Setter Property="HorizontalContentAlignment" Value="Center"/>
-          <Setter Property="VerticalContentAlignment" Value="Center"/>
-          <Setter Property="HeaderTemplate">
-            <Setter.Value>
-              <DataTemplate>
-                <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis"/>
-              </DataTemplate>
-            </Setter.Value>
-          </Setter>
-        </Style>
-      </TabControl.Resources>
-      <TabItem Header="Modèles">
+
+      <!-- 1 · Modèle -->
+      <TabItem>
         <DockPanel>
+          <WrapPanel x:Name="Families" DockPanel.Dock="Top"/>
           <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-            <Button Content="Ajouter un dossier…" HorizontalAlignment="Stretch" Click="OnAddFolder"/>
+            <Button Content="Ajouter un dossier de modèles…" HorizontalAlignment="Stretch" Click="OnAddFolder"
+                    ToolTip="Un dossier de modèles DVDFab, Leawo, Yuhan ou DVDStyler : ils sont convertis et rangés avec les autres"/>
             <TextBlock x:Name="ConvertNote" Margin="0,4,0,0" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
           </StackPanel>
-          <!-- one heading per group, BurnSmith's own designs first; still virtualized: some hundred and fifty pictures.
-               Not synchronized: a grouped view has a current item, which would pick the first template as soon as the editor opens -->
-          <ListBox x:Name="BuiltInList" SelectionChanged="OnPick" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizingWhenGrouping="True"
-                   IsSynchronizedWithCurrentItem="False">
-            <ListBox.GroupStyle>
-              <GroupStyle>
-                <GroupStyle.HeaderTemplate>
-                  <DataTemplate>
-                    <TextBlock FontWeight="SemiBold" Foreground="{StaticResource AccentHoverBrush}" Margin="2,10,0,4">
-                      <Run Text="{Binding Name, Mode=OneWay}"/> <Run Text="{Binding ItemCount, Mode=OneWay, StringFormat=({0})}"/>
-                    </TextBlock>
-                  </DataTemplate>
-                </GroupStyle.HeaderTemplate>
-              </GroupStyle>
-            </ListBox.GroupStyle>
-            <ListBox.ItemTemplate>
-              <DataTemplate>
-                <StackPanel Margin="0,4">
-                  <Image Source="{Binding Thumbnail}" Width="170" Stretch="Uniform"/>
-                  <TextBlock Text="{Binding Design.Name}" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+          <Grid>
+            <!-- two per row, the family's only: what the chips above leave is small enough to do without virtualizing -->
+            <ListBox x:Name="BuiltInList" SelectionChanged="OnPick" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top"/></ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Margin="0,2" ToolTip="{Binding Design.Name}">
+                    <Viewbox Stretch="Uniform">
+                      <Border Width="170" Height="96" Background="#22000000" CornerRadius="4">
+                        <Image Source="{Binding Thumbnail, Converter={StaticResource Thumb}}" Stretch="Uniform"/>
+                      </Border>
+                    </Viewbox>
+                    <TextBlock Text="{Binding Design.Name}" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="12" Margin="0,3,0,0"/>
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <DockPanel x:Name="MinePanel" Visibility="Collapsed">
+              <TextBlock DockPanel.Dock="Top" Text="Les menus que vous enregistrez avec « Enregistrer le modèle… », en bas de la fenêtre." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
+              <ListBox x:Name="CustomList" DisplayMemberPath="Name" SelectionChanged="OnPick"/>
+            </DockPanel>
+          </Grid>
+        </DockPanel>
+      </TabItem>
+
+      <!-- 2 · Structure -->
+      <TabItem>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="0,0,8,0">
+            <TextBlock Text="Pages du menu" Style="{StaticResource Head}" Margin="0,0,0,6"/>
+            <CheckBox Content="Aperçu du film sur le menu principal" IsChecked="{Binding ShowPreview}" Margin="0,0,0,4"/>
+            <StackPanel x:Name="GridLook">
+              <DockPanel Margin="0,4,0,0">
+                <TextBlock Text="Chapitres ou épisodes par page" VerticalAlignment="Center" DockPanel.Dock="Left" Margin="0,0,10,0"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                  <ComboBox x:Name="ColsBox" SelectedItem="{Binding Cols}" Width="66" AutomationProperties.Name="Colonnes"/>
+                  <TextBlock Text="×" Margin="8,0" VerticalAlignment="Center"/>
+                  <ComboBox x:Name="RowsBox" SelectedItem="{Binding Rows}" Width="66" AutomationProperties.Name="Lignes"/>
                 </StackPanel>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </DockPanel>
+              </DockPanel>
+              <CheckBox Content="Une image dans chaque case" IsChecked="{Binding Thumbnails}" Margin="0,8,0,0"/>
+            </StackPanel>
+            <TextBlock x:Name="GridNote" Text="Ce modèle fixe lui-même le nombre de cases par page." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="Collapsed"/>
+            <CheckBox Content="Chapitres en liste, sans vignettes (selon le modèle)" IsChecked="{Binding SceneList}" Margin="0,8,0,0" ToolTip="Pour les modèles qui prévoient une page de chapitres en liste"/>
+            <CheckBox Content="Vignettes animées (DVD)" IsChecked="{Binding AnimatedThumbs}" Margin="0,4,0,0" ToolTip="Un extrait du chapitre tourne dans chaque case"/>
+            <CheckBox Content="Pas de menu principal : les chapitres d'abord" IsChecked="{Binding ScenesOnly}" Margin="0,4,0,0" ToolTip="La première page de chapitres ou d'épisodes sert de menu"/>
+            <CheckBox Content="Série : pas de case pour la première vidéo" IsChecked="{Binding SkipFirstScene}" Margin="0,4,0,0" ToolTip="« Tout lire » la joue"/>
+            <CheckBox Content="Page Bonus en texte, sans vignettes" IsChecked="{Binding BonusText}" Margin="0,4,0,0"/>
+            <TextBlock Text="La page Langues (audio et sous-titres) et la page Bonus se créent d'elles-mêmes quand le disque a plusieurs pistes ou des bonus." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+
+            <TextBlock Text="Page Crédits" Style="{StaticResource Head}"/>
+            <TextBox Text="{Binding Credits, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70" VerticalScrollBarVisibility="Auto"
+                     ToolTip="Une ligne par rangée ; vide = pas de page Crédits" AutomationProperties.Name="Texte des crédits"/>
+            <TextBlock Text="Une ligne par rangée. Vide : pas de page Crédits." Opacity="0.65" FontSize="11" Margin="0,3,0,0"/>
+
+            <TextBlock Text="Pendant le film (Blu-ray)" Style="{StaticResource Head}"/>
+            <CheckBox x:Name="PopupBox" Content="Menu pop-up par-dessus le film" IsChecked="{Binding Popup}" ToolTip="La touche Pop-up de la télécommande ouvre un petit menu sans arrêter le film"/>
+            <DockPanel Margin="0,6,0,0" IsEnabled="{Binding IsChecked, ElementName=PopupBox}">
+              <TextBlock Text="Bouton reprendre" Width="150" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+              <TextBox Text="{Binding ResumeLabel, UpdateSourceTrigger=PropertyChanged}"/>
+            </DockPanel>
+            <DockPanel Margin="0,4,0,0" IsEnabled="{Binding IsChecked, ElementName=PopupBox}">
+              <TextBlock Text="Bouton menu principal" Width="150" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+              <TextBox Text="{Binding MainMenuLabel, UpdateSourceTrigger=PropertyChanged}"/>
+            </DockPanel>
+
+            <TextBlock Text="Lecture du disque" Style="{StaticResource Head}"/>
+            <ComboBox x:Name="PlayModeBox" HorizontalAlignment="Stretch" AutomationProperties.Name="Lecture du disque"
+                      ToolTip="Ce que fait le disque quand on l'insère et quand une vidéo se termine (aussi dans Paramètres avancés)">
+              <ComboBoxItem Content="Afficher le menu, puis lire toutes les vidéos à la suite"/>
+              <ComboBoxItem Content="Lire la première vidéo dès l'insertion, puis les suivantes"/>
+              <ComboBoxItem Content="Afficher le menu, y revenir à la fin de chaque vidéo"/>
+            </ComboBox>
+
+            <TextBlock Text="Langue" Style="{StaticResource Head}"/>
+            <ComboBox x:Name="LanguageBox" SelectionChanged="OnPickLanguage" DisplayMemberPath="Label" SelectedValuePath="Value" HorizontalAlignment="Stretch" AutomationProperties.Name="Langue du menu"
+                      ToolTip="Tous les mots du menu en français ou en anglais : ceux de l'étape Pages (Lecture, Chapitres, Réglages, Reprendre…) et ceux dessinés dans les boutons d'un modèle (Play, Scenes, Set Up, Main Menu). Un mot que vous avez écrit vous-même est gardé."/>
+            <TextBlock Text="Titre du disque par langue, Blu-ray (une ligne par langue, ex. fra: Mon disque)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+            <TextBox Text="{Binding TitlesByLanguage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" VerticalScrollBarVisibility="Auto" Margin="0,0,0,12"/>
+          </StackPanel>
+        </ScrollViewer>
       </TabItem>
-      <TabItem Header="Mes modèles">
+
+      <!-- 3 · Pages -->
+      <TabItem>
         <DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="Les menus que vous enregistrez avec « Enregistrer le modèle… ». Ceux livrés avec BurnSmith (Métal, Streaming…) sont dans l'onglet Modèles." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
-          <ListBox x:Name="CustomList" DisplayMemberPath="Name" SelectionChanged="OnPick"/>
-        </DockPanel>
-      </TabItem>
-      <TabItem Header="Fonds">
-        <DockPanel>
-          <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-            <Button x:Name="BgRemove" DockPanel.Dock="Right" Content="Retirer" Margin="4,0,0,0" IsEnabled="False" Click="OnBgRemove"/>
-            <Button DockPanel.Dock="Right" Content="Aucun" Margin="8,0,0,0" Click="OnBgClear" ToolTip="Revient au dégradé de couleurs"/>
-            <Button Content="Importer…" Click="OnBg"/>
-          </DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="Glissez un fond sur la page, ou double-cliquez." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
-          <ListBox x:Name="BgList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" SelectionChanged="OnBgPick"
-                   PreviewMouseLeftButtonDown="OnLibraryDown" PreviewMouseMove="OnLibraryMove" MouseDoubleClick="OnBgDouble">
-            <ListBox.GroupStyle>
-              <GroupStyle>
-                <GroupStyle.HeaderTemplate>
-                  <DataTemplate>
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{StaticResource AccentHoverBrush}" Margin="2,10,0,4"/>
-                  </DataTemplate>
-                </GroupStyle.HeaderTemplate>
-              </GroupStyle>
-            </ListBox.GroupStyle>
-            <ListBox.ItemsPanel>
-              <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top"/></ItemsPanelTemplate>
-            </ListBox.ItemsPanel>
-            <ListBox.ItemTemplate>
-              <DataTemplate>
-                <!-- always 2 per row: the Viewbox grows the 16:9 tile with the column -->
-                <Viewbox Stretch="Uniform" ToolTip="{Binding Name}">
-                  <Image Source="{Binding Path, Converter={StaticResource Thumb}}" Width="108" Height="61" Stretch="UniformToFill"/>
-                </Viewbox>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </DockPanel>
-      </TabItem>
-      <TabItem Header="Boutons">
+          <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+            <TextBlock Text="Ajouter :" VerticalAlignment="Center" Opacity="0.65" Margin="0,0,8,6"/>
+            <Button Content="+ Texte" Click="OnAddText" Margin="0,0,6,6"/>
+            <Button Content="+ Image" Click="OnAddImage" Margin="0,0,6,6"/>
+            <Button Content="+ Cadre" Click="OnAddBox" Margin="0,0,6,6"/>
+            <Button Content="+ Bouton" Click="OnAddButton" Margin="0,0,0,6"/>
+          </WrapPanel>
+          <TabControl x:Name="PageTabs">
+            <TabItem Header="Boutons">
         <DockPanel>
           <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
             <Button x:Name="BtnRemove" DockPanel.Dock="Right" Content="Retirer" Margin="8,0,0,0" IsEnabled="False" Click="OnBtnRemove"/>
@@ -163,63 +231,10 @@
             </ListBox.ItemTemplate>
           </ListBox>
         </DockPanel>
-      </TabItem>
-    </TabControl>
-
-    <DockPanel Grid.Column="1" Margin="16,0">
-      <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DockPanel.Dock="Top">
-          <Button x:Name="UndoButton" Content="↶ Annuler" Click="OnUndo" Padding="10,4" Margin="0,0,8,0" IsEnabled="False" ToolTip="Annuler la dernière modification (Ctrl+Z)"/>
-          <Button x:Name="RedoButton" Content="↷ Rétablir" Click="OnRedo" Padding="10,4" Margin="0,0,24,0" IsEnabled="False" ToolTip="Rétablir ce qui a été annulé (Ctrl+Y)"/>
-          <Button Content="◀" Width="40" Click="OnPrev"/>
-          <TextBlock x:Name="PageText" Margin="16,0" VerticalAlignment="Center"/>
-          <Button Content="▶" Width="40" Click="OnNext"/>
-        </StackPanel>
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
-          <Button Content="Fond de cette page…" Click="OnPageBg" Padding="12,4"
-                  ToolTip="Une image de fond pour ce genre de page (menu, scènes, réglages, bonus, crédits) ; les autres gardent le fond du modèle"/>
-          <Button x:Name="PageBgClear" Content="Fond commun" Click="OnPageBgClear" Padding="12,4" Margin="8,0,0,0"
-                  ToolTip="Rend à ce genre de page le fond du modèle"/>
-        </StackPanel>
-      </DockPanel>
-      <TextBlock x:Name="Status" DockPanel.Dock="Bottom" Foreground="{StaticResource AccentHoverBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-      <TextBlock DockPanel.Dock="Bottom" TextWrapping="Wrap" Opacity="0.65" Margin="0,8,0,0"
-                 Text="Glissez un fond ou un bouton de la bibliothèque sur la page. Cliquez un élément pour le déplacer ou le redimensionner (coins) ; Suppr le retire, les flèches le déplacent (Maj : pas fin). Sans élément choisi, flèches et Entrée parcourent le menu comme sur le disque."/>
-      <ListBox x:Name="PageStrip" DockPanel.Dock="Bottom" Margin="0,10,0,0" MaxHeight="170" SelectionChanged="OnStripPick"
-               ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-        <ListBox.ItemsPanel>
-          <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-        </ListBox.ItemsPanel>
-        <ListBox.ItemTemplate>
-          <DataTemplate>
-            <StackPanel Width="112" Margin="2">
-              <Image Source="{Binding Thumb}" Width="112" Height="63" Stretch="Uniform"/>
-              <TextBlock Text="{Binding Name}" FontSize="11" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
-            </StackPanel>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
-      <Border x:Name="Stage" Background="Black" CornerRadius="12" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Focusable="True" FocusVisualStyle="{x:Null}"
-              AllowDrop="True" PreviewKeyDown="OnStageKey" MouseDown="OnStageMouse" DragOver="OnStageDragOver" Drop="OnStageDrop">
-        <Viewbox Stretch="Uniform">
-          <Canvas x:Name="StageCanvas" Width="1920" Height="1080" ClipToBounds="True" RenderOptions.BitmapScalingMode="HighQuality"
-                  MouseMove="OnCanvasMove" MouseLeftButtonUp="OnCanvasUp" LostMouseCapture="OnCanvasLost"/>
-        </Viewbox>
-      </Border>
-    </DockPanel>
-
-    <!-- what is selected, the menu's texts, its animation and music, its look -->
-    <TabControl x:Name="Props" Grid.Column="2">
+            </TabItem>
       <TabItem Header="Élément">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="0,8,8,0">
-            <TextBlock Text="Posés à la main sur une page. Un bouton se règle ici : image, libellé, page ou film visé." Opacity="0.65" FontSize="11" TextWrapping="Wrap"/>
-            <WrapPanel Margin="0,8,0,4">
-              <Button Content="+ Texte" Click="OnAddText" Margin="0,0,6,6"/>
-              <Button Content="+ Image" Click="OnAddImage" Margin="0,0,6,6"/>
-              <Button Content="+ Cadre" Click="OnAddBox" Margin="0,0,6,6"/>
-              <Button Content="+ Bouton" Click="OnAddButton" Margin="0,0,0,6"/>
-            </WrapPanel>
             <ListBox x:Name="ElemList" Height="88" SelectionChanged="OnElemPick"/>
             <DockPanel Margin="0,4,0,0">
               <TextBlock Text="Page" Width="76" VerticalAlignment="Center"/>
@@ -291,16 +306,12 @@
           </StackPanel>
         </ScrollViewer>
       </TabItem>
-
-      <TabItem Header="Menu">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="0,8,8,0">
-            <TextBlock Text="Langue du menu" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
-            <ComboBox x:Name="LanguageBox" SelectionChanged="OnPickLanguage" DisplayMemberPath="Label" SelectedValuePath="Value" HorizontalAlignment="Stretch"
-                      ToolTip="Tous les mots du menu en français ou en anglais : ceux écrits ci-dessous (Lecture, Chapitres, Réglages, Reprendre…) et ceux dessinés dans les boutons d'un modèle (Play, Scenes, Set Up, Main Menu). Un mot que vous avez écrit vous-même est gardé."/>
-            <TextBlock Text="Titre" Style="{StaticResource Caption}"/>
-            <TextBox x:Name="TitleBox" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"/>
-            <StackPanel x:Name="ZonePanel"/>
+            <TabItem Header="Textes">
+              <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,8,8,12">
+                  <TextBlock Text="Titre" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
+                  <TextBox x:Name="TitleBox" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"/>
+                  <StackPanel x:Name="ZonePanel"/>
             <TextBlock Text="Bouton lecture" Style="{StaticResource Caption}"/>
             <TextBox Text="{Binding PlayLabel, UpdateSourceTrigger=PropertyChanged}"/>
             <TextBlock Text="Bouton chapitres" Style="{StaticResource Caption}"/>
@@ -329,81 +340,20 @@
             <TextBox Text="{Binding BackLabel, UpdateSourceTrigger=PropertyChanged}"/>
             <TextBlock Text="Bouton crédits" Style="{StaticResource Caption}"/>
             <TextBox Text="{Binding CreditsLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Texte des crédits (une ligne par rangée ; vide = pas de page crédits)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
-            <TextBox Text="{Binding Credits, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" VerticalScrollBarVisibility="Auto"/>
-            <TextBlock Text="Titre du disque par langue, Blu-ray (une ligne par langue, ex. fra: Mon disque)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
-            <TextBox Text="{Binding TitlesByLanguage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" VerticalScrollBarVisibility="Auto"/>
-            <CheckBox Content="Afficher l'aperçu du film" IsChecked="{Binding ShowPreview}" Margin="0,16,0,12"/>
-            <CheckBox Content="Menu limité aux chapitres : la première page de chapitres ou d'épisodes est le menu" IsChecked="{Binding ScenesOnly}" Margin="0,0,0,4"/>
-            <CheckBox Content="Série : la première vidéo n'a pas sa case dans les épisodes (« Tout lire » la joue)" IsChecked="{Binding SkipFirstScene}" Margin="0,0,0,4"/>
-            <CheckBox Content="Page Bonus en texte, sans vignettes" IsChecked="{Binding BonusText}" Margin="0,0,0,12"/>
-            <CheckBox x:Name="PopupBox" Content="Menu pop-up (Blu-ray) : la touche Pop-up ouvre un menu par-dessus le film" IsChecked="{Binding Popup}" Margin="0,0,0,4"/>
-            <TextBlock Text="Pop-up : bouton reprendre" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding ResumeLabel, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsChecked, ElementName=PopupBox}"/>
-            <TextBlock Text="Pop-up : bouton menu principal" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding MainMenuLabel, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsChecked, ElementName=PopupBox}" Margin="0,0,0,12"/>
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-
-      <TabItem Header="Animation">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="0,8,8,0">
-            <CheckBox Content="Menu animé : une vidéo tourne en boucle derrière les boutons" IsChecked="{Binding Loop}"/>
-            <DockPanel Margin="0,4">
-              <TextBlock Text="Début vidéo (s)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-              <TextBox Text="{Binding LoopStart, UpdateSourceTrigger=PropertyChanged}"/>
-            </DockPanel>
-            <TextBlock Text="Vidéo du menu (vide = le premier film)" Style="{StaticResource Caption}"/>
-            <DockPanel>
-              <Button Content="…" Width="36" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnLoopFile"/>
-              <TextBox Text="{Binding LoopFile, UpdateSourceTrigger=PropertyChanged}"/>
-            </DockPanel>
-
-            <TextBlock Text="Musique du menu (vide = aucune ; avec un menu animé, remplace le son de la vidéo)" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,16,0,4"/>
-            <DockPanel>
-              <Button Content="…" Width="36" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnMusic"/>
-              <TextBox Text="{Binding Music, UpdateSourceTrigger=PropertyChanged}"/>
-            </DockPanel>
-            <DockPanel Margin="0,4">
-              <TextBlock Text="Début musique (s)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-              <TextBox Text="{Binding MusicStart, UpdateSourceTrigger=PropertyChanged}"/>
-            </DockPanel>
-            <DockPanel Margin="0,4">
-              <TextBlock Text="Volume (%)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-              <TextBox Text="{Binding MusicVolume, UpdateSourceTrigger=PropertyChanged}"/>
-            </DockPanel>
-            <DockPanel Margin="0,4">
-              <TextBlock Text="Fondu (s)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left" ToolTip="Entrée au début de la boucle, sortie à sa fin (0 = aucun)"/>
-              <TextBox Text="{Binding MusicFade, UpdateSourceTrigger=PropertyChanged}"/>
-            </DockPanel>
-            <DockPanel Margin="0,4">
-              <TextBlock Text="Durée boucle (s)" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left" ToolTip="Durée de la vidéo animée et de la musique avant qu'elles recommencent : 5 à 300 s sur Blu-ray, 5 à 120 s sur DVD. 0 = la durée de la musique (la chanson entière). Une vidéo plus courte est rejouée depuis son début."/>
-              <TextBox Text="{Binding LoopSeconds, UpdateSourceTrigger=PropertyChanged}"/>
-            </DockPanel>
-            <TextBlock Text="Sans menu animé, la musique joue sur le menu fixe. Sur DVD elle repart quand on change de page ; sur Blu-ray elle continue." TextWrapping="Wrap" Opacity="0.65" Margin="0,4,0,12"/>
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-
-      <TabItem Header="Apparence">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="0,8,8,0">
-            <TextBlock x:Name="LookNote" Text="Ce modèle fixe l'apparence : police, couleurs, fond et libellés des boutons viennent de ses images (souvent en anglais)." TextWrapping="Wrap" Opacity="0.65" Visibility="Collapsed"/>
-            <Button x:Name="Detach" Content="Composer à partir de ce fond" Margin="0,8,0,0" HorizontalAlignment="Stretch" Visibility="Collapsed" Click="OnDetach"
-                    ToolTip="Garde le fond de ce modèle (sans le copier) et ouvre la police, les boutons, la grille et les couleurs."/>
-            <StackPanel x:Name="Look">
+                </StackPanel>
+              </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Style">
+              <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,8,8,12">
+                  <TextBlock x:Name="LookNote" Text="Ce modèle fixe l'apparence : police, couleurs, fond et libellés des boutons viennent de ses images." TextWrapping="Wrap" Opacity="0.65" Visibility="Collapsed"/>
+                  <Button x:Name="Detach" Content="Composer à partir de ce fond" Margin="0,8,0,0" HorizontalAlignment="Stretch" Visibility="Collapsed" Click="OnDetach"
+                          ToolTip="Garde le fond de ce modèle (sans le copier) et ouvre la police, les boutons, la grille et les couleurs."/>
+                  <StackPanel x:Name="Look">
               <TextBlock Text="Police" Style="{StaticResource Caption}"/>
               <ComboBox x:Name="FontBox" IsEditable="True" Text="{Binding Font, UpdateSourceTrigger=PropertyChanged}"/>
               <TextBlock Text="Style des boutons" Style="{StaticResource Caption}"/>
               <ComboBox x:Name="StyleBox" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ButtonStyle}" HorizontalAlignment="Stretch"/>
-              <TextBlock Text="Grille des scènes (colonnes × lignes)" Style="{StaticResource Caption}"/>
-              <StackPanel Orientation="Horizontal">
-                <ComboBox x:Name="ColsBox" SelectedItem="{Binding Cols}" Width="70"/>
-                <TextBlock Text="×" Margin="10,0" VerticalAlignment="Center"/>
-                <ComboBox x:Name="RowsBox" SelectedItem="{Binding Rows}" Width="70"/>
-              </StackPanel>
-              <CheckBox Content="Images des scènes" IsChecked="{Binding Thumbnails}" Margin="0,8,0,0"/>
               <CheckBox Content="Coins carrés" IsChecked="{Binding Square}" Margin="0,4,0,0"/>
 
               <TextBlock Text="Couleurs (#RRGGBB)" Style="{StaticResource Caption}"/>
@@ -449,19 +399,140 @@
 
               <TextBlock Text="Assombrir le fond (%)" Style="{StaticResource Caption}"/>
               <Slider Minimum="0" Maximum="80" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding Dim}"/>
-            </StackPanel>
-            <TextBlock Text="Flouter l'image de fond" Style="{StaticResource Caption}"/>
-            <Slider Minimum="0" Maximum="40" TickFrequency="2" IsSnapToTickEnabled="True" Value="{Binding BackgroundBlur}" AutomationProperties.Name="Flouter l'image de fond"/>
-            <CheckBox Content="Vignettes animées : un extrait du chapitre dans chaque case (DVD)" IsChecked="{Binding AnimatedThumbs}" Margin="0,8,0,12"/>
-          </StackPanel>
-        </ScrollViewer>
+                  </StackPanel>
+                </StackPanel>
+              </ScrollViewer>
+            </TabItem>
+          </TabControl>
+        </DockPanel>
+      </TabItem>
+
+      <!-- 4 · Fond et musique -->
+      <TabItem>
+        <TabControl x:Name="SoundTabs">
+          <TabItem Header="Image de fond">
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Bottom" Margin="0,10,8,8">
+                <StackPanel Orientation="Horizontal">
+                  <Button Content="Fond de cette page…" Click="OnPageBg" Padding="12,4"
+                          ToolTip="Une image de fond pour ce genre de page (menu, chapitres, réglages, bonus, crédits) ; les autres gardent le fond du modèle"/>
+                  <Button x:Name="PageBgClear" Content="Fond commun" Click="OnPageBgClear" Padding="12,4" Margin="8,0,0,0"
+                          ToolTip="Rend à ce genre de page le fond du modèle"/>
+                </StackPanel>
+                <TextBlock Text="Flouter l'image de fond" Style="{StaticResource Caption}"/>
+                <Slider Minimum="0" Maximum="40" TickFrequency="2" IsSnapToTickEnabled="True" Value="{Binding BackgroundBlur}" AutomationProperties.Name="Flouter l'image de fond"/>
+              </StackPanel>
+        <DockPanel>
+          <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <Button x:Name="BgRemove" DockPanel.Dock="Right" Content="Retirer" Margin="4,0,0,0" IsEnabled="False" Click="OnBgRemove"/>
+            <Button DockPanel.Dock="Right" Content="Aucun" Margin="8,0,0,0" Click="OnBgClear" ToolTip="Revient au dégradé de couleurs"/>
+            <Button Content="Importer…" Click="OnBg"/>
+          </DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="Glissez un fond sur la page, ou double-cliquez." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
+          <ListBox x:Name="BgList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" SelectionChanged="OnBgPick"
+                   PreviewMouseLeftButtonDown="OnLibraryDown" PreviewMouseMove="OnLibraryMove" MouseDoubleClick="OnBgDouble">
+            <ListBox.GroupStyle>
+              <GroupStyle>
+                <GroupStyle.HeaderTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{StaticResource AccentHoverBrush}" Margin="2,10,0,4"/>
+                  </DataTemplate>
+                </GroupStyle.HeaderTemplate>
+              </GroupStyle>
+            </ListBox.GroupStyle>
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top"/></ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <!-- always 2 per row: the Viewbox grows the 16:9 tile with the column -->
+                <Viewbox Stretch="Uniform" ToolTip="{Binding Name}">
+                  <Image Source="{Binding Path, Converter={StaticResource Thumb}}" Width="108" Height="61" Stretch="UniformToFill"/>
+                </Viewbox>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+            </DockPanel>
+          </TabItem>
+          <TabItem Header="Vidéo et musique">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <StackPanel Margin="0,8,8,12">
+                <TextBlock Text="Vidéo du menu" Style="{StaticResource Head}" Margin="0,0,0,6"/>
+                <CheckBox x:Name="LoopBox" Content="Menu animé : une vidéo en boucle derrière les boutons" IsChecked="{Binding Loop}"/>
+                <TextBlock Text="Fichier vidéo (vide = le premier film)" Style="{StaticResource Caption}" Margin="0,6,0,3"/>
+                <DockPanel>
+                  <Button Content="…" Width="36" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnLoopFile" AutomationProperties.Name="Choisir la vidéo du menu"/>
+                  <TextBox Text="{Binding LoopFile, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+                <DockPanel Margin="0,4,0,0">
+                  <TextBlock Text="Début de la vidéo (s)" Width="170" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                  <TextBox Text="{Binding LoopStart, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+                <TextBlock Text="Musique du menu" Style="{StaticResource Head}"/>
+                <TextBlock Text="Fichier audio (vide = aucune ; avec un menu animé, remplace le son de la vidéo)" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                <DockPanel>
+                  <Button Content="…" Width="36" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnMusic" AutomationProperties.Name="Choisir la musique"/>
+                  <TextBox Text="{Binding Music, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+                <DockPanel Margin="0,4">
+                  <TextBlock Text="Début de la musique (s)" Width="170" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                  <TextBox Text="{Binding MusicStart, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+                <TextBlock Text="Volume (%)" Style="{StaticResource Caption}"/>
+                <DockPanel>
+                  <TextBlock Text="{Binding Value, ElementName=MusicVolumeSlider, StringFormat={}{0:0} %}" Width="50" DockPanel.Dock="Right" TextAlignment="Right" VerticalAlignment="Center"/>
+                  <Slider x:Name="MusicVolumeSlider" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding MusicVolume}" AutomationProperties.Name="Volume de la musique"/>
+                </DockPanel>
+                <DockPanel Margin="0,8,0,4">
+                  <TextBlock Text="Fondu (s)" Width="170" VerticalAlignment="Center" DockPanel.Dock="Left" ToolTip="Entrée au début de la boucle, sortie à sa fin (0 = aucun)"/>
+                  <TextBox Text="{Binding MusicFade, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+                <DockPanel Margin="0,4">
+                  <TextBlock Text="Durée de la boucle (s)" Width="170" VerticalAlignment="Center" DockPanel.Dock="Left" ToolTip="Durée de la vidéo animée et de la musique avant qu'elles recommencent : 5 à 300 s sur Blu-ray, 5 à 120 s sur DVD. 0 = la durée de la musique (la chanson entière). Une vidéo plus courte est rejouée depuis son début."/>
+                  <TextBox Text="{Binding LoopSeconds, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+                <TextBlock Text="0 pour la durée : la chanson entière. Sans menu animé, la musique joue sur le menu fixe. Sur DVD elle repart quand on change de page ; sur Blu-ray elle continue." TextWrapping="Wrap" Opacity="0.65" Margin="0,6,0,0"/>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+        </TabControl>
+      </TabItem>
+
+      <!-- 5 · Aperçu -->
+      <TabItem>
+        <StackPanel Margin="0,0,8,0">
+          <TextBlock Text="Télécommande" Style="{StaticResource Head}" Margin="0,0,0,6"/>
+          <TextBlock Text="Le menu se parcourt ici comme sur le disque : les flèches passent d'un bouton à l'autre, OK ouvre la page ou dit ce que le disque lirait. Les flèches et Entrée du clavier font de même." TextWrapping="Wrap" Opacity="0.65"/>
+          <UniformGrid Columns="3" Rows="3" Width="186" Height="150" Margin="0,16,0,0" HorizontalAlignment="Center">
+            <Border/>
+            <Button Content="▲" Tag="Up" Click="OnRemote" Margin="3" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" AutomationProperties.Name="Haut"/>
+            <Border/>
+            <Button Content="◀" Tag="Left" Click="OnRemote" Margin="3" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" AutomationProperties.Name="Gauche"/>
+            <Button Content="OK" Tag="Enter" Click="OnRemote" Margin="3" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Style="{StaticResource Primary}"/>
+            <Button Content="▶" Tag="Right" Click="OnRemote" Margin="3" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" AutomationProperties.Name="Droite"/>
+            <Border/>
+            <Button Content="▼" Tag="Down" Click="OnRemote" Margin="3" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" AutomationProperties.Name="Bas"/>
+            <Border/>
+          </UniformGrid>
+          <Button Content="Menu principal" Tag="Menu" Click="OnRemote" HorizontalAlignment="Center" Padding="16,6" Margin="0,10,0,0" ToolTip="Revient à la première page, comme la touche Menu"/>
+          <TextBlock Text="Sur un vrai lecteur" Style="{StaticResource Head}" Margin="0,24,0,6"/>
+          <TextBlock TextWrapping="Wrap" Opacity="0.65"
+                     Text="Pour voir le menu tourner pour de bon avant le vrai disque : validez avec OK, puis dans la fenêtre principale cochez « Essai » et « ISO » et cliquez Démarrer. Le disque d'essai est prêt en quelques minutes et s'ouvre dans VLC ou se grave sur un disque réinscriptible."/>
+        </StackPanel>
       </TabItem>
     </TabControl>
 
-    <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-      <Button Content="Enregistrer le modèle…" Click="OnSave" Margin="0,0,16,0"/>
-      <Button Content="OK" IsDefault="True" Style="{StaticResource Primary}" MinWidth="100" Margin="0,0,8,0" Click="OnOk"/>
-      <Button Content="Annuler" IsCancel="True" MinWidth="100"/>
-    </StackPanel>
+    <DockPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="0,16,0,0">
+      <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+        <Button Content="Enregistrer le modèle…" Click="OnSave" Margin="0,0,16,0" ToolTip="Garde ce menu dans « Mes modèles », pour d'autres disques"/>
+        <Button Content="OK" IsDefault="True" Style="{StaticResource Primary}" MinWidth="100" Margin="0,0,8,0" Click="OnOk"/>
+        <Button Content="Annuler" IsCancel="True" MinWidth="100"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+        <Button x:Name="BackStep" Content="◂ Étape précédente" Click="OnBackStep" Margin="0,0,8,0" IsEnabled="False"/>
+        <Button x:Name="NextStep" Content="Étape suivante ▸" Click="OnNextStep"/>
+      </StackPanel>
+    </DockPanel>
   </Grid>
 </Window>

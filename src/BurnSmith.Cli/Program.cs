@@ -11,6 +11,7 @@ using BurnSmith.Core.Menu;
 //                  the default audio goes first on the disc, the default subtitle is selected by the disc (a menu's settings page shows it chosen)
 // --intro: after a --video, that video plays first when the disc starts, before the menu (before the film when there is no menu); not a title of the menu (Blu-ray and DVD)
 // --bonus: after a --video, that video is an extra (trailer, making-of): it goes after the main videos, off "Play" / "Play all", on the menu's Bonus page (needs another, main, video)
+// --trial [SECONDS], --save-project FILE, --sub-delay N=S (after a --video), --sub-font / --sub-size / --sub-color / --sub-position: see where they are read below; burnsmith project FILE.burnsmith builds a saved project
 var a = args.ToList();
 string? Opt(string name) => a.IndexOf(name) is var i and >= 0 && i + 1 < a.Count ? a[i + 1] : null;
 IEnumerable<string> OptAll(string name) { for (var i = 0; i + 1 < a.Count; i++) if (a[i] == name) yield return a[i + 1]; } // --element can repeat
@@ -668,6 +669,9 @@ if (a.Count >= 1 && a[0] == "check-elements")
         var elButtons = ElementLibrary.Buttons();
         Check("la bibliothèque de boutons commence par les looks de BurnSmith", elButtons.Take(ElementLibrary.ButtonStyles.Length).All(b => b.Source == ElementLibrary.Styles && b.Style != null && b.Normal == null));
         Check("chaque bouton image existe, et sa sélection aussi", elButtons.Where(b => b.Style == null).All(b => b.Normal != null && File.Exists(b.Normal) && (b.Focus == null || File.Exists(b.Focus))));
+        var houseButtons = elButtons.Where(b => b.Source.StartsWith(TemplateLabel.Own + " · ")).ToList();
+        Check($"les boutons de BurnSmith ({houseButtons.Count}) sont listés avec leur sélection, et se lisent", houseButtons.Count >= 80
+              && houseButtons.All(b => b.Focus != null && MenuRenderer.Size(b.Normal!) != null && MenuRenderer.Size(b.Focus) != null));
         Check("seuls les boutons de l'utilisateur peuvent être retirés", elButtons.Where(b => b.Removable).All(b => b.Source == ElementLibrary.MyButtons));
         var imported = ElementLibrary.ImportButton(normalPic, focusPic);
         try
@@ -1117,6 +1121,86 @@ if (a.Count >= 1 && a[0] == "check-edit")
           && twoClips.OnDisc(150) == null && twoClips.OnDisc(250) == 150 && twoClips.GapFilter(true) == "aselect='not(gte(t,100)*lt(t,200))',asetpts=N/SR/TB"
           && Throws(() => new DiscTitle("x", Start: 100, End: 400, Clips: [new(100, 300), new(250, 400)]).Cut(src)));
     Check("custom times are shifted by the start, 0 added, outside dropped", Show(new DiscTitle("x", Start: 100, End: 400, ChapterAt: [50, 100, 160, 250.4, 399.5, 500]).ChapterList(300, 5)) == "0,60,150");
+    // a trial disc: five minutes of each video, a passage at each chapter, so the menu keeps every chapter
+    var hour = src with { Duration = 3600 };
+    var trial = whole.Trial(hour, 5);
+    Check("trial of an hour with a chapter every 5 min: 12 passages of 25 s, 300 s in all, the 12 chapters kept, one every 25 s",
+          trial.Clips!.Count == 12 && trial.Clips.All(c => c.To - c.From == 25) && trial.Length(hour) == 300 && Show(trial.ChapterList(300, 5)) == string.Join(',', Enumerable.Range(0, 12).Select(i => i * 25)));
+    var trialOwn = new DiscTitle("x", Start: 100, ChapterAt: [700, 1900]).Trial(hour, 5);
+    Check("trial of a title cut at its start, with its own chapters: a passage of 100 s at each, counted from the cut",
+          Show(trialOwn.Clips!.Select(c => c.From)) == "100,700,1900" && trialOwn.Length(hour) == 300 && Show(trialOwn.ChapterList(300, 5)) == "0,100,200");
+    Check("trial: a video of five minutes or less stays whole; one already cut in clips keeps its first five minutes",
+          whole.Trial(src with { Duration = 300 }, 5) == whole
+          && new DiscTitle("x", Start: 0, End: 2000, Clips: [new(0, 200), new(1000, 2000)]).Trial(hour, 5) is { Clips: [{ From: 0, To: 200 }, { From: 1000, To: 1100 }], End: 1100 });
+    Check("trial: the titles of a disc are cut only when a trial is asked", Project.OnDisc([whole], 5, 0, _ => hour)[0] == whole && Project.OnDisc([whole], 5, 300, _ => hour)[0].Length(hour) == 300);
+    // a project file: everything the window holds, read back the same
+    var written = new Project("dvd", [new DiscTitle("a.mkv", "Film", [0, 1], [0, 2], 10, 500, 120, [60, 120], [new ExternalSubtitle("a.fr.srt", "fre")], DefaultSubtitle: 2, TrackLanguage: new Dictionary<string, string> { ["a0"] = "fre" },
+                                              Effects: new VideoEffects(Brightness: 10), Clips: [new(10, 200), new(300, 500)], SubtitleDelay: new Dictionary<int, double> { [2] = -1.5 }), new DiscTitle("b.mkv", Bonus: true)],
+                            new MenuDesign { Title = "Mon disque" }, true, "MON_DISQUE", 10, new EncodeOptions(FitDisc: true, DvdPal: true), new PlaybackOptions(PlayAll: true), new SubtitleStyle("Arial", 125, "FFE600", 20), "DVD-9", 7.6, @"D:\Disques\Film", true, 300);
+    var reread = Project.Parse(written.ToJson());
+    Check("a project is read back as it was written: videos, tracks, cut, chapters, subtitle files and delays, effects, menu, disc options",
+          reread.ToJson() == written.ToJson() && reread is { Kind: "dvd", Titles: [{ Name: "Film", End: 500, Volume: 120 } first, { Bonus: true }], Design.Title: "Mon disque", Subtitles.Size: 125, CapacityGB: 7.6, Trial: 300 }
+          && first.SubtitleDelay![2] == -1.5 && first.Clips!.Count == 2 && first.Effects!.Brightness == 10 && first.External![0].Lang == "fre" && Show(first.ChapterAt!) == "60,120");
+    static bool NotProject(string text) { try { Project.Parse(text); return false; } catch (InvalidDataException) { return true; } }
+    Check("what is not a project is refused: another JSON file, a text, a disc kind that does not exist",
+          NotProject("{\"Name\":\"a menu template\"}") && NotProject("not json") && NotProject(new Project("vhs", []).ToJson()));
+    // subtitles: the delay of a track and the look of the text ones
+    var editDir = Directory.CreateTempSubdirectory("burnsmith-check-edit").FullName;
+    try
+    {
+        var cue = Path.Combine(editDir, "s.srt");
+        string Shifted(double delay)
+        {
+            File.WriteAllText(cue, "1\n00:00:10,000 --> 00:00:12,000\nBonjour\n");
+            new DiscTitle("x", SubtitleDelay: new Dictionary<int, double> { [3] = delay }).Delay(new SubtitleTrack(3, "subrip", "fre", "", false), cue, 60);
+            return File.ReadAllText(cue).Split('\n').FirstOrDefault(l => l.Contains("-->")) ?? "";
+        }
+        Check("a subtitle's delay moves its cues: 1.5 s later, 11 s earlier (cut at the start of the video), none for another track or without delay",
+              Shifted(1.5) == "00:00:11,500 --> 00:00:13,500" && Shifted(-11) == "00:00:00,000 --> 00:00:01,000" && Shifted(0) == "00:00:10,000 --> 00:00:12,000"
+              && new DiscTitle("x", SubtitleDelay: new Dictionary<int, double> { [1] = 5 }) is var other && Shifted(0).Length > 0 && other.SubtitleDelay![1] == 5);
+        Check("the text subtitles of a Blu-ray keep their usual look, and take the disc's font, size, colour and height when set (half as big on a 540-line picture)",
+              BluRay.TextSubtitleLook(null, 1080) == "font-name=\"Calibri\", font-size=60, font-color=0xffffffff, bottom-offset=40"
+              && BluRay.TextSubtitleLook(new SubtitleStyle("Arial", 150, "ffe600", 50), 1080) == "font-name=\"Arial\", font-size=90, font-color=0xffffe600, bottom-offset=440"
+              && BluRay.TextSubtitleLook(new SubtitleStyle(Color: "rouge"), 540) == "font-name=\"Calibri\", font-size=30, font-color=0xffffffff, bottom-offset=20");
+        Check("a DVD's subtitle palette takes the disc's colour for the text, its edge halfway to black; the usual one without", DvdSubtitles.Colors(new SubtitleStyle(Color: "FFE600")) is [0, 0x101010, 0xFFE600, 0x7F7300, ..] && DvdSubtitles.Colors(null).SequenceEqual(DvdSubtitles.Rgb));
+        // the chapters a file holds are read with it
+        var marked = Path.Combine(editDir, "chapters.mkv");
+        var marks = Path.Combine(editDir, "chapters.txt");
+        File.WriteAllText(marks, ";FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=2000\ntitle=Un\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=2000\nEND=4500\ntitle=Deux\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=4500\nEND=6000\ntitle=Trois\n");
+        Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=6", "-i", marks, "-map_metadata", "1", "-map_chapters", "1", "-c:v", "libx264", "-preset", "ultrafast", marked]);
+        Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=2", "-c:v", "libx264", "-preset", "ultrafast", Path.Combine(editDir, "plain.mkv")]);
+        Check("the chapters of a file are read with it (0, 2 and 4.5 s); a file without chapters has none", BluRay.Probe(marked).Chapters is [0, 2, 4.5] && BluRay.Probe(Path.Combine(editDir, "plain.mkv")).Chapters == null);
+        Check("their names are read too, one for one; none for a file without chapters", BluRay.Probe(marked).ChapterNames is ["Un", "Deux", "Trois"] && BluRay.Probe(Path.Combine(editDir, "plain.mkv")).ChapterNames == null);
+        // a TrueHD and its AC-3 core, as a disc carries them: 100 units of 6 bytes (40 samples each), frames of 448 kb/s (1792 bytes, 1536 samples)
+        var (units, core, both) = (Path.Combine(editDir, "a.thd"), Path.Combine(editDir, "a.ac3"), Path.Combine(editDir, "a.hd.ac3"));
+        File.WriteAllBytes(units, [.. Enumerable.Range(0, 100).SelectMany(i => new byte[] { 0xA0, 0x03, 0, 0, (byte)i, 0xEE })]);
+        File.WriteAllBytes(core, [.. Enumerable.Range(0, 5).SelectMany(i => new byte[] { 0x0B, 0x77, (byte)i }.Concat(new byte[1789]))]);
+        BluRay.InterleaveTrueHd(units, core, 448, both);
+        var woven = File.ReadAllBytes(both);
+        Check("a TrueHD kept: each AC-3 frame of its core, then the TrueHD of the same 1536 samples (39 units, then 38), every unit there and no frame past the sound's end",
+              woven.Length == 3 * 1792 + 600 && woven[2] == 0 && woven[1792 + 4] == 0 && woven[1792 + 39 * 6 + 2] == 1 && woven[2 * 1792 + 39 * 6 + 4] == 39
+              && woven[2 * 1792 + 77 * 6 + 2] == 2 && woven[^2] == 99);
+    }
+    finally { Tools.TryDelete(editDir); }
+    {
+        var named = new DiscTitle("x", ChapterAt: [0, 200, 400], ChapterTitles: ["Un", null, " Trois "]);
+        var late = named with { Start = 100 };
+        Check("chapter names follow their chapters onto the disc: one for one, a chapter without name left to its number, the name of a chapter cut off with the start not moved to another",
+              named.ChapterNames(600, 5) is ["Un", null, "Trois"] && late.ChapterNames(500, 5) is [null, null, "Trois"] && late.ChapterList(500, 5) is [0, 100, 300]
+              && new DiscTitle("x").ChapterNames(600, 5) is [null, null] && (named with { ChapterAt = null }).ChapterNames(600, 5).All(n => n == null));
+        var namedMenu = new MenuContent(1, null, [null, null, null]) { ChapterNames = ["Prologue", null, "Final"] };
+        var scenes = MenuBuilder.Build(new MenuDesign(), namedMenu).SelectMany(p => p.Ops.OfType<Label>()).Select(t => t.Value).ToList();
+        Check("the menu writes a chapter's name in its box, \"Chapitre N\" where it has none", scenes.Contains("Prologue") && scenes.Contains("Final") && scenes.Contains("Chapter 2") && !scenes.Contains("Chapter 1")); // a bare design speaks English
+        Check("a sound delay: silence put before the track, or its start cut off, when the sound is made again (a DVD); nothing without delay or for another track",
+              new DiscTitle("x", AudioDelay: new Dictionary<int, double> { [1] = 0.25, [2] = -0.5 }) is var moved && moved.AudioDelayFilter(1) == "adelay=250:all=1"
+              && moved.AudioDelayFilter(2) == "atrim=start=0.5,asetpts=PTS-STARTPTS" && moved.AudioDelayFilter(0) == "" && new DiscTitle("x").AudioDelayFilter(0) == "");
+        var (hd, flac, dtsMa) = (new AudioTrack(0, "truehd", 8, "eng", "", Lossless: true, Bits: 24), new AudioTrack(1, "flac", 2, "fre", "", Lossless: true, Bits: 16), new AudioTrack(2, "dts", 6, "eng", "", Lossless: true));
+        Check("« Son sans perte »: a TrueHD is kept, FLAC becomes LPCM, a TrueHD made louder or cut too (it is decoded), DTS-HD is copied as ever; without the option, AC-3 as before",
+              BluRay.BdAudio(hd, new DiscTitle("x"), false, true) == "truehd" && BluRay.BdAudio(flac, new DiscTitle("x"), false, true) == "lpcm"
+              && BluRay.BdAudio(hd, new DiscTitle("x", Volume: 120), false, true) == "lpcm" && BluRay.BdAudio(hd, new DiscTitle("x", Start: 60), false, true) == "lpcm"
+              && BluRay.BdAudio(dtsMa, new DiscTitle("x"), false, true) == "dts" && BluRay.BdAudio(hd, new DiscTitle("x"), false) == "ac3" && BluRay.BdAudio(flac, new DiscTitle("x"), false) == "ac3"
+              && BluRay.BdAudio(new AudioTrack(3, "aac", 2, "fre", ""), new DiscTitle("x"), false, true) == "ac3");
+    }
     Check("a release file name gets a readable default name: cut at the first tag, an episode named by its number and title, its series for the season; a name with spaces kept",
           new DiscTitle("Title.2019.1080p.BluRay.x264-GRP.mkv").DisplayName == "Title 2019" && DiscTitle.Readable("Title.2019.1080p.BluRay.x264-GRP.mkv") == ("Title 2019", null)
           && DiscTitle.Readable("Cobra.Kai.S01E01.Le.roi.des.tares.MULTi.AD.1080p.NF.WEB.DDP.H265-THESYNDiCATE.mkv") == ("Épisode 1 · Le roi des tares", "Cobra Kai Saison 1")
@@ -1765,12 +1849,54 @@ if (a.Count >= 2 && a[0] == "probe")
     return 0;
 }
 if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BURNSMITH", a.Contains("--dvd"), Console.WriteLine); return 0; }
-// burnsmith burn IMAGE.iso F: [--speed 4] : the speed is × 1x, absent = the drive's fastest
-if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0); return 0; }
+// burnsmith burn IMAGE.iso F: [--speed 4] [--copies 3] : the speed is × 1x, absent = the drive's fastest; --copies: the same image on several discs, Enter once the next blank one is in
+if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], int.TryParse(Opt("--copies"), out var copies) ? copies : 1, n => { Console.WriteLine($"copy {n}: put the next blank disc in {a[2]}, then press Enter"); Console.ReadLine(); }, Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0); return 0; }
 
-if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || Opt("--out") is not { } outDir)
+// --trial [SECONDS] (bd, dvd, project): a trial disc, each video cut to SECONDS in all (300 = five minutes), a passage at each chapter: the whole menu, made in minutes, to try in VLC before the real build
+// --menu-mode bdj|hdmv (bd): the Blu-ray menu as the BD-J program (default: everything the menu can do) or as native HDMV navigation (every player runs it
+// without Java; still pages, no pop-up menu: see HdmvMenu)
+bool Hdmv() => Opt("--menu-mode") switch { null or "bdj" => false, "hdmv" => true, var other => throw new ArgumentException($"--menu-mode: bdj or hdmv expected, not '{other}'") };
+int Trial() => !a.Contains("--trial") ? 0 : int.TryParse(Opt("--trial"), out var seconds) && seconds > 0 ? seconds : 300;
+// what the builds below share: the folder made, then its structure checked against the disc it must fit
+int Make(string kind, List<DiscTitle> list, string folder, MenuDesign? menu, string label, int minutes, EncodeOptions enc, double usableGb, PlaybackOptions? play, SubtitleStyle? look, int trial, double checkGb)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--bonus] [--credits 'A|B'] [--preview] [--cpu] [--fps R] [bd: --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']");
+    list = Project.OnDisc(list, minutes, trial, BluRay.Probe);
+    if (trial > 0) Console.WriteLine($"trial disc: {trial} s of each video");
+    if (kind == "dvd") Dvd.Build(new DvdJob(list, folder, menu, minutes, usableGb, enc, play, look), Console.WriteLine);
+    else BluRay.Build(new BluRayJob(list, folder, menu, kind == "uhd", label, minutes, enc, usableGb, play, look, Hdmv()), Console.WriteLine);
+    var found = DiscCheck.Folder(folder, checkGb);
+    Console.WriteLine(found.Count == 0 ? "disc structure checked: no problem" : "disc structure: " + string.Join(" ; ", found));
+    return found.Count == 0 ? 0 : 1;
+}
+// burnsmith project FILE.burnsmith [--out FOLDER] [--trial [SECONDS]] : builds the disc of a project saved by the app (« Enregistrer le projet ») or by --save-project,
+//   as its Démarrer button would: its videos, menu and options; --out replaces the project's folder, --trial its own trial setting
+int BuildProject(string file)
+{
+    var p = Project.Load(file);
+    var found = p.Build(Opt("--out") is { } folder ? Path.GetFullPath(folder) : null, a.Contains("--trial") ? Trial() : p.Trial, Console.WriteLine);
+    Console.WriteLine(found.Count == 0 ? "disc checked: no problem" : "disc check: " + string.Join(" ; ", found));
+    return found.Count == 0 ? 0 : 1;
+}
+if (a.Count >= 2 && a[0] == "project") return BuildProject(a[1]);
+// burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] : the app's « File d'attente »: the projects built one after the other, each in its own folder
+//   (with its ISO when the project asks for one, nothing burnt); one that fails does not stop the next; exit 1 when any failed
+if (a.Count >= 2 && a[0] == "queue")
+{
+    var files = a.Skip(1).Where(f => f.EndsWith(Project.Extension, StringComparison.OrdinalIgnoreCase)).ToList();
+    var failed = new List<string>();
+    foreach (var (file, n) in files.Select((f, n) => (f, n + 1)))
+    {
+        Console.WriteLine($"queue {n}/{files.Count}: {file}");
+        try { if (BuildProject(file) != 0) failed.Add(file); }
+        catch (Exception e) when (e is not OperationCanceledException) { failed.Add(file); Console.Error.WriteLine($"failed: {file}: {e.Message}"); }
+    }
+    Console.WriteLine(failed.Count == 0 ? $"queue: {files.Count} disc(s) made" : $"queue: {files.Count - failed.Count} of {files.Count} disc(s) made, failed: {string.Join(", ", failed)}");
+    return failed.Count == 0 && files.Count > 0 ? 0 : 1;
+}
+
+if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
+{
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] [--copies N]");
     return 2;
 }
 
@@ -1837,6 +1963,24 @@ var titles = videos.Select((v, k) =>
     var volume = int.TryParse(Own("--volume"), out var vol) ? Math.Clamp(vol, 10, 300) : 100;
     IReadOnlyList<double>? chapterAt = own.Contains("--no-chapters") ? [] : Own("--chapter-at")?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => Time(t.Trim()) ?? 0).ToList();
     int? chapterMinutes = int.TryParse(Own("--chapter-every"), out var every) ? Math.Clamp(every, 1, 600) : null;
+    // as the app: a file with chapters of its own (an mkv's) keeps them, unless one of the chapter flags above, or --chapters for the whole disc, says otherwise
+    IReadOnlyList<string?>? chapterNames = null;
+    if (chapterAt == null && chapterMinutes == null && Opt("--chapters") == null) (chapterAt, chapterNames) = (BluRay.Probe(v).Chapters, BluRay.Probe(v).ChapterNames);
+    // --chapter-names "Prologue|La rencontre||Final" (this video): the names the menu writes instead of "Chapitre N", in the order of --chapter-at or of the file's own chapters
+    //   (the first names the chapter at 0 when the list has one; an empty name leaves "Chapitre N"). The file's own names are kept without this flag.
+    if (Own("--chapter-names") is { } named)
+        chapterNames = chapterAt is { Count: > 0 } ? [.. named.Split('|').Select(n => n.Trim().Length > 0 ? n.Trim() : null)]
+            : throw new ArgumentException("--chapter-names names the chapters of --chapter-at, or those the file holds: this video has neither");
+    // --audio-delay 0=0.2,1=-0.1 (this video): audio track N (numbered as --audio) is heard that many seconds later, or earlier when negative
+    Dictionary<int, double>? audioDelay = null;
+    foreach (var pair in Own("--audio-delay")?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [])
+        (audioDelay ??= [])[pair.Split('=') is [var n, var s] && int.TryParse(n, out var track) && double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var late)
+            ? track : throw new ArgumentException($"--audio-delay: an audio track number and seconds are expected (0=0.2), not '{pair}'")] = late;
+    // --sub-delay 0=1.5,2=-0.4 (this video): subtitle N (numbered as --sub) shows that many seconds later, or earlier when negative
+    Dictionary<int, double>? subDelay = null;
+    foreach (var pair in Own("--sub-delay")?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [])
+        (subDelay ??= [])[pair.Split('=') is [var n, var s] && int.TryParse(n, out var track) && double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var late)
+            ? track : throw new ArgumentException($"--sub-delay: a subtitle number and seconds are expected (0=1.5), not '{pair}'")] = late;
     // --sub-file FILE | --sub-file fra=FILE (repeatable): a subtitle file kept as one more track, after the video's own and the --sub ones
     var files = own.Select((x, i) => (x, i)).Where(x => x.x == "--sub-file" && x.i + 1 < own.Count).SelectMany(x => ExternalSubtitle.ParseAll(own[x.i + 1])).ToList();
     // --sub after a --video is that video's own choice ("none": only its --sub-file ones), else the one for every video
@@ -1861,11 +2005,12 @@ var titles = videos.Select((v, k) =>
                           Own("--effects") is { } fx ? System.Text.Json.JsonSerializer.Deserialize<VideoEffects>(File.ReadAllText(fx)) : null, // --effects FILE.json: the video editor's settings (VideoEffects, by property name)
                           clipList,
                           Own("--thumb-at") is { } thumbAt ? Time(thumbAt) : null, Own("--thumb") is { } thumb ? Path.GetFullPath(thumb) : null, // the menu thumbnail: a moment of the video, or a picture
-                          Own("--overview")); // the video's summary on the menu pages that show one (Streaming)
+                          Own("--overview"), // the video's summary on the menu pages that show one (Streaming)
+                          subDelay, audioDelay, chapterNames);
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
 // --cpu (encode and decode on the processor; default: the NVIDIA card when there is one), --fps 23.976|24|25|29.97|50|59.94 (bd: the disc's rate; default: as the source)
-// bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (default fit = "Adapter au disque"; up to 60000 with --uhd, where --reencode = "Conversion"),
+// bd: --profile "BD25 720p" (BD50|BD25|BD9|BD5|MiniBD, 1080p/i or 720p; default BD25), --quality source|fit|15|20|30|<kb/s> (default fit = "Adapter au disque"; up to 60000 with --uhd, where --reencode = "Conversion"),
 //     --capacity GB (usable size, instead of the profile's), --play-mode 0|1|2 (menu then all titles | first title then all | back to the menu) [--no-rewind] (DVD too)
 // dvd: --pal | --ntsc (default: as the first video), --4x3 (4:3 titles, the menu stays 16:9)
 var profile = BdProfile.Find(Opt("--profile") ?? "BD25");
@@ -1874,9 +2019,13 @@ if (quality is not ("fit" or "source") && !int.TryParse(quality, out _)) throw n
 var rate = int.TryParse(quality, out var q) ? (q < 1000 ? q * 1000 : q) : 0; // "15" = 15 Mb/s
 var encode = new EncodeOptions(a.Contains("--reencode"), int.TryParse(Opt("--crf"), out var crf) ? crf : 17, Opt("--preset") ?? "medium", int.TryParse(Opt("--dvd-kbps"), out var kbps) ? kbps : 0,
                                rate, quality == "fit", profile.Hd720, Gpu: !a.Contains("--cpu"),
-                               Fps: double.TryParse(Opt("--fps"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var fps) ? fps : null);
+                               Fps: double.TryParse(Opt("--fps"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var fps) ? fps : null,
+                               Lossless: a.Contains("--lossless")); // bd: --lossless = "Son sans perte" (TrueHD kept, FLAC and PCM as LPCM, instead of AC-3)
 var capacity = double.TryParse(Opt("--capacity"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var gb) ? gb : profile.UsableGb;
 var playback = int.TryParse(Opt("--play-mode"), out var mode) ? PlaybackOptions.FromMode(mode, !a.Contains("--no-rewind")) : null;
+// the text subtitles of the disc (SRT, ASS...): --sub-font NAME (a font of this PC), --sub-size PERCENT (100 = the usual size), --sub-color RRGGBB, --sub-position 0-100 (0 = bottom, 100 = top)
+var subtitleLook = Opt("--sub-font") == null && Opt("--sub-size") == null && Opt("--sub-color") == null && Opt("--sub-position") == null ? null
+    : new SubtitleStyle(Opt("--sub-font"), int.TryParse(Opt("--sub-size"), out var subSize) ? subSize : 100, Opt("--sub-color")?.TrimStart('#') ?? "FFFFFF", int.TryParse(Opt("--sub-position"), out var subPosition) ? subPosition : 0);
 
 // --preview: only the menu pages, as JPEGs in --out (menu_root.jpg...), nothing encoded: to check a menu before the hours of a build
 if (a.Contains("--preview"))
@@ -1884,13 +2033,17 @@ if (a.Contains("--preview"))
     BluRay.PreviewMenu(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback), Path.GetFullPath(outDir), Console.WriteLine);
     return 0;
 }
-if (a[0] == "bd")
-    BluRay.Build(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback), Console.WriteLine);
-else
-    Dvd.Build(new DvdJob(titles, Path.GetFullPath(outDir), design, chapters, Encode: encode with { DvdPal = a.Contains("--pal") ? true : a.Contains("--ntsc") ? false : null, DvdWide = !a.Contains("--4x3") },
-                         Playback: playback, CapacityGB: Opt("--capacity") != null ? capacity : 4.2), Console.WriteLine); // --capacity 7.6: a DVD-9
+var dvdDisc = a[0] == "dvd";
+if (dvdDisc) (encode, capacity) = (encode with { DvdPal = a.Contains("--pal") ? true : a.Contains("--ntsc") ? false : null, DvdWide = !a.Contains("--4x3") }, Opt("--capacity") != null ? capacity : 4.2); // --capacity 7.6: a DVD-9
+var discKind = dvdDisc ? "dvd" : a.Contains("--uhd") ? "uhd" : "bd";
+// --save-project FILE.burnsmith: nothing is built; the disc these flags describe is written as a project the app opens (« Ouvrir un projet ») and `burnsmith project` builds
+if (Opt("--save-project") is { } projectFile)
+{
+    new Project(discKind, titles, design, design != null, Opt("--label"), chapters, encode, playback, subtitleLook, null, Opt("--capacity") != null && capacity <= 0 ? -1 : capacity, Opt("--out") is { } kept ? Path.GetFullPath(kept) : null, false, Trial(), Hdmv()).Save(projectFile);
+    Console.WriteLine("ok   " + Path.GetFullPath(projectFile));
+    return 0;
+}
 // the disc the folder must fit: the profile's, or the one --capacity names by its usable size (a BD-100 for --uhd, a DVD-9)
-var discGb = Math.Max(a[0] == "bd" ? profile.Gb : 4.7, Opt("--capacity") != null ? capacity / 0.89 : 0);
-var problems = DiscCheck.Folder(Path.GetFullPath(outDir), discGb);
-Console.WriteLine(problems.Count == 0 ? "disc structure checked: no problem" : "disc structure: " + string.Join(" ; ", problems));
-return problems.Count == 0 ? 0 : 1;
+// --capacity 0: no size limit (a folder or an image for a hard disk): nothing is fitted to a disc and the size is not checked
+return Make(discKind, titles, Path.GetFullPath(outDir), design, Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback, subtitleLook, Trial(),
+            Opt("--capacity") != null && capacity <= 0 ? 0 : Opt("--capacity") != null ? capacity / 0.89 : dvdDisc ? 4.7 : profile.Gb);

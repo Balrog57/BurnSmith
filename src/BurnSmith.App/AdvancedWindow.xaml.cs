@@ -15,6 +15,13 @@ public partial class AdvancedWindow : Window
     public EncodeOptions Encode { get; private set; }
     public PlaybackOptions Playback { get; private set; }
     public Output Output { get; private set; }
+    /// <summary>How the disc draws its text subtitles; null = the usual look.</summary>
+    public SubtitleStyle? Subtitles { get; private set; }
+    /// <summary>Blu-ray: the menu as native HDMV navigation (fewer functions, see <see cref="HdmvMenu"/> in Core) instead of the BD-J program.</summary>
+    public bool HdmvMenu { get; private set; }
+
+    static readonly (string Name, string Rgb)[] SubColors = [("Blanc", "FFFFFF"), ("Jaune", "FFE600"), ("Gris clair", "D0D0D0"), ("Bleu clair", "8FE3FF"), ("Vert clair", "A6FFA6")];
+    static readonly int[] SubSizes = [60, 75, 90, 100, 110, 125, 150, 175, 200];
 
     static readonly double[] Rates = [0, 23.976, 24, 25, 29.97, 50, 59.94]; // 0 = as the source
     static readonly (string Name, int Crf, string Preset)[] Speeds = [("Rapide (fichier plus gros)", 20, "veryfast"), ("Standard", 17, "medium"), ("Lente (meilleure qualité)", 14, "slow")];
@@ -33,9 +40,14 @@ public partial class AdvancedWindow : Window
 
     /// <param name="estimate">Size in GB of the disc for a given output and encoding (null = no video yet).</param>
     public AdvancedWindow(string volume, int chapterMinutes, EncodeOptions encode, PlaybackOptions playback, string kind, IReadOnlyList<Output> outputs, Output output,
-                          Func<Output, EncodeOptions, double?>? estimate = null)
+                          Func<Output, EncodeOptions, double?>? estimate = null, SubtitleStyle? subtitles = null, bool hdmvMenu = false)
     {
         InitializeComponent();
+        HdmvMenu = hdmvMenu;
+        (hdmvMenu ? MenuHdmv : MenuBdj).IsChecked = true;
+        MenuKindPanel.Visibility = kind == "dvd" ? Visibility.Collapsed : Visibility.Visible; // a DVD's menu is always native
+        LanguageBox.ItemsSource = new[] { "Français", "English" };
+        LanguageBox.SelectedIndex = Loc.Saved() == "en" ? 1 : 0;
         this.estimate = estimate;
         Volume = volume;
         ChapterMinutes = chapterMinutes;
@@ -47,6 +59,14 @@ public partial class AdvancedWindow : Window
         OutputBox.SelectedItem = output;
         ChapterBox.ItemsSource = new[] { 1, 2, 3, 5, 10, 15 };
         ChapterBox.SelectedItem = chapterMinutes;
+        var look = subtitles ?? new();
+        SubFontBox.ItemsSource = new[] { "Par défaut (Calibri sur un Blu-ray, Arial sur un DVD)" }.Concat(System.Windows.Media.Fonts.SystemFontFamilies.Select(f => f.Source).Order()).ToList();
+        SubFontBox.SelectedIndex = look.Font == null ? 0 : Math.Max(0, SubFontBox.Items.IndexOf(look.Font));
+        SubSizeBox.ItemsSource = SubSizes.Append(look.Scale).Distinct().Order().ToList(); // a size a project or the command line set stays in the list
+        SubSizeBox.SelectedItem = look.Scale;
+        SubColorBox.ItemsSource = SubColors.Select(c => c.Name).Concat(SubColors.Any(c => c.Rgb == look.Rgb) ? [] : ["#" + look.Rgb]).ToList();
+        SubColorBox.SelectedIndex = Array.FindIndex(SubColors, c => c.Rgb == look.Rgb) is var known and >= 0 ? known : SubColors.Length;
+        SubPosSlider.Value = look.Lift;
 
         dvd = kind == "dvd";
         uhd = kind == "uhd";
@@ -68,6 +88,7 @@ public partial class AdvancedWindow : Window
         ModeBox.ItemsSource = new[] { "Automatique (copie si la vidéo convient)", "Toujours convertir" };
         ModeBox.SelectedIndex = encode.ForceReencode ? 1 : 0;
         GpuBox.IsChecked = encode.Gpu;
+        LosslessBox.IsChecked = encode.Lossless;
         FpsBox.ItemsSource = Rates.Select(r => r == 0 ? "Comme la source" : r.ToString("0.###")).ToList();
         FpsBox.SelectedIndex = Math.Max(0, Array.IndexOf(Rates, encode.Fps ?? 0));
         SpeedBox.ItemsSource = Speeds.Select(q => q.Name).ToList();
@@ -92,7 +113,7 @@ public partial class AdvancedWindow : Window
         return new EncodeOptions(uhd ? !Passthrough : ModeBox.SelectedIndex == 1, speed.Crf, speed.Preset, dvd ? ChosenRate : Encode.DvdKbps,
             dvd ? Encode.BdKbps : Passthrough ? 0 : ChosenRate, dvd ? Encode.FitDisc : !Passthrough && QualityBox.SelectedIndex == 0, output.Hd720,
             TvPal.IsChecked == true ? true : TvNtsc.IsChecked == true ? false : null, Narrow.IsChecked != true,
-            GpuBox.IsChecked == true, dvd ? Encode.Fps : FpsBox.SelectedIndex > 0 ? Rates[FpsBox.SelectedIndex] : null);
+            GpuBox.IsChecked == true, dvd ? Encode.Fps : FpsBox.SelectedIndex > 0 ? Rates[FpsBox.SelectedIndex] : null, LosslessBox.IsChecked == true);
     }
 
     void OnQuality(object s, RoutedEventArgs e)
@@ -109,8 +130,9 @@ public partial class AdvancedWindow : Window
         var gb = estimate?.Invoke(output, Current());
         SizeText.Text = gb == null ? "—" : $"{gb:0.00} Go";
         SizeText.ToolTip = gb == null ? "Ajoutez une vidéo pour voir la taille du disque."
+            : output.Unlimited ? $"≈ {gb:0.0} Go, sans limite de taille"
             : $"≈ {gb:0.0} Go sur {output.Usable:0.#} Go utilisables{(gb > output.Usable ? " : trop grand pour ce support" : "")}";
-        if (gb > output.Usable) SizeText.Foreground = System.Windows.Media.Brushes.IndianRed; else SizeText.ClearValue(ForegroundProperty);
+        if (!output.Unlimited && gb > output.Usable) SizeText.Foreground = System.Windows.Media.Brushes.IndianRed; else SizeText.ClearValue(ForegroundProperty);
     }
 
     /// <summary>"Rembobiner" belongs to its own radio button only.</summary>
@@ -128,8 +150,18 @@ public partial class AdvancedWindow : Window
         if (ChapterBox.SelectedItem is int minutes) ChapterMinutes = minutes;
         if (OutputBox.SelectedItem is Output output) Output = output;
         Encode = Current();
+        var look = new SubtitleStyle(SubFontBox.SelectedIndex > 0 ? (string)SubFontBox.SelectedItem : null, SubSizeBox.SelectedItem is int size ? size : 100,
+                                     SubColorBox.SelectedIndex is var c and >= 0 && c < SubColors.Length ? SubColors[c].Rgb : ((string)SubColorBox.SelectedItem).TrimStart('#'), (int)SubPosSlider.Value);
+        Subtitles = look == new SubtitleStyle() ? null : look;
         var mode = Mode0.IsChecked == true ? 0 : Mode1.IsChecked == true ? 1 : 2;
         Playback = PlaybackOptions.FromMode(mode, mode == 0 ? Rewind0.IsChecked == true : mode == 1 ? Rewind1.IsChecked == true : true);
+        HdmvMenu = MenuHdmv.IsChecked == true;
+        if ((LanguageBox.SelectedIndex == 1 ? "en" : "fr") is var language && language != Loc.Saved())
+        {
+            Loc.Save(language);
+            // said in both: the reader may know only the language just chosen
+            MessageBox.Show(this, "La langue changera au prochain démarrage de BurnSmith.\n\nThe language will change the next time BurnSmith starts.", "BurnSmith");
+        }
         DialogResult = true;
     }
 }

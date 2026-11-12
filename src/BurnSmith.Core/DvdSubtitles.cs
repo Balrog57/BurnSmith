@@ -45,10 +45,10 @@ public static class DvdSubtitles
         Path.GetExtension(file).Equals(".sup", StringComparison.OrdinalIgnoreCase) ? PgsSubtitles.Cues(File.ReadAllBytes(file), out _).Count > 0 : File.ReadAllText(file).Contains("-->");
 
     /// <summary>The cues of <paramref name="srt"/> as subpictures of the frame.</summary>
-    public static List<Spu.Picture> Pictures(string srt, int w, int h)
+    public static List<Spu.Picture> Pictures(string srt, int w, int h, SubtitleStyle? style = null)
     {
         var cues = ParseSrt(srt);
-        var images = MenuRenderer.Sta(() => cues.Select(c => Draw(c.Text, w, h)).ToList());
+        var images = MenuRenderer.Sta(() => cues.Select(c => Draw(c.Text, w, h, style ?? new())).ToList());
         return [.. cues.Select((c, i) => new Spu.Picture(c.Start, c.End, images[i].Pixels, w, h))];
     }
 
@@ -64,16 +64,17 @@ public static class DvdSubtitles
     /// Full-frame bitmap, text at the bottom, as DVDStyler draws it with spumux: Arial Regular 28 on a 576-line frame, square pixels
     /// (on a 16:9 screen the letters come out wider), white with a black outline about 2.5 pixels wide, grey where they meet.
     /// </summary>
-    static Canvas Draw(string text, int w, int h)
+    // the disc's SubtitleStyle changes the font, the size and the height; its colour is in the palette (Colors)
+    static Canvas Draw(string text, int w, int h, SubtitleStyle style)
     {
         var visual = new DrawingVisual();
         using (var dc = visual.RenderOpen())
         {
-            var size = h * 28.0 / 576;
-            var face = new Typeface(new FontFamily("Arial"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+            var size = h * 28.0 / 576 * style.Scale / 100;
+            var face = new Typeface(new FontFamily(style.Font ?? "Arial"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
             var ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, size, Brushes.White, 1.0)
             { MaxTextWidth = w - 120, TextAlignment = TextAlignment.Center };
-            var geometry = ft.BuildGeometry(new Point(60, h - h * 0.07 - ft.Height));
+            var geometry = ft.BuildGeometry(new Point(60, Math.Max(h * 0.05, h - h * 0.07 - ft.Height - h * 0.75 * style.Lift / 100)));
             // the outline first, the white over it: a pen drawn on top would cover half its width inside the letters
             dc.DrawGeometry(null, new Pen(Brushes.Black, size * 0.15) { LineJoin = PenLineJoin.Round }, geometry);
             dc.DrawGeometry(Brushes.White, null, geometry);
@@ -96,6 +97,16 @@ public static class DvdSubtitles
 
     /// <summary>The colours of codes 0..3 (transparent, black outline, white text, grey edge), as the first entries of a title's 16 colours.</summary>
     public static readonly int[] Rgb = [0x000000, 0x101010, 0xFFFFFF, 0x808080, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+    /// <summary><see cref="Rgb"/> with the text in the disc's subtitle colour, and the edge halfway to black.</summary>
+    public static int[] Colors(SubtitleStyle? style)
+    {
+        int[] colors = [.. Rgb];
+        if (style == null) return colors;
+        colors[2] = Convert.ToInt32(style.Rgb, 16);
+        colors[3] = (colors[2] >> 1) & 0x7F7F7F;
+        return colors;
+    }
 
     /// <summary>
     /// A PGS picture on the DVD frame (the whole 16:9 plane lands on the whole frame, whatever the plane's size): each DVD pixel averages the

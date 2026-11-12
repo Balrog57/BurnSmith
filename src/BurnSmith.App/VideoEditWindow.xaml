@@ -301,13 +301,15 @@
             <RadioButton x:Name="ChapCustom" GroupName="chapters" Content="Liste personnalisée (temps dans la vidéo d'origine)" Margin="0,10,0,0" Checked="OnChapterMode"/>
             <Grid x:Name="ListPanel" Margin="24,8,0,0">
               <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-              <ListBox x:Name="ChapterList" Height="150" SelectionMode="Extended"/>
+              <ListBox x:Name="ChapterList" Height="184" SelectionMode="Extended"/>
               <StackPanel Grid.Column="1" Margin="10,0,0,0" Width="150">
                 <TextBox x:Name="AtBox" ToolTip="h:mm:ss (ou en secondes)"/>
                 <Button Content="Insérer" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnInsert"/>
                 <Button Content="Insérer ici" ToolTip="Un chapitre à la position de l'aperçu" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnInsertHere"/>
+                <Button Content="Nommer…" ToolTip="Le nom que le menu écrit pour le chapitre choisi, à la place de « Chapitre N ». Pour nommer le premier chapitre du disque, insérez-en un à 0:00:00." Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnNameChapter"/>
                 <Button Content="Supprimer" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnDelete"/>
                 <Button Content="Tout supprimer" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnDeleteAll"/>
+                <Button x:Name="FileChaptersButton" Content="Ceux du fichier" ToolTip="Remplace la liste par les chapitres que le fichier contient déjà" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnFileChapters"/>
               </StackPanel>
             </Grid>
             <TextBlock Text="Les chapitres en dehors de la partie gardée sont ignorés." Style="{StaticResource Label}"/>

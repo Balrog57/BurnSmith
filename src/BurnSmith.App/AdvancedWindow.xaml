@@ -62,7 +62,23 @@
           </Grid>
         </StackPanel>
 
-        <!-- Mode de lecture: what the BD-J menu does when a title ends -->
+        <!-- Blu-ray only: the menu as the BD-J program or as native HDMV navigation -->
+        <StackPanel x:Name="MenuKindPanel">
+          <Grid Margin="0,22,0,4">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <Separator VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="1" Text="Type de menu" FontSize="16" Margin="16,0"/>
+            <Separator Grid.Column="2" VerticalAlignment="Center"/>
+          </Grid>
+          <RadioButton x:Name="MenuBdj" GroupName="menukind" Content="BD-J : toutes les fonctions du menu" Margin="0,8,0,0"
+                       ToolTip="Le menu est un petit programme Java que la platine exécute : fond animé, menu pop-up, langue changée pendant le film."/>
+          <RadioButton x:Name="MenuHdmv" GroupName="menukind" Content="HDMV : menu natif, fonctions limitées" Margin="0,10,0,0"
+                       ToolTip="Le menu est fait des commandes de base du Blu-ray, sans Java : toutes les platines les lisent."/>
+          <TextBlock TextWrapping="Wrap" Opacity="0.65" Margin="28,4,0,0"
+                     Text="En HDMV : pages fixes (pas de fond animé), pas de menu pop-up ; la langue et les sous-titres choisis au menu s'appliquent au lancement d'un titre. L'éditeur de menu grise ce qui n'est pas pris en charge."/>
+        </StackPanel>
+
+        <!-- Mode de lecture: what the menu does when a title ends -->
         <StackPanel x:Name="PlaybackPanel">
           <Grid Margin="0,22,0,4">
             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
@@ -77,12 +93,32 @@
           <RadioButton x:Name="Mode2" GroupName="play" Content="Retourner au menu si la lecture du titre sélectionné est terminée" Margin="0,10,0,0" Checked="OnMode"/>
         </StackPanel>
 
+        <!-- the text subtitles kept on the disc: font, size, colour, height (SubtitleStyle) -->
+        <Grid Margin="0,22,0,0">
+          <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+          <Separator VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="1" Text="Sous-titres en texte" FontSize="16" Margin="16,0"/>
+          <Separator Grid.Column="2" VerticalAlignment="Center"/>
+        </Grid>
+        <TextBlock TextWrapping="Wrap" Opacity="0.65" Margin="0,8,0,0"
+                   Text="Pour les sous-titres en texte (SRT, ASS…) gardés sur le disque. Ceux en images (PGS, VobSub) gardent leur aspect ; sur un DVD, la couleur vaut pour tous les sous-titres. Le décalage d'un sous-titre se règle dans la liste des vidéos, colonne Sous-titres."/>
+        <TextBlock Text="Police" Style="{StaticResource Label}"/>
+        <ComboBox x:Name="SubFontBox" HorizontalAlignment="Stretch"/>
+        <TextBlock Text="Taille" Style="{StaticResource Label}"/>
+        <ComboBox x:Name="SubSizeBox" HorizontalAlignment="Stretch" ItemStringFormat="{}{0} %"/>
+        <TextBlock Text="Couleur" Style="{StaticResource Label}"/>
+        <ComboBox x:Name="SubColorBox" HorizontalAlignment="Stretch"/>
+        <TextBlock Text="Hauteur dans l'image (à gauche : en bas, à droite : en haut)" Style="{StaticResource Label}"/>
+        <Slider x:Name="SubPosSlider" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" AutoToolTipPlacement="TopLeft" AutomationProperties.Name="Hauteur des sous-titres"/>
+
         <Grid Margin="0,22,0,0">
           <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
           <Separator VerticalAlignment="Center"/>
           <TextBlock Grid.Column="1" Text="Autres réglages" FontSize="16" Margin="16,0"/>
           <Separator Grid.Column="2" VerticalAlignment="Center"/>
         </Grid>
+        <TextBlock Text="Langue de BurnSmith / Language" Style="{StaticResource Label}"/>
+        <ComboBox x:Name="LanguageBox" HorizontalAlignment="Stretch" ToolTip="La langue des fenêtres de BurnSmith. Celle du menu du disque se règle dans l'éditeur de menu."/>
         <TextBlock Text="Un chapitre toutes les" Style="{StaticResource Label}"/>
         <ComboBox x:Name="ChapterBox" HorizontalAlignment="Stretch" ItemStringFormat="{}{0} min"/>
         <CheckBox x:Name="GpuBox" Content="Convertir avec la carte graphique NVIDIA" Margin="0,12,0,0"
@@ -95,6 +131,8 @@
                     ToolTip="Le 1080p n'a 25 et 29,97 qu'en entrelacé, le 720p n'a que 50 et 59,94 : une autre cadence y est ramenée à la plus proche."/>
           <TextBlock Text="Vitesse de conversion (processeur)" Style="{StaticResource Label}"/>
           <ComboBox x:Name="SpeedBox" HorizontalAlignment="Stretch"/>
+          <CheckBox x:Name="LosslessBox" Content="Son sans perte" Margin="0,12,0,0" Click="OnRefresh"
+                    ToolTip="Garde le son sans perte du fichier au lieu de le refaire en AC-3 : le TrueHD tel quel (avec le cœur AC-3 qu'un disque demande), le FLAC et le PCM en LPCM. Le DTS-HD est toujours copié tel quel. Prend plus de place sur le disque."/>
           <TextBlock TextWrapping="Wrap" Opacity="0.65" Margin="0,12,0,0"
                      Text="« Adapter au disque » garde la vidéo telle quelle tant qu'elle tient sur le support, sinon la refait au débit qui remplit le disque. « Identique à la source » copie la vidéo si elle est déjà en H.264 1080p à 23,976 / 24 / 25 i/s, sinon la refait à qualité constante."/>
         </StackPanel>

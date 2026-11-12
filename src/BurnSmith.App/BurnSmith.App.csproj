@@ -22,6 +22,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- the English of every text the windows show (see Loc.cs) -->
+    <EmbeddedResource Include="en.tsv" LogicalName="en.tsv" Condition="Exists('en.tsv')" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="System.IO" />
     <Using Include="System.Threading" />
     <Using Include="System.Threading.Tasks" />

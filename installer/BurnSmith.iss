@@ -34,10 +34,18 @@ LZMAUseSeparateProcess=yes
 CloseApplications=yes
 ; %TEMP%\Setup Log <date>.txt, every time: what an update that went wrong did
 SetupLogging=yes
+; French or English, asked at each manual install: it is also the language BurnSmith starts in
+ShowLanguageDialog=yes
 
 [Languages]
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Registry]
+; the language picked for the setup is the app's own, until the user picks another in its settings (kept per user, which wins: see src\BurnSmith.App\Loc.cs).
+; An update started by the app is silent and keeps the language of the first install
+Root: HKLM; Subkey: "Software\BurnSmith"; ValueType: string; ValueName: "Language"; ValueData: "fr"; Languages: french; Flags: uninsdeletevalue uninsdeletekeyifempty
+Root: HKLM; Subkey: "Software\BurnSmith"; ValueType: string; ValueName: "Language"; ValueData: "en"; Languages: english; Flags: uninsdeletevalue uninsdeletekeyifempty
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

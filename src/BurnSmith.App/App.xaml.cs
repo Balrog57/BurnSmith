@@ -9,9 +9,10 @@ namespace BurnSmith.App;
 public partial class App : Application
 {
     /// <summary>
-    /// burnsmith.exe [video]                      opens the window, optionally with a video already loaded
-    /// burnsmith.exe [video] --snapshot out.png [design=template name] [editor[=template name]] [scroll[=pixels]] [lib=N] [tab=N] [button] [english] [zones] | [advanced] | [edit] [focus]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; lib / tab = the library / properties tab on show; button = the first library button dropped on the page; or the advanced settings; or the video edit)
+    /// burnsmith.exe [video | project.burnsmith]  opens the window, optionally with a video already loaded or a saved project open
+    /// burnsmith.exe [video] --snapshot out.png [design=template name] [editor[=template name]] [scroll[=pixels]] [step=N] [tab=N] [remote=Right,Enter] [button] [english] [zones] | [advanced] | [edit] | [queue] [focus]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; lib / tab = the library / properties tab on show; button = the first library button dropped on the page; or the advanced settings; or the video edit)
     ///                                            off screen to a PNG and exits; lets the UI be checked without touching the desktop
+    /// burnsmith.exe --language fr|en             the windows in that language for this run (the choice kept is in Paramètres avancés)
     /// burnsmith.exe --try-install file.exe       runs that file as the update's installer: how a stand-in proves the window's side of an update
     /// </summary>
     protected override async void OnStartup(StartupEventArgs e)
@@ -31,6 +32,8 @@ public partial class App : Application
         var snap = Array.IndexOf(e.Args, "--snapshot");
         var snapshot = snap >= 0 && snap + 1 < e.Args.Length;
         var videos = e.Args.Where((a, i) => !a.StartsWith("--") && (snap < 0 || i != snap + 1) && File.Exists(a)).ToList(); // not the snapshot's own output
+        // --language fr|en: the windows' language for this run (else the one kept: Paramètres avancés, the installer's, Windows')
+        Loc.Start(Array.IndexOf(e.Args, "--language") is var spoken and >= 0 && spoken + 1 < e.Args.Length ? e.Args[spoken + 1] : null);
         var main = new MainWindow();
         static void OffScreen(Window w) { w.WindowStartupLocation = WindowStartupLocation.Manual; w.Left = -20000; w.ShowInTaskbar = false; }
         if (snapshot) OffScreen(main); // never flashes on the desktop
@@ -51,7 +54,7 @@ public partial class App : Application
             window.Show();
             int? Number(string name) => e.Args.FirstOrDefault(a => a.StartsWith(name + "=")) is { } a && int.TryParse(a[(name.Length + 1)..], out var n) ? n : null;
             if (e.Args.Contains("english")) win.PickLanguage("en");
-            win.ShowTabs(Number("lib"), Number("tab"), e.Args.Contains("button"));
+            win.ShowTabs(Number("step"), Number("tab"), e.Args.Contains("button"));
             if (e.Args.FirstOrDefault(a => a == "scroll" || a.StartsWith("scroll=")) is { } scroll) win.ScrollProps(scroll.Length > 7 ? double.Parse(scroll[7..], System.Globalization.CultureInfo.InvariantCulture) : null);
         }
         else if (e.Args.FirstOrDefault(a => a == "edit" || a.StartsWith("edit=")) is { } edit) // edit=crop|effect|watermark|subtitle|chapters: that tab; with a video, its real frames
@@ -59,7 +62,7 @@ public partial class App : Application
             var info = videos.Count > 0 ? BurnSmith.Core.BluRay.Probe(videos[0]) : new BurnSmith.Core.SourceInfo("h264", 1920, 1080, 25, "ac3", 2, 5400, [], []);
             window = new VideoEditWindow(videos.FirstOrDefault() ?? "Épisode 1.mkv", info, "Épisode 1", 90, 3600, 120, [600, 1800, 3000], null, 5,
                                          new BurnSmith.Core.VideoEffects(Brightness: 10, WatermarkText: "BurnSmith", WatermarkSize: 64, BurnSubtitle: videos.Select(v => Path.ChangeExtension(v, ".srt")).FirstOrDefault(File.Exists)), edit.Length > 5 ? edit[5..] : null,
-                                         [new(90, 600), new(900, 1500)]);
+                                         [new(90, 600), new(900, 1500)], chapterTitles: ["Le départ", null, "La tempête"]);
             OffScreen(window);
             window.Show();
         }
@@ -72,8 +75,11 @@ public partial class App : Application
             if (window.FindName("CapacityBox") is System.Windows.Controls.ComboBox box) box.IsDropDownOpen = true; // builds the drop-down items with the theme's item style
         }
         await Task.Delay(2500); // lets async previews finish
+        if (e.Args.FirstOrDefault(a => a.StartsWith("remote=")) is { } remote && window is MenuEditorWindow piloted) await piloted.TryRemote(remote[7..]); // remote=Right,Enter: the Aperçu step's remote
         if (e.Args.Contains("zones") && window is MenuEditorWindow zoned) { zoned.TryZones(); await Task.Delay(2500); }
         if (e.Args.Contains("undo") && window is MenuEditorWindow undone) { await undone.TryUndo(); await Task.Delay(1000); }
+        if (e.Args.Contains("queue") && window == main) { main.TryQueue(); await Task.Delay(500); } // the disc put in the queue: its count by the button
+        if (e.Args.Contains("undo") && window == main) { main.TryUndo(); await Task.Delay(1500); } // the last video removed, then back: the list is whole and Rétablir is lit
         if (e.Args.Contains("guides") && window is MenuEditorWindow guided) await guided.TryGuides();
         var bmp = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
         bmp.Render(window);
@@ -126,12 +132,12 @@ public partial class App : Application
             var setup = await getSetup();
             while (owner.Working) // the install closes the app: it waits for the disc; closed meanwhile, the next start offers it again
             {
-                owner.Title = "Mise à jour téléchargée : elle s'installera à la fin du travail en cours";
+                owner.Title = Loc.T("Mise à jour téléchargée : elle s'installera à la fin du travail en cours");
                 await Task.Delay(1000);
             }
             if (!owner.IsVisible) return;
             owner.IsEnabled = false; // Restart Manager closes the app whatever OnClosing says: no disc may start while the installer runs
-            owner.Title = "Mise à jour : répondez à la demande d'administrateur de Windows…";
+            owner.Title = Loc.T("Mise à jour : répondez à la demande d'administrateur de Windows…");
             await BurnSmith.Core.Updater.Install(setup);
             Current.Shutdown();
         }

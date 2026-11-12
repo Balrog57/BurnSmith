@@ -29,7 +29,7 @@ jobs:
             tools/tsmuxer
             tools/dovi_tool
             tools/hdr10plus_tool
-          key: tools-ffmpeg-8.1.1-49b28c5f-tsmuxer-2.7.0-e3cf117d-dovi-2.3.4-hdr10plus-1.7.2
+          key: tools-ffmpeg-8.1.1-49b28c5f-tsmuxer-bdmvauthor-0.1.133-34814ab3-dovi-2.3.4-hdr10plus-1.7.2
 
       # in tools\ the dev build finds them by its parent walk, before anything on the runner's PATH; a hash that differs stops the job
       - name: Fetch ffmpeg, ffprobe and tsMuxeR, dovi_tool and hdr10plus_tool
@@ -47,9 +47,11 @@ jobs:
           }
           if (-not (Test-Path tools\tsmuxer\bin\tsMuxeR.exe)) {
             New-Item -ItemType Directory -Force tools\tsmuxer\bin | Out-Null
-            Fetch https://github.com/justdan96/tsMuxer/releases/download/2.7.0/tsMuxer-2.7.0-win64.zip tools\tsmuxer.zip E3CF117D2C6F01332188123641C63FE38AB9731AE7AA23645F6F9A261A7A301C
-            & $tar -xf tools\tsmuxer.zip -C tools\tsmuxer\bin tsMuxeR.exe
-            Remove-Item tools\tsmuxer.zip
+            # tsMuxeR as BDMV Author patched and built it (native menu track, insertSEI start delay), with its four DLLs: taken out of its NSIS setup, which is not run
+            Fetch https://github.com/blenheimears/bdmvauthor/releases/download/0.1.133/bdmvauthor-0.1.133-windows-ucrt64-setup.exe tools\bdmvauthor-setup.exe 34814AB3E15DC9115D0992DEF7EEFBA5A39164CEA37D823DE8B701B8C02FBEA6
+            7z e -y -otools\tsmuxer\bin tools\bdmvauthor-setup.exe tsmuxer.exe libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll zlib1.dll
+            if ($LASTEXITCODE -ne 0) { throw '7z could not open the BDMV Author setup' }
+            Remove-Item tools\bdmvauthor-setup.exe
           }
           foreach ($t in @(@('dovi_tool', 'https://github.com/quietvoid/dovi_tool/releases/download/2.3.4/dovi_tool-2.3.4-x86_64-pc-windows-msvc.zip', '0D9733D311DFE49F9DCA0C350F7E6D978182673D333C6F07F7365DAF9E6C81EB'),
                            @('hdr10plus_tool', 'https://github.com/quietvoid/hdr10plus_tool/releases/download/1.7.2/hdr10plus_tool-1.7.2-x86_64-pc-windows-msvc.zip', '82B2D560073941B14C6511A431F429E33E134E5CAEFB60D7E8F6F6E6DA8E16BA'))) {
@@ -64,7 +66,10 @@ jobs:
           foreach ($tool in $pins.Keys) {
             if ((Get-FileHash tools\ffmpeg\$tool -Algorithm SHA256).Hash -ne $pins[$tool]) { throw "$tool is not the pinned build" }
           }
-          if ((Get-FileHash tools\tsmuxer\bin\tsMuxeR.exe -Algorithm SHA256).Hash -ne '12434DB81E879927D78FAD932BF37B5BE5DCA911B4BF741B1D8E0D98609CC2AB') { throw 'tsMuxeR.exe is not the pinned build' }
+          $pins = @{ 'tsMuxeR.exe' = '785C40C2B232B3F167D9C58842EB688C354FC289C09E9C7B8A057D644E540F31'; 'libgcc_s_seh-1.dll' = '266670EA259731F061D77A1EE6721266C8D1EF8200C15BB09ADB65C86EAC8591'; 'libstdc++-6.dll' = '0C7C8EFE66A3879AE6200CC3B0709647DFCBE7E0AA19F1F6EEA030B1229E8C5E'; 'libwinpthread-1.dll' = '2225E5C6887837D58E8CEEC7380A95D9EB74D8DF49B24A787EE5BC864C0FA279'; 'zlib1.dll' = 'A6BDF5EECC69D86264820F45D04FC9B8113DAC7EDC4C34377DFF05E2F27DDF7B' }
+          foreach ($tool in $pins.Keys) {
+            if ((Get-FileHash -LiteralPath tools\tsmuxer\bin\$tool -Algorithm SHA256).Hash -ne $pins[$tool]) { throw "$tool is not the pinned build" }
+          }
 
       - name: Build, a warning is a failure
         run: dotnet build BurnSmith.slnx -c Release -warnaserror

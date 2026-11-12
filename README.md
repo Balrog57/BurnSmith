@@ -37,7 +37,7 @@ Tous ces modèles sont déjà dans **un seul format modifiable**, portés par l'
 
 L'éditeur dessine **en direct** les pages du disque (menu, scènes, réglages, crédits) et se parcourt comme sur le disque, à la souris ou aux flèches.
 
-- **Composez** : fond (bibliothèque de fonds, ou vos images), police, style de boutons, grille des scènes, couleurs. Les onglets **Fonds** et **Boutons** se glissent sur la page.
+- **Composez** : fond (bibliothèque de fonds, ou vos images), police, style de boutons, grille des scènes, couleurs. Les fonds (étape Fond et musique) et les boutons (étape Pages) se glissent sur la page.
 - **Vignettes animées** : sur un DVD, chaque case de la page de scènes joue un court extrait de son chapitre au lieu d'une image fixe — la page reste immobile, seules les cases bougent. Pas avec un menu animé ni une musique de menu, et sans effet sur un Blu-ray. Case dans l'éditeur, `--animated-thumbs` en ligne de commande.
 - **Surbrillances DVD prises aux modèles** : quand un modèle DVD fournit l'image de survol d'un bouton (`frame/0.dvd.sub.png` et son masque `frame/0.dvd.mask.png`), c'est elle qui devient la surbrillance du DVD, composée page par page et quantifiée en quatre couleurs ; l'état **choisi** a sa propre image, le marqueur du modèle (`selection/0.png`), à sa taille naturelle. Le cadre plat reste le repli pour les boutons sans artwork. `check-highlights --out DOSSIER` écrit les images de page, si un modèle DVD est présent.
 - **Trois styles de surbrillance** pour le bouton choisi : cadre d'accent, soulignement, ou libellé en couleur (quand le modèle n'apporte pas sa propre image de survol), avec une **couleur de sélection distincte** de l'accent et sa **transparence** réglable (une couleur et une transparence propres). `--highlight` en ligne de commande.
@@ -71,11 +71,11 @@ Tout est dans [`docs/`](docs/README.md) :
 
 ## Reste à faire
 
-- **Essai d'un Blu-ray gravé sur lecteur de salon** (le DVD est fait) ; menus HDMV natifs (le menu BD-J est signé comme ceux de DVDFab, mais pas encore essayé sur lecteur de salon).
+- **Essai d'un Blu-ray gravé sur lecteur de salon** (le DVD est fait) ; le menu HDMV natif (choix BD-J / HDMV dans Paramètres avancés) et le menu BD-J, signé comme ceux de DVDFab, ne sont pas encore essayés sur lecteur de salon ; fond animé et pop-up dans le menu HDMV.
 - Amélioration IA / HDR, menu contextuel dans l'éditeur.
 
 ## Licence
 
 MIT ([`LICENSE`](LICENSE)).
 
-Les modèles et boutons livrés dans `assets/library/open` gardent leurs propres fichiers de licence ; la lecture des boutons SVG utilise DotNetProjects.SVGImage (MIT, PropertyTools and DotNetProjects contributors) ; l'écriture des images ISO de Blu-ray 3D (`Udf.cs`) suit celle de tsMuxeR (`iso_writer.cpp`, Apache 2.0, justdan96/tsMuxer) ; les programmes que l'installateur apporte, inchangés, restent sous la leur : tsMuxeR (Apache 2.0), dovi_tool et hdr10plus_tool (MIT, quietvoid), ffmpeg (GPL v3 ; sa licence et le lien de ses sources sont dans `tools\ffmpeg`), ImgBurn (gratuiciel de LIGHTNING UK!, dont le setup officiel est lancé tel quel). L'exe publié embarque aussi des images et des mises en page de modèles recueillis sur le PC de publication : elles appartiennent à leurs auteurs et ne sont pas dans le dépôt. Aucun code, interface, police ni programme n'est repris, et BurnSmith n'est affilié à aucun de leurs auteurs.
+Les modèles et boutons livrés dans `assets/library/open` gardent leurs propres fichiers de licence ; la lecture des boutons SVG utilise DotNetProjects.SVGImage (MIT, PropertyTools and DotNetProjects contributors) ; l'écriture des images ISO de Blu-ray 3D (`Udf.cs`) suit celle de tsMuxeR (`iso_writer.cpp`, Apache 2.0, justdan96/tsMuxer) ; les programmes que l'installateur apporte, inchangés, restent sous la leur : tsMuxeR (Apache 2.0, dans la version corrigée et compilée par BDMV Author, avec les bibliothèques de GCC, winpthreads et zlib dont elle a besoin : `tsMuxeR-NOTICES.txt`), dovi_tool et hdr10plus_tool (MIT, quietvoid), ffmpeg (GPL v3 ; sa licence et le lien de ses sources sont dans `tools\ffmpeg`), ImgBurn (gratuiciel de LIGHTNING UK!, dont le setup officiel est lancé tel quel). L'exe publié embarque aussi des images et des mises en page de modèles recueillis sur le PC de publication : elles appartiennent à leurs auteurs et ne sont pas dans le dépôt. Aucun code, interface, police ni programme n'est repris, et BurnSmith n'est affilié à aucun de leurs auteurs.

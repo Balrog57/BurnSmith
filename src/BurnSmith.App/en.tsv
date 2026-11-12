@@ -1,0 +1,926 @@
+# BurnSmith - English texts. One entry per line: French<TAB>English. A French side with holes {0}, {1}... is a pattern; the longest pattern is tried first (see Loc.cs).
+
+# MainWindow.xaml
+Pistes audio gardées	Audio tracks kept
+Sous-titres gardés	Subtitles kept
+Prévisualisation (lecteur par défaut)	Preview (default player)
+Montage vidéo : nom dans le menu, découpe, volume, chapitres	Video edit: name in the menu, cutting, volume, chapters
+Coupe : garder seulement une partie de la vidéo	Cut: keep only part of the video
+Supprimer le titre de la liste	Remove the title from the list
+Plus : bonus, vidéo de début	More: bonus, start video
+Ouvrir un projet	Open a project
+Ouvrir un projet enregistré : ses vidéos, leurs réglages, le menu et les options du disque (Ctrl+O)	Open a saved project: its videos, their settings, the menu and the disc options (Ctrl+O)
+Enregistrer le projet	Save the project
+Enregistrer le projet dans un fichier, pour le reprendre plus tard (Ctrl+S enregistre dans le même fichier)	Save the project to a file, to come back to it later (Ctrl+S saves to the same file)
+File d'attente	Queue
+File d'attente : plusieurs disques fabriqués l'un après l'autre, sans rester devant l'écran	Queue: several discs made one after the other, without staying at the screen
+Annuler	Cancel
+Annuler la dernière modification (Ctrl+Z)	Undo the last change (Ctrl+Z)
+Rétablir	Redo
+Rétablir ce qui a été annulé (Ctrl+Y)	Redo what was undone (Ctrl+Y)
+Grave une image ISO existante sur le disque du graveur choisi	Burns an existing ISO image to the disc in the chosen burner
+Graver une image	Burn an image
+Efface un disque réinscriptible (BD-RE, DVD±RW)	Erases a rewritable disc (BD-RE, DVD±RW)
+Effacer un disque	Erase a disc
+Type de disque	Disc type
++  Ajouter une source	+  Add a source
+Créateur de disques Blu-ray, Blu-ray 4K et DVD	Blu-ray, Blu-ray 4K and DVD disc creator
+Nom	Name
+Durée	Length
+Sous-titres	Subtitles
+Glissez ici une ou plusieurs vidéos (pour une série : tous les épisodes).	Drop one or more videos here (for a series: all the episodes).
+Sortie	Output
+Menu du disque	Disc menu
+Paramètres de menu	Menu settings
+Paramètres avancés	Advanced settings
+Arrête après l'étape en cours ; pendant l'écriture du disque, la gravure s'arrête aussitôt	Stops after the current step; while the disc is being written, burning stops at once
+Enregistrer vers :	Save to:
+Dossier du disque : BDMV (ou VIDEO_TS) y est créé	Disc folder: BDMV (or VIDEO_TS) is created in it
+Choisir le dossier	Choose the folder
+Essai	Trial
+Disque d'essai : cinq minutes de chaque vidéo, un passage à chaque chapitre. Le menu est complet et le disque est prêt en quelques minutes, dans un dossier à part (son nom finit par _essai), pour le vérifier dans VLC avant la vraie fabrication.	Trial disc: five minutes of each video, one passage at each chapter. The menu is complete and the disc is ready in a few minutes, in a folder of its own (its name ends with _essai), to check it in VLC before the real build.
+Créer aussi une image ISO (UDF) à côté du dossier	Also create an ISO image (UDF) next to the folder
+Graver	Burn
+Grave le disque sur le graveur choisi après la création (une ISO temporaire est utilisée)	Burns the disc on the chosen burner after it is created (a temporary ISO is used)
+Graveur	Burner
+Vitesse de gravure	Burning speed
+Vitesse de gravure. Plus lent est souvent plus sûr pour un DVD lu sur une vieille platine. Une vitesse que le disque n'offre pas laisse le choix au graveur.	Burning speed. Slower is often safer for a DVD played on an old player. A speed the disc does not offer leaves the choice to the burner.
+Vitesse max	Max speed
+Nombre de copies	Number of copies
+Nombre de disques à graver : la même image sur chacun, BurnSmith demande le disque vierge suivant entre deux.	Number of discs to burn: the same image on each, BurnSmith asks for the next blank disc in between.
+1 copie	1 copy
+Démarrer	Start
+Journal	Log
+
+# MainWindow.xaml.cs
+Début · {0}	Start · {0}
+Début	Start
+Durée d'origine : {0}	Original length: {0}
+{0} (défaut)	{0} (default)
+Aucun	None
+Chargement…	Loading…
+Le modèle de menu se charge encore (au premier lancement, BurnSmith installe ses fichiers). Réessayez dans un instant.	The menu template is still loading (on first launch, BurnSmith installs its files). Try again in a moment.
+Un disque est en cours de création.\n\nFermer BurnSmith annule la création : le travail est arrêté, ses fichiers temporaires sont supprimés et le disque ne sera pas terminé. La fenêtre se ferme dès l'arrêt.\n\nFermer quand même ?	A disc is being created.\n\nClosing BurnSmith cancels it: the work is stopped, its temporary files are deleted and the disc will not be finished. The window closes as soon as the work has stopped.\n\nClose anyway?
+Annulation…	Cancelling…
+Une vidéo est en préparation (diaporama, morceau ou fusion).\n\nFermer BurnSmith l'arrête : elle ne sera pas ajoutée.\n\nFermer quand même ?	A video is being prepared (slideshow, song or join).\n\nClosing BurnSmith stops it: it will not be added.\n\nClose anyway?
+Une gravure ou un effacement est en cours : BurnSmith reste ouvert, car l'interrompre peut rendre le disque inutilisable.\n\nAttendez la fin. Une gravure peut être arrêtée avec le bouton Annuler.	A disc is being burned or erased: BurnSmith stays open, because interrupting it can make the disc unusable.\n\nWait until it ends. Burning can be stopped with the Cancel button.
+Aucune source	No source
+Espace libre : {0} Go	Free space: {0} GB
+\ntrop grand pour ce support	\ntoo big for this disc
+\nune vidéo source est introuvable	\na source video cannot be found
+\nPassthrough : sources HEVC 2160p seulement	\nPassthrough: HEVC 2160p sources only
+{0} Go, sans limite de taille{1}	{0} GB, no size limit{1}
+{0} Go / {1} Go utilisables{2}	{0} GB / {1} GB usable{2}
+{0} vidéo  ·  {1} Go	{0} video  ·  {1} GB
+{0} vidéos  ·  {1} Go	{0} videos  ·  {1} GB
+{0} vidéo (dont {1} bonus)  ·  {2} Go	{0} video ({1} of them bonus)  ·  {2} GB
+{0} vidéos (dont {1} bonus)  ·  {2} Go	{0} videos ({1} of them bonus)  ·  {2} GB
+{0} vidéo (dont une vidéo de début)  ·  {1} Go	{0} video (one of them the start video)  ·  {1} GB
+{0} vidéos (dont une vidéo de début)  ·  {1} Go	{0} videos (one of them the start video)  ·  {1} GB
+{0} vidéo (dont {1} bonus) (dont une vidéo de début)  ·  {2} Go	{0} video ({1} of them bonus) (one of them the start video)  ·  {2} GB
+{0} vidéos (dont {1} bonus) (dont une vidéo de début)  ·  {2} Go	{0} videos ({1} of them bonus) (one of them the start video)  ·  {2} GB
+Projet BurnSmith	BurnSmith project
+Tous les fichiers	All files
+Impossible d'ouvrir {0} : {1}	Cannot open {0}: {1}
+Projet	Project
+Ouverture de {0}…	Opening {0}…
+Projet : « {0} » est introuvable ou illisible, cette vidéo n'est pas reprise ({1}).	Project: "{0}" cannot be found or read, this video is left out ({1}).
+Projet enregistré : {0}	Project saved: {0}
+Le projet n'a pas pu être enregistré : {0}	The project could not be saved: {0}
+Vidéos, photos et musique	Videos, photos and music
+Vidéos	Videos
+Blu-ray (image ISO non chiffrée, 3D compris)	Blu-ray (unencrypted ISO image, 3D included)
+Photos (diaporama)	Photos (slideshow)
+Musique	Music
+Diaporama d'une photo : secondes	Slideshow of one photo: seconds
+Diaporama de {0} photos : secondes par photo	Slideshow of {0} photos: seconds per photo
+Transition entre les photos : fondu, glissement, volet, cercle, mélange ou aucune	Transition between the photos: fade, slideleft, wipeleft, circleopen, mix or none
+Préparation du diaporama…	Preparing the slideshow…
+Diaporama annulé (durée par photo absente ou invalide) : les photos ne sont pas ajoutés.	Slideshow cancelled (time per photo missing or invalid): the photos are not added.
+Diaporama annulé (durée par photo absente ou invalide) : les photos et les morceaux déposés avec elles ne sont pas ajoutés.	Slideshow cancelled (time per photo missing or invalid): the photos and the songs dropped with them are not added.
+Préparation de {0}…	Preparing {0}…
+Photos / musique : {0}	Photos / music: {0}
+Impossible de lire {0} : {1}	Cannot read {0}: {1}
+« {0} » redevient le film principal : un disque a besoin d'au moins une vidéo qui ne soit ni un bonus ni la vidéo de début.	"{0}" becomes the main film again: a disc needs at least one video that is neither a bonus nor the start video.
+Bonus (après le film, page Bonus du menu)	Bonus (after the film, Bonus page of the menu)
+Vidéo de début (lue avant le menu)	Start video (played before the menu)
+Vignette du menu : choisir le moment…	Menu thumbnail: choose the moment…
+Vignette du menu : choisir une image…	Menu thumbnail: choose a picture…
+Vignette du menu : automatique	Menu thumbnail: automatic
+Vignette du menu : à {0}…	Menu thumbnail: at {0}…
+Vignette du menu : {0}…	Menu thumbnail: {0}…
+Vignette du menu : moment de la vidéo (h:mm:ss, depuis son début sur le disque)	Menu thumbnail: moment of the video (h:mm:ss, from its start on the disc)
+Entrez un moment entre 0:00:00 et {0}.	Enter a moment between 0:00:00 and {0}.
+Vignette du menu	Menu thumbnail
+Image de la vignette	Thumbnail picture
+Résumé pour le menu : modifier…	Summary for the menu: edit…
+Résumé pour le menu…	Summary for the menu…
+Résumé de la vidéo, sous son nom sur les pages d'épisodes (modèle Streaming) ; vide = aucun	Summary of the video, under its name on the episode pages (Streaming template); empty = none
+Couper en deux : à quel moment ? (h:mm:ss)	Cut in two: at what moment? (h:mm:ss)
+Entrez un moment entre {0} et {1}.	Enter a moment between {0} and {1}.
+Couper en deux titres	Cut into two titles
+Retirez d'abord la coupe des deux vidéos.	First remove the cut from both videos.
+Une vidéo du film, un bonus et la vidéo de début ne se fusionnent pas entre eux.	A video of the film, a bonus and the start video cannot be joined together.
+Les deux vidéos n'ont pas les mêmes flux (codec et profil, taille, cadence, pistes) : on ne peut pas les coller sans les réencoder.	The two videos do not have the same streams (codec and profile, size, frame rate, tracks): they cannot be joined without re-encoding.
+Fusionner	Join
+Fusion des deux vidéos…	Joining the two videos…
+Les fichiers de sous-titres ajoutés aux deux vidéos ne suivent pas la fusion.	The subtitle files added to the two videos are not carried over by the join.
+Fusion : {0}	Join: {0}
+Fusion	Join
+Impossible d'ouvrir la vidéo : {0}	Cannot open the video: {0}
+la vidéo	the video
+{0}  ({1}, non pris en charge)	{0}  ({1}, not supported)
+Tout garder sur toutes les vidéos	Keep all on every video
+Tout garder	Keep all
+Aucune piste audio	No audio track
+Aucun sous-titre	No subtitle
+Ajouter un fichier de sous-titres…	Add a subtitle file…
+Langue de « {0} » (piste {1})	Language of "{0}" (track {1})
+Langue de « {0} »	Language of "{0}"
+Inconnue	Unknown
+Décalage de « {0} » : {1} s…	Delay of "{0}": {1} s…
+Décalage de « {0} »…	Delay of "{0}"…
+Décalage du son	Audio delay
+Décalage du sous-titre	Subtitle delay
+Décalage du son, en secondes : 0,2 = plus tard, -0,2 = plus tôt, 0 = aucun	Audio delay, in seconds: 0.2 = later, -0.2 = earlier, 0 = none
+Décalage du sous-titre, en secondes : 1,5 = plus tard, -1,5 = plus tôt, 0 = aucun	Subtitle delay, in seconds: 1.5 = later, -1.5 = earlier, 0 = none
+Entrez un nombre de secondes, par exemple 1,5 ou -0,8.	Enter a number of seconds, for example 1.5 or -0.8.
+Appliquer les pistes de cette vidéo aux autres	Apply this video's tracks to the others
+Piste audio par défaut	Default audio track
+Sous-titre par défaut	Default subtitle
+Langue d'origine	Original language
+Sous-titres de {0}	Subtitles of {0}
+Sous-titres (*.srt;*.ass;*.ssa;*.vtt;*.sup;*.idx;*.sub)	Subtitles (*.srt;*.ass;*.ssa;*.vtt;*.sup;*.idx;*.sub)
+{0} : seuls les sous-titres srt, ass, ssa, vtt, sup (PGS) et idx + sub (VobSub) sont pris en charge.	{0}: only srt, ass, ssa, vtt, sup (PGS) and idx + sub (VobSub) subtitles are supported.
+La page Réglages du menu propose au plus {0} pistes audio et {1} sous-titres : les autres restent sur le disque, sans ligne dans le menu.	The Settings page of the menu offers at most {0} audio tracks and {1} subtitles: the others stay on the disc, with no line in the menu.
+Pistes appliquées à toutes les vidéos (par numéro de piste).	Tracks applied to all the videos (by track number).
+Dossier du disque	Disc folder
+Arrêter la gravure ?\n\nLe disque en cours d'écriture sera probablement inutilisable (un disque réinscriptible devra être effacé). L'arrêt peut prendre quelques minutes.	Stop burning?\n\nThe disc being written will probably be unusable (a rewritable disc will have to be erased). Stopping can take a few minutes.
+Annulé.	Cancelled.
+ERREUR : {0}	ERROR: {0}
+ERREUR	ERROR
+Ajoutez d'abord une vidéo.	Add a video first.
+Choisissez un dossier de sortie.	Choose an output folder.
+Après la création, graver « {0} » sur {1}, en {2} copies ?\n\nInsérez un disque vierge adapté ({3}). Le disque sera écrit définitivement.	After it is created, burn "{0}" on {1}, in {2} copies?\n\nInsert a suitable blank disc ({3}). The disc will be written for good.
+Après la création, graver « {0} » sur {1} ?\n\nInsérez un disque vierge adapté ({2}). Le disque sera écrit définitivement.	After it is created, burn "{0}" on {1}?\n\nInsert a suitable blank disc ({2}). The disc will be written for good.
+Création du disque…	Creating the disc…
+Disque d'essai : {0} minutes de chaque vidéo, un passage à chaque chapitre, dans {1}	Trial disc: {0} minutes of each video, one passage at each chapter, in {1}
+Vérification de la structure du disque : aucune anomalie.	Disc structure check: no problem found.
+Vérification de la structure du disque : {0}	Disc structure check: {0}
+Le disque n'est pas gravé, sa structure a des anomalies : {0}	The disc is not burned, its structure has problems: {0}
+Création de l'image ISO…	Creating the ISO image…
+Vérification de l'image ISO : aucune anomalie.	ISO image check: no problem found.
+Vérification de l'image ISO : {0}	ISO image check: {0}
+Le disque n'est pas gravé, l'image ISO a des anomalies : {0}	The disc is not burned, the ISO image has problems: {0}
+Terminé.	Done.
+Disque d'essai terminé. Ouvrez {0} dans VLC (Média > Ouvrir un disque) pour vérifier le menu, puis décochez « Essai » pour le vrai disque.	Trial disc done. Open {0} in VLC (Media > Open Disc) to check the menu, then untick "Trial" for the real disc.
+Copie {0} sur {1} : retirez le disque gravé, insérez un disque vierge dans {2}, puis OK.	Copy {0} of {1}: remove the burned disc, insert a blank disc in {2}, then OK.
+Ajouter ce disque à la file	Add this disc to the queue
+Ajouter des projets enregistrés…	Add saved projects…
+Retirer « {0} »  ({1}, {2})	Remove "{0}"  ({1}, {2})
+Lancer la file ({0} disques)	Run the queue ({0} discs)
+Lancer la file (1 disque)	Run the queue (1 disc)
+Projets à ajouter à la file	Projects to add to the queue
+« {0} » n'est pas ajouté à la file : ce projet n'indique pas de dossier de sortie. Ouvrez-le, choisissez le dossier, enregistrez-le.	"{0}" is not added to the queue: this project names no output folder. Open it, choose the folder, save it.
+« {0} » n'est pas ajouté à la file : un disque de la file va déjà dans {1}. Choisissez un autre dossier de sortie.	"{0}" is not added to the queue: a disc of the queue already goes to {1}. Choose another output folder.
+File d'attente : « {0} » ajouté ({1} disque). Le bouton de la file permet de la lancer.	Queue: "{0}" added ({1} disc). The queue button runs it.
+File d'attente : « {0} » ajouté ({1} disques). Le bouton de la file permet de la lancer.	Queue: "{0}" added ({1} discs). The queue button runs it.
+File d'attente…	Queue…
+File d'attente : disque {0} sur {1}, « {2} »	Queue: disc {0} of {1}, "{2}"
+« {0} » : vérification du disque, aucune anomalie.	"{0}": disc check, no problem found.
+ERREUR, « {0} » : {1}	ERROR, "{0}": {1}
+File d'attente : {0} disque(s) fait(s), {1} en échec, resté(s) dans la file : {2}.	Queue: {0} disc(s) made, {1} failed and left in the queue: {2}.
+File d'attente terminée : {0} disque(s) fait(s).	Queue done: {0} disc(s) made.
+Aucun graveur détecté.	No burner found.
+Image à graver	Image to burn
+Images disque	Disc images
+Graver « {0} » sur {1}, en {2} copies ?\n\nInsérez un disque vierge adapté à la taille de l'image. Le disque sera écrit définitivement.	Burn "{0}" on {1}, in {2} copies?\n\nInsert a blank disc that suits the size of the image. The disc will be written for good.
+Graver « {0} » sur {1} ?\n\nInsérez un disque vierge adapté à la taille de l'image. Le disque sera écrit définitivement.	Burn "{0}" on {1}?\n\nInsert a blank disc that suits the size of the image. The disc will be written for good.
+Gravure…	Burning…
+Effacer le disque réinscriptible de {0} ?\n\nToutes les données du disque seront perdues.	Erase the rewritable disc in {0}?\n\nAll the data on the disc will be lost.
+Effacement…	Erasing…
+
+
+# MenuEditorWindow.xaml
+1 · Modèle	1 · Template
+Choisir l'habillage du menu parmi les modèles	Choose the look of the menu among the templates
+Les pages du menu et ce que fait le disque	The menu pages and what the disc does
+Boutons, textes et couleurs de chaque page	Buttons, texts and colors of each page
+4 · Fond et musique	4 · Background and music
+L'image ou la vidéo derrière le menu, et sa musique	The picture or video behind the menu, and its music
+5 · Aperçu	5 · Preview
+Parcourir le menu comme avec la télécommande	Go through the menu as with the remote
+↶ Annuler	↶ Undo
+↷ Rétablir	↷ Redo
+Page précédente	Previous page
+Page suivante	Next page
+Ajouter un dossier de modèles…	Add a template folder…
+Un dossier de modèles DVDFab, Leawo, Yuhan ou DVDStyler : ils sont convertis et rangés avec les autres	A folder of DVDFab, Leawo, Yuhan or DVDStyler templates: they are converted and filed with the others
+Les menus que vous enregistrez avec « Enregistrer le modèle… », en bas de la fenêtre.	The menus you save with "Save the template…", at the bottom of the window.
+Pages du menu	Menu pages
+Aperçu du film sur le menu principal	Preview of the film on the main menu
+Chapitres ou épisodes par page	Chapters or episodes per page
+Colonnes	Columns
+Lignes	Rows
+Une image dans chaque case	A picture in each cell
+Ce modèle fixe lui-même le nombre de cases par page.	This template sets the number of cells per page itself.
+Chapitres en liste, sans vignettes (selon le modèle)	Chapters as a list, without thumbnails (depending on the template)
+Pour les modèles qui prévoient une page de chapitres en liste	For templates that have a chapter page as a list
+Vignettes animées (DVD)	Moving thumbnails (DVD)
+Un extrait du chapitre tourne dans chaque case	A clip of the chapter plays in each cell
+Pas de menu principal : les chapitres d'abord	No main menu: chapters first
+La première page de chapitres ou d'épisodes sert de menu	The first page of chapters or episodes serves as the menu
+Série : pas de case pour la première vidéo	Series: no cell for the first video
+« Tout lire » la joue	"Play all" plays it
+Page Bonus en texte, sans vignettes	Bonus page as text, without thumbnails
+La page Langues (audio et sous-titres) et la page Bonus se créent d'elles-mêmes quand le disque a plusieurs pistes ou des bonus.	The Languages page (audio and subtitles) and the Bonus page are created by themselves when the disc has several tracks or bonus videos.
+Page Crédits	Credits page
+Une ligne par rangée ; vide = pas de page Crédits	One line per row; empty = no Credits page
+Texte des crédits	Credits text
+Une ligne par rangée. Vide : pas de page Crédits.	One line per row. Empty: no Credits page.
+Pendant le film (Blu-ray)	During the film (Blu-ray)
+Menu pop-up par-dessus le film	Pop-up menu over the film
+La touche Pop-up de la télécommande ouvre un petit menu sans arrêter le film	The Pop-up key of the remote opens a small menu without stopping the film
+Bouton reprendre	Resume button
+Bouton menu principal	Main menu button
+Lecture du disque	Disc playback
+Ce que fait le disque quand on l'insère et quand une vidéo se termine (aussi dans Paramètres avancés)	What the disc does when it is inserted and when a video ends (also in Advanced settings)
+Afficher le menu, puis lire toutes les vidéos à la suite	Show the menu, then play all the videos in a row
+Lire la première vidéo dès l'insertion, puis les suivantes	Play the first video as soon as the disc is inserted, then the next ones
+Afficher le menu, y revenir à la fin de chaque vidéo	Show the menu, come back to it at the end of each video
+Langue	Language
+Langue du menu	Menu language
+Tous les mots du menu en français ou en anglais : ceux de l'étape Pages (Lecture, Chapitres, Réglages, Reprendre…) et ceux dessinés dans les boutons d'un modèle (Play, Scenes, Set Up, Main Menu). Un mot que vous avez écrit vous-même est gardé.	All the words of the menu in French or in English: those of the Pages step (Play, Chapters, Settings, Resume…) and those drawn in a template's buttons (Play, Scenes, Set Up, Main Menu). A word you wrote yourself is kept.
+Titre du disque par langue, Blu-ray (une ligne par langue, ex. fra: Mon disque)	Disc title per language, Blu-ray (one line per language, e.g. fra: Mon disque)
+Ajouter :	Add:
++ Texte	+ Text
++ Cadre	+ Box
++ Bouton	+ Button
+Boutons	Buttons
+Retirer	Remove
+Importer…	Import…
+Une image de bouton, puis (au choix) celle qu'il montre quand il est sélectionné	A button picture, then (optionally) the one it shows when it is selected
+Glissez un bouton sur la page, ou double-cliquez.	Drag a button onto the page, or double-click.
+Élément	Element
+Mène à	Leads to
+L'apparence d'un bouton sans image (vide = celle du thème)	The look of a button without a picture (empty = the theme's)
+Texte	Text
+Sélection…	Selected…
+L'image que montre un bouton image quand il est sélectionné (vide = le cadre du thème)	The picture a picture button shows when it is selected (empty = the theme's frame)
+Largeur	Width
+Hauteur	Height
+Taille du texte	Text size
+Couleur	Color
+Remplissage	Fill
+Bordure	Border
+Épaisseur de bordure	Border thickness
+Opacité du cadre (%)	Box opacity (%)
+Alignement	Alignment
+Gras	Bold
+Italique	Italic
+Derrière les boutons (panneau, cadre)	Behind the buttons (panel, box)
+Dupliquer	Duplicate
+Supprimer l'élément	Delete the element
+Textes	Texts
+Titre	Title
+Bouton lecture	Play button
+Bouton chapitres	Chapters button
+Bouton accueil	Home button
+Mot « chapitre »	The word "chapter"
+Bouton « tout lire » (séries)	"Play all" button (series)
+Liste des épisodes (séries)	Episode list (series)
+Mot devant le résumé d'un épisode	Word before an episode's summary
+Bouton et page des bonus	Bonus button and page
+Bouton réglages (audio / sous-titres)	Settings button (audio / subtitles)
+Colonne audio	Audio column
+Colonne sous-titres	Subtitles column
+Sous-titres désactivés	Subtitles off
+Bouton retour	Back button
+Bouton crédits	Credits button
+Ce modèle fixe l'apparence : police, couleurs, fond et libellés des boutons viennent de ses images.	This template sets the look: font, colors, background and button labels come from its pictures.
+Composer à partir de ce fond	Compose from this background
+Garde le fond de ce modèle (sans le copier) et ouvre la police, les boutons, la grille et les couleurs.	Keeps this template's background (without copying it) and unlocks the font, the buttons, the grid and the colors.
+Police	Font
+Style des boutons	Button style
+Coins carrés	Square corners
+Couleurs (#RRGGBB)	Colors (#RRGGBB)
+Fond haut	Background top
+Fond bas	Background bottom
+Sélection	Selection
+Sélection (2e)	Selection (2nd)
+Transparence de la sélection (%)	Selection transparency (%)
+Surbrillance du bouton choisi	Highlight of the chosen button
+Cartes	Cards
+Halo	Glow
+Assombrir le fond (%)	Darken the background (%)
+Image de fond	Background picture
+Fond de cette page…	Background of this page…
+Une image de fond pour ce genre de page (menu, chapitres, réglages, bonus, crédits) ; les autres gardent le fond du modèle	A background picture for this kind of page (menu, chapters, settings, bonus, credits); the others keep the template's background
+Fond commun	Shared background
+Rend à ce genre de page le fond du modèle	Gives this kind of page the template's background back
+Flouter l'image de fond	Blur the background picture
+Revient au dégradé de couleurs	Goes back to the color gradient
+Glissez un fond sur la page, ou double-cliquez.	Drag a background onto the page, or double-click.
+Vidéo et musique	Video and music
+Vidéo du menu	Menu video
+Menu animé : une vidéo en boucle derrière les boutons	Moving menu: a looping video behind the buttons
+Fichier vidéo (vide = le premier film)	Video file (empty = the first film)
+Choisir la vidéo du menu	Choose the menu video
+Début de la vidéo (s)	Video start (s)
+Musique du menu	Menu music
+Fichier audio (vide = aucune ; avec un menu animé, remplace le son de la vidéo)	Audio file (empty = none; with a moving menu, replaces the video's sound)
+Choisir la musique	Choose the music
+Début de la musique (s)	Music start (s)
+Volume de la musique	Music volume
+Fondu (s)	Fade (s)
+Entrée au début de la boucle, sortie à sa fin (0 = aucun)	Fade in at the start of the loop, fade out at its end (0 = none)
+Durée de la boucle (s)	Loop length (s)
+Durée de la vidéo animée et de la musique avant qu'elles recommencent : 5 à 300 s sur Blu-ray, 5 à 120 s sur DVD. 0 = la durée de la musique (la chanson entière). Une vidéo plus courte est rejouée depuis son début.	Length of the moving video and of the music before they start again: 5 to 300 s on Blu-ray, 5 to 120 s on DVD. 0 = the length of the music (the whole song). A shorter video is played again from its start.
+0 pour la durée : la chanson entière. Sans menu animé, la musique joue sur le menu fixe. Sur DVD elle repart quand on change de page ; sur Blu-ray elle continue.	0 for the length: the whole song. Without a moving menu, the music plays over the still menu. On DVD it starts again when the page changes; on Blu-ray it goes on.
+Télécommande	Remote
+Le menu se parcourt ici comme sur le disque : les flèches passent d'un bouton à l'autre, OK ouvre la page ou dit ce que le disque lirait. Les flèches et Entrée du clavier font de même.	The menu is browsed here as on the disc: the arrows go from one button to the next, OK opens the page or says what the disc would play. The keyboard's arrows and Enter do the same.
+Haut	Top
+Gauche	Left
+Droite	Right
+Bas	Bottom
+Menu principal	Main menu
+Revient à la première page, comme la touche Menu	Goes back to the first page, like the Menu key
+Sur un vrai lecteur	On a real player
+Pour voir le menu tourner pour de bon avant le vrai disque : validez avec OK, puis dans la fenêtre principale cochez « Essai » et « ISO » et cliquez Démarrer. Le disque d'essai est prêt en quelques minutes et s'ouvre dans VLC ou se grave sur un disque réinscriptible.	To see the menu really run before the real disc: confirm with OK, then in the main window tick "Trial" and "ISO" and click Start. The trial disc is ready in a few minutes and opens in VLC or burns to a rewritable disc.
+Enregistrer le modèle…	Save the template…
+Garde ce menu dans « Mes modèles », pour d'autres disques	Keeps this menu in "My templates", for other discs
+◂ Étape précédente	◂ Previous step
+Étape suivante ▸	Next step ▸
+
+# MenuEditorWindow.xaml.cs
+Pas avec un menu HDMV (Paramètres avancés, Type de menu)	Not with an HDMV menu (Advanced settings, Menu type)
+Anglais	English
+Cadre (comme avant)	Box (as before)
+Soulignement	Underline
+Texte en couleur	Colored text
+Dossier contenant des modèles de menu	Folder containing menu templates
+Conversion des modèles…	Converting the templates…
+{0} converti(s), {1} déjà présent(s), {2} échec(s) — dossier Documents\\BurnSmith\\Templates\\converted	{0} converted, {1} already there, {2} failed — folder Documents\\BurnSmith\\Templates\\converted
+Modèles non convertis	Templates not converted
+Réglages	Settings
+Réglages · Audio	Settings · Audio
+Réglages · Sous-titres	Settings · Subtitles
+Crédits	Credits
+Chapitres {0}	Chapters {0}
+Aperçu impossible : {0}	Preview not possible: {0}
+{0} · page {1} / {2}	{0} · page {1} / {2}
+Ligne d'information	Information line
+Texte {0}	Text {0}
+Nom de la vidéo {0}	Name of video {0}
+Zone de texte du modèle : cliquez pour écrire	Text zone of the template: click to write
+Changer l'image	Change the picture
+Cliquez pour écrire	Click to write
+Choisir une image…	Choose a picture…
+Image du menu	Menu picture
+Reprendre l'image du film	Use the film's picture again
+▶ Sur le disque : lecture du titre {0} à partir du repère {1}.	▶ On the disc: plays title {0} from mark {1}.
+▶ Sur le disque : lecture du titre {0}.	▶ On the disc: plays title {0}.
+▶ Sur le disque : lecture de {0} titre(s) à la suite.	▶ On the disc: plays {0} title(s) in a row.
+Toutes les pages	All pages
+Chapitres	Chapters
+(celui du thème)	(the theme's)
+Bouton · {0} · {1} → {2}	Button · {0} · {1} → {2}
+sans texte	no text
+Cadre · {0} · {1}×{2}	Box · {0} · {1}×{2}
+Texte · {0} · {1}	Text · {0} · {1}
+Image de l'élément	Picture of the element
+Image du bouton sélectionné	Picture of the selected button
+Ce fond remplace celui du modèle : ses boutons et sa mise en page deviennent les vôtres (police, boutons, grille, couleurs).\n\nContinuer ?	This background replaces the template's: its buttons and its layout become yours (font, buttons, grid, colors).\n\nContinue?
+Fond	Background
+Image du bouton	Button picture
+Image du bouton sélectionné (Annuler = aucune : le cadre du thème)	Picture of the selected button (Cancel = none: the theme's frame)
+Cliquez un modèle : il habille le menu ; vos textes, vos vidéos et vos réglages restent.	Click a template: it dresses the menu; your texts, your videos and your settings stay.
+Les pages que le menu contient et ce que fait le disque. L'aperçu suit chaque réglage.	The pages the menu contains and what the disc does. The preview follows each setting.
+Cliquez un élément de la page pour le déplacer ou le régler (coins : sa taille). Glissez un bouton de la bibliothèque sur la page, ou double-cliquez. Suppr le retire, les flèches le déplacent (Maj : pas fin).	Click an element of the page to move it or set it (corners: its size). Drag a button from the library onto the page, or double-click. Del removes it, the arrows move it (Shift: small steps).
+Glissez un fond sur la page, ou double-cliquez. La musique et la vidéo du menu ne s'entendent et ne bougent que sur le disque.	Drag a background onto the page, or double-click. The menu's music and video are only heard and only move on the disc.
+Flèches et Entrée du clavier, ou la télécommande à droite : le menu se parcourt comme sur le disque.	Keyboard arrows and Enter, or the remote on the right: the menu is browsed as on the disc.
+Tous ({0})	All ({0})
+Thèmes ({0})	Themes ({0})
+Libres ({0})	Open ({0})
+Mes modèles	My templates
+Images à ajouter à la bibliothèque	Pictures to add to the library
+Vidéo du menu animé	Video of the moving menu
+Sons	Sounds
+Fond de la page « {0} »	Background of the "{0}" page
+Enregistrer le modèle	Save the template
+Corrigez d'abord l'erreur de l'aperçu :\n{0}	Fix the preview error first:\n{0}
+
+
+# VideoEditWindow.xaml
+Éditer	Edit
+h:mm:ss (Entrée pour valider)	h:mm:ss (Enter to confirm)
+Nom dans le menu	Name in the menu
+Aperçu de la sortie	Output preview
+En couleur : les clips gardés ; les traits blancs : les chapitres	In color: the clips kept; the white lines: the chapters
+10 secondes plus tôt	10 seconds earlier
+Lecture / pause (sans le son)	Play / pause (no sound)
+10 secondes plus tard	10 seconds later
+Une seconde plus tôt	One second earlier
+Une seconde plus tard	One second later
+Rogner	Crop
+Par défaut	Default
+Appliquer à tous	Apply to all
+Tourner à gauche	Turn left
+Tourner à droite	Turn right
+⇋ Miroir	⇋ Mirror
+Retourner de gauche à droite	Flip left to right
+⇵ Retourner	⇵ Flip
+Retourner de haut en bas	Flip top to bottom
+Taille du recadrage	Crop size
+Format du recadrage	Crop shape
+Libre	Free
+Conserver l'original	Keep the original
+2,35:1 (cinémascope)	2.35:1 (CinemaScope)
+Distance au bord (pixels)	Distance from the edge (pixels)
+Tirez le cadre sur l'image de gauche, ses coins ou ses bords. La partie gardée est remise au format du disque, avec des bandes noires si besoin.	Drag the frame on the left picture, its corners or its edges. The part kept is fitted to the disc's shape, with black bars if needed.
+Effet	Effect
+Luminosité	Brightness
+Contraste	Contrast
+Balance des blancs (froid ← → chaud)	White balance (cool ← → warm)
+100 % laisse le son tel quel. Un autre volume refait le son en AC-3.	100% leaves the sound as it is. Another volume re-encodes the sound as AC-3.
+Filigrane	Watermark
+G	B
+S	U
+Souligné	Underlined
+Largeur (part de l'image)	Width (share of the picture)
+Transparence	Transparency
+En haut à gauche	Top left
+En haut à droite	Top right
+En bas à gauche	Bottom left
+En bas à droite	Bottom right
+Au centre	Center
+Incruster des sous-titres dans l'image (toujours affichés, même sans réglage du lecteur).	Burn subtitles into the picture (always shown, whatever the player's settings).
++ Ajouter des sous-titres	+ Add subtitles
+Centre	Center
+Délai (secondes, négatif = plus tôt)	Delay (seconds, negative = earlier)
+Les pistes de sous-titres à choisir sur le lecteur se règlent dans la liste des vidéos.	The subtitle tracks to choose on the player are set in the video list.
+Clips de sortie	Output clips
+Les parties de la vidéo gardées sur le disque, dans l'ordre : ce qui se trouve entre deux clips est enlevé.	The parts of the video kept on the disc, in order: what lies between two clips is removed.
+Couper ici	Cut here
+Partage le clip en deux à la position de l'aperçu ; supprimez ensuite la partie à enlever	Splits the clip in two at the preview position; then delete the part to remove
++ Ajouter un clip	+ Add a clip
+Un clip d'une minute à la position de l'aperçu	A one-minute clip at the preview position
+Toute la vidéo	Whole video
+Un seul clip, du début à la fin du fichier	A single clip, from the start to the end of the file
+Un chapitre toutes les	One chapter every
+Insertion automatique	Automatic insertion
+Remplit la liste personnalisée avec un chapitre toutes les N minutes, à retoucher ensuite	Fills the custom list with one chapter every N minutes, to adjust afterwards
+Sortie sans chapitres	Output without chapters
+Liste personnalisée (temps dans la vidéo d'origine)	Custom list (times in the original video)
+h:mm:ss (ou en secondes)	h:mm:ss (or in seconds)
+Insérer	Insert
+Insérer ici	Insert here
+Un chapitre à la position de l'aperçu	A chapter at the preview position
+Nommer…	Name…
+Le nom que le menu écrit pour le chapitre choisi, à la place de « Chapitre N ». Pour nommer le premier chapitre du disque, insérez-en un à 0:00:00.	The name the menu writes for the chosen chapter, instead of "Chapter N". To name the first chapter of the disc, insert one at 0:00:00.
+Supprimer	Delete
+Tout supprimer	Delete all
+Ceux du fichier	From the file
+Remplace la liste par les chapitres que le fichier contient déjà	Replaces the list with the chapters the file already contains
+Les chapitres en dehors de la partie gardée sont ignorés.	Chapters outside the part kept are ignored.
+
+# VideoEditWindow.xaml.cs
+Blanc	White
+Noir	Black
+Jaune	Yellow
+Rouge	Red
+Vert	Green
+Bleu	Blue
+Gris	Gray
+Éditer - {0}	Edit - {0}
+Comme le disque (un chapitre toutes les {0} min)	Same as the disc (one chapter every {0} min)
+Aucune image	No picture
+Lecture impossible : {0}	Cannot play: {0}
+Lecture	Play
+Taille de sortie : {0}x{1}	Output size: {0}x{1}
+Image du filigrane	Watermark picture
+Impossible de lire ce sous-titre : {0}	Cannot read this subtitle: {0}
+Sous-titres à incruster	Subtitles to burn in
+Sous-titres texte (*.srt;*.ass;*.ssa;*.vtt)	Text subtitles (*.srt;*.ass;*.ssa;*.vtt)
+Appliqué à tous ✓	Applied to all ✓
+Clip {0} : ses temps doivent être dans la vidéo (0:00:00 à {1}).	Clip {0}: its times must be within the video (0:00:00 to {1}).
+Clip {0} : il doit durer au moins une seconde.	Clip {0}: it must last at least one second.
+Clip {0} : il doit commencer après la fin du clip {1}.	Clip {0}: it must start after the end of clip {1}.
+Supprimer ce clip (sa partie est enlevée du disque)	Delete this clip (its part is removed from the disc)
+Lire ce clip	Play this clip
+Clip {0}  ·  durée {1}	Clip {0}  ·  length {1}
+Début ici (à la position de l'aperçu)	Start here (at the preview position)
+Fin ici (à la position de l'aperçu)	End here (at the preview position)
+Durée sur le disque : {0} ({1} clips, {2} enlevés entre eux)	Length on the disc: {0} ({1} clips, {2} removed between them)
+Durée sur le disque : {0}	Length on the disc: {0}
+Placez l'aperçu dans un clip, à plus d'une seconde de ses bords.	Put the preview inside a clip, more than one second from its edges.
+Placez l'aperçu en dehors des clips déjà là, devant au moins une seconde libre.	Put the preview outside the clips already there, before at least one free second.
+Ajouter un clip	Add a clip
+Entrez un nombre de minutes entre 1 et 600.	Enter a number of minutes between 1 and 600.
+Entrez un temps dans la vidéo d'origine (h:mm:ss).	Enter a time in the original video (h:mm:ss).
+Chapitre	Chapter
+Choisissez d'abord un chapitre dans la liste.	Choose a chapter in the list first.
+Nom du chapitre	Chapter name
+Nom du chapitre de {0} sur le menu ; vide = « Chapitre N »{1}{2}{3}{4}{5}	Name of the chapter at {0} on the menu; empty = "Chapter N"
+Le recadrage ne laisse presque rien de l'image ({0}x{1}).	The crop leaves almost nothing of the picture ({0}x{1}).
+
+# AdvancedWindow.xaml
+Mode de traitement :	Processing mode:
+Nom de volume :	Volume name:
+Sortie :	Output:
+Qualité vidéo :	Video quality:
+REMARQUE : Passthrough copie la vidéo telle quelle (sources HEVC 2160p seulement, HDR10 et Dolby Vision gardés). Conversion la refait en HEVC 10 bits 2160p : le HDR10 est gardé, d'un Dolby Vision il ne reste que la couche HDR10.	NOTE: Passthrough copies the video as it is (HEVC 2160p sources only, HDR10 and Dolby Vision kept). Conversion re-encodes it as 10-bit HEVC 2160p: HDR10 is kept, of a Dolby Vision only the HDR10 layer remains.
+Propriétés du DVD	DVD properties
+Standard TV :	TV standard:
+Comme la 1re vidéo	Like the 1st video
+PAL pour une vidéo à 25 / 50 i/s, sinon NTSC	PAL for a video at 25 / 50 fps, otherwise NTSC
+Rapport d'aspect :	Aspect ratio:
+Pour une source en 4:3 (vieille série, VHS) : sans bandes noires sur les côtés. Le menu reste en 16:9.	For a 4:3 source (old series, VHS): no black bars on the sides. The menu stays 16:9.
+Type de menu	Menu type
+BD-J : toutes les fonctions du menu	BD-J: all the menu functions
+Le menu est un petit programme Java que la platine exécute : fond animé, menu pop-up, langue changée pendant le film.	The menu is a small Java program the player runs: moving background, pop-up menu, language changed during the film.
+HDMV : menu natif, fonctions limitées	HDMV: native menu, limited functions
+Le menu est fait des commandes de base du Blu-ray, sans Java : toutes les platines les lisent.	The menu is made of the basic Blu-ray commands, without Java: every player reads them.
+En HDMV : pages fixes (pas de fond animé), pas de menu pop-up ; la langue et les sous-titres choisis au menu s'appliquent au lancement d'un titre. L'éditeur de menu grise ce qui n'est pas pris en charge.	In HDMV: still pages (no moving background), no pop-up menu; the language and subtitles chosen in the menu apply when a title starts. The menu editor grays out what is not supported.
+Mode de lecture	Playback mode
+Démarrer depuis le menu et lire tous les titres à la suite	Start from the menu and play all the titles in a row
+Rembobiner à la fin	Rewind at the end
+À la fin, revenir au menu. Sinon l'écran reste noir.	At the end, go back to the menu. Otherwise the screen stays black.
+Démarrer au premier titre et tout lire à la suite	Start at the first title and play everything in a row
+À la fin, relancer le premier titre. Sinon l'écran reste noir.	At the end, start the first title again. Otherwise the screen stays black.
+Retourner au menu si la lecture du titre sélectionné est terminée	Go back to the menu when the selected title has finished playing
+Sous-titres en texte	Text subtitles
+Pour les sous-titres en texte (SRT, ASS…) gardés sur le disque. Ceux en images (PGS, VobSub) gardent leur aspect ; sur un DVD, la couleur vaut pour tous les sous-titres. Le décalage d'un sous-titre se règle dans la liste des vidéos, colonne Sous-titres.	For text subtitles (SRT, ASS…) kept on the disc. Picture ones (PGS, VobSub) keep their look; on a DVD, the color applies to all subtitles. A subtitle's delay is set in the video list, Subtitles column.
+Taille	Size
+Hauteur dans l'image (à gauche : en bas, à droite : en haut)	Height in the picture (left: bottom, right: top)
+Hauteur des sous-titres	Subtitle height
+Autres réglages	Other settings
+Langue de BurnSmith / Language	BurnSmith language / Langue
+La langue des fenêtres de BurnSmith. Celle du menu du disque se règle dans l'éditeur de menu.	The language of BurnSmith's windows. The disc menu's language is set in the menu editor.
+Convertir avec la carte graphique NVIDIA	Convert with the NVIDIA graphics card
+Plusieurs fois plus rapide. Le processeur reste utilisé quand la carte ne peut pas : pas de carte NVIDIA, 1080i, 4K HDR10+ ou Dolby Vision, MPEG-2 du DVD (la carte lit alors la vidéo).	Several times faster. The processor is still used when the card cannot do it: no NVIDIA card, 1080i, 4K HDR10+ or Dolby Vision, DVD MPEG-2 (the card then decodes the video).
+Mode vidéo	Video mode
+Images par seconde	Frames per second
+Le 1080p n'a 25 et 29,97 qu'en entrelacé, le 720p n'a que 50 et 59,94 : une autre cadence y est ramenée à la plus proche.	1080p has 25 and 29.97 only as interlaced, 720p has only 50 and 59.94: another frame rate is brought to the nearest one.
+Vitesse de conversion (processeur)	Conversion speed (processor)
+Son sans perte	Lossless audio
+Garde le son sans perte du fichier au lieu de le refaire en AC-3 : le TrueHD tel quel (avec le cœur AC-3 qu'un disque demande), le FLAC et le PCM en LPCM. Le DTS-HD est toujours copié tel quel. Prend plus de place sur le disque.	Keeps the file's lossless audio instead of re-encoding it as AC-3: TrueHD as it is (with the AC-3 core a disc requires), FLAC and PCM as LPCM. DTS-HD is always copied as it is. Takes more room on the disc.
+« Adapter au disque » garde la vidéo telle quelle tant qu'elle tient sur le support, sinon la refait au débit qui remplit le disque. « Identique à la source » copie la vidéo si elle est déjà en H.264 1080p à 23,976 / 24 / 25 i/s, sinon la refait à qualité constante.	"Fit to disc" keeps the video as it is as long as it fits on the disc, otherwise re-encodes it at the bit rate that fills the disc. "Same as source" copies the video if it is already H.264 1080p at 23.976 / 24 / 25 fps, otherwise re-encodes it at constant quality.
+
+# AdvancedWindow.xaml.cs
+Gris clair	Light gray
+Bleu clair	Light blue
+Vert clair	Light green
+Rapide (fichier plus gros)	Fast (bigger file)
+Lente (meilleure qualité)	Slow (better quality)
+Adapter au disque	Fit to disc
+Identique à la source	Same as source
+Personnaliser	Custom
+Par défaut (Calibri sur un Blu-ray, Arial sur un DVD)	Default (Calibri on a Blu-ray, Arial on a DVD)
+Débit vidéo, de {0} à {1} kb/s	Video bit rate, from {0} to {1} kb/s
+Automatique (copie si la vidéo convient)	Automatic (copy if the video is suitable)
+Toujours convertir	Always convert
+Comme la source	Same as source
+Ajoutez une vidéo pour voir la taille du disque.	Add a video to see the size of the disc.
+ : trop grand pour ce support	: too big for this disc
+≈ {0} Go, sans limite de taille	≈ {0} GB, no size limit
+≈ {0} Go sur {1} Go utilisables{2}	≈ {0} GB of {1} GB usable{2}
+
+# CutWindow.xaml
+Couper	Cut
+Aller au début de la partie gardée	Go to the start of the part kept
+Aller à la fin de la partie gardée	Go to the end of the part kept
+Heure de début :	Start time:
+Début ici (à la tête de lecture)	Start here (at the playhead)
+Heure de fin :	End time:
+Fin ici (à la tête de lecture)	End here (at the playhead)
+
+# CutWindow.xaml.cs
+Couper - {0}	Cut - {0}
+Durée gardée : {0}	Length kept: {0}
+
+# App.xaml.cs
+Une erreur inattendue s'est produite :\n\n{0}\n\nLe détail est enregistré dans :\n{1}\n\nBurnSmith reste ouvert ; si quelque chose semble anormal, fermez-le et relancez-le.	An unexpected error occurred:\n\n{0}\n\nThe details are saved in:\n{1}\n\nBurnSmith stays open; if something looks wrong, close it and start it again.
+Une erreur inattendue s'est produite :\n\n{0}\n\nLe détail est enregistré dans :\n{1}\n\nBurnSmith va se fermer.	An unexpected error occurred:\n\n{0}\n\nThe details are saved in:\n{1}\n\nBurnSmith will close.
+BurnSmith {0} est disponible (vous avez la {1}).\n\nLa télécharger et l'installer maintenant ? BurnSmith se ferme pendant l'installation puis redémarre.	BurnSmith {0} is available (you have {1}).\n\nDownload and install it now? BurnSmith closes during the installation, then starts again.
+Mise à jour	Update
+Téléchargement de la mise à jour… {0}	Downloading the update… {0}
+Mise à jour téléchargée : elle s'installera à la fin du travail en cours	Update downloaded: it will be installed when the current work ends
+Mise à jour : répondez à la demande d'administrateur de Windows…	Update: answer the Windows administrator prompt…
+La mise à jour n'a pas pu être installée : {0}.\n\nBurnSmith reste ouvert. Elle sera proposée de nouveau au prochain démarrage ; vous pouvez aussi la télécharger sur https://github.com/Balrog57/BurnSmith/releases/latest	The update could not be installed: {0}.\n\nBurnSmith stays open. It will be offered again at the next start; you can also download it from https://github.com/Balrog57/BurnSmith/releases/latest
+
+# Output.cs
+Mini DVD 8 cm double couche	Mini DVD 8 cm double layer
+Sans limite	No limit
+Sans limite 2160p	No limit 2160p
+Sans limite 1080p/i	No limit 1080p/i
+Sans limite 720p	No limit 720p
+{0} ({1} Go)	{0} ({1} GB)
+
+
+# Core: Tracks.cs
+{0} (forcés)	{0} (forced)
+au moins une vidéo doit rester le film principal (toutes sont marquées Bonus)	at least one video must stay the main film (all are marked Bonus)
+{0}: la coupe ne laisse rien sur le disque (début {1} s, fin {2} s, durée du fichier {3} s)	{0}: the cut leaves nothing on the disc (start {1} s, end {2} s, file length {3} s)
+{0}: les clips doivent se suivre sans se chevaucher	{0}: the clips must follow each other without overlapping
+
+# Core: BluRay.cs
+une seule vidéo de début est possible	only one start video is possible
+{0} vidéos : un disque en porte {1} au plus (les numéros suivants sont ceux de la vidéo de début et du menu)	{0} videos: a disc holds {1} at most (the next numbers are those of the start video and the menu)
+
+# Core: Dvd.cs
+{0} vidéos : un DVD en porte 99 au plus, vidéo de début comprise	{0} videos: a DVD holds 99 at most, start video included
+Pas assez de place pour ce DVD sur {0} : il faut environ {1} Go pendant la création, {2} Go sont libres.	Not enough room for this DVD on {0}: about {1} GB are needed while it is created, {2} GB are free.
+menu: {0} vignettes animées sur {1}	menu: {0} moving thumbnails on {1}
+
+# Core: Project.cs
+ce fichier n'est pas un projet BurnSmith	this file is not a BurnSmith project
+
+# Core: HdmvMenu.cs
+fond animé (les pages sont des images fixes)	moving background (the pages are still pictures)
+menu pop-up pendant le film	pop-up menu during the film
+menu HDMV : pas de {0}	HDMV menu: no {0}
+
+# Core: Iso.cs
+Lecteur optique	Optical drive
+burn: ImgBurn {0} -> {1} ({2} GB, vitesse max)	burn: ImgBurn {0} -> {1} ({2} GB, max speed)
+{0}\n{1}\n(journal complet : {2})	{0}\n{1}\n(full log: {2})
+journal d'ImgBurn : {0}	ImgBurn log: {0}
+
+# Core: Imapi.cs
+pas assez de place sur {0} pour l'image : il faut {1} Go	not enough room on {0} for the image: {1} GB are needed
+Gravure annulée.	Burning cancelled.
+burn: finalisation du disque…	burn: finalizing the disc…
+burn: écrit en {0} s	burn: written in {0} s
+verify: lecture du disque…	verify: reading the disc…
+verify: le lecteur s'arrête {0} Ko avant la fin de l'image (octets lus identiques)	verify: the drive stops {0} KB before the end of the image (the bytes read are identical)
+verify: identique à l'image	verify: identical to the image
+warning: {0} (a player that follows the IFOs may not find it)	warning: {0} (a player that follows the IFOs may not find it)
+
+# Core: Disc\UdfImage.cs
+image trop grande	image too big
+trop de fichiers pour un DVD-Video	too many files for a DVD-Video
+« {0} » a changé pendant l'écriture de l'image	"{0}" changed while the image was being written
+« {0} » : un dossier de DVD-Video a un nom de 8 lettres ou chiffres au plus (VIDEO_TS, AUDIO_TS)	"{0}": a DVD-Video folder has a name of 8 letters or digits at most (VIDEO_TS, AUDIO_TS)
+« {0} » : un DVD-Video n'a pas de dossier dans {1}	"{0}": a DVD-Video has no folder inside {1}
+« {0} » : un fichier de DVD-Video a un nom 8.3 (VTS_01_1.VOB)	"{0}": a DVD-Video file has an 8.3 name (VTS_01_1.VOB)
+« {0} » dépasse 4 Go	"{0}" is over 4 GB
+
+# Core: Updater.cs
+GitHub ne donne pas de hash sha256 pour cet installateur : il n'a pas été téléchargé	GitHub gives no sha256 hash for this installer: it was not downloaded
+aucune adresse	no address
+GitHub n'a pas envoyé l'installateur ({0})	GitHub did not send the installer ({0})
+l'installateur n'a pas démarré	the installer did not start
+l'installateur s'est arrêté sans rien installer (code {0}), par exemple parce que la demande d'administrateur de Windows a été refusée ou est restée sans réponse	the installer stopped without installing anything (code {0}), for example because the Windows administrator prompt was refused or left unanswered
+
+# Core: Tools.cs
+{0} introuvable : réinstallez BurnSmith, dont l'installateur les contient. Sinon, indiquez son dossier dans la variable d'environnement BURNSMITH_TOOLS, ajoutez-le au PATH ou placez-le dans un dossier tools à côté de BurnSmith.	{0} not found: reinstall BurnSmith, whose installer contains them. Otherwise, give its folder in the BURNSMITH_TOOLS environment variable, add it to the PATH or put it in a tools folder next to BurnSmith.
+{0} introuvable : ouvrez BurnSmith une fois, qui le déballe. Sinon, indiquez son dossier dans la variable d'environnement BURNSMITH_TOOLS, ajoutez-le au PATH ou placez-le dans un dossier tools à côté de BurnSmith.	{0} not found: open BurnSmith once, which unpacks it. Otherwise, give its folder in the BURNSMITH_TOOLS environment variable, add it to the PATH or put it in a tools folder next to BurnSmith.
+{0} introuvable : indiquez son dossier dans la variable d'environnement BURNSMITH_TOOLS, ajoutez-le au PATH ou placez-le dans un dossier tools à côté de BurnSmith.	{0} not found: give its folder in the BURNSMITH_TOOLS environment variable, add it to the PATH or put it in a tools folder next to BurnSmith.
+« {0} » est dans le dossier « {1} », que la création vide : choisissez un autre dossier de sortie.	"{0}" is in the folder "{1}", which the build empties: choose another output folder.
+
+# Core: MediaMaker.cs
+Diaporama : plus de 600 photos, sans transition	Slideshow: more than 600 photos, no transition
+Diaporama : {0} photos, {1} s chacune, transition {2}, avec de la musique	Slideshow: {0} photos, {1} s each, transition {2}, with music
+Diaporama : {0} photos, {1} s chacune, avec de la musique	Slideshow: {0} photos, {1} s each, with music
+Diaporama : {0} photos, {1} s chacune, transition {2}	Slideshow: {0} photos, {1} s each, transition {2}
+Diaporama : {0} photos, {1} s chacune	Slideshow: {0} photos, {1} s each
+Fusion de {0} vidéos	Joining {0} videos
+Morceau : {0} ({1})	Song: {0} ({1})
+
+# Core: VideoEffects.cs
+Niveaux de gris	Grayscale
+Sépia	Sepia
+Négatif	Negative
+Chaud	Warm
+Froid	Cool
+Contraste fort	Strong contrast
+Couleurs vives	Vivid colors
+Délavé	Faded
+
+# Core: Menu\TemplateKind.cs
+Thèmes	Themes
+Libres	Open
+
+# Core: Menu\BuiltInTemplates.cs
+Nuit d'encre	Ink night
+Séries	Series
+Cinéma muet	Silent film
+Tube cathodique	Cathode-ray tube
+Papier	Paper
+Métal	Metal
+Saison	Season
+Rideau rouge	Red curtain
+Salle obscure	Dark theater
+Fête	Party
+Mariage	Wedding
+Naissance	Birth
+Noël	Christmas
+Hiver	Winter
+Voyage	Travel
+Montagne	Mountain
+Espace	Space
+Stade	Stadium
+Tableau noir	Blackboard
+Bois	Wood
+Marbre	Marble
+
+# Core: Menu\ElementLibrary.cs
+Contour	Outline
+Ruban	Ribbon
+Bandeau	Band
+Relief	Raised
+Crochets	Brackets
+Mes images	My pictures
+Capsules	Pills
+Texte seul	Text only
+Cadre classique	Classic frame
+Verre néon	Neon glass
+Métal (logo)	Metal (logo)
+Styles BurnSmith	BurnSmith styles
+Mes boutons	My buttons
+DVDStyler (vectoriels)	DVDStyler (vector)
+scènes	scenes
+réglages	settings
+Accueil	Home
+Précédent	Previous
+Suivant	Next
+Retour	Back
+{0} (français)	{0} (French)
+
+# Core: Menu\ElementLibrary.cs, names of the folders and files of assets\library\house
+Cinéma	Cinema
+Enfants	Children
+Noël et hiver	Christmas and winter
+Voyage et nature	Travel and nature
+Science-fiction	Science fiction
+Matières	Materials
+Abstrait	Abstract
+Pellicule	Film strip
+Projecteur	Projector
+Vieux film	Old film
+Bokeh doré	Golden bokeh
+Bokeh multicolore	Multicolor bokeh
+Confettis	Confetti
+Feu d'artifice	Fireworks
+Guirlandes	Garlands
+Bokeh rose	Pink bokeh
+Cœurs	Hearts
+Marbre blanc	White marble
+Marbre noir	Black marble
+Soie ivoire	Ivory silk
+Arc-en-ciel	Rainbow
+Ballons	Balloons
+Nuages pastel	Pastel clouds
+Pois	Polka dots
+Étoiles pastel	Pastel stars
+Flocons	Snowflakes
+Givre	Frost
+Noël rouge et or	Red and gold Christmas
+Sapins sous la neige	Fir trees in the snow
+Aurore boréale	Northern lights
+Coucher de soleil	Sunset
+Forêt brumeuse	Misty forest
+Montagnes	Mountains
+Nuit étoilée	Starry night
+Océan	Ocean
+Prairie	Meadow
+Hexagones	Hexagons
+Hyperespace	Hyperspace
+Nébuleuse	Nebula
+Plan technique	Blueprint
+Planète	Planet
+Carbone	Carbon
+Damier	Checkerboard
+Pelouse	Turf
+Piste	Track
+Partition	Sheet music
+Scène	Stage
+Vinyle	Vinyl
+Égaliseur	Equalizer
+Acier brossé	Brushed steel
+Ardoise	Slate
+Béton	Concrete
+Cuir	Leather
+Papier ancien	Old paper
+Toile de lin	Linen
+Aube	Dawn
+Braise	Ember
+Demi-teinte	Halftone
+Facettes bleues	Blue facets
+Facettes braise	Ember facets
+Facettes graphite	Graphite facets
+Lagon	Lagoon
+Minuit	Midnight
+Rayons	Rays
+Rayures	Stripes
+Vagues bleues	Blue waves
+Vagues corail	Coral waves
+Vagues nuit	Night waves
+Émeraude	Emerald
+Or	Gold
+Verre	Glass
+Néon	Neon
+Encre	Ink
+Cuivre	Copper
+Couleur vive	Bright color
+Capsule	Pill
+Plaque	Plate
+Étiquette	Label
+
+# Core: Menu\MenuLayout.cs
+attention : le menu ne propose que {0} ; les autres restent sur le disque, sans ligne pour les choisir	warning: the menu only offers {0}; the others stay on the disc, with no line to choose them
+{0} pistes audio sur {1} et {2} sous-titres sur {3}	{0} audio tracks out of {1} and {2} subtitles out of {3}
+{0} pistes audio sur {1}	{0} audio tracks out of {1}
+{0} sous-titres sur {1}	{0} subtitles out of {1}
+Modèle introuvable : {0} (dossier déplacé ou désinstallé ?)	Template not found: {0} (folder moved or uninstalled?)
+
+# Core: Menu\MenuRenderer.cs
+Image illisible : {0}	Unreadable picture: {0}
+dessin d'un bouton du modèle	drawing of one of the template's buttons
+lien externe refusé : {0}	external link refused: {0}
+Image trop grande ({0} x {1}) : {2}	Picture too big ({0} x {1}): {2}
+
+# Core: Menu\TemplateCatalog.cs
+aucun modèle de menu trouvé : ajoutez un dossier dans template-folders.txt, une version publiée doit les porter	no menu template found: add a folder in template-folders.txt, a published version must carry them
+
+# Core: Menu\TemplatePack.cs
+garde  {0}	kept  {0}
+convertis {0} -> {1} ({2} fonds, {3} boutons)	converted {0} -> {1} ({2} backgrounds, {3} buttons)
+ECHEC {0}: {1}	FAILED {0}: {1}
+modèle illisible (aucun lecteur ne le reconnaît)	unreadable template (no reader recognizes it)
+arbre illisible	unreadable tree
+image absente : {0}	missing picture: {0}
+aucun fond	no background
+aucun bouton	no button
+
+# Core: Menu\InstalledTemplate.cs
+modèle illisible : {0}	unreadable template: {0}
+mise en page illisible (fichier de thème absent ?)	unreadable layout (theme file missing?)
+pas de menu racine (modèle « tout en un »)	no root menu ("all in one" template)
+image de fond introuvable	background picture not found
+bouton lecture introuvable	play button not found
+pas de grille de scènes	no scene grid
+
+# Core: Menu\DvdtTemplate.cs
+pas de menu dans le modèle	no menu in the template
+modèle sans dessin de menu	template without a menu drawing
+taille de menu illisible	unreadable menu size
+boutons du menu principal illisibles	unreadable main menu buttons
+
+# A list of problems ("a ; b ; c") is cut at its first " ; " before a problem line below reads it whole: the holes after {1} stay empty, they only make this pattern longer than those lines (Loc tries the longest pattern first)
+{0} ; {1}{2}{3}{4}{5}{6}{7}{8}{9}{10}{11}	{0}; {1}{2}{3}{4}{5}{6}{7}{8}{9}{10}{11}
+
+# Core: DiscCheck.cs
+ni BDMV ni VIDEO_TS dans le dossier	neither BDMV nor VIDEO_TS in the folder
+les fichiers du disque ({0} Go) dépassent la capacité du disque ({1} Go)	the disc files ({0} GB) exceed the capacity of the disc ({1} GB)
+l'image ISO ({0} Go) dépassent la capacité du disque ({1} Go)	the ISO image ({0} GB) exceeds the capacity of the disc ({1} GB)
+l'image ISO n'existe pas	the ISO image does not exist
+la taille de l'image n'est pas un nombre entier de secteurs de 2048 octets	the size of the image is not a whole number of 2048-byte sectors
+pas de descripteur de volume (ISO 9660 ou UDF) au secteur 16	no volume descriptor (ISO 9660 or UDF) at sector 16
+pas de point d'ancrage UDF au secteur 256	no UDF anchor point at sector 256
+pas de second point d'ancrage UDF en fin d'image : l'image est tronquée	no second UDF anchor point at the end of the image: the image is cut short
+l'image ({0} octets) est plus petite que les fichiers du disque ({1} octets)	the image ({0} bytes) is smaller than the disc files ({1} bytes)
+la copie de secours {0} manque	the backup copy {0} is missing
+la copie de secours {0} diffère de l'original	the backup copy {0} differs from the original
+aucune liste de lecture (PLAYLIST\\*.mpls)	no playlist (PLAYLIST\\*.mpls)
+STREAM\\{0}.m2ts manque (une liste de lecture l'utilise)	STREAM\\{0}.m2ts is missing (a playlist uses it)
+le menu BD-J (JAR) n'a pas de fichier BDJO	the BD-J menu (JAR) has no BDJO file
+CERTIFICATE\\{0} manque : une platine refusera le menu BD-J	CERTIFICATE\\{0} is missing: a player will refuse the BD-J menu
+{0} n'est pas fait de paquets entiers de {1} octets ({2} octets)	{0} is not made of whole packets of {1} bytes ({2} bytes)
+{0} : le paquet {1} ne commence pas par l'octet de synchronisation	{0}: packet {1} does not start with the sync byte
+VIDEO_TS.IFO ne donne pas la taille des fichiers VIDEO_TS	VIDEO_TS.IFO does not give the size of the VIDEO_TS files
+aucun titre (VTS_nn_0.IFO)	no title (VTS_nn_0.IFO)
+VTS_{0}_0.IFO ne donne pas la taille des fichiers du titre {1}	VTS_{0}_0.IFO does not give the size of the files of title {1}
+{0} n'est pas fait de secteurs entiers de 2048 octets	{0} is not made of whole 2048-byte sectors
+{0} ne commence pas par un en-tête de paquet MPEG	{0} does not start with an MPEG pack header
+{0} n'est pas un fichier {1}	{0} is not a file of type {1}
+{0} manque	{0} is missing
+
+# Core: BdjSign.cs
+pas de certificat du menu	no menu certificate
+{0} : le certificat du menu n'est pas signé par CERTIFICATE\\app.discroot.crt	{0}: the menu certificate is not signed by CERTIFICATE\\app.discroot.crt
+{0} : la signature de SIG-BD00.SF est fausse	{0}: the signature of SIG-BD00.SF is wrong
+{0} : l'organisation du certificat ({1}) n'est pas celle de CERTIFICATE\\id.bdmv	{0}: the organization of the certificate ({1}) is not that of CERTIFICATE\\id.bdmv
+{0} : SIG-BD00.SF ne correspond pas au manifeste	{0}: SIG-BD00.SF does not match the manifest
+{0} : {1} n'est pas signé tel qu'il est	{0}: {1} is not signed as it is
+{0} : signature illisible ({1})	{0}: unreadable signature ({1})
+
+# Core: Disc\UdfImage.cs (problem lines)
+VIDEO_TS.IFO n'est pas un IFO de DVD-Video	VIDEO_TS.IFO is not a DVD-Video IFO
+VIDEO_TS.IFO : menu annoncé au secteur {0}, placé à {1}	VIDEO_TS.IFO: menu announced at sector {0}, placed at {1}
+VIDEO_TS.IFO : copie BUP annoncée au secteur {0}, placée à {1}	VIDEO_TS.IFO: BUP copy announced at sector {0}, placed at {1}
+titre {0} : le titre {1} est annoncé {2} secteurs après VIDEO_TS.IFO, il est à {3}	title {0}: title {1} is announced {2} sectors after VIDEO_TS.IFO, it is at {3}
+{0} : menus annoncés au secteur {1}, placés à {2}	{0}: menus announced at sector {1}, placed at {2}
+{0} : film annoncé au secteur {1}, placé à {2}	{0}: film announced at sector {1}, placed at {2}
+{0} : copie BUP annoncée au secteur {1}, placée à {2}	{0}: BUP copy announced at sector {1}, placed at {2}
+
+# Generic patterns (short: tried after the others)
+« {0} » : {1}	"{0}": {1}
+{0} : {1}	{0}: {1}
+{0}  ({1})	{0}  ({1})
+{0} · {1}	{0} · {1}
+{0} +{1}	{0} +{1}
+{0} Go	{0} GB
+# menu type, disc sizes, app language (added with the HDMV menu)
+« Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.	"No limit" cannot be burned: choose the size of the disc to burn, or untick burning.

@@ -9,7 +9,7 @@ namespace BurnSmith.Core;
 /// <summary>DVD-Video job: one title per entry of <see cref="Titles"/>, the bonus ones (<see cref="DiscTitle.Bonus"/>) after the others. <see cref="Menu"/> null = the disc starts straight on the movie (a single title only).
 /// <see cref="Playback"/>: what the disc does at the start and after a title (null = back to the menu after the picked title).</summary>
 public sealed record DvdJob(IReadOnlyList<DiscTitle> Titles, string OutDir, MenuDesign? Menu = null, int ChapterMinutes = 5, double CapacityGB = 4.2, EncodeOptions? Encode = null,
-                            PlaybackOptions? Playback = null);
+                            PlaybackOptions? Playback = null, SubtitleStyle? Subtitles = null);
 
 /// <summary>ffmpeg (MPEG-2 + AC-3, then the subpictures muxed in: button highlights, subtitles) -> <see cref="Authoring"/> (VIDEO_TS with menus).</summary>
 public static class Dvd
@@ -23,7 +23,8 @@ public static class Dvd
     {
         var seconds = items.Sum(i => i.Src.Duration);
         var audioBits = items.Sum(i => i.Src.Duration * i.Title.KeptAudio(i.Src).Sum(AudioBps));
-        return (int)Math.Clamp((capacityGB * 1e9 * 8 * 0.96 - audioBits) / seconds, 1_000_000, Math.Min(8_000_000, VideoCeiling(items)));
+        // no size limit (capacity 0 or less): the best a DVD takes
+        return (int)Math.Clamp(capacityGB > 0 ? (capacityGB * 1e9 * 8 * 0.96 - audioBits) / seconds : double.MaxValue, 1_000_000, Math.Min(8_000_000, VideoCeiling(items)));
     }
 
     /// <summary>
@@ -65,7 +66,7 @@ public static class Dvd
         var work = job.OutDir + "_work";
         var videoBps = job.Encode is { DvdKbps: > 0 } manual ? Math.Min(Math.Clamp(manual.DvdKbps, 1500, 9000) * 1000, VideoCeiling(items)) : VideoBitrate(items, job.CapacityGB); // by hand, else what fills the disc
         // the fitted rate stops at 1 Mb/s: past that (a season with three languages on a DVD-5) the disc is too small, as the Blu-ray build says too
-        if (EstimateGB(items, job.CapacityGB, job.Encode?.DvdKbps ?? 0) is var gb && gb > job.CapacityGB)
+        if (job.CapacityGB > 0 && EstimateGB(items, job.CapacityGB, job.Encode?.DvdKbps ?? 0) is var gb && gb > job.CapacityGB)
             log($"warning: about {gb:0.0} GB, more than the {job.CapacityGB:0.#} GB of the disc: keep fewer audio tracks or take a bigger disc");
         // before the earlier disc is emptied and anything is encoded: a job that cannot finish is told at once
         CheckRoom(job.OutDir, NeededBytes(job, items, videoBps));
@@ -122,11 +123,11 @@ public static class Dvd
             var menuBytes = menuPages.Sum(m => new FileInfo(m.Mpg).Length);
             log($"menu: {menuPages.Count} pages, {menuBytes / 1e6:0} MB on the disc");
             // shortcut: the bit rate above is fixed before the menu exists, so it cannot reserve this; warn instead, lower the loop length or the pages to fix
-            if (movies.Sum(m => new FileInfo(m.Mpg).Length) + menuBytes > job.CapacityGB * 1e9)
+            if (job.CapacityGB > 0 && movies.Sum(m => new FileInfo(m.Mpg).Length) + menuBytes > job.CapacityGB * 1e9)
                 log("warning: the movie and the looping menu together may not fit the disc; shorten the menu loop or use a lower quality");
         }
 
-        Authoring.Write(DiscOf(pal, movies, mainCount, menuPages, restarts, introMovie, job.Encode?.DvdWide ?? true, job.Playback ?? new()), job.OutDir, log);
+        Authoring.Write(DiscOf(pal, movies, mainCount, menuPages, restarts, introMovie, job.Encode?.DvdWide ?? true, job.Playback ?? new(), job.Subtitles), job.OutDir, log);
         Directory.CreateDirectory(Path.Combine(job.OutDir, "AUDIO_TS")); // empty, but players and tools expect it
     }
 
@@ -152,7 +153,7 @@ public static class Dvd
         var plain = title.Effects is null or { IsEmpty: true }; // effects are placed in the source's pixels: with some, the picture keeps its size until they are drawn
         var vf = (title.Effects ?? new()).Vf(src.Width, src.Height, title.Start, fit, plain ? BluRay.ToSdr(src.Hdr, src.Width, src.Height, wide ? 1024 : 768) : BluRay.ToSdr(src.Hdr)); // a DVD has no HDR
         if (title.GapFilter(false) is { Length: > 0 } dropV) vf += "," + dropV;
-        var af = string.Join(",", new[] { title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "" }.Where(f => f.Length > 0));
+        string Af(int track) => string.Join(",", new[] { title.AudioDelayFilter(track), title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "" }.Where(f => f.Length > 0));
         args.AddRange(["-vf", vf,
             "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", wide ? "16:9" : "4:3", "-b:v", $"{videoBps / 1000}k"]);
         if (audio.Count == 0) args.Add("-an");
@@ -160,7 +161,7 @@ public static class Dvd
         {
             args.AddRange([$"-b:a:{j}", $"{AudioBps(audio[j]) / 1000}k"]); // -target already asks for AC-3: naming it again only earns a warning from ffmpeg
             if (audio[j].Channels > 6) args.AddRange([$"-ac:a:{j}", "6"]); // AC-3 tops out at 5.1
-            if (af.Length > 0) args.AddRange([$"-filter:a:{j}", af]);
+            if (Af(audio[j].Index) is { Length: > 0 } af) args.AddRange([$"-filter:a:{j}", af]);
         }
         if (ntscFilm) args.AddRange(["-flags", "+ildct+ilme"]);
         args.AddRange(["-sn", "-dn", movie]);
@@ -173,7 +174,7 @@ public static class Dvd
         BluRay.WriteOwnSubtitles(title, real.Where(x => x.Track.File == null && !x.Track.IsVobSub).ToList(), span, log); // a VobSub or a subtitle file is converted apart, below
         foreach (var (s, file) in real.Where(x => x.Track.File == null && x.Track.IsVobSub)) BluRay.WriteEmbeddedVobSub(title, s, span, file, (720, 480), log);
         foreach (var (s, file) in real.Where(x => x.Track.File != null)) BluRay.WriteExternalSubtitle(title, s, span, file, (720, 480), log); // a VobSub becomes PGS on a 720x480 plane, which PgsStream maps onto the frame whatever its height
-        foreach (var (_, file) in real) title.CloseGaps(file, span);
+        foreach (var (s, file) in real) { title.Delay(s, file, span); title.CloseGaps(file, span); }
         BluRay.Blanks(subs, lined != null, file => !DvdSubtitles.HasCues(file), (720, 480), log);
         // a DVD title has 32 subtitle streams (0x20-0x3F): a 33rd would overwrite the chain's next fields, then fail the build after the encode
         if (subs.Count > 32)
@@ -188,7 +189,7 @@ public static class Dvd
             var withSubs = Path.Combine(work, $"movie{number}_sub.mpg");
             try
             {
-                AddSubtitles(movie, withSubs, subs, pal, wide, work, log);
+                AddSubtitles(movie, withSubs, subs, pal, wide, work, log, job.Subtitles);
                 movie = withSubs;
                 carried = subs.Select(s => s.Track).ToList();
             }
@@ -210,7 +211,7 @@ public static class Dvd
     /// One ffmpeg pass that adds a subtitle stream per entry, in order (0x20, 0x21...): each track's cues drawn by <see cref="DvdSubtitles"/> into
     /// subpictures, written as VobSub, copied into the movie. Its timestamps are kept (-copyts), the cues being moved by the movie's first one.
     /// </summary>
-    static void AddSubtitles(string movie, string output, List<(SubtitleTrack Track, string File)> subs, bool pal, bool wide, string work, Action<string> log)
+    static void AddSubtitles(string movie, string output, List<(SubtitleTrack Track, string File)> subs, bool pal, bool wide, string work, Action<string> log, SubtitleStyle? style = null)
     {
         log("subtitles: render + mux");
         var name = Path.GetFileNameWithoutExtension(movie);
@@ -219,9 +220,9 @@ public static class Dvd
         var args = new List<string> { "-y", "-v", "warning", "-i", movie };
         for (var k = 0; k < subs.Count; k++)
         {
-            var pictures = subs[k].Track.IsPicture ? DvdSubtitles.PgsPictures(subs[k].File, 720, h, log) : DvdSubtitles.Pictures(subs[k].File, 720, h);
+            var pictures = subs[k].Track.IsPicture ? DvdSubtitles.PgsPictures(subs[k].File, 720, h, log) : DvdSubtitles.Pictures(subs[k].File, 720, h, style);
             var idx = Path.Combine(work, $"{name}_s{k + 1}.idx");
-            Spu.WriteVobSub(idx, pictures, 720, h, Languages.Iso1(subs[k].Track.Lang), DvdSubtitles.Rgb, [0, 1, 2, 3], [0, 15, 15, 15], false, start);
+            Spu.WriteVobSub(idx, pictures, 720, h, Languages.Iso1(subs[k].Track.Lang), DvdSubtitles.Colors(style), [0, 1, 2, 3], [0, 15, 15, 15], false, start);
             args.AddRange(["-i", idx]);
         }
         args.AddRange(["-map", "0:v", "-map", "0:a?"]);
@@ -305,7 +306,12 @@ public static class Dvd
             series ? [] : movies[0].ChapterTimes.Select((t, i) => Thumb($"c{i + 1}", 0, t + 3, 480, 270)).ToList(),
             series ? Enumerable.Range(0, mainCount).Select(i => Entry(i, $"t{i + 1}")).ToList() : null,
             movies[0].Audio.Select(a => a.Name).ToList(), movies[0].Subtitles.Select(s => s.Name).ToList(),
-            mainCount < job.Titles.Count ? Enumerable.Range(mainCount, job.Titles.Count - mainCount).Select(i => Entry(i, $"b{i - mainCount + 1}")).ToList() : null) { PlainFocus = true };
+            mainCount < job.Titles.Count ? Enumerable.Range(mainCount, job.Titles.Count - mainCount).Select(i => Entry(i, $"b{i - mainCount + 1}")).ToList() : null)
+        {
+            PlainFocus = true,
+            // past 99 chapters the disc keeps some of them only: their numbers say which, the names would not follow
+            ChapterNames = !series && job.Titles[0].ChapterNames(sources[0].Duration, job.ChapterMinutes) is var names && names.Count == movies[0].ChapterTimes.Count ? names : null,
+        };
 
         var pages = MenuBuilder.Build(job.Menu!, content);
         if (MenuBuilder.TracksLeftOut(pages, content) is { } leftOut) log(leftOut);
@@ -484,7 +490,7 @@ public static class Dvd
     /// <param name="intro">The start video: the title after the last one, which the first-play jump goes to; it ends on the menu (or on the first title when there is none).</param>
     /// <param name="wide">false = 4:3 titles; the menus stay 16:9 (their pictures are drawn that way).</param>
     /// <param name="play">Start on the menu or on the first title; after a title, the next main one (play all) or the menu; at the very end, start again or stop.</param>
-    static DvdDisc DiscOf(bool pal, List<Movie> movies, int mainCount, List<MenuOut> menus, bool loop, Movie? intro, bool wide, PlaybackOptions play)
+    static DvdDisc DiscOf(bool pal, List<Movie> movies, int mainCount, List<MenuOut> menus, bool loop, Movie? intro, bool wide, PlaybackOptions play, SubtitleStyle? subtitles = null)
     {
         var series = movies.Count > 1;
         // menu PGCs are numbered in order: 1 = root, then the scene/episode pages, then the settings pages
@@ -563,7 +569,7 @@ public static class Dvd
         }).ToList();
 
         var first = movies[0];
-        int[] subColors = [.. DvdSubtitles.Rgb];
+        int[] subColors = DvdSubtitles.Colors(subtitles);
         var titles = new List<Chain>();
         // after the last main title of "play all": the start again, or stop
         var atEnd = !play.Rewind ? Vm.Exit() : play.StartAtFirstTitle ? Vm.JumpVtsTitle(1) : Vm.CallRootMenu();

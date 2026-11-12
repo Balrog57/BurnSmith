@@ -52,19 +52,19 @@ public partial class MenuEditorWindow : Window
     public void ScrollProps(double? to = null)
     {
         UpdateLayout();
-        if (Props.SelectedContent is not ScrollViewer panel) return;
+        if ((Props.SelectedContent as ScrollViewer ?? InnerTabs?.SelectedContent as ScrollViewer) is not { } panel) return;
         if (to is { } y) panel.ScrollToVerticalOffset(y); else panel.ScrollToEnd();
     }
 
     /// <summary>For the off-screen snapshot: the menu's language chosen in its list, as a click does ("fr" or "en").</summary>
     public void PickLanguage(string language) => LanguageBox.SelectedValue = language;
 
-    /// <summary>For the off-screen snapshot: which tab of the library (0 templates, 1 mine, 2 backgrounds, 3 buttons) and of the properties (0 element, 1 menu, 2 animation, 3 look) is on show.</summary>
-    public void ShowTabs(int? library, int? props, bool withButton = false)
+    /// <summary>For the off-screen snapshot: which step is on show (see <see cref="ShowStep"/>) and which tab inside it (Pages: 0 buttons, 1 element, 2 texts, 3 style; Fond et musique: 0 background, 1 music).</summary>
+    public void ShowTabs(int? step, int? tab, bool withButton = false)
     {
-        if (library is { } l) Library.SelectedIndex = Math.Clamp(l, 0, Library.Items.Count - 1);
+        if (step is { } st) ShowStep(st);
         if (withButton && buttons.Count > 0) AddLibraryButton(buttons[0].Item, new System.Windows.Point(MenuBuilder.W / 2.0, MenuBuilder.H * 0.75)); // as a double click on the first button of the library does
-        if (props is { } p) Props.SelectedIndex = Math.Clamp(p, 0, Props.Items.Count - 1);
+        if (tab is { } t && InnerTabs is { } inner) inner.SelectedIndex = Math.Clamp(t, 0, inner.Items.Count - 1);
         UpdateLayout();
     }
 
@@ -86,12 +86,27 @@ public partial class MenuEditorWindow : Window
 
         timer.Tick += (_, _) => { timer.Stop(); _ = Render(); };
         Props.AddHandler(TextBoxBase.TextChangedEvent, new TextChangedEventHandler((_, _) => Dirty()));
-        Props.AddHandler(Selector.SelectionChangedEvent, new SelectionChangedEventHandler((_, _) => Dirty()));
+        // a list of the library or a tab picked changes nothing of the menu by itself: only what is then done with it
+        Props.AddHandler(Selector.SelectionChangedEvent, new SelectionChangedEventHandler((_, e) => { if (e.OriginalSource is not (ListBox or TabControl)) Dirty(); }));
         Props.AddHandler(RangeBase.ValueChangedEvent, new RoutedPropertyChangedEventHandler<double>((_, _) => Dirty()));
         Props.AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler((_, _) => Dirty()));
         Props.AddHandler(ToggleButton.UncheckedEvent, new RoutedEventHandler((_, _) => Dirty()));
-        Loaded += (_, _) => Rebind();
+        ShowStep(0);
+        Loaded += (_, _) => { PlayModeBox.SelectedIndex = Playback.Mode; Rebind(); };
+        Loaded += (_, _) =>
+        {
+            if (!Hdmv) return;
+            foreach (var box in new[] { PopupBox, LoopBox }) // kept in the design (a BD-J disc of the same menu has them), only not offered
+            {
+                box.IsEnabled = false;
+                box.ToolTip = "Pas avec un menu HDMV (Paramètres avancés, Type de menu)";
+                ToolTipService.SetShowOnDisabled(box, true);
+            }
+        };
     }
+
+    /// <summary>The disc gets a native (HDMV) menu: what it cannot do (see <see cref="BurnSmith.Core.HdmvMenu.LeftOut"/>) is greyed.</summary>
+    public bool Hdmv { get; init; }
 
     void Dirty() { timer.Stop(); timer.Start(); }
 
@@ -152,7 +167,8 @@ public partial class MenuEditorWindow : Window
     {
         Props.DataContext = null;
         Props.DataContext = working;
-        Look.IsEnabled = working.TemplateDir == null;
+        Look.IsEnabled = GridLook.IsEnabled = working.TemplateDir == null;
+        GridNote.Visibility = working.TemplateDir == null ? Visibility.Collapsed : Visibility.Visible;
         LookNote.Visibility = Detach.Visibility = working.TemplateDir == null ? Visibility.Collapsed : Visibility.Visible;
         SelectBackground();
         HlBox.SelectedValue = working.HighlightStyle;
@@ -165,7 +181,7 @@ public partial class MenuEditorWindow : Window
     void LoadCatalog()
     {
         var (usable, skipped) = TemplateCatalog.Scan();
-        BuiltInList.ItemsSource = BySource(usable, "Design.Category");
+        FillFamilies(usable);
         LoadBackgrounds((usable, skipped));
         LoadButtons((usable, skipped));
         _ = FillThumbnails(usable);
@@ -265,7 +281,7 @@ public partial class MenuEditorWindow : Window
     async Task FillThumbnails(List<TemplateCatalog.Found> usable)
     {
         if (!await Task.Run(() => TemplateCatalog.RenderThumbnails(usable))) return;
-        BuiltInList.ItemsSource = BySource(TemplateCatalog.Scan().Usable, "Design.Category");
+        FillFamilies(TemplateCatalog.Scan().Usable);
     }
 
     /// <summary>
@@ -275,7 +291,7 @@ public partial class MenuEditorWindow : Window
     /// </summary>
     async void OnAddFolder(object s, RoutedEventArgs e)
     {
-        var dlg = new OpenFolderDialog { Title = "Dossier contenant des modèles de menu" };
+        var dlg = new OpenFolderDialog { Title = Loc.T("Dossier contenant des modèles de menu") };
         if (dlg.ShowDialog(this) != true) return;
         TemplateCatalog.AddFolder(dlg.FolderName);
         ((Button)s).IsEnabled = false;
@@ -421,6 +437,7 @@ public partial class MenuEditorWindow : Window
             hit.MouseLeftButtonUp += (_, _) => { Select(id); Activate(b); };
             StageCanvas.Children.Add(hit);
         }
+        if (Previewing) return; // the page as the disc shows it: nothing to grab
         foreach (var z in current.Zones) DrawZone(z);
         DrawElements();
         DrawMarks();
@@ -596,7 +613,7 @@ public partial class MenuEditorWindow : Window
         var pick = new MenuItem { Header = "Choisir une image…" };
         pick.Click += (_, _) =>
         {
-            var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*", Title = "Image du menu" };
+            var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image du menu") };
             if (dlg.ShowDialog(this) != true) return;
             try
             {
@@ -800,16 +817,18 @@ public partial class MenuEditorWindow : Window
         elemSync = true;
         ElemList.SelectedIndex = e == null ? -1 : working.Elements.IndexOf(e);
         elemSync = false;
-        if (e != null) Props.SelectedIndex = 0; // the element's own settings, wherever the panel was
+        if (e != null) { ShowStep(2); PageTabs.SelectedIndex = 1; } // the element's own settings, wherever the panel was
         ShowElem();
         DrawStage();
     }
 
-    void AddElem(MenuElement e)
+    /// <param name="settings">Its settings come up (a text to type, a picture to choose); a button taken from the library leaves the library on show, for the next one.</param>
+    void AddElem(MenuElement e, bool settings = true)
     {
         working.Elements.Add(e);
         sel = e;
         RefreshElemList();
+        if (settings) { ShowStep(2); PageTabs.SelectedIndex = 1; }
         ShowElem();
         Dirty();
     }
@@ -837,7 +856,7 @@ public partial class MenuEditorWindow : Window
     void OnElemImage(object s, RoutedEventArgs e)
     {
         if (sel is not { } el) return;
-        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*", Title = "Image de l'élément" };
+        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image de l'élément") };
         if (dlg.ShowDialog(this) != true) return;
         try
         {
@@ -855,7 +874,7 @@ public partial class MenuEditorWindow : Window
     void OnElemFocus(object s, RoutedEventArgs e)
     {
         if (sel is not { } el) return;
-        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*", Title = "Image du bouton sélectionné" };
+        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image du bouton sélectionné") };
         if (dlg.ShowDialog(this) != true) return;
         el.Focus = dlg.FileName;
         ShowElem();
@@ -927,7 +946,7 @@ public partial class MenuEditorWindow : Window
         el.H = h;
         el.X = (int)Math.Clamp(at.X - w / 2.0, 0, MenuBuilder.W - w);
         el.Y = (int)Math.Clamp(at.Y - h / 2.0, 0, MenuBuilder.H - h);
-        AddElem(el);
+        AddElem(el, settings: false);
     }
 
     void OnLibraryDown(object s, System.Windows.Input.MouseButtonEventArgs e)
@@ -982,9 +1001,9 @@ public partial class MenuEditorWindow : Window
     void OnBtnImport(object s, RoutedEventArgs e)
     {
         var filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*";
-        var normal = new OpenFileDialog { Filter = filter, Title = "Image du bouton" };
+        var normal = new OpenFileDialog { Filter = filter, Title = Loc.T("Image du bouton") };
         if (normal.ShowDialog(this) != true) return;
-        var focus = new OpenFileDialog { Filter = filter, Title = "Image du bouton sélectionné (Annuler = aucune : le cadre du thème)" };
+        var focus = new OpenFileDialog { Filter = filter, Title = Loc.T("Image du bouton sélectionné (Annuler = aucune : le cadre du thème)") };
         try
         {
             ElementLibrary.ImportButton(normal.FileName, focus.ShowDialog(this) == true ? focus.FileName : null);
@@ -1181,17 +1200,7 @@ public partial class MenuEditorWindow : Window
             e.Handled = true;
             return;
         }
-        if (current?.Buttons.FirstOrDefault(b => b.Id == focusId) is not { } b) return;
-        switch (e.Key)
-        {
-            case System.Windows.Input.Key.Left: Select(b.Left); break;
-            case System.Windows.Input.Key.Right: Select(b.Right); break;
-            case System.Windows.Input.Key.Up: Select(b.Up); break;
-            case System.Windows.Input.Key.Down: Select(b.Down); break;
-            case System.Windows.Input.Key.Enter: Activate(b); break;
-            default: return;
-        }
-        e.Handled = true;
+        if (Remote(e.Key)) e.Handled = true;
     }
 
     void Nudge(MenuElement el, int dx, int dy)
@@ -1228,6 +1237,111 @@ public partial class MenuEditorWindow : Window
     void OnPrev(object s, RoutedEventArgs e) => Step(-1);
     void OnNext(object s, RoutedEventArgs e) => Step(1);
 
+    // ---------------------------------------------------------------- the five steps
+    // Yuhan's one window (the page always in place) laid out as TMPGEnc's stages: the bar picks the panel on the right
+
+    static readonly string[] Hints =
+    [
+        "Cliquez un modèle : il habille le menu ; vos textes, vos vidéos et vos réglages restent.",
+        "Les pages que le menu contient et ce que fait le disque. L'aperçu suit chaque réglage.",
+        "Cliquez un élément de la page pour le déplacer ou le régler (coins : sa taille). Glissez un bouton de la bibliothèque sur la page, ou double-cliquez. Suppr le retire, les flèches le déplacent (Maj : pas fin).",
+        "Glissez un fond sur la page, ou double-cliquez. La musique et la vidéo du menu ne s'entendent et ne bougent que sur le disque.",
+        "Flèches et Entrée du clavier, ou la télécommande à droite : le menu se parcourt comme sur le disque.",
+    ];
+
+    /// <summary>The step on show is the last one: the page as the disc shows it, nothing to grab on it.</summary>
+    bool Previewing => Props.SelectedIndex == Hints.Length - 1;
+
+    /// <summary>The tabs inside the step on show, for the two steps that have some.</summary>
+    TabControl? InnerTabs => Props.SelectedIndex == 2 ? PageTabs : Props.SelectedIndex == 3 ? SoundTabs : null;
+
+    void OnStep(object s, RoutedEventArgs e)
+    {
+        if (Props != null) ShowStep(int.Parse((string)((FrameworkElement)s).Tag)); // null while the window is being built: its first step is shown by the constructor
+    }
+
+    /// <summary>Shows a step (0 Modèle, 1 Structure, 2 Pages, 3 Fond et musique, 4 Aperçu): its panel, its line of help.</summary>
+    public void ShowStep(int step)
+    {
+        step = Math.Clamp(step, 0, Hints.Length - 1);
+        if (StepBar.Children[step] is RadioButton bar && bar.IsChecked != true) { bar.IsChecked = true; return; } // comes back here through OnStep
+        Props.SelectedIndex = step;
+        Hint.Text = Hints[step];
+        BackStep.IsEnabled = step > 0;
+        NextStep.IsEnabled = step < Hints.Length - 1;
+        if (Previewing && sel != null) SelectElem(null); else DrawStage();
+        if (Previewing) Stage.Focus(); // the keyboard's arrows walk the menu at once
+    }
+
+    void OnBackStep(object s, RoutedEventArgs e) => ShowStep(Props.SelectedIndex - 1);
+    void OnNextStep(object s, RoutedEventArgs e) => ShowStep(Props.SelectedIndex + 1);
+
+    /// <summary>The disc's behaviour (« Lecture du disque », also in Paramètres avancés): given by the main window, read back by it after OK.</summary>
+    public PlaybackOptions Playback { get; set; } = new();
+
+    // ---------------------------------------------------------------- the templates, one family at a time
+    const string AllFamilies = "*", Mine = "+";
+    List<TemplateCatalog.Found> catalog = [];
+    string? family;
+
+    /// <summary>One chip per family of templates (their category), « Tous » before and « Mes modèles » after; the family of the menu's own template is the one open.</summary>
+    void FillFamilies(List<TemplateCatalog.Found> usable)
+    {
+        catalog = usable;
+        var names = catalog.Select(f => f.Design.Category).Distinct().ToList();
+        if (family is null || (family != AllFamilies && family != Mine && !names.Contains(family)))
+            family = names.Contains(working.Category) ? working.Category : names.FirstOrDefault() ?? AllFamilies;
+        Families.Children.Clear();
+        foreach (var name in names.Prepend(AllFamilies).Append(Mine))
+        {
+            var chip = new RadioButton
+            {
+                Content = name == AllFamilies ? $"Tous ({catalog.Count})" : name == Mine ? "Mes modèles" : $"{name} ({catalog.Count(f => f.Design.Category == name)})",
+                GroupName = "family", Style = (Style)FindResource("Step"), Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 6), IsChecked = name == family,
+            };
+            chip.Checked += (_, _) => { family = name; ShowFamily(); };
+            Families.Children.Add(chip);
+        }
+        ShowFamily();
+    }
+
+    void ShowFamily()
+    {
+        MinePanel.Visibility = family == Mine ? Visibility.Visible : Visibility.Collapsed;
+        BuiltInList.Visibility = family == Mine ? Visibility.Collapsed : Visibility.Visible;
+        BuiltInList.ItemsSource = catalog.Where(f => family == AllFamilies || f.Design.Category == family).ToList();
+    }
+
+    /// <summary>The remote's keys: the arrows go to the neighbour button, Enter does what the disc would.</summary>
+    bool Remote(System.Windows.Input.Key key)
+    {
+        if (current?.Buttons.FirstOrDefault(b => b.Id == focusId) is not { } b) return false;
+        switch (key)
+        {
+            case System.Windows.Input.Key.Left: Select(b.Left); break;
+            case System.Windows.Input.Key.Right: Select(b.Right); break;
+            case System.Windows.Input.Key.Up: Select(b.Up); break;
+            case System.Windows.Input.Key.Down: Select(b.Down); break;
+            case System.Windows.Input.Key.Enter: Activate(b); break;
+            default: return false;
+        }
+        return true;
+    }
+
+    /// <summary>For the off-screen snapshot: the remote's keys pressed one after the other on the Aperçu step ("Right,Enter").</summary>
+    public async Task TryRemote(string keys)
+    {
+        ShowStep(Hints.Length - 1);
+        foreach (var key in keys.Split(',')) { OnRemote(new FrameworkElement { Tag = key.Trim() }, new RoutedEventArgs()); await Task.Delay(800); }
+    }
+
+    void OnRemote(object s, RoutedEventArgs e)
+    {
+        var key = (string)((FrameworkElement)s).Tag;
+        if (key == "Menu") { if (shot?.Pages.FirstOrDefault() is { } first) GoTo(first.Id); }
+        else Remote(Enum.Parse<System.Windows.Input.Key>(key));
+    }
+
     /// <summary>Which of the three highlight styles marks the chosen button (a template with its own artwork keeps it).</summary>
     void OnPickHighlight(object s, SelectionChangedEventArgs e)
     {
@@ -1251,7 +1365,7 @@ public partial class MenuEditorWindow : Window
     /// <summary>Adds pictures to your library (a copy is kept in %APPDATA%\BurnSmith\library) and uses the last one.</summary>
     void OnBg(object s, RoutedEventArgs e)
     {
-        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*", Multiselect = true, Title = "Images à ajouter à la bibliothèque" };
+        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Multiselect = true, Title = Loc.T("Images à ajouter à la bibliothèque") };
         if (dlg.ShowDialog(this) != true) return;
         try
         {
@@ -1300,7 +1414,7 @@ public partial class MenuEditorWindow : Window
     void OnPageBg(object s, RoutedEventArgs e)
     {
         if (current == null) return;
-        var dlg = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*", Title = $"Fond de la page « {PageName(current.Id)} »" };
+        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T($"Fond de la page « {PageName(current.Id)} »") };
         if (dlg.ShowDialog(this) != true) return;
         try
         {
@@ -1354,6 +1468,7 @@ public partial class MenuEditorWindow : Window
     void OnOk(object s, RoutedEventArgs e)
     {
         if (error != null) { MessageBox.Show(this, "Corrigez d'abord l'erreur de l'aperçu :\n" + error, "BurnSmith"); return; }
+        Playback = PlaybackOptions.FromMode(Math.Max(0, PlayModeBox.SelectedIndex), Playback.Rewind);
         DialogResult = true;
     }
 }

@@ -72,9 +72,6 @@ public static class Bdmv
     /// </summary>
     public static byte[] PatchIndex(byte[] original, string bdjoName = "00000")
     {
-        var indexStart = (int)BinaryPrimitives.ReadUInt32BigEndian(original.AsSpan(8));
-        var extStart = (int)BinaryPrimitives.ReadUInt32BigEndian(original.AsSpan(12));
-
         static void BdjObject(BinaryWriterBE w, string name, int playbackType)
         {
             w.U8(playbackType << 6); w.U8(0); w.Str(name, 5); w.U8(0);
@@ -90,10 +87,24 @@ public static class Bdmv
         table.U16(1); // one title
         table.U32((2u << 30));              // object_type = BD-J, access_type 0
         BdjObject(table, bdjoName, 2);      // movie
+        return ReplaceTable(original, table.ToArray());
+    }
 
+    /// <summary>
+    /// The index.bdmv of a disc with a native (HDMV) menu: First Playback runs movie object 0, the Top Menu object 1, and title N (of <paramref name="titles"/>)
+    /// object N + 1. Header, app info and extension data are kept.
+    /// </summary>
+    public static byte[] HdmvIndex(byte[] original, int titles) =>
+        ReplaceTable(original, Disc.MovieObjectFile.IndexTable([.. Enumerable.Range(2, titles)], firstPlay: 0, topMenu: 1));
+
+    /// <summary>An index.bdmv with its index table (length included) replaced by <paramref name="table"/>.</summary>
+    static byte[] ReplaceTable(byte[] original, byte[] table)
+    {
+        var indexStart = (int)BinaryPrimitives.ReadUInt32BigEndian(original.AsSpan(8));
+        var extStart = (int)BinaryPrimitives.ReadUInt32BigEndian(original.AsSpan(12));
         var o = new BinaryWriterBE();
         o.Bytes(original.AsSpan(0, indexStart));
-        o.Bytes(table.ToArray());
+        o.Bytes(table);
         if (extStart != 0)
         {
             while (o.Length % 4 != 0) o.U8(0);

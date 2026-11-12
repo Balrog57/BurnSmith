@@ -491,6 +491,15 @@ public static partial class MenuRenderer
     public static byte[] Marker(MenuDesign d, int size, double scale = 1) =>
         Encode(new PngBitmapEncoder(), size, size, dc => dc.DrawEllipse(new SolidColorBrush(Col(d.Accent)), null, new Point(size / 2.0, size / 2.0), size / 2.0, size / 2.0), scale);
 
+    /// <summary>A picture made here (<see cref="Focus"/>, <see cref="Marker"/>) as straight ARGB pixels, one number each: what a native Blu-ray menu's graphics are made from.</summary>
+    public static (uint[] Argb, int W, int H) Pixels(byte[] png)
+    {
+        var source = new FormatConvertedBitmap(BitmapFrame.Create(new MemoryStream(png), BitmapCreateOptions.None, BitmapCacheOption.OnLoad), PixelFormats.Bgra32, null, 0);
+        var argb = new uint[source.PixelWidth * source.PixelHeight];
+        source.CopyPixels(argb, source.PixelWidth * 4, 0); // little-endian B, G, R, A = the number 0xAARRGGBB
+        return (argb, source.PixelWidth, source.PixelHeight);
+    }
+
     /// <summary>
     /// Refuses, before it is decoded, a picture over 8192 pixels a side (the library's largest is 3840x2160): a 2 MB PNG can say 20000x20000, gigabytes in memory,
     /// and an out-of-memory error ends the app.

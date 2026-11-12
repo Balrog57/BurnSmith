@@ -44,6 +44,10 @@ public partial class VideoEditWindow : Window
     string Sdr => BluRay.ToSdr(info.Hdr) is { Length: > 0 } f ? f + "," : "";
     readonly double duration;
     readonly List<double> times;
+    /// <summary>The chapters' names, by their time in <see cref="times"/>: the menu writes them instead of "Chapitre N".</summary>
+    readonly Dictionary<double, string> names = [];
+    /// <summary>The names of <see cref="ChapterAt"/>, one for one (null = no chapter is named).</summary>
+    public IReadOnlyList<string?>? ChapterTitles { get; private set; }
     readonly List<Clip> clips;
     readonly string temp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "BurnSmith", "edit");
     readonly System.Windows.Threading.DispatcherTimer seekTimer, fxTimer;
@@ -55,7 +59,7 @@ public partial class VideoEditWindow : Window
     bool looksMade, syncing;
 
     public VideoEditWindow(string video, SourceInfo info, string name, double start, double? end, int volume, IReadOnlyList<double>? chapterAt, int? chapterMinutes,
-                           int discMinutes, VideoEffects? effects, string? part = null, IReadOnlyList<Clip>? clips = null)
+                           int discMinutes, VideoEffects? effects, string? part = null, IReadOnlyList<Clip>? clips = null, IReadOnlyList<string?>? chapterTitles = null)
     {
         InitializeComponent();
         this.video = video;
@@ -81,6 +85,8 @@ public partial class VideoEditWindow : Window
         VolumeSlider.Value = volume;
         ChapDisc.Content = $"Comme le disque (un chapitre toutes les {discMinutes} min)";
         times = chapterAt?.Order().ToList() ?? [];
+        foreach (var (t, title) in (chapterAt ?? []).Zip(chapterTitles ?? [])) if (!string.IsNullOrWhiteSpace(title)) names[t] = title;
+        FileChaptersButton.Visibility = info.Chapters == null ? Visibility.Collapsed : Visibility.Visible;
         EveryBox.Text = (chapterMinutes ?? discMinutes).ToString();
         (chapterAt == null ? chapterMinutes == null ? ChapDisc : ChapEvery : chapterAt.Count == 0 ? ChapNone : ChapCustom).IsChecked = true;
 
@@ -604,7 +610,7 @@ public partial class VideoEditWindow : Window
 
     void OnWmPicture(object s, RoutedEventArgs e)
     {
-        var dlg = new OpenFileDialog { Title = "Image du filigrane", Filter = "Images (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp" };
+        var dlg = new OpenFileDialog { Title = Loc.T("Image du filigrane"), Filter = Loc.Filter("Images (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp") };
         if (dlg.ShowDialog(this) != true) return;
         wmPicture = dlg.FileName;
         WmPicText.Text = System.IO.Path.GetFileName(wmPicture);
@@ -647,7 +653,7 @@ public partial class VideoEditWindow : Window
 
     void OnBurnAdd(object s, RoutedEventArgs e)
     {
-        var dlg = new OpenFileDialog { Title = "Sous-titres à incruster", Filter = "Sous-titres texte (*.srt;*.ass;*.ssa;*.vtt)|*.srt;*.ass;*.ssa;*.vtt" };
+        var dlg = new OpenFileDialog { Title = Loc.T("Sous-titres à incruster"), Filter = Loc.Filter("Sous-titres texte (*.srt;*.ass;*.ssa;*.vtt)|*.srt;*.ass;*.ssa;*.vtt") };
         if (dlg.ShowDialog(this) != true) return;
         var item = new ComboBoxItem { Content = System.IO.Path.GetFileName(dlg.FileName), Tag = dlg.FileName };
         BurnBox.Items.Add(item);
@@ -839,7 +845,7 @@ public partial class VideoEditWindow : Window
 
     void ShowTimes()
     {
-        ChapterList.ItemsSource = times.Select(Timecode.Format).ToList();
+        ChapterList.ItemsSource = times.Select(t => Timecode.Format(t) + (names.TryGetValue(t, out var name) ? "   " + name : "")).ToList();
         if (ready) ShowMarks();
     }
 
@@ -853,9 +859,9 @@ public partial class VideoEditWindow : Window
 
     void AddChapter(double t)
     {
-        if (t <= 0 || t >= duration)
+        if (t < 0 || t >= duration) // 0 is taken too: the disc starts a chapter there anyway, and listed it can be named
         {
-            MessageBox.Show(this, "Entrez un temps dans la vidéo d'origine (h:mm:ss), après le début.", "Chapitre", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "Entrez un temps dans la vidéo d'origine (h:mm:ss).", "Chapitre", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         t = Math.Round(t, 1);
@@ -867,6 +873,33 @@ public partial class VideoEditWindow : Window
     void OnDelete(object s, RoutedEventArgs e)
     {
         foreach (var i in ChapterList.SelectedItems.Cast<string>().Select(ChapterList.Items.IndexOf).OrderDescending()) times.RemoveAt(i);
+        ShowTimes();
+    }
+
+    /// <summary>"Ceux du fichier": the list becomes the chapters the file itself holds (an mkv's), to keep or retouch.</summary>
+    void OnFileChapters(object s, RoutedEventArgs e)
+    {
+        times.Clear();
+        names.Clear();
+        // the one at the very start is kept for its name: the disc always begins a chapter there
+        foreach (var (t, title) in (info.Chapters ?? []).Zip(info.ChapterNames ?? Enumerable.Repeat<string?>(null, int.MaxValue)).Where(c => c.First >= 0 && c.First < duration))
+        {
+            if (!times.Contains(Math.Round(t, 1))) times.Add(Math.Round(t, 1));
+            if (title != null) names.TryAdd(Math.Round(t, 1), title);
+        }
+        ShowTimes();
+    }
+
+    /// <summary>"Nommer…": the name the menu writes for the chosen chapter, instead of "Chapitre N"; the first chapter of the disc is the one at 0:00:00.</summary>
+    void OnNameChapter(object s, RoutedEventArgs e)
+    {
+        if (ChapterList.SelectedIndex is not (>= 0 and var i))
+        {
+            MessageBox.Show(this, "Choisissez d'abord un chapitre dans la liste.", "Nom du chapitre", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (Prompt.Ask(this, $"Nom du chapitre de {Timecode.Format(times[i])} sur le menu ; vide = « Chapitre N »", names.GetValueOrDefault(times[i], "")) is not { } text) return;
+        if (text.Trim().Length == 0) names.Remove(times[i]); else names[times[i]] = text.Trim();
         ShowTimes();
     }
 
@@ -908,6 +941,7 @@ public partial class VideoEditWindow : Window
         Volume = (int)VolumeSlider.Value;
         ChapterMinutes = ChapEvery.IsChecked == true ? minutes : null;
         ChapterAt = ChapDisc.IsChecked == true || ChapEvery.IsChecked == true ? null : ChapNone.IsChecked == true ? [] : times.ToList();
+        ChapterTitles = ChapterAt is { Count: > 0 } && times.Any(names.ContainsKey) ? [.. times.Select(t => names.GetValueOrDefault(t))] : null;
         Effects = fx.IsEmpty ? null : fx;
         Clips = kept.Count > 1 ? kept : null;
         DialogResult = true;

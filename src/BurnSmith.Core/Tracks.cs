@@ -2,8 +2,9 @@ using System.Globalization;
 
 namespace BurnSmith.Core;
 
-/// <summary><see cref="Index"/> counts audio streams of the source file only (ffmpeg's 0:a:N), not all streams. <see cref="SampleRate"/>, <see cref="Kbps"/> (average bit rate): 0 when the file does not say.</summary>
-public sealed record AudioTrack(int Index, string Codec, int Channels, string Lang, string Title, int SampleRate = 48000, int Kbps = 0)
+/// <summary><see cref="Index"/> counts audio streams of the source file only (ffmpeg's 0:a:N), not all streams. <see cref="SampleRate"/>, <see cref="Kbps"/> (average bit rate): 0 when the file does not say.
+/// <see cref="Lossless"/>: TrueHD, DTS-HD Master Audio, FLAC, PCM... (what "Son sans perte" keeps whole); <see cref="Bits"/>: its sample size, 0 = unknown.</summary>
+public sealed record AudioTrack(int Index, string Codec, int Channels, string Lang, string Title, int SampleRate = 48000, int Kbps = 0, bool Lossless = false, int Bits = 0)
 {
     public string Name => $"{Languages.Display(Lang, Title)} {Languages.ChannelLayout(Channels)}".Trim();
 }
@@ -179,14 +180,30 @@ public sealed record ExternalSubtitle(string File, string Lang = "und", bool For
 /// <summary>One part of a video kept on the disc, from <see cref="From"/> to <see cref="To"/> seconds of the source.</summary>
 public sealed record Clip(double From, double To);
 
+/// <summary>
+/// How a disc draws its text subtitles (SRT, ASS...): <see cref="Font"/> (null = the disc's own: Calibri on a Blu-ray, Arial on a DVD), <see cref="Size"/> in % of
+/// the usual one, <see cref="Color"/> RRGGBB, <see cref="Position"/> 0 (bottom) to 100 (top). Picture subtitles (PGS, VobSub) keep their own look; a DVD has
+/// one palette, so there the colour is that of every subtitle.
+/// </summary>
+public sealed record SubtitleStyle(string? Font = null, int Size = 100, string Color = "FFFFFF", int Position = 0)
+{
+    [System.Text.Json.Serialization.JsonIgnore] public int Scale => Math.Clamp(Size, 30, 300);
+    [System.Text.Json.Serialization.JsonIgnore] public int Lift => Math.Clamp(Position, 0, 100);
+    /// <summary>The colour as six hex digits; white when it is not one.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public string Rgb => Color.Length == 6 && Color.All(Uri.IsHexDigit) ? Color.ToUpperInvariant() : "FFFFFF";
+}
+
 public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<int>? Audio = null, IReadOnlyList<int>? Subtitles = null,
                                double Start = 0, double? End = null, int Volume = 100, IReadOnlyList<double>? ChapterAt = null,
                                IReadOnlyList<ExternalSubtitle>? External = null, bool Bonus = false, int? DefaultAudio = null, int? DefaultSubtitle = null,
                                int? ChapterMinutes = null, bool Intro = false, IReadOnlyDictionary<string, string>? TrackLanguage = null,
                                VideoEffects? Effects = null, IReadOnlyList<Clip>? Clips = null, double? ThumbAt = null, string? ThumbImage = null,
-                               string? Overview = null)
+                               string? Overview = null,
+                               IReadOnlyDictionary<int, double>? SubtitleDelay = null, // by subtitle number (as Subtitles counts them): seconds its cues are shown later (earlier when negative)
+                               IReadOnlyDictionary<int, double>? AudioDelay = null, // by audio track number (as Audio counts them): seconds its sound is heard later (earlier when negative)
+                               IReadOnlyList<string?>? ChapterTitles = null) // the names of the chapters of ChapterAt, in its order (null or empty = "Chapitre N" on the menu); a chapter at 0 names the first
 {
-    public string DisplayName => Name ?? Readable(Video).Name;
+    [System.Text.Json.Serialization.JsonIgnore] public string DisplayName => Name ?? Readable(Video).Name;
 
     /// <summary>
     /// The default name of a video whose file has a release name: words split by dots or underscores, cut at the first release tag
@@ -221,13 +238,13 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
     }
 
     /// <summary>Every file the title reads: the video, its subtitle files, and the effects' burnt subtitle and watermark.</summary>
-    public IEnumerable<string?> Files => [Video, .. External?.Select(e => e.File) ?? [], Effects?.BurnSubtitle, Effects?.Watermark, ThumbImage];
+    [System.Text.Json.Serialization.JsonIgnore] public IEnumerable<string?> Files => [Video, .. External?.Select(e => e.File) ?? [], Effects?.BurnSubtitle, Effects?.Watermark, ThumbImage];
 
     /// <summary>The files a build reads (titles and menu), which its output and work folders must not hold: see <see cref="Tools.KeepInputs"/>.</summary>
     public static IEnumerable<string?> Inputs(IEnumerable<DiscTitle> titles, Menu.MenuDesign? menu) =>
         [.. titles.SelectMany(t => t.Files), menu?.LoopFile, menu?.Music];
 
-    public bool Trimmed => Start > 0 || End != null || Gaps.Count > 0;
+    [System.Text.Json.Serialization.JsonIgnore] public bool Trimmed => Start > 0 || End != null || Gaps.Count > 0;
 
     /// <summary>
     /// The disc order: the main feature's videos first, then the bonus ones (each group keeps its order). A title is its playlist number,
@@ -243,10 +260,45 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
     public double Length(SourceInfo s) => Math.Max(0, Math.Min(End ?? s.Duration, s.Duration) - Math.Min(Start, s.Duration)) - GapLength;
 
     /// <summary>The parts left out between two <see cref="Clips"/>, in seconds from <see cref="Start"/> (none with a single part).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public IReadOnlyList<(double From, double To)> Gaps =>
         Clips is not { Count: > 1 } ? [] : [.. Clips.Zip(Clips.Skip(1)).Where(p => p.Second.From > p.First.To).Select(p => (p.First.To - Start, p.Second.From - Start))];
 
-    public double GapLength => Gaps.Sum(g => g.To - g.From);
+    [System.Text.Json.Serialization.JsonIgnore] public double GapLength => Gaps.Sum(g => g.To - g.From);
+
+    /// <summary>
+    /// The title as a trial disc carries it: <paramref name="seconds"/> of it in all, one passage at each chapter, so the menu has every chapter and the disc is
+    /// made in minutes. A title that short already stays whole. shortcut: a title already cut in several clips keeps only its first <paramref name="seconds"/>
+    /// (its later chapters go); lay the passages over the clips if the trial of such a title matters.
+    /// </summary>
+    public DiscTitle Trial(SourceInfo source, int minutes, double seconds = 300)
+    {
+        var length = Length(source);
+        if (length <= seconds) return this;
+        if (Gaps.Count > 0)
+        {
+            var kept = new List<Clip>();
+            for (var (i, left) = (0, seconds); i < Clips!.Count && left > 0; left -= kept[^1].To - kept[^1].From, i++)
+                kept.Add(Clips[i] with { To = Math.Min(Clips[i].To, Clips[i].From + left) });
+            return this with { Clips = kept, End = kept[^1].To };
+        }
+        var chapters = ChapterList(length, minutes);
+        var each = Math.Max(4, seconds / chapters.Count);
+        var passages = chapters.Select((c, i) => new Clip(Start + c, Start + Math.Min(c + each, i + 1 < chapters.Count ? chapters[i + 1] : length))).ToList();
+        return this with { Clips = passages, End = passages[^1].To, ChapterAt = [.. chapters.Skip(1).Select(c => Start + c)], ChapterMinutes = null };
+    }
+
+    /// <summary>
+    /// Moves the cues of a subtitle file written for the disc (.sup pictures, else SRT, counted from <see cref="Start"/>) by the track's <see cref="SubtitleDelay"/>:
+    /// later when positive; what leaves the <paramref name="span"/> is dropped.
+    /// </summary>
+    public void Delay(SubtitleTrack track, string file, double span)
+    {
+        var delay = SubtitleDelay?.GetValueOrDefault(track.Index) ?? 0;
+        if (delay == 0 || !File.Exists(file)) return;
+        if (file.EndsWith(".sup", StringComparison.OrdinalIgnoreCase)) File.WriteAllBytes(file, PgsSubtitles.Cut(File.ReadAllBytes(file), -delay, span)); // a negative start moves the cues later
+        else File.WriteAllText(file, ExternalSubtitle.Cut(File.ReadAllText(file), -delay, span));
+    }
 
     /// <summary>
     /// A time of the source counted from <see cref="Start"/> as a time on the disc: the gaps before it are taken off; null inside a gap.
@@ -344,6 +396,29 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
     public List<double> ChapterList(double length, int minutes) =>
         ChapterAt == null ? BluRay.Chapters(length, ChapterMinutes ?? minutes)
         : ChapterAt.Select(t => OnDisc(t - Start)).OfType<double>().Select(t => Math.Round(t)).Where(t => t > 0 && t < length - 1).Prepend(0).Distinct().Order().ToList();
+
+    /// <summary>
+    /// The names of the chapters <see cref="ChapterList"/> gives, one for one: null where a chapter has none (every chapter of "one every N minutes",
+    /// a chapter without a title). The menu writes "Chapitre N" there.
+    /// </summary>
+    public List<string?> ChapterNames(double length, int minutes)
+    {
+        var times = ChapterList(length, minutes);
+        var names = new string?[times.Count];
+        if (ChapterAt != null && ChapterTitles != null)
+            foreach (var (t, name) in ChapterAt.Zip(ChapterTitles))
+                if (!string.IsNullOrWhiteSpace(name) && OnDisc(t - Start) is > -0.5 and var at && times.IndexOf(Math.Max(0, Math.Round(at))) is >= 0 and var i) names[i] ??= name.Trim();
+        return [.. names];
+    }
+
+    /// <summary>
+    /// The ffmpeg audio filter that moves a track by its <see cref="AudioDelay"/> when the sound is made again: silence before it, or its start cut off; "" without delay.
+    /// </summary>
+    public string AudioDelayFilter(int track)
+    {
+        var delay = AudioDelay?.GetValueOrDefault(track) ?? 0;
+        return delay > 0 ? $"adelay={(int)Math.Round(delay * 1000)}:all=1" : delay < 0 ? $"atrim=start={(-delay).ToString("0.###", CultureInfo.InvariantCulture)},asetpts=PTS-STARTPTS" : "";
+    }
 
     /// <summary>The audio tracks in disc order: the default one first, the others in the order kept.</summary>
     public IReadOnlyList<AudioTrack> KeptAudio(SourceInfo s)

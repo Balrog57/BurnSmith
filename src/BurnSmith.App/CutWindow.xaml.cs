@@ -37,7 +37,7 @@ public partial class CutWindow : Window
         this.start = start;
         this.end = end ?? duration;
         pos = start;
-        Title = "Couper - " + Path.GetFileName(path);
+        Title = Loc.T("Couper - ") + Path.GetFileName(path);
         TotalText.Text = "/ " + Timecode.Format(duration);
         Loaded += async (_, _) => { ShowTimes(); await Seek(); await FillStrip(); };
         Closed += (_, _) => playing?.Cancel();

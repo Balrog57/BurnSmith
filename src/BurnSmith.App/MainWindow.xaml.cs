@@ -72,14 +72,29 @@ public partial class MainWindow : Window
         public string? ThumbImage { get; set; }
         /// <summary>The summary written under the video's name on the menu pages that show one (Streaming).</summary>
         public string? Overview { get; set; }
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects, Clips, ThumbAt, ThumbImage, Overview);
+        /// <summary>Seconds each kept subtitle shows later (earlier when negative), by its number in <see cref="Subs"/>.</summary>
+        public Dictionary<int, double> SubDelay { get; set; } = [];
+        /// <summary>Seconds each kept audio track is heard later (earlier when negative), by its number in <see cref="Audio"/>.</summary>
+        public Dictionary<int, double> AudioDelay { get; set; } = [];
+        /// <summary>The names of the chapters of <see cref="ChapterAt"/>, one for one (null = "Chapitre N" on the menu).</summary>
+        public IReadOnlyList<string?>? ChapterTitles { get; set; }
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects, Clips, ThumbAt, ThumbImage, Overview, SubDelay, AudioDelay, ChapterTitles);
+
+        /// <summary>The row of a title read from a project or an undo step.</summary>
+        public static Entry From(DiscTitle d, SourceInfo info) => new(d.Video, info)
+        {
+            Name = d.DisplayName, Audio = [.. d.Audio ?? info.Audio.Take(1).Select(a => a.Index)], Subs = [.. d.Subtitles ?? []], Extra = [.. d.External ?? []], Start = d.Start, End = d.End, Volume = d.Volume, ChapterAt = d.ChapterAt,
+            ChapterMinutes = d.ChapterMinutes, Bonus = d.Bonus, Intro = d.Intro, DefaultAudio = d.DefaultAudio, DefaultSub = d.DefaultSubtitle, TrackLanguage = new(d.TrackLanguage ?? new Dictionary<string, string>()),
+            Effects = d.Effects, Clips = d.Clips, ThumbAt = d.ThumbAt, ThumbImage = d.ThumbImage, Overview = d.Overview, SubDelay = new(d.SubtitleDelay ?? new Dictionary<int, double>()),
+            AudioDelay = new(d.AudioDelay ?? new Dictionary<int, double>()), ChapterTitles = d.ChapterTitles,
+        };
 
         /// <summary>Another row for the same video with the same settings (a title cut in two).</summary>
         public Entry Clone() => new(Path, Info)
         {
             Name = Name, Audio = [.. Audio], Subs = [.. Subs], Extra = [.. Extra], Start = Start, End = End, Volume = Volume, ChapterAt = ChapterAt,
             ChapterMinutes = ChapterMinutes, Bonus = Bonus, Intro = Intro, DefaultAudio = DefaultAudio, DefaultSub = DefaultSub, TrackLanguage = new(TrackLanguage), Effects = Effects, Clips = Clips,
-            ThumbAt = ThumbAt, ThumbImage = ThumbImage, Overview = Overview,
+            ThumbAt = ThumbAt, ThumbImage = ThumbImage, Overview = Overview, SubDelay = new(SubDelay), AudioDelay = new(AudioDelay), ChapterTitles = ChapterTitles,
         };
     }
 
@@ -89,6 +104,7 @@ public partial class MainWindow : Window
     int chapterMinutes = 5;
     EncodeOptions encode = new(FitDisc: true); // "Adapter au disque": the video stays as it is while it fits
     PlaybackOptions playback = new(); // back to the menu after the title that was picked, as before the option existed
+    bool hdmvMenu; // Blu-ray: the menu as native HDMV navigation instead of the BD-J program (Paramètres avancés)
     string? previewFrame, previewFor;
     bool labelEdited, outEdited, busy, refreshingDrives;
     int thumbVersion;
@@ -118,6 +134,9 @@ public partial class MainWindow : Window
         AfterTitlesChanged();
         Closed += (_, _) => Tools.TryDelete(frameDir);
         defaultDesign = LoadDefaultDesign();
+        watch.Tick += (_, _) => Remember();
+        watch.Start();
+        Closed += (_, _) => watch.Stop();
     }
 
     /// <summary>The default template, off the UI thread: the scan waits for the exe's files to unpack. A template chosen meanwhile stays; if the scan fails the blank design does.</summary>
@@ -211,7 +230,7 @@ public partial class MainWindow : Window
         finally { refreshingDrives = false; }
     }
 
-    public MenuEditorWindow CreateEditor(MenuDesign? start = null) => openEditor = new(start ?? design, previewFrame, EditorContent());
+    public MenuEditorWindow CreateEditor(MenuDesign? start = null) => openEditor = new(start ?? design, previewFrame, EditorContent()) { Playback = playback, Hdmv = hdmvMenu && kind != "dvd" };
 
     /// <summary>The video the menu's picture, the disc's name and the audio / subtitle pages come from: the first that is not a bonus.</summary>
     Entry? MainEntry => titles.FirstOrDefault(t => !t.Bonus && !t.Intro) ?? titles.FirstOrDefault();
@@ -229,7 +248,8 @@ public partial class MainWindow : Window
         return new MenuContent(1, previewFrame, series ? [] : disc.ChapterList(first.OnDisc.Duration, chapterMinutes).Select(at => Frame(first, first.Start + at + 3)).ToList(),
             series ? main.Select((t, i) => new TitleEntry(t.Name, i + 1, TenPercent(t), t.Overview)).ToList() : null,
             disc.KeptAudio(first.Tracks).Select(a => a.Name).ToList(), disc.KeptSubtitles(first.Tracks).Where(s => s.Supported).Select(s => s.Name).ToList(),
-            extras.Count > 0 ? extras.Select((t, i) => new TitleEntry(t.Name, main.Count + i + 1, TenPercent(t))).ToList() : null);
+            extras.Count > 0 ? extras.Select((t, i) => new TitleEntry(t.Name, main.Count + i + 1, TenPercent(t))).ToList() : null)
+            { ChapterNames = series ? null : disc.ChapterNames(first.OnDisc.Duration, chapterMinutes) };
     }
 
     /// <summary>As on the disc: the feature first, then the extras (the start video is on neither). Numbered from 1 in this order, they are the playlists of <see cref="EditorContent"/>.</summary>
@@ -267,7 +287,7 @@ public partial class MainWindow : Window
 
     void Append(string line)
     {
-        Log.AppendText(line + Environment.NewLine);
+        Log.AppendText(Loc.T(line) + Environment.NewLine);
         Log.ScrollToEnd();
     }
 
@@ -346,12 +366,12 @@ public partial class MainWindow : Window
         {
             // shortcut: a 4K disc is sized by its source files (HEVC is kept), the audio dropped from them is not subtracted
             est = Estimate(cap, encode) ?? titles.Sum(t => Tools.SizeOf(t.Path) * t.OnDisc.Duration / t.Info.Duration) / 1e9;
-            if (est > cap.Usable) note = "\ntrop grand pour ce support";
+            if (!cap.Unlimited && est > cap.Usable) note = "\ntrop grand pour ce support";
             if (titles.Any(t => !File.Exists(t.Path))) note = "\nune vidéo source est introuvable";
             if (kind == "uhd" && !encode.ForceReencode && titles.Any(t => t.Info.VideoCodec != "hevc" || t.Info.Height != 2160)) note = "\nPassthrough : sources HEVC 2160p seulement";
         }
-        CapBar.Value = Math.Min(100, est / cap.Gb * 100);
-        CapText.Text = $"{est:0.00} Go / {cap.Usable:0.#} Go utilisables{note}";
+        CapBar.Value = cap.Unlimited ? 0 : Math.Min(100, est / cap.Gb * 100);
+        CapText.Text = cap.Unlimited ? $"{est:0.00} Go, sans limite de taille{note}" : $"{est:0.00} Go / {cap.Usable:0.#} Go utilisables{note}";
         ProjectInfo.Text = titles.Count == 0 ? "" : $"{titles.Count} vidéo{(titles.Count > 1 ? "s" : "")}{(titles.Any(t => t.Bonus) ? $" (dont {titles.Count(t => t.Bonus)} bonus)" : "")}{(titles.Any(t => t.Intro) ? " (dont une vidéo de début)" : "")}  ·  {titles.Sum(t => Tools.SizeOf(t.Path)) / 1e9:0.0} Go";
     }
 
@@ -362,6 +382,151 @@ public partial class MainWindow : Window
         : BluRay.EstimateGB(new BluRayJob(titles.Select(t => t.ToDisc()).ToList(), "", MenuCheck.IsChecked == true || NeedsMenu(titles.Select(t => t.ToDisc())) ? design : null, false, "X", chapterMinutes, enc, output.Usable),
             titles.Select(t => t.OnDisc).ToList());
 
+    // ---- project: save, open, undo ----
+
+    SubtitleStyle? subtitleStyle; // how the disc draws its text subtitles (null = the usual look)
+    string? projectFile;
+    int loading; // videos or a project being read: the list is half filled
+    /// <summary>What ffprobe said of each file added: a project reopened or a removal undone needs no second probe.</summary>
+    readonly Dictionary<string, SourceInfo> probed = new(StringComparer.OrdinalIgnoreCase);
+    // one undo step per change of the project, seen by a timer: every setting is in Snapshot, so none can be forgotten.
+    // shortcut: a change is seen up to half a second late, and two made within it are one step; call Remember where a change is made if that is missed
+    readonly Stack<string> undo = new(), redo = new();
+    string? kept; // the state last seen
+    readonly System.Windows.Threading.DispatcherTimer watch = new() { Interval = TimeSpan.FromMilliseconds(500) };
+
+    /// <summary>The disc as it stands: what a project file holds, and one undo step.</summary>
+    Project Snapshot() => new(kind, titles.Select(t => t.ToDisc()).ToList(), design, MenuCheck.IsChecked == true, labelEdited ? volume : null, chapterMinutes, encode, playback, subtitleStyle,
+                              (CapacityBox.SelectedItem as Output)?.Name, (CapacityBox.SelectedItem as Output)?.Usable ?? 0, outEdited ? OutBox.Text : null, IsoCheck.IsChecked == true, TrialCheck.IsChecked == true ? TrialSeconds : 0, hdmvMenu);
+
+    /// <summary>Five minutes of each video on a trial disc.</summary>
+    const int TrialSeconds = 300;
+
+    /// <summary>Puts a project (a file opened, an undo step) in the window. Its videos must have been probed; one that was not (a file gone) is left out.</summary>
+    void Apply(Project p)
+    {
+        titles.Clear();
+        SetKind(p.Kind);
+        // a project written by the command line names no size: the one of its capacity (below 0 = « Sans limite »)
+        if ((Output.For(kind).FirstOrDefault(o => o.Name == p.Output)
+             ?? Output.For(kind).FirstOrDefault(o => o.Hd720 == (p.Encode?.Hd720 ?? false) && (p.CapacityGB < 0 ? o.Unlimited : Math.Abs(o.Usable - p.CapacityGB) < 0.01))) is { } cap) CapacityBox.SelectedItem = cap;
+        (volume, labelEdited) = (p.Label ?? "MON_DISQUE", p.Label != null);
+        (chapterMinutes, encode, playback, subtitleStyle, hdmvMenu) = (p.ChapterMinutes, p.Encode ?? new(FitDisc: true), p.Playback ?? new(), p.Subtitles, p.HdmvMenu);
+        if (p.Design != null) { design = p.Design; MenuName.Text = design.Name; }
+        foreach (var t in p.Titles ?? [])
+            if (probed.TryGetValue(t.Video, out var info)) titles.Add(Entry.From(t, info));
+        (MenuCheck.IsChecked, IsoCheck.IsChecked, TrialCheck.IsChecked, outEdited) = (p.Menu, p.Iso, p.Trial > 0, p.Out != null);
+        if (p.Out != null) OutBox.Text = p.Out;
+        AfterTitlesChanged(); // the disc's name, the output folder, the size and the menu picture follow
+        _ = RefreshPreview();
+    }
+
+    void Remember()
+    {
+        if (busy || loading > 0 || !defaultDesign.IsCompleted) return; // the default template arriving is not a change of the user's
+        var now = Snapshot().ToJson();
+        if (now == kept) return;
+        if (kept != null) { undo.Push(kept); redo.Clear(); }
+        kept = now;
+        (UndoButton.IsEnabled, RedoButton.IsEnabled) = (undo.Count > 0, redo.Count > 0);
+    }
+
+    void Step(Stack<string> from, Stack<string> to)
+    {
+        if (busy || loading > 0) return;
+        Remember();
+        if (from.Count == 0 || kept == null) return;
+        to.Push(kept);
+        Apply(Project.Parse(from.Pop()));
+        kept = Snapshot().ToJson(); // as the window took it
+        (UndoButton.IsEnabled, RedoButton.IsEnabled) = (undo.Count > 0, redo.Count > 0);
+    }
+
+    public void Undo() => Step(undo, redo);
+    public void Redo() => Step(redo, undo);
+    void OnUndo(object s, RoutedEventArgs e) => Undo();
+    void OnRedo(object s, RoutedEventArgs e) => Redo();
+
+    /// <summary>For the off-screen snapshot (<c>undo</c>): the last video removed, then brought back by Undo; the picture shows the list whole and Rétablir lit.</summary>
+    public void TryUndo()
+    {
+        Remember();
+        if (titles.Count > 0) titles.RemoveAt(titles.Count - 1);
+        AfterTitlesChanged();
+        Undo();
+    }
+
+    // on the way up: a text box has taken its own Ctrl+Z by then
+    void OnWindowKey(object s, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers is not (ModifierKeys.Control or (ModifierKeys.Control | ModifierKeys.Shift))) return;
+        var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        if (e.Key == Key.Z && !shift) Undo();
+        else if (e.Key == Key.Y || e.Key == Key.Z) Redo();
+        else if (e.Key == Key.S) SaveProject(ask: false);
+        else if (e.Key == Key.O) OnOpenProject(s, e);
+        else return;
+        e.Handled = true;
+    }
+
+    void OnOpenProject(object s, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog { Title = Loc.T("Ouvrir un projet"), Filter = Loc.Filter($"Projet BurnSmith|*{Project.Extension}|Tous les fichiers|*.*") };
+        if (dlg.ShowDialog(this) == true) _ = OpenProject(dlg.FileName);
+    }
+
+    /// <summary>Replaces what the window holds by a saved project (Annuler brings the former back). A video that is gone or unreadable is told and left out.</summary>
+    public async Task OpenProject(string file)
+    {
+        if (busy) return;
+        Project p;
+        try { p = Project.Load(file); }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"Impossible d'ouvrir {Path.GetFileName(file)} : {e.Message}", "Projet", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        await defaultDesign; // arriving later, it would not replace the project's menu, but Annuler would have no state to go back to
+        Remember();
+        loading++;
+        try
+        {
+            foreach (var video in (p.Titles ?? []).Select(t => t.Video).Where(v => !probed.ContainsKey(v)).Distinct().ToList())
+            {
+                StatusText.Text = "Ouverture de " + Path.GetFileName(video) + "…";
+                try { probed[video] = await Task.Run(() => BluRay.Probe(video)); }
+                catch (Exception ex) { Warn($"Projet : « {Path.GetFileName(video)} » est introuvable ou illisible, cette vidéo n'est pas reprise ({ex.Message.Split('\n')[0]})."); }
+            }
+            Apply(p);
+            projectFile = file;
+            Title = Path.GetFileNameWithoutExtension(file) + " — BurnSmith";
+        }
+        finally { loading--; }
+    }
+
+    void OnSaveProject(object s, RoutedEventArgs e) => SaveProject(ask: true);
+
+    /// <summary>Writes the project; <paramref name="ask"/> false = in the file it came from, when there is one.</summary>
+    void SaveProject(bool ask)
+    {
+        if (ask || projectFile == null)
+        {
+            var dlg = new SaveFileDialog { Title = Loc.T("Enregistrer le projet"), Filter = Loc.Filter($"Projet BurnSmith|*{Project.Extension}"), DefaultExt = Project.Extension, FileName = projectFile ?? volume };
+            if (dlg.ShowDialog(this) != true) return;
+            projectFile = dlg.FileName;
+        }
+        try
+        {
+            Snapshot().Save(projectFile);
+            Title = Path.GetFileNameWithoutExtension(projectFile) + " — BurnSmith";
+            Append("Projet enregistré : " + projectFile);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"Le projet n'a pas pu être enregistré : {ex.Message}", "Projet", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     // ---- videos ----
 
     void OnOpen(object s, RoutedEventArgs e)
@@ -369,7 +534,7 @@ public partial class MainWindow : Window
         var dlg = new OpenFileDialog
         {
             Multiselect = true,
-            Filter = "Vidéos, photos et musique|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv;*.webm;*.mpg;*.mpeg;*.vob;*.iso;*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tif;*.tiff;*.mp3;*.flac;*.wav;*.m4a;*.aac;*.ogg;*.opus;*.wma;*.ac3;*.mka"
+            Filter = Loc.Filter("Vidéos, photos et musique|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv;*.webm;*.mpg;*.mpeg;*.vob;*.iso;*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tif;*.tiff;*.mp3;*.flac;*.wav;*.m4a;*.aac;*.ogg;*.opus;*.wma;*.ac3;*.mka")
                      + "|Vidéos|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv;*.webm;*.mpg;*.mpeg;*.vob|Blu-ray (image ISO non chiffrée, 3D compris)|*.iso|Photos (diaporama)|*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tif;*.tiff|Musique|*.mp3;*.flac;*.wav;*.m4a;*.aac;*.ogg;*.opus;*.wma;*.ac3;*.mka|Tous les fichiers|*.*",
         };
         if (dlg.ShowDialog(this) == true) _ = AddFiles(dlg.FileNames);
@@ -461,6 +626,14 @@ public partial class MainWindow : Window
     /// <summary>Probes and adds videos; several at once are put in natural order (episode 2 before episode 10).</summary>
     async Task AddFiles(IEnumerable<string> files)
     {
+        if (files.FirstOrDefault(f => f.EndsWith(Project.Extension, StringComparison.OrdinalIgnoreCase)) is { } project) { await OpenProject(project); return; } // dropped, or given to the exe
+        loading++;
+        try { await AddVideos(files); }
+        finally { loading--; }
+    }
+
+    async Task AddVideos(IEnumerable<string> files)
+    {
         var list = new List<string>();
         foreach (var f in files)
         {
@@ -484,7 +657,8 @@ public partial class MainWindow : Window
         {
             try
             {
-                var entry = new Entry(path, await Task.Run(() => BluRay.Probe(path))) { Extra = ExternalSubtitle.Near(path) };
+                var info = probed[path] = await Task.Run(() => BluRay.Probe(path));
+                var entry = new Entry(path, info) { Extra = ExternalSubtitle.Near(path), ChapterAt = info.Chapters, ChapterTitles = info.ChapterNames }; // the file's own chapters and their names, when it has some, instead of one every N minutes
                 if (madeNames.TryGetValue(path, out var shown) || discNames.TryGetValue(path, out shown)) entry.Name = shown;
                 // episodes usually share one layout: start from the first video's choice
                 if (titles.FirstOrDefault() is { } first && first.Info.Audio.Count == entry.Info.Audio.Count)
@@ -640,7 +814,7 @@ public partial class MainWindow : Window
         var thumbImage = new MenuItem { Header = entry.ThumbImage is { } img ? $"Vignette du menu : {System.IO.Path.GetFileName(img)}…" : "Vignette du menu : choisir une image…" };
         thumbImage.Click += (_, _) =>
         {
-            var dlg = new OpenFileDialog { Title = "Image de la vignette", Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.webp|Tous les fichiers|*.*" };
+            var dlg = new OpenFileDialog { Title = Loc.T("Image de la vignette"), Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.webp|Tous les fichiers|*.*") };
             if (dlg.ShowDialog(this) == true) (entry.ThumbImage, entry.ThumbAt) = (dlg.FileName, null);
         };
         menu.Items.Add(thumbImage);
@@ -699,7 +873,7 @@ public partial class MainWindow : Window
         {
             var file = NextMade(entry.Name);
             await Task.Run(() => MediaMaker.Join([entry.Path, next.Path], file, Say));
-            var info = await Task.Run(() => BluRay.Probe(file));
+            var info = probed[file] = await Task.Run(() => BluRay.Probe(file));
             var joined = new Entry(file, info)
             {
                 Name = entry.Name, Audio = [.. entry.Audio.Where(a => a < info.Audio.Count)], Subs = [.. entry.Subs.Where(s => s < info.Subtitles.Count)],
@@ -765,9 +939,9 @@ public partial class MainWindow : Window
     async void OnRowEdit(object s, RoutedEventArgs e)
     {
         if (Row(s) is not { } entry) return;
-        var dlg = new VideoEditWindow(entry.Path, entry.Tracks, entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes, chapterMinutes, entry.Effects, clips: entry.Clips) { Owner = this };
+        var dlg = new VideoEditWindow(entry.Path, entry.Tracks, entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes, chapterMinutes, entry.Effects, clips: entry.Clips, chapterTitles: entry.ChapterTitles) { Owner = this };
         if (dlg.ShowDialog() != true) return;
-        (entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes, entry.Effects, entry.Clips) = (dlg.NameText, dlg.Start, dlg.End, dlg.Volume, dlg.ChapterAt, dlg.ChapterMinutes, dlg.Effects, dlg.Clips);
+        (entry.Name, entry.Start, entry.End, entry.Volume, entry.ChapterAt, entry.ChapterMinutes, entry.Effects, entry.Clips, entry.ChapterTitles) = (dlg.NameText, dlg.Start, dlg.End, dlg.Volume, dlg.ChapterAt, dlg.ChapterMinutes, dlg.Effects, dlg.Clips, dlg.ChapterTitles);
         foreach (var other in titles.Where(t => t != entry && dlg.ApplyAll.Count > 0))
         {
             var fx = dlg.ApplyAll.Aggregate(other.Effects ?? new VideoEffects(), (o, part) => o.Take(dlg.Effects ?? new VideoEffects(), part));
@@ -852,6 +1026,27 @@ public partial class MainWindow : Window
                 menu.Items.Add(languages);
             }
         }
+        // a track that comes too early or too late (a subtitle file made for another cut of the film, a sound out of step with the lips): moved as a whole
+        var delays = audio ? entry.AudioDelay : entry.SubDelay;
+        if (kept.Count > 0) menu.Items.Add(new Separator());
+        foreach (var index in kept)
+        {
+            var late = delays.GetValueOrDefault(index);
+            var name = (audio ? entry.Tracks.Audio.FirstOrDefault(a => a.Index == index)?.Name : entry.Tracks.Subtitles.FirstOrDefault(t => t.Index == index)?.Name) ?? "?";
+            var delay = new MenuItem { Header = $"Décalage de « {name} »" + (late != 0 ? $" : {late.ToString("+0.###;-0.###", CultureInfo.CurrentCulture)} s…" : "…") };
+            delay.Click += (_, _) =>
+            {
+                var what = audio ? "Décalage du son" : "Décalage du sous-titre";
+                if (Prompt.Ask(this, $"{what}, en secondes : {(audio ? "0,2" : "1,5")} = plus tard, -{(audio ? "0,2" : "1,5")} = plus tôt, 0 = aucun", late.ToString("0.###", CultureInfo.CurrentCulture)) is not { } text) return;
+                if (!double.TryParse(text.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) || Math.Abs(seconds) > 3600)
+                {
+                    MessageBox.Show(this, "Entrez un nombre de secondes, par exemple 1,5 ou -0,8.", what, MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                if (seconds == 0) delays.Remove(index); else delays[index] = seconds;
+            };
+            menu.Items.Add(delay);
+        }
         if (titles.Count > 1)
         {
             menu.Items.Add(new Separator());
@@ -922,8 +1117,8 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Title = $"Sous-titres de {entry.Name}", Multiselect = true, InitialDirectory = Path.GetDirectoryName(entry.Path),
-            Filter = "Sous-titres (*.srt;*.ass;*.ssa;*.vtt;*.sup;*.idx;*.sub)|*.srt;*.ass;*.ssa;*.vtt;*.sup;*.idx;*.sub|Tous les fichiers|*.*",
+            Title = Loc.T($"Sous-titres de {entry.Name}"), Multiselect = true, InitialDirectory = Path.GetDirectoryName(entry.Path),
+            Filter = Loc.Filter("Sous-titres (*.srt;*.ass;*.ssa;*.vtt;*.sup;*.idx;*.sub)|*.srt;*.ass;*.ssa;*.vtt;*.sup;*.idx;*.sub|Tous les fichiers|*.*"),
         };
         if (dialog.ShowDialog(this) != true) return;
         foreach (var chosen in dialog.FileNames)
@@ -1006,6 +1201,7 @@ public partial class MainWindow : Window
         openEditor = null;
         if (!ok) return;
         design = editor.Result;
+        playback = editor.Playback;
         MenuName.Text = design.Name;
         if (MainEntry is { } first && editor.RenamedTitles.Count > 0) // the names written on the menu's page are the videos' names
         {
@@ -1022,8 +1218,10 @@ public partial class MainWindow : Window
 
     void OnAdvanced(object s, RoutedEventArgs e)
     {
-        var dlg = new AdvancedWindow(volume, chapterMinutes, encode, playback, kind, Output.For(kind), (Output)CapacityBox.SelectedItem, Estimate) { Owner = this };
+        var dlg = new AdvancedWindow(volume, chapterMinutes, encode, playback, kind, Output.For(kind), (Output)CapacityBox.SelectedItem, Estimate, subtitleStyle, hdmvMenu) { Owner = this };
         if (dlg.ShowDialog() != true) return;
+        subtitleStyle = dlg.Subtitles;
+        hdmvMenu = dlg.HdmvMenu;
         if (dlg.Volume != volume) { volume = dlg.Volume; labelEdited = true; SyncOutput(); }
         chapterMinutes = dlg.ChapterMinutes;
         encode = dlg.Encode;
@@ -1035,7 +1233,7 @@ public partial class MainWindow : Window
 
     void OnBrowseOut(object s, RoutedEventArgs e)
     {
-        var dlg = new OpenFolderDialog { Title = "Dossier du disque" };
+        var dlg = new OpenFolderDialog { Title = Loc.T("Dossier du disque") };
         if (dlg.ShowDialog(this) != true) return;
         OutBox.Text = dlg.FolderName;
         outEdited = true;
@@ -1098,17 +1296,25 @@ public partial class MainWindow : Window
         var cap = (Output)CapacityBox.SelectedItem;
         var enc = encode with { Hd720 = cap.Hd720 && kind == "bd" };
         var play = playback;
+        var hdmv = hdmvMenu;
         var label = volume;
         var drive = DriveBox.SelectedItem as Imapi.Drive;
         var speed = Iso.Speeds[Math.Max(0, SpeedBox.SelectedIndex)];
         var burn = BurnCheck.IsChecked == true && drive != null;
+        var copies = Copies;
+        if (burn && cap.Unlimited) { MessageBox.Show(this, "« Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.", "BurnSmith"); return; }
         if (burn && MessageBox.Show(this,
-                $"Après la création, graver « {label} » sur {drive!.Letter} ?\n\nInsérez un disque vierge adapté ({cap.Name}). Le disque sera écrit définitivement.",
+                $"Après la création, graver « {label} » sur {drive!.Letter}{(Copies > 1 ? $", en {Copies} copies" : "")} ?\n\nInsérez un disque vierge adapté ({cap.Name}). Le disque sera écrit définitivement.",
                 "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
 
-        var discTitles = titles.Select(t => t.ToDisc()).ToList();
-        var menu = MenuCheck.IsChecked == true || NeedsMenu(discTitles) ? design.Clone() : null;
         var minutes = chapterMinutes;
+        // a trial disc: a few minutes of each video, in a folder of its own, so the real disc's folder is never replaced by it
+        var trial = TrialCheck.IsChecked == true ? TrialSeconds : 0;
+        if (trial > 0) outDir = Path.TrimEndingDirectorySeparator(outDir) + "_essai";
+        var infos = titles.GroupBy(t => t.Path).ToDictionary(g => g.Key, g => g.First().Info);
+        var discTitles = Project.OnDisc(titles.Select(t => t.ToDisc()).ToList(), minutes, trial, path => infos[path]);
+        var menu = MenuCheck.IsChecked == true || NeedsMenu(discTitles) ? design.Clone() : null;
+        var look = subtitleStyle;
         var uhd = kind == "uhd";
         var dvd = kind == "dvd";
         var withIso = IsoCheck.IsChecked == true;
@@ -1116,8 +1322,9 @@ public partial class MainWindow : Window
 
         var ok = await Work("Création du disque…", (log, progress, token) =>
         {
-            if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable, enc, play), log, token);
-            else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes, enc, cap.Usable, play), log, token);
+            if (trial > 0) log($"Disque d'essai : {trial / 60} minutes de chaque vidéo, un passage à chaque chapitre, dans {outDir}");
+            if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable, enc, play, look), log, token);
+            else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes, enc, cap.Usable, play, look, hdmv), log, token);
             var iso = IsoFile(outDir);
             File.Delete(iso); // an image of an earlier build must never be burnt by mistake
             var problems = DiscCheck.Folder(outDir, cap.Gb);
@@ -1134,30 +1341,141 @@ public partial class MainWindow : Window
             {
                 writing = true;
                 token.ThrowIfCancellationRequested();
-                Iso.Burn(iso, drive!.Letter, log, progress, token, speed);
+                Iso.Burn(iso, drive!.Letter, copies, n => NextDisc(n, copies, drive.Letter), log, progress, token, speed);
             }
             if (!withIso) File.Delete(iso); // only made to burn
         });
-        if (ok) Append("Terminé.");
+        if (ok) Append(trial == 0 ? "Terminé." : $"Disque d'essai terminé. Ouvrez {(withIso ? IsoFile(outDir) : outDir)} dans VLC (Média > Ouvrir un disque) pour vérifier le menu, puis décochez « Essai » pour le vrai disque.");
     }
 
-    // not "<folder>.iso": that name could belong to the user's own file
-    static string IsoFile(string folder) => Path.TrimEndingDirectorySeparator(folder) + "_BurnSmith.iso";
+    static string IsoFile(string folder) => Project.IsoFile(folder);
+
+    /// <summary>How many discs « Graver » writes: the same image on each.</summary>
+    int Copies => Math.Max(1, CopiesBox.SelectedIndex + 1);
+
+    /// <summary>Between two copies, from the working thread: waits for the next blank disc; « Annuler » stops the copies there.</summary>
+    void NextDisc(int n, int copies, string drive)
+    {
+        if (!Dispatcher.Invoke(() => MessageBox.Show(this, $"Copie {n} sur {copies} : retirez le disque gravé, insérez un disque vierge dans {drive}, puis OK.",
+                "BurnSmith", MessageBoxButton.OKCancel, MessageBoxImage.Information) == MessageBoxResult.OK)) throw new OperationCanceledException();
+    }
+
+    // ---- queue ----
+
+    /// <summary>
+    /// « File d'attente »: discs made one after the other, each a whole project with its own folder (and its ISO when it asks for one); nothing is burnt.
+    /// shortcut: the queue lives as long as the window; a disc to keep for another day is a saved project, added again with « Ajouter des projets enregistrés ».
+    /// </summary>
+    readonly List<(string Name, Project Disc)> queue = [];
+
+    /// <summary>For the snapshot run: the disc of the window put in the queue.</summary>
+    public void TryQueue() => QueueCurrent();
+
+    void ShowQueue() => QueueCount.Text = queue.Count > 0 ? queue.Count.ToString() : "";
+
+    void OnQueue(object s, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { PlacementTarget = (Button)s, Placement = PlacementMode.Bottom };
+        var current = new MenuItem { Header = "Ajouter ce disque à la file", IsEnabled = titles.Count > 0 };
+        current.Click += (_, _) => QueueCurrent();
+        menu.Items.Add(current);
+        var saved = new MenuItem { Header = "Ajouter des projets enregistrés…" };
+        saved.Click += (_, _) => QueueFiles();
+        menu.Items.Add(saved);
+        if (queue.Count > 0) menu.Items.Add(new Separator());
+        foreach (var item in queue.ToList())
+        {
+            var row = new MenuItem { Header = $"Retirer « {item.Name} »  ({item.Disc.Kind switch { "dvd" => "DVD", "uhd" => "Blu-ray 4K", _ => "Blu-ray" }}, {item.Disc.Out})" };
+            row.Click += (_, _) => { queue.Remove(item); ShowQueue(); };
+            menu.Items.Add(row);
+        }
+        if (queue.Count > 0)
+        {
+            menu.Items.Add(new Separator());
+            var run = new MenuItem { Header = queue.Count > 1 ? $"Lancer la file ({queue.Count} disques)" : "Lancer la file (1 disque)", IsEnabled = !busy };
+            run.Click += (_, _) => RunQueue();
+            menu.Items.Add(run);
+        }
+        menu.IsOpen = true;
+    }
+
+    /// <summary>The disc as the window holds it now, frozen: later changes in the window do not reach the queue.</summary>
+    void QueueCurrent()
+    {
+        if (StillLoadingDesign()) return;
+        var outDir = OutBox.Text.Trim();
+        if (outDir.Length == 0) { MessageBox.Show(this, "Choisissez un dossier de sortie.", "BurnSmith"); return; }
+        var cap = (Output)CapacityBox.SelectedItem;
+        Queue(volume.Length > 0 ? volume : titles[0].Name, Project.Parse(Snapshot().ToJson()) with { Out = outDir, Label = volume, Encode = encode with { Hd720 = cap.Hd720 && kind == "bd" } });
+    }
+
+    void QueueFiles()
+    {
+        var dlg = new OpenFileDialog { Title = Loc.T("Projets à ajouter à la file"), Filter = Loc.Filter($"Projet BurnSmith|*{Project.Extension}"), Multiselect = true };
+        if (dlg.ShowDialog(this) != true) return;
+        foreach (var file in dlg.FileNames)
+            try { Queue(Path.GetFileNameWithoutExtension(file), Project.Load(file)); }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException or UnauthorizedAccessException) { Warn($"{Path.GetFileName(file)} : {ex.Message}"); }
+    }
+
+    void Queue(string name, Project disc)
+    {
+        // two discs in one folder: the second would replace the first
+        if (disc.Out is not { Length: > 0 }) Warn($"« {name} » n'est pas ajouté à la file : ce projet n'indique pas de dossier de sortie. Ouvrez-le, choisissez le dossier, enregistrez-le.");
+        else if (queue.Any(q => string.Equals(Path.GetFullPath(q.Disc.Out!), Path.GetFullPath(disc.Out), StringComparison.OrdinalIgnoreCase) && (q.Disc.Trial > 0) == (disc.Trial > 0)))
+            Warn($"« {name} » n'est pas ajouté à la file : un disque de la file va déjà dans {disc.Out}. Choisissez un autre dossier de sortie.");
+        else
+        {
+            queue.Add((name, disc));
+            Append($"File d'attente : « {name} » ajouté ({queue.Count} disque{(queue.Count > 1 ? "s" : "")}). Le bouton de la file permet de la lancer.");
+        }
+        ShowQueue();
+    }
+
+    async void RunQueue()
+    {
+        if (busy || queue.Count == 0) return;
+        var items = queue.ToList();
+        var done = new List<(string Name, Project Disc)>();
+        var failed = new List<string>();
+        Log.Clear();
+        var ended = await Work("File d'attente…", (log, progress, token) =>
+        {
+            foreach (var item in items)
+            {
+                token.ThrowIfCancellationRequested();
+                log($"File d'attente : disque {done.Count + failed.Count + 1} sur {items.Count}, « {item.Name} »");
+                try
+                {
+                    var problems = item.Disc.Build(null, item.Disc.Trial, log, token, progress);
+                    log(problems.Count == 0 ? $"« {item.Name} » : vérification du disque, aucune anomalie." : $"« {item.Name} » : " + string.Join(" ; ", problems));
+                    if (problems.Count == 0) done.Add(item); else failed.Add(item.Name);
+                }
+                // one disc that fails must not lose the night for the others
+                catch (Exception ex) when (ex is not OperationCanceledException) { failed.Add(item.Name); log($"ERREUR, « {item.Name} » : {ex.Message}"); }
+            }
+        });
+        queue.RemoveAll(done.Contains); // what failed or was not reached stays, to be run again
+        ShowQueue();
+        if (failed.Count > 0) Warn($"File d'attente : {done.Count} disque(s) fait(s), {failed.Count} en échec, resté(s) dans la file : {string.Join(", ", failed)}.");
+        else if (ended) Append($"File d'attente terminée : {done.Count} disque(s) fait(s).");
+    }
 
     /// <summary>Burns an image that already exists (made earlier, or downloaded) on a DVD / Blu-ray / Blu-ray 4K.</summary>
     async void OnBurnIso(object s, RoutedEventArgs e)
     {
         if (DriveBox.SelectedItem is not Imapi.Drive drive) { MessageBox.Show(this, "Aucun graveur détecté.", "BurnSmith"); return; }
-        var dlg = new OpenFileDialog { Title = "Image à graver", Filter = "Images disque|*.iso|Tous les fichiers|*.*" };
+        var dlg = new OpenFileDialog { Title = Loc.T("Image à graver"), Filter = Loc.Filter("Images disque|*.iso|Tous les fichiers|*.*") };
         if (dlg.ShowDialog(this) != true) return;
         var iso = dlg.FileName;
         var answer = MessageBox.Show(this,
-            $"Graver « {Path.GetFileName(iso)} » sur {drive.Letter} ?\n\nInsérez un disque vierge adapté à la taille de l'image. Le disque sera écrit définitivement.",
+            $"Graver « {Path.GetFileName(iso)} » sur {drive.Letter}{(Copies > 1 ? $", en {Copies} copies" : "")} ?\n\nInsérez un disque vierge adapté à la taille de l'image. Le disque sera écrit définitivement.",
             "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (answer != MessageBoxResult.Yes) return;
         writing = true;
         var speed = Iso.Speeds[Math.Max(0, SpeedBox.SelectedIndex)];
-        if (await Work("Gravure…", (log, progress, token) => Iso.Burn(iso, drive.Letter, log, progress, token, speed))) Append("Terminé.");
+        var copies = Copies;
+        if (await Work("Gravure…", (log, progress, token) => Iso.Burn(iso, drive.Letter, copies, n => NextDisc(n, copies, drive.Letter), log, progress, token, speed))) Append("Terminé.");
     }
 
     async void OnErase(object s, RoutedEventArgs e)
