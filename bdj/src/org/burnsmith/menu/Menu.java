@@ -30,6 +30,7 @@ import javax.tv.xlet.Xlet;
 import javax.tv.xlet.XletContext;
 import javax.tv.xlet.XletStateChangeException;
 
+import org.bluray.media.PlaybackControl;
 import org.bluray.media.PrimaryAudioControl;
 import org.bluray.media.SubtitlingControl;
 import org.bluray.net.BDLocator;
@@ -111,6 +112,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private HScene scene;
     private View view;
     private Player player, loopPlayer;
+    private int pendingMark = -1; // chapter to skip to once the player starts (-1: none)
     private int loopPlaylist; // menu video playing behind the pages, 0 = none
     private final Hashtable pages = new Hashtable();
     private Page firstPage, page;
@@ -480,10 +482,11 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private void play(int playlist, int mark) {
         log("play playlist " + playlist + " mark " + mark);
         try {
-            BDLocator loc = mark < 0
-                ? new BDLocator(null, -1, playlist)
-                : new BDLocator(null, -1, playlist, 0, mark, null);
-            closePlayer(); // a chapter picked in the pop-up replaces the title that plays
+            // the playlist alone, then a skip to the chapter once it plays: a locator with ITEM:00 and MARK together played in VLC
+            // but sent a real player back to the menu on every chapter (Bright, 2026-11-13)
+            BDLocator loc = new BDLocator(null, -1, playlist);
+            closePlayer();
+            pendingMark = mark; // a chapter picked in the pop-up replaces the title that plays
             popupOpen = false;
             scene.setVisible(false);
             if (hasPopup) startListening(); // the Pop-up key must reach the xlet while the film plays
@@ -555,11 +558,30 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         }
         if (e instanceof StartEvent) {
             applyTracks(player);
+            skipToChapter(player);
         } else if (e instanceof EndOfMediaEvent || e instanceof ControllerErrorEvent) {
             log("playback ended: " + e.getClass().getName());
             closePlayer();
             if (e instanceof EndOfMediaEvent && nextPlaylist > 0 && nextPlaylist < endPlaylist) start(nextPlaylist, -1, endPlaylist);
             else finished(e instanceof EndOfMediaEvent);
+        }
+    }
+
+    /** The chapter asked for, once the playlist plays. A refusal only costs the chapter: the film plays from its start. */
+    private void skipToChapter(Player p) {
+        int mark = pendingMark;
+        pendingMark = -1;
+        if (mark < 0 || p == null) return;
+        try {
+            Control c = p.getControl("org.bluray.media.PlaybackControl");
+            if (c instanceof PlaybackControl) {
+                ((PlaybackControl) c).skipToMark(mark);
+                log("skip to mark " + mark);
+            } else {
+                log("no PlaybackControl");
+            }
+        } catch (Throwable t) {
+            log("skip to mark failed: " + t);
         }
     }
 

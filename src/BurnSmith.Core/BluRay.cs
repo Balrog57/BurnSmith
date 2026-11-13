@@ -1383,13 +1383,15 @@ public static class BluRay
         var layout = !File.Exists(Path.Combine(bdmv, "BDJO", "00001.bdjo")); // not yet one title per video
         var files = JarFiles(jar);
         var menu = files.Where(e => !e.Name.EndsWith(".class", StringComparison.Ordinal)).Select(e => e.Name == "menu.txt" ? (e.Name, ChainEpisodes(e.Data)) : e).ToList();
-        if (!layout && menu.SequenceEqual(files.Where(e => !e.Name.EndsWith(".class", StringComparison.Ordinal)))) return false;
+        var xlet = JarFiles(Assets.Find(@"bdj\menu.jar"));
+        static string Classes(IEnumerable<(string Name, byte[] Data)> f) => string.Join("|", f.Where(e => e.Name.EndsWith(".class", StringComparison.Ordinal)).OrderBy(e => e.Name, StringComparer.Ordinal).Select(e => e.Name + ":" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(e.Data))));
+        var oldXlet = Classes(files) != Classes(xlet); // an older xlet (before 1.0.33 a chapter sent a real player back to the menu)
+        if (!layout && !oldXlet && menu.SequenceEqual(files.Where(e => !e.Name.EndsWith(".class", StringComparison.Ordinal)))) return false;
         foreach (var f in Directory.EnumerateFiles(discRoot, "*", SearchOption.AllDirectories)) // files copied out of an image are read-only
             File.SetAttributes(f, File.GetAttributes(f) & ~FileAttributes.ReadOnly);
         var old = File.ReadAllBytes(menuBdjo);
         var havi = old[(int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(old.AsSpan(8)) + 4 + 5] >> 4; // terminal info: length, font name, then the HAVi configuration
         var videos = Enumerable.Range(MoviePlaylist, IntroPlaylist - MoviePlaylist).TakeWhile(n => File.Exists(Path.Combine(bdmv, "PLAYLIST", $"{n:00000}.mpls"))).Count();
-        var xlet = JarFiles(Assets.Find(@"bdj\menu.jar"));
         File.Delete(jar); // read above; the signer writes a new file
         BdjSign.Write(jar, [.. xlet, .. menu], discRoot);
         // the objects an earlier start left in MovieObject.bdmv stay there, unused
