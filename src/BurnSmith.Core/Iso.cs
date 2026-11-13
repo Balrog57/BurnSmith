@@ -78,6 +78,9 @@ public static class Iso
             throw new InvalidOperationException($"{e.Message.Split('\n')[0]}\n{string.Join("\n", File.ReadLines(imgLog).TakeLast(15))}\n(journal complet : {imgLog})", e);
         }
         if (File.Exists(imgLog)) log?.Invoke($"journal d'ImgBurn : {imgLog}");
+        // ImgBurn exits 0 when its verify is aborted (tray left open after "Cycling Tray before Verify", seen on a USB BD-RE): the disc is written, not checked
+        if (File.Exists(imgLog) && File.ReadLines(imgLog).Any(l => l.Contains("Operation Aborted!")))
+        { log?.Invoke("warning: disc written, but ImgBurn's verify did not run (tray left open?) - the disc is not checked"); return; }
         log?.Invoke("done: disc written");
     }
 }
