@@ -414,6 +414,7 @@ static class BdCheck
             var m2ts = Stream(Bd("hdr1080", [new DiscTitle(F("hdr10.mkv"))], new EncodeOptions(Preset: "ultrafast")), 1);
             var colours = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=color_transfer,color_primaries", "-of", "csv=p=0", m2ts]).Trim().Split('\n')[0].Trim(); // an m2ts lists its stream twice (program, stream)
             Check("its PQ picture is made SDR BT.709 (copied as it is, a player shows it grey)", colours == "bt709,bt709", colours);
+            Check("HDR to SDR keeps the studio's SDR brightness (Mobius: Hable left Bright 15-20 % too dark against Netflix's SDR grade)", BluRay.ToSdr("HDR10").Contains("tonemap=mobius"), BluRay.ToSdr("HDR10"));
             Check("a 4K HDR film is made 1080 wide before it is converted (a quarter of the pixels to convert)", BluRay.ToSdr("HDR10", 3840, 2160, 1920).StartsWith("scale=1920:1080,zscale="), BluRay.ToSdr("HDR10", 3840, 2160, 1920)[..30]);
         });
     }

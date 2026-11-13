@@ -537,11 +537,12 @@ public static class BluRay
 
     /// <summary>
     /// An HDR picture (PQ or HLG, BT.2020) made SDR BT.709 for a disc that cannot show HDR (a 1080p Blu-ray, a DVD): copied as it is, a player shows it grey and flat.
-    /// The input is named, not read from the file; Hable keeps detail in the highlights. Empty for an SDR source. A picture wider than <paramref name="maxWidth"/>
+    /// The input is named, not read from the file; Mobius keeps the studio's own SDR brightness (Bright 4K against Netflix's 1080p SDR: mean level 71/33/27
+    /// for 71/33/26, where Hable gave 57/27/23, a film 15-20 % too dark). Empty for an SDR source. A picture wider than <paramref name="maxWidth"/>
     /// (a 4K film for a 1080p disc) is made smaller first: the conversion, in floating point, then has a quarter of the pixels.
     /// </summary>
     public static string ToSdr(string hdr, int width = 0, int height = 0, int maxWidth = 0) => hdr == "SDR" ? ""
-        : (maxWidth > 0 && width > maxWidth ? $"scale={maxWidth}:{(int)Math.Round(height * (double)maxWidth / width / 2) * 2}," : "") + $"zscale=tin={(hdr == "HLG" ? "arib-std-b67" : "smpte2084")}:min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p";
+        : (maxWidth > 0 && width > maxWidth ? $"scale={maxWidth}:{(int)Math.Round(height * (double)maxWidth / width / 2) * 2}," : "") + $"zscale=tin={(hdr == "HLG" ? "arib-std-b67" : "smpte2084")}:min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=mobius:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p";
 
     /// <summary>A standard-definition picture (BT.601 colours) put on an HD disc, which a player decodes as BT.709: the colours are converted, else reds turn orange.</summary>
     static string X265Colors(string hdr) => hdr switch { "HDR10" or "HDR10+" or "Dolby Vision" => "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:hdr10=1", "HLG" => "colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc", _ => "colorprim=bt709:transfer=bt709:colormatrix=bt709" };
