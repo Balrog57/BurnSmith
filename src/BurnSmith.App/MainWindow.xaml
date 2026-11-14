@@ -226,10 +226,15 @@
           <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <TextBlock x:Name="StatusText" MaxWidth="460" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,16,0"/>
         <ProgressBar x:Name="Busy" Grid.Column="1" Maximum="100" VerticalAlignment="Center"/>
-        <Button x:Name="CancelButton" Grid.Column="2" Content="Annuler" Margin="16,0,0,0" Click="OnCancel"
+        <TextBlock x:Name="RemainingText" Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0"/>
+        <CheckBox x:Name="ShutdownCheck" Grid.Column="3" Content="Éteindre le PC à la fin" VerticalAlignment="Center" Margin="16,0,0,0"
+                  ToolTip="Quand le travail est fini (réussi ou en échec, pas annulé), Windows s'éteint une minute plus tard ; un message permet encore d'arrêter l'extinction"/>
+        <Button x:Name="CancelButton" Grid.Column="4" Content="Annuler" Margin="16,0,0,0" Click="OnCancel"
                 ToolTip="Arrête après l'étape en cours ; pendant l'écriture du disque, la gravure s'arrête aussitôt"/>
       </Grid>
 

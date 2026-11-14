@@ -125,6 +125,24 @@ static class ReliabilityCheck
                 Check("a tool under another tool, flooding its output: killed with its parent, no hang", ended && run.Exception?.GetBaseException() is OperationCanceledException && Alive() == 0, $"{sw.Elapsed.TotalSeconds:0.00} s, {Interlocked.Read(ref count)} lines read, {Alive()} left");
             });
 
+            Part("conversion progress", () =>
+            {
+                // the time left in the window comes from these reports: the second half of the job (Converting), filled as ffmpeg goes, its "key=value" lines kept out of the log
+                var seen = new List<double>();
+                var lines = new List<string>();
+                using var unused = new CancellationTokenSource();
+                Tools.WithCancel(unused.Token, () =>
+                {
+                    Tools.Converting(0.5, 0.5);
+                    Tools.Run(ffmpeg, ["-y", "-v", "warning", "-re", "-f", "lavfi", "-i", "testsrc=s=320x240:r=25:d=3", "-c:v", "libx264", "-preset", "ultrafast", "-f", "null", "-"], lines.Add, seconds: 3);
+                }, new Now(v => { lock (seen) seen.Add(v); }));
+                Check("a conversion reports how far it is, in its part of the job, its progress lines not logged",
+                      seen.Count >= 3 && seen.All(v => v >= 0.5 && v <= 1) && seen.Max() > 0.95 && !lines.Any(l => l.Contains("out_time")), $"{seen.Count} reports, last {(seen.Count > 0 ? seen[^1] : 0):0.00}, {lines.Count} log lines");
+                lines.Clear();
+                Tools.Run(ffmpeg, ["-y", "-v", "warning", "-f", "lavfi", "-i", "testsrc=s=320x240:r=25:d=1", "-f", "null", "-"], lines.Add, seconds: 1);
+                Check("without a progress to report to, a conversion runs as before", lines.Count == 0, $"{lines.Count} log lines");
+            });
+
             Part("a real failure", () =>
             {
                 var what = "";

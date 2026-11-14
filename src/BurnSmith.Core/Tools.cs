@@ -129,13 +129,26 @@ public static class Tools
     /// Every <see cref="Run"/> made by <paramref name="work"/>, on whatever thread, ends with an <see cref="OperationCanceledException"/> when <paramref name="cancel"/> fires, its process tree killed.
     /// Ambient, not a parameter: a build reaches the tools through some thirty calls, and one that forgot the token could not be stopped.
     /// </summary>
-    public static void WithCancel(CancellationToken cancel, Action work)
+    public static void WithCancel(CancellationToken cancel, Action work, IProgress<double>? progress = null)
     {
-        var before = ambient.Value;
+        var (before, shareBefore) = (ambient.Value, share.Value);
         ambient.Value = cancel;
+        share.Value = (progress, 0, 1);
         try { work(); }
-        finally { ambient.Value = before; }
+        finally { (ambient.Value, share.Value) = (before, shareBefore); }
     }
+
+    // the progress given to WithCancel, and the part of it [From, From + Size] the next conversions fill
+    static readonly AsyncLocal<(IProgress<double>? Report, double From, double Size)> share = new();
+
+    /// <summary>« Éteindre le PC à la fin »: Windows shuts down in <paramref name="seconds"/>, time enough to stop it (`shutdown /a`, <see cref="CancelShutdown"/>).</summary>
+    public static void ShutdownSoon(int seconds = 60) =>
+        Process.Start(new ProcessStartInfo("shutdown.exe", ["/s", "/t", seconds.ToString(System.Globalization.CultureInfo.InvariantCulture), "/c", "BurnSmith : travail terminé, le PC s'éteint."]) { UseShellExecute = false, CreateNoWindow = true })?.WaitForExit();
+
+    public static void CancelShutdown() => Process.Start(new ProcessStartInfo("shutdown.exe", ["/a"]) { UseShellExecute = false, CreateNoWindow = true })?.WaitForExit();
+
+    /// <summary>A build tells, before converting a video, which part of the whole job that conversion is (its length over the videos' total length).</summary>
+    public static void Converting(double from, double size) => share.Value = (share.Value.Report, from, size);
 
     /// <summary>
     /// Puts a started process in the app's job: Windows ends it when the app's last handle on the job closes, which <see cref="KillAll"/> cannot do when the app
@@ -196,10 +209,15 @@ public static class Tools
     /// Runs a tool and returns its stdout; throws with the output tail when the exit code is not 0, <see cref="OperationCanceledException"/> when cancelled (see <see cref="WithCancel"/>).
     /// The tool ends with the app, even one that crashes or is ended by force (<see cref="TieToApp"/>), unless <paramref name="outlivesApp"/>.
     /// </summary>
+    /// <param name="seconds">For an ffmpeg conversion writing that many seconds: it reports how far it is to the progress given to <see cref="WithCancel"/>, in the part <see cref="Converting"/> set.</param>
     public static string Run(string exe, IEnumerable<string> args, Action<string>? onLine = null, string? workDir = null,
-                             IReadOnlyDictionary<string, string>? env = null, bool outlivesApp = false)
+                             IReadOnlyDictionary<string, string>? env = null, bool outlivesApp = false, double seconds = 0)
     {
         var cancel = ambient.Value;
+        var (report, from, size) = share.Value;
+        if (report == null || seconds <= 0) report = null;
+        // -progress pipe:1: "key=value" lines on stdout, out_time_us among them, whatever the log level
+        if (report != null) args = ["-progress", "pipe:1", "-nostats", .. args];
         cancel.ThrowIfCancellationRequested();
         var psi = new ProcessStartInfo(exe)
         {
@@ -220,6 +238,11 @@ public static class Tools
         void Line(string? l, bool isOut)
         {
             if (l == null) return;
+            if (report != null && isOut && l.Contains('='))
+            {
+                if (l.StartsWith("out_time_us=") && long.TryParse(l.AsSpan(12), out var us) && us >= 0) report.Report(from + size * Math.Min(1, us / 1e6 / seconds));
+                return;
+            }
             lock (all) { all.AppendLine(l); if (isOut) stdout.AppendLine(l); }
             onLine?.Invoke(l);
         }

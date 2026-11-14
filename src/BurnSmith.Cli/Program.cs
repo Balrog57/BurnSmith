@@ -1901,7 +1901,15 @@ int BuildProject(string file)
     Console.WriteLine(found.Count == 0 ? "disc checked: no problem" : "disc check: " + string.Join(" ; ", found));
     return found.Count == 0 ? 0 : 1;
 }
-if (a.Count >= 2 && a[0] == "project") return BuildProject(a[1]);
+// --shutdown (bd, dvd, project, queue): the app's « Éteindre le PC à la fin »: once the command has made its disc(s), good or not, Windows shuts down a minute later (`shutdown /a` stops it)
+int Finished(int code)
+{
+    if (!a.Contains("--shutdown")) return code;
+    Tools.ShutdownSoon();
+    Console.WriteLine("shutdown: Windows shuts down in 60 s (shutdown /a stops it)");
+    return code;
+}
+if (a.Count >= 2 && a[0] == "project") return Finished(BuildProject(a[1]));
 // burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] : the app's « File d'attente »: the projects built one after the other, each in its own folder
 //   (with its ISO when the project asks for one, nothing burnt); one that fails does not stop the next; exit 1 when any failed
 if (a.Count >= 2 && a[0] == "queue")
@@ -1915,12 +1923,12 @@ if (a.Count >= 2 && a[0] == "queue")
         catch (Exception e) when (e is not OperationCanceledException) { failed.Add(file); Console.Error.WriteLine($"failed: {file}: {e.Message}"); }
     }
     Console.WriteLine(failed.Count == 0 ? $"queue: {files.Count} disc(s) made" : $"queue: {files.Count - failed.Count} of {files.Count} disc(s) made, failed: {string.Join(", ", failed)}");
-    return failed.Count == 0 && files.Count > 0 ? 0 : 1;
+    return Finished(failed.Count == 0 && files.Count > 0 ? 0 : 1);
 }
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--shutdown] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]] [--shutdown]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] [--shutdown]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER");
     return 2;
 }
 
@@ -2073,5 +2081,5 @@ if (Opt("--save-project") is { } projectFile)
 }
 // the disc the folder must fit: the profile's, or the one --capacity names by its usable size (a BD-100 for --uhd, a DVD-9)
 // --capacity 0: no size limit (a folder or an image for a hard disk): nothing is fitted to a disc and the size is not checked
-return Make(discKind, titles, Path.GetFullPath(outDir), design, Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback, subtitleLook, Trial(),
-            Opt("--capacity") != null && capacity <= 0 ? 0 : Opt("--capacity") != null ? capacity / 0.89 : dvdDisc ? 4.7 : profile.Gb);
+return Finished(Make(discKind, titles, Path.GetFullPath(outDir), design, Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback, subtitleLook, Trial(),
+            Opt("--capacity") != null && capacity <= 0 ? 0 : Opt("--capacity") != null ? capacity / 0.89 : dvdDisc ? 4.7 : profile.Gb));

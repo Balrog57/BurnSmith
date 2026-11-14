@@ -44,7 +44,8 @@ public static class Dvd
     /// <summary>One encoded title: the MPEG file, the audio and subtitle tracks that really are in it, its chapter times.</summary>
     sealed record Movie(string Mpg, List<AudioTrack> Audio, List<SubtitleTrack> Subtitles, List<double> ChapterTimes, int DefaultSubtitle);
 
-    public static void Build(DvdJob job, Action<string>? log, CancellationToken cancel) => Tools.WithCancel(cancel, () => Build(job, log));
+    /// <param name="progress">Fills as the videos are converted, each by its share of their total length.</param>
+    public static void Build(DvdJob job, Action<string>? log, CancellationToken cancel, IProgress<double>? progress = null) => Tools.WithCancel(cancel, () => Build(job, log), progress);
 
     public static void Build(DvdJob job, Action<string>? log = null)
     {
@@ -107,10 +108,18 @@ public static class Dvd
         log($"movie: {(pal ? "PAL" : "NTSC")} {videoBps / 1000} kb/s");
         var movies = new List<Movie>();
         var lined = job.Titles.Count > 1 ? DiscTitle.LineUpSubtitles(job.Titles, sources) : null;
-        for (var i = 0; i < job.Titles.Count; i++) movies.Add(EncodeTitle(job, i + 1, sources[i], job.Titles[i], lined?[i], pal, videoBps, work, log));
+        var total = Math.Max(1, sources.Sum(s => s.Duration) + (introSource?.Duration ?? 0));
+        var before = 0.0;
+        for (var i = 0; i < job.Titles.Count; i++)
+        {
+            Tools.Converting(before / total, sources[i].Duration / total);
+            before += sources[i].Duration;
+            movies.Add(EncodeTitle(job, i + 1, sources[i], job.Titles[i], lined?[i], pal, videoBps, work, log));
+        }
         if (movies.Any(m => m.Audio.Count != movies[0].Audio.Count)) // the subtitles are lined up (LineUpSubtitles): only a title's extra ones come after the menu's
             log("warning: the videos do not have the same number of audio tracks; the menu follows the first one");
         Movie? introMovie = null;
+        if (intro != null) Tools.Converting(before / total, introSource!.Duration / total);
         if (intro != null) // one audio track and no subtitles: nothing to choose while it plays, and no subtitle pass
             introMovie = EncodeTitle(job, movies.Count + 1, introSource!, intro with { Audio = [.. intro.KeptAudio(introSource!).Take(1).Select(a => a.Index)], Subtitles = null, External = null, DefaultAudio = null, DefaultSubtitle = null }, null, pal, videoBps, work, log);
 
@@ -170,7 +179,7 @@ public static class Dvd
         var subs = BluRay.Subtitles(title, src, lined, n => Path.Combine(work, $"sub{number}_{n}"), log);
         var real = subs.Where(x => x.Track.Index >= 0).ToList();
         log($"encode {number}: {title.DisplayName} (audio {audio.Count}, subtitles {subs.Count})");
-        Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
+        Tools.Run(Tools.Find("ffmpeg.exe"), args, log, seconds: src.Duration);
         BluRay.WriteOwnSubtitles(title, real.Where(x => x.Track.File == null && !x.Track.IsVobSub).ToList(), span, log); // a VobSub or a subtitle file is converted apart, below
         foreach (var (s, file) in real.Where(x => x.Track.File == null && x.Track.IsVobSub)) BluRay.WriteEmbeddedVobSub(title, s, span, file, (720, 480), log);
         foreach (var (s, file) in real.Where(x => x.Track.File != null)) BluRay.WriteExternalSubtitle(title, s, span, file, (720, 480), log); // a VobSub becomes PGS on a 720x480 plane, which PgsStream maps onto the frame whatever its height

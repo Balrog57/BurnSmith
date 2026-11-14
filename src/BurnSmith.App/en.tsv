@@ -931,3 +931,17 @@ titre {0} : le titre {1} est annoncé {2} secteurs après VIDEO_TS.IFO, il est �
 {0} Go	{0} GB
 # menu type, disc sizes, app language (added with the HDMV menu)
 « Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.	"No limit" cannot be burned: choose the size of the disc to burn, or untick burning.
+Éteindre le PC à la fin	Shut down the PC when done
+Quand le travail est fini (réussi ou en échec, pas annulé), Windows s'éteint une minute plus tard ; un message permet encore d'arrêter l'extinction	When the work is over (done or failed, not cancelled), Windows shuts down a minute later; a message still lets you stop it
+Terminé : {0}	Done: {0}
+Arrêté sur une erreur : {0}	Stopped by an error: {0}
+Création du disque	Creating the disc
+Gravure	Burning
+Effacement	Erasing
+encore moins d'une minute	less than a minute left
+encore {0} min	{0} min left
+encore {0} h {1}	{0} h {1} left
+Le PC n'a pas pu être éteint : {0}	The PC could not be shut down: {0}
+Le PC s'éteint dans une minute.	The PC shuts down in a minute.
+Le travail est fini : le PC s'éteint dans une minute.\n\nAnnuler l'extinction ?	The work is over: the PC shuts down in a minute.\n\nCancel the shutdown?
+Extinction annulée.	Shutdown cancelled.

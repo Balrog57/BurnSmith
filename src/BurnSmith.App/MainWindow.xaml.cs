@@ -1262,14 +1262,31 @@ public partial class MainWindow : Window
         CancelButton.IsEnabled = canCancel;
         cancel = new CancellationTokenSource();
         var token = cancel.Token;
-        var progress = new Progress<double>(v => { Busy.IsIndeterminate = false; Busy.Value = v * 100; });
+        RemainingText.Text = "";
+        TaskbarItemInfo ??= new System.Windows.Shell.TaskbarItemInfo();
+        TaskbarItemInfo.ProgressState = System.Windows.Shell.TaskbarItemProgressState.Indeterminate;
+        // the time left from the pace so far; a step that starts again from 0 (the ISO image after the videos, the burn) starts its own clock
+        var clock = new Stopwatch();
+        var last = 0.0;
+        var progress = new Progress<double>(v =>
+        {
+            Busy.IsIndeterminate = false;
+            Busy.Value = v * 100;
+            TaskbarItemInfo.ProgressState = System.Windows.Shell.TaskbarItemProgressState.Normal;
+            TaskbarItemInfo.ProgressValue = v;
+            if (!clock.IsRunning || v < last - 0.05) clock.Restart();
+            last = v;
+            RemainingText.Text = Remaining(clock.Elapsed, v);
+        });
         void Log(string line) => Dispatcher.BeginInvoke(() => { Append(line); StatusText.Text = line; });
+        var ended = "failed";
         try
         {
             await Task.Run(() => job(Log, progress, token));
+            ended = "done";
             return true;
         }
-        catch (OperationCanceledException) { Warn("Annulé."); return false; }
+        catch (OperationCanceledException) { Warn("Annulé."); ended = "cancelled"; return false; }
         catch (Exception ex)
         {
             Warn("ERREUR : " + ex.Message);
@@ -1280,10 +1297,35 @@ public partial class MainWindow : Window
             busy = writing = false;
             StartButton.IsEnabled = true;
             ProgressPanel.Visibility = Visibility.Collapsed;
+            TaskbarItemInfo.ProgressState = ended == "failed" ? System.Windows.Shell.TaskbarItemProgressState.Error : System.Windows.Shell.TaskbarItemProgressState.None;
             cancel.Dispose();
             cancel = null;
             RefreshDrives();
+            var step = what.TrimEnd('…');
+            if (ended != "cancelled") Notify.Ended(this, "BurnSmith", Loc.T(ended == "done" ? $"Terminé : {step}" : $"Arrêté sur une erreur : {step}"), ended == "failed");
+            if (ended != "cancelled" && ShutdownCheck.IsChecked == true) ShutDown();
             if (closeAfterWork) Close();
+        }
+    }
+
+    /// <summary>"encore 42 min" once the pace is known (a few seconds and 1 % in), nothing when the step is at its end.</summary>
+    static string Remaining(TimeSpan elapsed, double done)
+    {
+        if (done < 0.01 || done >= 0.999 || elapsed.TotalSeconds < 10) return "";
+        var left = TimeSpan.FromSeconds(elapsed.TotalSeconds * (1 - done) / done);
+        return Loc.T(left.TotalMinutes < 1 ? "encore moins d'une minute" : left.TotalHours < 1 ? $"encore {(int)Math.Ceiling(left.TotalMinutes)} min" : $"encore {(int)left.TotalHours} h {left.Minutes:00}");
+    }
+
+    /// <summary>« Éteindre le PC à la fin »: a minute to change one's mind, then Windows shuts down.</summary>
+    void ShutDown()
+    {
+        try { Tools.ShutdownSoon(); }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { Warn("Le PC n'a pas pu être éteint : " + ex.Message); return; }
+        Append("Le PC s'éteint dans une minute.");
+        if (MessageBox.Show(this, "Le travail est fini : le PC s'éteint dans une minute.\n\nAnnuler l'extinction ?", "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes)
+        {
+            Tools.CancelShutdown();
+            Append("Extinction annulée.");
         }
     }
 
@@ -1322,8 +1364,8 @@ public partial class MainWindow : Window
         var ok = await Work("Création du disque…", (log, progress, token) =>
         {
             if (trial > 0) log($"Disque d'essai : {trial / 60} minutes de chaque vidéo, un passage à chaque chapitre, dans {outDir}");
-            if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable, enc, play, look), log, token);
-            else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes, enc, cap.Usable, play, look, hdmv), log, token);
+            if (dvd) Dvd.Build(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable, enc, play, look), log, token, progress);
+            else BluRay.Build(new BluRayJob(discTitles, outDir, menu, uhd, label.Length > 0 ? label : "BURNSMITH", minutes, enc, cap.Usable, play, look, hdmv), log, token, progress);
             var iso = IsoFile(outDir);
             File.Delete(iso); // an image of an earlier build must never be burnt by mistake
             var problems = DiscCheck.Folder(outDir, cap.Gb);

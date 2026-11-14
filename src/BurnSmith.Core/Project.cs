@@ -59,8 +59,8 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
         var menu = Menu || list.Count(t => !t.Intro) > 1 ? Design ?? TemplateCatalog.Default().Clone() : null;
         var label = Label is { Length: > 0 } ? Label : "BURNSMITH";
         if (trial > 0) log($"trial disc: {trial} s of each video, in {dir}");
-        if (Kind == "dvd") Dvd.Build(new DvdJob(list, dir, menu, ChapterMinutes, usable, Encode ?? new(FitDisc: true), Playback, Subtitles), log, cancel);
-        else BluRay.Build(new BluRayJob(list, dir, menu, Kind == "uhd", label, ChapterMinutes, Encode ?? new(FitDisc: true), usable, Playback, Subtitles, HdmvMenu), log, cancel);
+        if (Kind == "dvd") Dvd.Build(new DvdJob(list, dir, menu, ChapterMinutes, usable, Encode ?? new(FitDisc: true), Playback, Subtitles), log, cancel, progress);
+        else BluRay.Build(new BluRayJob(list, dir, menu, Kind == "uhd", label, ChapterMinutes, Encode ?? new(FitDisc: true), usable, Playback, Subtitles, HdmvMenu), log, cancel, progress);
         File.Delete(IsoFile(dir)); // an image of an earlier build must never be burnt by mistake
         var found = DiscCheck.Folder(dir, usable / 0.89);
         if (!Iso) return found;

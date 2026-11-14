@@ -316,7 +316,8 @@ public static class BluRay
         return (listed, forced);
     }
 
-    public static void Build(BluRayJob job, Action<string>? log, CancellationToken cancel) => Tools.WithCancel(cancel, () => Build(job, log));
+    /// <param name="progress">Fills as the videos are converted (or copied), each by its share of their total length.</param>
+    public static void Build(BluRayJob job, Action<string>? log, CancellationToken cancel, IProgress<double>? progress = null) => Tools.WithCancel(cancel, () => Build(job, log), progress);
 
     public static void Build(BluRayJob job, Action<string>? log = null)
     {
@@ -344,8 +345,12 @@ public static class BluRay
         var kbps = intro == null ? TargetKbps(job, sources, log) : TargetKbps(job with { Titles = [.. job.Titles, intro] }, [.. sources, introSource!], log); // the intro takes room on the disc too
         var muxed = new List<Muxed>();
         var lined = job.Titles.Count > 1 ? DiscTitle.LineUpSubtitles(job.Titles, sources) : null;
+        var total = Math.Max(1, sources.Sum(s => s.Duration) + (introSource?.Duration ?? 0));
+        var converted = 0.0;
         for (var i = 0; i < job.Titles.Count; i++)
         {
+            Tools.Converting(converted / total, sources[i].Duration / total);
+            converted += sources[i].Duration;
             var playlist = MoviePlaylist + i;
             // later titles are muxed on their own (playlist/clip numbers offset), then merged into the first disc folder
             var dest = i == 0 ? job.OutDir : Path.Combine(work, "mux" + playlist);
@@ -356,6 +361,7 @@ public static class BluRay
         if (intro != null)
         {
             var introDest = Path.Combine(work, "mux" + IntroPlaylist);
+            Tools.Converting(converted / total, introSource!.Duration / total);
             MuxTitle(job, intro, introSource!, null, IntroPlaylist, introDest, work, kbps, log);
             Merge(introDest, job.OutDir);
         }
@@ -1119,8 +1125,8 @@ public static class BluRay
         }
         if (!noVideo || audio.Count > 0) // without picture or sound there is nothing to write
             // one more try: a long encode once stopped with exit 255 and no message (a whole season lost) and went through when run again
-            try { Tools.Run(Tools.Find("ffmpeg.exe"), args, log); }
-            catch (InvalidOperationException e) { log($"conversion failed, trying once more: {e.Message.Split('\n')[0]}"); Tools.Run(Tools.Find("ffmpeg.exe"), args, log); }
+            try { Tools.Run(Tools.Find("ffmpeg.exe"), args, log, seconds: s.Duration); }
+            catch (InvalidOperationException e) { log($"conversion failed, trying once more: {e.Message.Split('\n')[0]}"); Tools.Run(Tools.Find("ffmpeg.exe"), args, log, seconds: s.Duration); }
         for (var j = 0; j < audio.Count; j++)
             if (AudioMode(audio[j], title, job.Uhd, enc.Lossless) == "thd")
             {
