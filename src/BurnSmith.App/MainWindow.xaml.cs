@@ -217,10 +217,11 @@ public partial class MainWindow : Window
         {
             var drives = await Task.Run(Iso.Drives); // none: no burning, creating still works
             if (busy) return;
-            if (!drives.Select(d => d.Id).SequenceEqual(DriveBox.Items.Cast<Imapi.Drive>().Select(d => d.Id)))
+            if (!drives.SequenceEqual(DriveBox.Items.Cast<Imapi.Drive>())) // a disc put in or taken out changes the list too
             {
+                var chosen = (DriveBox.SelectedItem as Imapi.Drive)?.Letter;
                 DriveBox.ItemsSource = drives;
-                DriveBox.SelectedIndex = drives.Count > 0 ? 0 : -1;
+                DriveBox.SelectedIndex = drives.Count > 0 ? Math.Max(0, drives.FindIndex(d => d.Letter == chosen)) : -1;
             }
             BurnButton.IsEnabled = EraseButton.IsEnabled = BurnCheck.IsEnabled = drives.Count > 0;
             if (drives.Count == 0) BurnCheck.IsChecked = false;
@@ -228,6 +229,16 @@ public partial class MainWindow : Window
         // logged, not shown: this runs at every activation of the window, and a box would bring it back as soon as it is closed
         catch (Exception e) when (e is not OutOfMemoryException) { AppFiles.LogError("Lecteurs de disque", e); }
         finally { refreshingDrives = false; }
+    }
+
+    void OnDrivesOpened(object? s, EventArgs e) => RefreshDrives(); // the disc in each burner, read again when the user looks, never polled
+
+    /// <summary>Asks before burning when the disc in <paramref name="drive"/> holds less than <paramref name="usableGb"/>; true = go on.</summary>
+    async Task<bool> DiscBigEnough(Imapi.Drive drive, double usableGb, string what)
+    {
+        if (await Task.Run(() => Iso.Disc(drive.Letter)) is not { } disc || !Iso.TooSmall(disc, usableGb)) return true;
+        return MessageBox.Show(this, $"Le disque de {drive.Letter} ({disc.Kind}, {disc.TotalBytes / 1e9:0.#} Go) est trop petit pour {what} ({usableGb:0.#} Go).\n\nMettez un disque plus grand avant la gravure. Continuer quand même ?",
+            "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
     }
 
     public MenuEditorWindow CreateEditor(MenuDesign? start = null) => openEditor = new(start ?? design, previewFrame, EditorContent()) { Playback = playback, Hdmv = hdmvMenu && kind != "dvd" };
@@ -1302,6 +1313,7 @@ public partial class MainWindow : Window
         var speed = Iso.Speeds[Math.Max(0, SpeedBox.SelectedIndex)];
         var burn = BurnCheck.IsChecked == true && drive != null;
         if (burn && cap.Unlimited) { MessageBox.Show(this, "« Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.", "BurnSmith"); return; }
+        if (burn && !await DiscBigEnough(drive!, cap.Usable, "le projet")) return;
         if (burn && MessageBox.Show(this,
                 $"Après la création, graver « {label} » sur {drive!.Letter} ?\n\nInsérez un disque vierge adapté ({cap.Name}). Le disque sera écrit définitivement.",
                 "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
@@ -1457,6 +1469,7 @@ public partial class MainWindow : Window
         var dlg = new OpenFileDialog { Title = Loc.T("Image à graver"), Filter = Loc.Filter("Images disque|*.iso|Tous les fichiers|*.*") };
         if (dlg.ShowDialog(this) != true) return;
         var iso = dlg.FileName;
+        if (!await DiscBigEnough(drive, new FileInfo(iso).Length / 1e9, "l'image")) return;
         var answer = MessageBox.Show(this,
             $"Graver « {Path.GetFileName(iso)} » sur {drive.Letter} ?\n\nInsérez un disque vierge adapté à la taille de l'image. Le disque sera écrit définitivement.",
             "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);

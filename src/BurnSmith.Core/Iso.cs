@@ -31,20 +31,42 @@ public static class Iso
         }
     }
 
-    /// <summary>The burners IMAPI2 sees, plus, when ImgBurn can burn them, the other optical drives Windows lists.</summary>
+    /// <summary>
+    /// The burners IMAPI2 sees, each with the disc in it (<see cref="Imapi.Drive.State"/>), plus, when ImgBurn can burn them, the other optical drives Windows lists.
+    /// A drive IMAPI2 knows as a reader only (« Msft Virtual DVD-ROM », a mounted image) is left out.
+    /// </summary>
     public static List<Imapi.Drive> Drives()
     {
-        List<Imapi.Drive> drives;
-        try { drives = Imapi.Drives().Where(d => d.Letter.Length > 0).ToList(); }
-        catch (Exception) { drives = []; } // IMAPI2 unavailable
+        List<Imapi.Drive> seen;
+        try { seen = Imapi.Drives().Where(d => d.Letter.Length > 0).ToList(); }
+        catch (Exception) { seen = []; } // IMAPI2 unavailable
+        var drives = seen.Where(d => d.Writes).Select(d => d with { State = DiscState(Disc(d.Letter), new DriveInfo(d.Letter).IsReady) }).ToList();
         if (ImgBurn() == null) return drives;
         foreach (var d in DriveInfo.GetDrives().Where(d => d.DriveType == DriveType.CDRom))
         {
             var letter = d.Name.TrimEnd('\\');
-            if (!drives.Any(x => x.Letter.Equals(letter, StringComparison.OrdinalIgnoreCase))) drives.Add(new Imapi.Drive(letter, "Lecteur optique", letter));
+            if (!seen.Any(x => x.Letter.Equals(letter, StringComparison.OrdinalIgnoreCase))) drives.Add(new Imapi.Drive(letter, "Lecteur optique", letter));
         }
         return drives;
     }
+
+    /// <summary>The disc in a burner, or null: none, one Windows cannot write, or a drive only ImgBurn reaches.</summary>
+    public static Imapi.Media? Disc(string letter)
+    {
+        try { return Imapi.Inspect(letter); }
+        catch (Exception e) when (e is System.Runtime.InteropServices.COMException or ArgumentException or InvalidCastException) { return null; }
+    }
+
+    /// <summary>« BD-R vierge, 25 Go », « BD-RE déjà écrit », « pas de disque », or « disque non inscriptible » for a disc that is there (<paramref name="present"/>) but cannot be written.</summary>
+    public static string DiscState(Imapi.Media? disc, bool present) =>
+        disc == null ? (present ? "disque non inscriptible" : "pas de disque") : disc.Blank ? $"{disc.Kind} vierge, {disc.TotalBytes / 1e9:0.#} Go" : $"{disc.Kind} déjà écrit";
+
+    /// <summary>
+    /// True when the disc holds less than <paramref name="usableGb"/> (what the project fills, <c>Output.Usable</c>). A blank disc says its size, a rewritable one
+    /// its size once erased; a written write-once disc cannot be told (it only says what it holds), so it is not judged here.
+    /// </summary>
+    public static bool TooSmall(Imapi.Media disc, double usableGb) =>
+        (disc.Blank || disc.Kind.Contains("RW") || disc.Kind.Contains("RAM") || disc.Kind == "BD-RE") && disc.TotalBytes > 0 && disc.TotalBytes < usableGb * 1e9;
 
     /// <summary>The write speeds offered, × the disc's 1x (0 = the drive's fastest): values found in ImgBurn's list for DVD as for Blu-ray.</summary>
     public static readonly int[] Speeds = [0, 8, 6, 4];
