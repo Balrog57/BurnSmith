@@ -427,6 +427,13 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
         return kept.FindIndex(a => a.Index == DefaultAudio) is > 0 and var at ? [kept[at], .. kept.Where((_, i) => i != at)] : kept;
     }
 
+    /// <summary>
+    /// « Compatibilité maximale »: a Dolby Digital track first, by making it the <see cref="DefaultAudio"/>. Without « Son sans perte » only a DTS is not made AC-3
+    /// (a Blu-ray copies it), so a DTS first gives way to a kept track of its language that is not DTS; never to another language (the viewer's language comes first).
+    /// </summary>
+    public DiscTitle Ac3First(SourceInfo s) =>
+        KeptAudio(s) is [{ Codec: "dts" } first, ..] kept && kept.Skip(1).FirstOrDefault(a => a.Codec != "dts" && a.Lang == first.Lang) is { } ac3 ? this with { DefaultAudio = ac3.Index } : this;
+
     /// <summary>The default subtitle's number among the tracks that really went on the disc (1-based, as a player counts them); 0 = none shown.</summary>
     public int DefaultSubtitleNumber(IReadOnlyList<SubtitleTrack> carried) =>
         DefaultSubtitle is { } d ? carried.Select(t => t.Index).ToList().IndexOf(d) + 1 : 0;

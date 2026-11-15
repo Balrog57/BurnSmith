@@ -207,6 +207,8 @@
                 <ComboBox x:Name="CapacityBox" HorizontalAlignment="Stretch" Margin="0,4,0,0" SelectionChanged="OnChanged"/>
                 <TextBlock x:Name="CapText" Margin="0,8,0,0" TextWrapping="Wrap"/>
                 <ProgressBar x:Name="CapBar" Height="8" Maximum="100" Margin="0,6,0,0"/>
+                <CheckBox x:Name="CompatCheck" Content="Compatibilité maximale" Margin="0,12,0,0"
+                          ToolTip="Ce que toutes les platines lisent : le menu simple (HDMV, pages fixes, sans menu pop-up, pas encore essayé sur une vraie platine) au lieu du menu Java, le son en Dolby Digital (AC-3) avec une piste AC-3 en premier, et la gravure à 4x."/>
                 <Separator Margin="0,14"/>
               </StackPanel>
               <StackPanel Grid.Row="1">

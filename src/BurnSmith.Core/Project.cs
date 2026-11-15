@@ -12,9 +12,25 @@ namespace BurnSmith.Core;
 public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Titles = null, MenuDesign? Design = null, bool Menu = true, string? Label = null,
                              int ChapterMinutes = 5, EncodeOptions? Encode = null, PlaybackOptions? Playback = null, SubtitleStyle? Subtitles = null,
                              string? Output = null, double CapacityGB = 0, string? Out = null, bool Iso = false, int Trial = 0,
-                             bool HdmvMenu = false) // Blu-ray: the menu as native HDMV navigation instead of the BD-J program (see Core.HdmvMenu)
+                             bool HdmvMenu = false, // Blu-ray: the menu as native HDMV navigation instead of the BD-J program (see Core.HdmvMenu)
+                             bool MaxCompat = false) // « Compatibilité maximale »: see Compatible
 {
     public const string Extension = ".burnsmith";
+
+    /// <summary>
+    /// « Compatibilité maximale » (`--max-compat`): the settings every player reads, set over the disc's own for the build — the native HDMV menu (the simple one:
+    /// still pages, no pop-up), every sound in AC-3 (« Son sans perte » off) with a Dolby Digital track first (<see cref="DiscTitle.Ac3First"/>); a burn then
+    /// goes at the slowest speed offered (<see cref="Iso.Speeds"/>). On a DVD only the sound applies.
+    /// </summary>
+    public static (List<DiscTitle> Titles, EncodeOptions Encode, bool Hdmv) Compatible(IEnumerable<DiscTitle> titles, EncodeOptions encode, Func<string, SourceInfo> probe) =>
+        ([.. titles.Select(t => t.Ac3First(probe(t.Video)))], encode with { Lossless = false }, true);
+
+    /// <summary>Known to fail on players, said before the job starts (null = nothing): a 100 GB disc (more than a BD-66 holds).</summary>
+    public static string? Warning(string kind, double usableGb) =>
+        kind != "dvd" && usableGb > 61 ? "Les disques de 100 Go sont refusés par beaucoup de platines : préférez deux disques de 50 Go." : null;
+
+    /// <summary>Said with every Blu-ray, as a note and not as an error (Sony's own support says so).</summary>
+    public const string Ps5Note = "À savoir : la PS5 ne lit aucun disque gravé, quel qu'il soit (Sony le dit dans son aide).";
 
     // nulls are written: left out, a design's property set to null would come back as the class's default
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
@@ -80,8 +96,13 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
     /// </summary>
     public List<string> Build(string? folder, int trial, Action<string> log, CancellationToken cancel = default, IProgress<double>? progress = null)
     {
+        if (MaxCompat && Compatible(Titles ?? [], Encode ?? new(FitDisc: true), BluRay.Probe) is var (compatible, encode, hdmv))
+            return (this with { MaxCompat = false, Titles = compatible, Encode = encode, HdmvMenu = hdmv }).Build(folder, trial, log, cancel, progress);
         var dir = Path.GetFullPath(folder ?? (Out is { Length: > 0 } ? Path.TrimEndingDirectorySeparator(Out) + (trial > 0 ? "_essai" : "") : throw new ArgumentException("the project names no output folder")));
-        var (usable, list, menu) = TemplateCatalog.DefaultFor([.. list.Where(t => !t.Bonus && !t.Intro).Select(t => t.Video)]).CloneDisc(trial);
+        var (usable, which the builds and the checks call 0
+        if (Warning(Kind, usable) is { } warning) log(warning);
+        if (Kind != "dvd") log(Ps5Note);
+        var list, menu) = TemplateCatalog.DefaultFor([.. list.Where(t => !t.Bonus && !t.Intro).Select(t => t.Video)]).CloneDisc(trial);
         var label = Label is { Length: > 0 } ? Label : "BURNSMITH";
         if (trial > 0) log($"trial disc: {trial} s of each video, in {dir}");
         if (Kind == "dvd") Dvd.Build(new DvdJob(list, dir, menu, ChapterMinutes, usable, Encode ?? new(FitDisc: true), Playback, Subtitles), log, cancel, progress);
