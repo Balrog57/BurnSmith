@@ -26,7 +26,7 @@ static List<int> SubsToKeep(List<int>? asked, int own, int files, string video, 
 }
 var videos = a.Select((v, i) => (v, i)).Where(x => x.v == "--video" && x.i + 1 < a.Count).Select(x => BluRay.MainClip(Path.GetFullPath(a[x.i + 1]))).ToList(); // a Blu-ray given whole (.iso, BDMV folder): its film
 
-// burnsmith preview <template name or folder> <out folder> [--picture frame.jpg] [--episodes N] [--bonus N] [--focus] [--menu-aspect 16:9|4:3]
+// burnsmith preview <template name or folder> <out folder> [--picture frame.jpg] [--episodes N] [--bonus N] [--focus] [--menu-aspect 16:9|4:3] [--safe-area]
 //   draws every page of a menu template with sample content (3 audio, 2 subtitles), to compare with the vendor's own thumbnail
 if (a.Count >= 3 && a[0] == "preview")
 {
@@ -72,7 +72,10 @@ if (a.Count >= 3 && a[0] == "preview")
         encoder.Save(ms);
         return ms.ToArray();
     }
-    var files = MenuRenderer.Sta(() => MenuBuilder.Build(chosen, sample).Select(page => (page.Id, Jpeg: MenuRenderer.Background(chosen, page) is var jpeg && a.Contains("--focus") ? Lit(page, jpeg) : jpeg)).ToList());
+    var previewPages = MenuBuilder.Build(chosen, sample);
+    foreach (var w in SafeArea.Warnings(previewPages, chosen)) Console.WriteLine(w); // what a TV may crop, with or without --safe-area
+    var files = MenuRenderer.Sta(() => previewPages.Select(page => (page.Id, Jpeg: MenuRenderer.Background(chosen, page) is var jpeg && a.Contains("--focus") ? Lit(page, jpeg) : jpeg)).ToList());
+    if (a.Contains("--safe-area")) files = MenuRenderer.Sta(() => files.Select((f, i) => (f.Id, SafeArea.Over(f.Jpeg, previewPages[i], chosen))).ToList()); // the action-safe / title-safe frames drawn over each page
     foreach (var (id, jpeg) in files) File.WriteAllBytes(Path.Combine(a[2], $"{chosen.Name}_{id}.jpg"), jpeg);
     Console.WriteLine(string.Join(", ", files.Select(f => f.Id)));
     return 0;
@@ -886,6 +889,14 @@ if (a.Count >= 1 && a[0] == "check-elements")
         Directory.Delete(hostile, true);
         File.Delete(Path.Combine(Path.GetTempPath(), "outside.png"));
     }
+    // « Zone sûre »: the frames a TV may crop (93 % / 90 %, SMPTE ST 2046-1), and what leaves the title-safe one
+    Check("safe area: action-safe 93 % and title-safe 90 % of 1920x1080, centred",
+          SafeArea.Action == new Box(67, 38, 1786, 1004) && SafeArea.Title == new Box(96, 54, 1728, 972));
+    var safePage = new MenuPage("root", [new Label("Lecture", new Box(40, 500, 300, 80), 40, true), new Label("Dedans", new Box(200, 300, 300, 80), 40, true), new Label("", new Box(0, 0, 10, 10), 40, true),
+                                       new Label("Réglages", new Box(0, 60, 1920, 120), 60, true), new Label("Une phrase écrite tout à gauche", new Box(20, 200, 900, 60), 40, false, "left")],
+                                [new MenuButton("b1", new Box(40, 500, 300, 80), new MenuAction("play")), new MenuButton("b2", new Box(96, 54, 1728, 972), new MenuAction("play")), new MenuButton("b3", new Box(1700, 1000, 200, 60), new MenuAction("play"))]);
+    Check("safe area: a button or text partly outside the title-safe frame is reported once (a button's own text by its button); one wholly inside (edges included), an empty text and a title centred across the page are not",
+          SafeArea.Outside(safePage, new MenuDesign()).Select(x => x.What).SequenceEqual(["button b1", "button b3", "text \"Une phrase écrite tout à gauche\""]) && SafeArea.Warnings([safePage], new MenuDesign()).Count() == 3);
     Console.WriteLine(elFailed == 0 ? "all ok" : $"{elFailed} failed");
     return elFailed == 0 ? 0 : 1;
 }
@@ -1920,7 +1931,7 @@ if (a.Count >= 2 && a[0] == "queue")
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview [--safe-area]] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER");
     return 2;
 }
 
@@ -2055,10 +2066,10 @@ var playback = int.TryParse(Opt("--play-mode"), out var mode) ? PlaybackOptions.
 var subtitleLook = Opt("--sub-font") == null && Opt("--sub-size") == null && Opt("--sub-color") == null && Opt("--sub-position") == null ? null
     : new SubtitleStyle(Opt("--sub-font"), int.TryParse(Opt("--sub-size"), out var subSize) ? subSize : 100, Opt("--sub-color")?.TrimStart('#') ?? "FFFFFF", int.TryParse(Opt("--sub-position"), out var subPosition) ? subPosition : 0);
 
-// --preview: only the menu pages, as JPEGs in --out (menu_root.jpg...), nothing encoded: to check a menu before the hours of a build
+// --preview: only the menu pages, as JPEGs in --out (menu_root.jpg...), nothing encoded: to check a menu before the hours of a build; --safe-area draws the action-safe (93 %) and title-safe (90 %) frames on them
 if (a.Contains("--preview"))
 {
-    BluRay.PreviewMenu(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback), Path.GetFullPath(outDir), Console.WriteLine);
+    BluRay.PreviewMenu(new BluRayJob(titles, Path.GetFullPath(outDir), design, a.Contains("--uhd"), Opt("--label") ?? "BURNSMITH", chapters, encode, capacity, playback), Path.GetFullPath(outDir), Console.WriteLine, a.Contains("--safe-area"));
     return 0;
 }
 var dvdDisc = a[0] == "dvd";

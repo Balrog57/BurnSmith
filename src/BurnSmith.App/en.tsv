@@ -931,3 +931,6 @@ titre {0} : le titre {1} est annoncé {2} secteurs après VIDEO_TS.IFO, il est �
 {0} Go	{0} GB
 # menu type, disc sizes, app language (added with the HDMV menu)
 « Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.	"No limit" cannot be burned: choose the size of the disc to burn, or untick burning.
+# menu editor: safe area (Zone sûre)
+Zone sûre	Safe area
+Ce qu'un téléviseur peut couper : cadre plein = zone des titres (90 %), pointillés = zone d'action (93 %). En orange, un bouton ou un texte qui dépasse de la zone des titres	What a TV may crop: solid frame = title-safe area (90 %), dotted = action-safe area (93 %). In orange, a button or a text that goes past the title-safe area

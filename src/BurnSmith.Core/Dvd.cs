@@ -315,6 +315,7 @@ public static class Dvd
 
         var pages = MenuBuilder.Build(job.Menu!, content);
         if (MenuBuilder.TracksLeftOut(pages, content) is { } leftOut) log(leftOut);
+        foreach (var unsafeLine in SafeArea.Warnings(pages, job.Menu!)) log(unsafeLine);
         var settingsPages = MenuBuilder.SettingsIds(job.Menu!, content);
         if (pages.RemoveAll(p => settingsPages.Contains(p.Id)) > 0)
         {
