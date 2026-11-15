@@ -10,7 +10,7 @@ public partial class App : Application
 {
     /// <summary>
     /// burnsmith.exe [video | project.burnsmith]  opens the window, optionally with a video already loaded or a saved project open
-    /// burnsmith.exe [video] --snapshot out.png [design=template name] [editor[=template name]] [scroll[=pixels]] [step=N] [tab=N] [remote=Right,Enter] [button] [english] [zones] | [advanced] | [edit] | [queue] [focus]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; lib / tab = the library / properties tab on show; button = the first library button dropped on the page; or the advanced settings; or the video edit)
+    /// burnsmith.exe [video] --snapshot out.png [design=template name] [editor[=template name]] [scroll[=pixels]] [step=N] [tab=N] [remote=Right,Enter] [button] [english] [zones] [safe] | [advanced] | [edit] | [queue] [focus]   renders the window (or the menu editor, on a template; scroll = bottom of its properties; lib / tab = the library / properties tab on show; button = the first library button dropped on the page; or the advanced settings; or the video edit)
     ///                                            off screen to a PNG and exits; lets the UI be checked without touching the desktop
     /// burnsmith.exe --language fr|en             the windows in that language for this run (the choice kept is in Paramètres avancés)
     /// burnsmith.exe --try-install file.exe       runs that file as the update's installer: how a stand-in proves the window's side of an update
@@ -56,6 +56,7 @@ public partial class App : Application
             int? Number(string name) => e.Args.FirstOrDefault(a => a.StartsWith(name + "=")) is { } a && int.TryParse(a[(name.Length + 1)..], out var n) ? n : null;
             if (e.Args.Contains("english")) win.PickLanguage("en");
             win.ShowTabs(Number("step"), Number("tab"), e.Args.Contains("button"));
+            if (e.Args.Contains("safe")) win.SafeToggle.IsChecked = true; // « Zone sûre » on: the frames a TV may crop over the page
             if (e.Args.FirstOrDefault(a => a == "scroll" || a.StartsWith("scroll=")) is { } scroll) win.ScrollProps(scroll.Length > 7 ? double.Parse(scroll[7..], System.Globalization.CultureInfo.InvariantCulture) : null);
         }
         else if (e.Args.FirstOrDefault(a => a == "edit" || a.StartsWith("edit=")) is { } edit) // edit=crop|effect|watermark|subtitle|chapters: that tab; with a video, its real frames

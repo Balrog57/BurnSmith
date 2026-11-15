@@ -60,6 +60,8 @@
         <Button Content="◀" Width="40" Click="OnPrev" AutomationProperties.Name="Page précédente"/>
         <TextBlock x:Name="PageText" Margin="16,0" VerticalAlignment="Center"/>
         <Button Content="▶" Width="40" Click="OnNext" AutomationProperties.Name="Page suivante"/>
+        <ToggleButton x:Name="SafeToggle" Content="Zone sûre" Padding="10,4" Margin="24,0,0,0" Checked="OnSafeToggle" Unchecked="OnSafeToggle"
+                      ToolTip="Ce qu'un téléviseur peut couper : cadre plein = zone des titres (90 %), pointillés = zone d'action (93 %). En orange, un bouton ou un texte qui dépasse de la zone des titres"/>
       </StackPanel>
       <TextBlock x:Name="Status" DockPanel.Dock="Bottom" Foreground="{StaticResource AccentHoverBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/>
       <TextBlock x:Name="Hint" DockPanel.Dock="Bottom" TextWrapping="Wrap" Opacity="0.65" Margin="0,8,0,0"/>

@@ -439,6 +439,7 @@ public static class BluRay
             if (!job.HdmvMenu && (moving || job.Menu.ExistingMusic() != null)) { MuxLoop(job, work, log); loop = LoopPlaylist; } // a native menu makes a clip per page
             var menuPages = MenuBuilder.Build(job.Menu, content);
             if (MenuBuilder.TracksLeftOut(menuPages, content) is { } leftOut) log(leftOut);
+            foreach (var unsafeLine in SafeArea.Warnings(menuPages, job.Menu)) log(unsafeLine);
             var popup = job.Menu.Popup && !job.HdmvMenu ? MenuBuilder.Popup(job.Menu, content, muxed.Select((m, i) => (MoviePlaylist + i, m.ChapterTimes.Count)).ToList()) : null;
             if (popup != null) log($"menu: pop-up menu on {job.Titles.Count} title(s)");
             // the BD-J graphics plane is 1920x1080 on a 4K disc too (the player scales it up): 3840x2160 pages ran the xlet out of heap
@@ -473,7 +474,7 @@ public static class BluRay
     /// The menu pages of <paramref name="job"/> as the disc will show them (menu_PAGE.jpg in <paramref name="dir"/>), without encoding anything: the same tracks, names,
     /// thumbnails and hidden forced subtitles as <see cref="Build"/>, pictures taken from the sources. What the CLI's --preview gives an AI instead of the editor's view.
     /// </summary>
-    public static List<string> PreviewMenu(BluRayJob job, string dir, Action<string>? log = null)
+    public static List<string> PreviewMenu(BluRayJob job, string dir, Action<string>? log = null, bool safeArea = false)
     {
         log ??= _ => { };
         if (job.Menu == null) throw new ArgumentException("no menu to preview (--no-menu)");
@@ -509,10 +510,11 @@ public static class BluRay
             { ChapterNames = series ? null : job.Titles[0].ChapterNames(sources[0].Duration, job.ChapterMinutes) };
         var pages = MenuBuilder.Build(job.Menu, content);
         if (MenuBuilder.TracksLeftOut(pages, content) is { } leftOut) log(leftOut);
+        foreach (var unsafeLine in SafeArea.Warnings(pages, job.Menu)) log(unsafeLine);
         var files = MenuRenderer.Sta(() => pages.Select(p =>
         {
             var file = Path.Combine(dir, $"menu_{p.Id}.jpg");
-            File.WriteAllBytes(file, MenuRenderer.Background(job.Menu, p));
+            File.WriteAllBytes(file, MenuRenderer.Background(job.Menu, p) is var jpeg && safeArea ? SafeArea.Over(jpeg, p, job.Menu) : jpeg); // --safe-area: the frames a TV may crop drawn over it
             return file;
         }).ToList());
         foreach (var f in files) log($"preview: {f}");

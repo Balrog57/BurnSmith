@@ -25,7 +25,7 @@ Sans argument, l'exe affiche son usage et sort avec 2.
 
 1. **Lire la vidéo** : `burnsmith probe film.mkv` donne en JSON la vidéo et ses pistes. `Index` est le numéro que prennent `--audio` et `--sub`.
 2. **Choisir un modèle** : `burnsmith templates` les liste (`OK Catégorie | Nom`). `--design` prend le nom, un dossier de modèle, ou un `.json` de modèle enregistré. Sans `--design`, comme l'application : le dernier modèle choisi dans l'éditeur de menu de l'application, sinon d'après les vidéos du film (bonus et vidéo de début à part) : une seule = « Salle obscure », des épisodes tous nommés SxxEyy = « Saison » (« Séries » si le modèle Streaming manque), plusieurs autres = « Nuit d'encre ». La sortie le dit (`menu template: NOM`).
-3. **Regarder le menu avant d'encoder** : ajouter `--preview` à la commande `bd` / `dvd` écrit seulement les pages en JPEG dans `--out` (`menu_root.jpg`…). Les lire avec l'outil de lecture d'images pour vérifier.
+3. **Regarder le menu avant d'encoder** : ajouter `--preview` à la commande `bd` / `dvd` écrit seulement les pages en JPEG dans `--out` (`menu_root.jpg`…). Les lire avec l'outil de lecture d'images pour vérifier. `--safe-area` y dessine les cadres de la zone sûre (pointillés : zone d'action, 93 % ; cadre plein : zone des titres, 90 %) et entoure en orange un bouton ou un texte qui dépasse de la zone des titres. Avec ou sans l'option, chaque élément qui en dépasse est signalé par une ligne `warning: page … is outside the title-safe area` (aussi pendant la fabrication du disque).
 4. **Fabriquer le disque** : `burnsmith bd …` ou `burnsmith dvd …`. La commande contrôle le dossier à la fin.
 5. **Image ISO** : `burnsmith iso DOSSIER sortie.iso --label NOM` (ajouter `--dvd` pour un DVD).
 6. **Contrôler** : `burnsmith check-disc sortie.iso DOSSIER`.
@@ -79,7 +79,7 @@ burnsmith dvd --video ep1.mkv --name "Épisode 1" --video ep2.mkv --name "Épiso
 | Type de menu Blu-ray | `--menu-mode bdj` (défaut : programme Java, toutes les fonctions) `\|hdmv` (menu natif que toute platine lit ; pages fixes : pas de `--loop`, pas de `--popup`) |
 | Élément libre | `--element "kind=text;page=root;rect=100,120,900,90;text=Bienvenue;size=54;align=center"` (répétable ; `kind` = `text`, `image`, `box`, `button` ; un bouton prend `target=movie\|chapter:3\|scenes1\|settings\|bonus1\|credits`) |
 
-Pour modifier un modèle en profondeur : `burnsmith design-export NOM modele.json`, éditer le JSON, puis `--design modele.json`. `burnsmith preview NOM|modele.json dossier [--picture image.jpg] [--episodes N] [--overview "résumé"] [--title TEXTE] [--bonus N] [--focus]` dessine toutes les pages d'un modèle avec un contenu d'exemple (`--focus` : avec l'état sélectionné des boutons, tel que la télécommande le montre) ; `burnsmith dump NOM` liste ce qui est dessiné, rectangle par rectangle.
+Pour modifier un modèle en profondeur : `burnsmith design-export NOM modele.json`, éditer le JSON, puis `--design modele.json`. `burnsmith preview NOM|modele.json dossier [--picture image.jpg] [--episodes N] [--overview "résumé"] [--title TEXTE] [--bonus N] [--focus] [--safe-area]` dessine toutes les pages d'un modèle avec un contenu d'exemple (`--focus` : avec l'état sélectionné des boutons, tel que la télécommande le montre ; `--safe-area` : les cadres de la zone sûre, comme le bouton « Zone sûre » de l'éditeur) ; `burnsmith dump NOM` liste ce qui est dessiné, rectangle par rectangle.
 
 ## Préparer des vidéos
 

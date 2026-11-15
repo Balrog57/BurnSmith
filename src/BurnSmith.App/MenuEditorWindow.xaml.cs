@@ -437,6 +437,7 @@ public partial class MenuEditorWindow : Window
             hit.MouseLeftButtonUp += (_, _) => { Select(id); Activate(b); };
             StageCanvas.Children.Add(hit);
         }
+        if (SafeToggle.IsChecked == true) DrawSafe();
         if (Previewing) return; // the page as the disc shows it: nothing to grab
         foreach (var z in current.Zones) DrawZone(z);
         DrawElements();
@@ -1130,6 +1131,25 @@ public partial class MenuEditorWindow : Window
             if (m.Spacing) line.StrokeDashArray = [3, 2];
             StageCanvas.Children.Add(line);
         }
+    }
+
+    void OnSafeToggle(object s, RoutedEventArgs e) => DrawStage();
+
+    /// <summary>
+    /// « Zone sûre »: the action-safe and title-safe frames over the page (SafeArea), each button or text that leaves the title-safe one outlined in orange.
+    /// shortcut: the outlines follow the last render, so an element being dragged shows where it left from until the mouse is let go.
+    /// </summary>
+    void DrawSafe()
+    {
+        var visual = new System.Windows.Media.DrawingVisual();
+        var page = new System.Windows.Rect(0, 0, MenuBuilder.W, MenuBuilder.H);
+        using (var dc = visual.RenderOpen())
+        {
+            dc.PushClip(new System.Windows.Media.RectangleGeometry(page)); // the picture's bounds are the page's, so it lies on the canvas unscaled
+            dc.DrawRectangle(System.Windows.Media.Brushes.Transparent, null, page);
+            SafeArea.Draw(dc, current!, shot?.Design ?? working);
+        }
+        StageCanvas.Children.Add(new System.Windows.Controls.Image { Source = new System.Windows.Media.DrawingImage(visual.Drawing), Width = MenuBuilder.W, Height = MenuBuilder.H, IsHitTestVisible = false });
     }
 
     /// <summary>

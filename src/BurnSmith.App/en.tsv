@@ -976,3 +976,6 @@ Ouvert dans VLC : {0}	Opened in VLC: {0}
 Dans VLC, le menu d'un Blu-ray BD-J (le type de menu par défaut) ne s'affiche que si Java est installé sur l'ordinateur (en 64 bits pour un VLC 64 bits) ; sans Java, VLC lit le disque sans menu. Le menu HDMV n'a pas besoin de Java.	In VLC, a BD-J Blu-ray menu (the default menu type) shows only if Java is installed on the computer (64-bit for a 64-bit VLC); without Java, VLC plays the disc without its menu. The HDMV menu does not need Java.
 Impossible d'ouvrir le disque dans VLC : {0}	Cannot open the disc in VLC: {0}
 Ni BDMV ni VIDEO_TS dans {0}, ni une image ISO.	Neither BDMV nor VIDEO_TS in {0}, and not an ISO image.
+# menu editor: safe area (Zone sûre)
+Zone sûre	Safe area
+Ce qu'un téléviseur peut couper : cadre plein = zone des titres (90 %), pointillés = zone d'action (93 %). En orange, un bouton ou un texte qui dépasse de la zone des titres	What a TV may crop: solid frame = title-safe area (90 %), dotted = action-safe area (93 %). In orange, a button or a text that goes past the title-safe area
