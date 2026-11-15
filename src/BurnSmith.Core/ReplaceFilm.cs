@@ -294,13 +294,17 @@ public static class ReplaceFilm
         {
             File.WriteAllBytes(newPlaylist, Mpls.Graft(File.ReadAllBytes(newPlaylist), File.ReadAllBytes(chosen.File), out var subClips));
             var (from, to) = (item.Video[0].Rate, Mpls.Read(newPlaylist).Items[0].Video[0].Rate);
-            foreach (var sub in subClips.Distinct().Where(_ => from != to))
+            var frame = (int)Math.Ceiling(90000 / Mpls.Fps(to)); // one film frame in 90 kHz ticks (3754 at 23.976)
+            foreach (var sub in subClips.Distinct())
             {
                 var file = Path.Combine(output, Rel("STREAM", sub + ".m2ts"));
                 var data = File.ReadAllBytes(file);
-                var changed = item.Ig.Sum(ig => SetIgRate(data, ig.Pid, to));
+                var changed = from != to ? item.Ig.Sum(ig => SetIgRate(data, ig.Pid, to)) : 0;
+                var steps = item.Ig.Sum(ig => RaiseIgEffects(data, ig.Pid, frame));
+                if (changed + steps == 0) continue;
                 File.WriteAllBytes(file, data);
-                log($"  menu pop-up {sub}.m2ts : {changed} composition(s) IG passées de {Mpls.Fps(from):0.###} à {Mpls.Fps(to):0.###} i/s");
+                if (changed > 0) log($"  menu pop-up {sub}.m2ts : {changed} composition(s) IG passées de {Mpls.Fps(from):0.###} à {Mpls.Fps(to):0.###} i/s");
+                if (steps > 0) log($"  menu pop-up {sub}.m2ts : {steps} étape(s) d'effet d'arrivée/départ allongées à une image du film ({frame} ticks à 90 kHz), plus courtes la platine les saute");
             }
             log($"  repris : {pl.SubPathTypes.Count} sous-chemin(s) et {item.Ig.Count} piste(s) IG de l'ancienne liste (menu pop-up)");
         }
@@ -337,6 +341,15 @@ public static class ReplaceFilm
               $"menu pop-up : {fresh.Ig.Count} piste(s) IG, sous-chemin(s) de type {string.Join(", ", pl.SubPathTypes)} (l'ancienne liste : {item.Ig.Count}, {string.Join(", ", sourcePaths)})");
         var pcr = PcrPids(Path.Combine(output, "BDMV", "STREAM", item.Clip + ".m2ts"));
         Check(pcr.SetEquals([0x1001]), $"PCR sur {string.Join(", ", pcr.Select(p => $"0x{p:X4}"))} (attendu : 0x1001, pas celui de l'image)");
+        using (var film = File.OpenRead(Path.Combine(output, "BDMV", "STREAM", item.Clip + ".m2ts")))
+        {
+            log("  débit du film, seconde par seconde...");
+            var (peak, over) = PeakRate(film, 48e6);
+            // tsMuxeR's --maxbitrate and --vbv-len do not cap it (Judge Dredd, two DTS-HD MA + x264 vbv-maxrate 40000: 55.6 Mb/s, 12 s over)
+            Check(over == 0, $"débit de pointe {peak / 1e6:0.0} Mb/s (limite Blu-ray : 48)" + (over == 0 ? "" :
+                  $" : {over} s au-dessus, la platine peut saccader ou s'arrêter. Réencoder l'image du MKV avec un VBV plus bas (x264 vbv-maxrate 32000 " +
+                  "vbv-bufsize 12000 : Judge Dredd est passé de 55,6 à 47,6 Mb/s) ou retirer/convertir une piste son avant de relancer"));
+        }
         var marks = pl.Chapters.Select(m => ((double)m.Time - fresh.In) / 45000.0).ToList();
         Check(marks.Count == chapters.Count && marks.Zip(chapters).All(p => Math.Abs(p.First - p.Second) <= 1 / fpsN),
               $"{marks.Count} chapitres (le disque en avait {chapters.Count}), écart max {Ms(marks.Zip(chapters).Select(p => Math.Abs(p.First - p.Second)).DefaultIfEmpty().Max())}");
@@ -405,6 +418,19 @@ public static class ReplaceFilm
     /// </summary>
     public static int SetIgRate(byte[] m2ts, int pid, int code)
     {
+        var changed = 0;
+        foreach (var seg in IgSegments(m2ts, pid))
+            if (seg.Count >= 12 && m2ts[seg[0]] == 0x18 && (m2ts[seg[11]] & 0x80) != 0) // ICS, first in sequence: the video descriptor is in this piece
+            {
+                m2ts[seg[7]] = (byte)(code << 4 | m2ts[seg[7]] & 15);
+                changed++;
+            }
+        return changed;
+    }
+
+    /// <summary>The segments of the IG stream of PID <paramref name="pid"/> in a .m2ts, each as the file positions of its bytes (type, length, body).</summary>
+    static List<List<int>> IgSegments(byte[] m2ts, int pid)
+    {
         var pes = new List<List<int>>();
         List<int>? open = null;
         for (var p = 4; p + 188 <= m2ts.Length; p += 192)
@@ -415,18 +441,99 @@ public static class ReplaceFilm
             if ((m2ts[p + 1] & 0x40) != 0) pes.Add(open = []);
             if (open != null && (afc & 1) != 0) open.AddRange(Enumerable.Range(p + o, Math.Max(0, 188 - o)));
         }
-        var changed = 0;
-        foreach (var at in pes)
+        var segments = new List<List<int>>();
+        foreach (var at in pes.Where(at => at.Count >= 9))
+            for (var s = 9 + m2ts[at[8]]; s + 3 <= at.Count; s += 3 + (m2ts[at[s + 1]] << 8 | m2ts[at[s + 2]]))
+                segments.Add(at.GetRange(s, Math.Min(at.Count - s, 3 + (m2ts[at[s + 1]] << 8 | m2ts[at[s + 2]]))));
+        return segments;
+    }
+
+    /// <summary>
+    /// Raises every step of the in and out effects of every page of every IG composition of PID <paramref name="pid"/> to at least
+    /// <paramref name="minTicks"/> (90 kHz), in place; returns how many steps were raised. A step shorter than a film frame is skipped by a real
+    /// player (Judge Dredd: 10 steps of 1134 ticks, a wipe over 3 frames, seen jerky); a zero step is left alone. The composition keeps its size.
+    /// </summary>
+    public static int RaiseIgEffects(byte[] m2ts, int pid, int minTicks)
+    {
+        var raised = 0;
+        List<int>? ics = null;
+        foreach (var seg in IgSegments(m2ts, pid).Where(g => g.Count >= 12 && m2ts[g[0]] == 0x18))
         {
-            if (at.Count < 9) continue;
-            for (var s = 9 + m2ts[at[8]]; s + 12 <= at.Count; s += 3 + (m2ts[at[s + 1]] << 8 | m2ts[at[s + 2]]))
-                if (m2ts[at[s]] == 0x18 && (m2ts[at[s + 11]] & 0x80) != 0) // ICS, first in sequence: the video descriptor is in this piece
+            if ((m2ts[seg[11]] & 0x80) != 0) ics = [];
+            if (ics == null) continue;
+            ics.AddRange(seg.Skip(12)); // the fragments of one composition without their headers (type, length, video, composition, sequence)
+            if ((m2ts[seg[11]] & 0x40) == 0) continue;
+            try
+            {
+                foreach (var at in ShortEffects(m2ts, ics, minTicks)) // all found before any is written: a composition read wrong is left whole
                 {
-                    m2ts[at[s + 7]] = (byte)(code << 4 | m2ts[at[s + 7]] & 15);
-                    changed++;
+                    (m2ts[at[0]], m2ts[at[1]], m2ts[at[2]]) = ((byte)(minTicks >> 16), (byte)(minTicks >> 8), (byte)minTicks);
+                    raised++;
                 }
+            }
+            catch (ArgumentOutOfRangeException) { } // a composition shorter than its pages say: left as it is
+            ics = null;
         }
-        return changed;
+        return raised;
+    }
+
+    /// <summary>The file positions of the 24-bit durations, shorter than <paramref name="minTicks"/> but not zero, of the effects of an ICS whose bytes are at <paramref name="d"/>.</summary>
+    static List<int[]> ShortEffects(byte[] b, List<int> d, int minTicks)
+    {
+        var found = new List<int[]>();
+        int U8(int i) => b[d[i]];
+        int U16(int i) => U8(i) << 8 | U8(i + 1);
+        var p = 3; // interactive_composition_length
+        if (U8(p++) >> 7 == 0) p += 10; // stream model 0 (multiplexed): composition and selection time-outs
+        p += 3; // user time-out
+        var pages = U8(p++);
+        for (var page = 0; page < pages; page++)
+        {
+            p += 2 + 8; // id, version, UO mask
+            for (var sequence = 0; sequence < 2; sequence++) // in_effects, out_effects
+            {
+                p += 1 + 9 * U8(p); // windows
+                var effects = U8(p++);
+                for (var e = 0; e < effects; e++)
+                {
+                    if ((U8(p) << 16 | U16(p + 1)) is > 0 and var duration && duration < minTicks) found.Add([d[p], d[p + 1], d[p + 2]]);
+                    p += 4; // duration, palette
+                    var objects = U8(p++);
+                    for (var o = 0; o < objects; o++) p += (U8(p + 3) & 0x80) != 0 ? 16 : 8; // cropped: the cropping rectangle follows
+                }
+            }
+            p += 1 + 2 + 2 + 1; // animation rate, default selected and activated buttons, palette
+            var groups = U8(p++);
+            for (var g = 0; g < groups; g++)
+            {
+                p += 2;
+                var buttons = U8(p++);
+                for (var n = 0; n < buttons; n++) p += 35 + 12 * U16(p + 33);
+            }
+        }
+        _ = d[p - 1]; // throws when the composition ends before its pages do
+        return found;
+    }
+
+    /// <summary>The highest mux rate (bits/s, 192-byte packets) over the seconds of a .m2ts's arrival clock (27 MHz), null packets left out, and how many seconds are above <paramref name="limit"/>.</summary>
+    public static (double Peak, int Over) PeakRate(Stream m2ts, double limit)
+    {
+        var buffer = new byte[192 * 8192];
+        var perSecond = new Dictionary<long, int>();
+        long last = -1, wraps = 0;
+        int n;
+        while ((n = m2ts.ReadAtLeast(buffer, buffer.Length, false)) >= 192)
+            for (var p = 0; p + 192 <= n; p += 192)
+            {
+                if (buffer[p + 4] != 0x47 || ((buffer[p + 5] & 0x1F) << 8 | buffer[p + 6]) == 0x1FFF) continue;
+                long ats = (buffer[p] & 0x3F) << 24 | buffer[p + 1] << 16 | buffer[p + 2] << 8 | buffer[p + 3];
+                if (last >= 0 && ats < last - (1 << 29)) wraps++; // the 30-bit clock wraps every 39.8 s
+                last = ats;
+                var second = (ats + (wraps << 30)) / 27_000_000;
+                perSecond[second] = perSecond.GetValueOrDefault(second) + 1;
+            }
+        var rates = perSecond.Values.Select(c => c * 192 * 8.0).ToList();
+        return (rates.DefaultIfEmpty().Max(), rates.Count(r => r > limit));
     }
 
     /// <summary>The PIDs that carry a PCR in the first packets of a .m2ts (a Blu-ray player wants it on its own PID, 0x1001, not on the video's).</summary>

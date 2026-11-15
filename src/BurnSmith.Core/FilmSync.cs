@@ -217,7 +217,79 @@ public static class FilmSync
         sup[FlagsAt] |= 0x40;
         Check("PGS forced flag counted", PgsSubtitles.ForcedObjects(sup) == (3, 1));
         Check("PGS forced flag cleared", PgsSubtitles.Retime(sup, t => t, clearForced: true) == 1 && PgsSubtitles.ForcedObjects(sup) == (3, 0));
+        // pop-up IG: an ICS in two fragments over two TS packets, two pages with wipes of 1134 ticks, a zero step and a 4000 one; raised to 3754, the rest untouched
+        var (clip, durations) = MadeUpIg();
+        var before = (byte[])clip.Clone();
+        Check("IG frame rate code", ReplaceFilm.SetIgRate(clip, 0x1400, 1) == 1);
+        var raised = ReplaceFilm.RaiseIgEffects(clip, 0x1400, 3754);
+        int Ticks(int[] at) => clip[at[0]] << 16 | clip[at[1]] << 8 | clip[at[2]];
+        var expected = new[] { 3754, 0, 3754, 3754, 4000 };
+        var others = Enumerable.Range(0, clip.Length).Where(i => clip[i] != before[i]).Except(durations.SelectMany(at => at)).ToList();
+        Check($"IG effects raised {raised}, durations {string.Join(' ', durations.Select(Ticks))}, {others.Count} other byte(s) changed",
+              raised == 3 && durations.Select(Ticks).SequenceEqual(expected) && others.Count == 1 && (clip[others[0]] >> 4) == 1);
+        // mux rate: 10000, 35000 (+5000 null) and 10000 packets in three seconds of the arrival clock, across its wrap
+        var ts = new MemoryStream();
+        void Packets(long second, int count, int pid)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var ats = (second * 27_000_000 + (long)i * 27_000_000 / count) % (1L << 30);
+                ts.Write([(byte)(ats >> 24), (byte)(ats >> 16), (byte)(ats >> 8), (byte)ats, 0x47, (byte)(pid >> 8), (byte)pid, 0x10]);
+                ts.Write(new byte[184]);
+            }
+        }
+        Packets(39, 10000, 0x1011); Packets(40, 35000, 0x1011); Packets(40, 5000, 0x1FFF); Packets(41, 10000, 0x1100);
+        var (peakRate, over) = ReplaceFilm.PeakRate(new MemoryStream(ts.ToArray()), 48e6);
+        Check($"mux peak {peakRate / 1e6:0.00} Mb/s, {over} s over, instead of 53.76 and 1", Math.Abs(peakRate - 35000 * 1536.0) < 1 && over == 1);
         return bad;
+    }
+
+    /// <summary>A .m2ts holding one IG PES (PID 0x1400) whose ICS is cut in two fragments, spread over two TS packets; and the positions of its effect durations.</summary>
+    static (byte[] Clip, List<int[]> Durations) MadeUpIg()
+    {
+        var data = new List<byte> { 0, 0, 0, 0x00 }; // interactive_composition_length (not read), stream model 0
+        data.AddRange(new byte[10 + 3]); // time-outs, user time-out
+        data.Add(2); // pages
+        var at = new List<int>();
+        void Effect(int ticks, bool cropped)
+        {
+            at.Add(data.Count);
+            data.AddRange([(byte)(ticks >> 16), (byte)(ticks >> 8), (byte)ticks, 0, 1]); // duration, palette, one object
+            data.AddRange([0, 1, 0, (byte)(cropped ? 0x80 : 0), 0, 10, 0, 20]);
+            if (cropped) data.AddRange([0, 0, 0, 0, 0, 100, 0, (byte)ticks]);
+        }
+        foreach (var page in new[] { 0, 1 })
+        {
+            data.AddRange([(byte)page, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            data.AddRange([1, 0, 0, 0, 0, 0, 0x07, 0x80, 0, 100]); // in: one window (id, x, y, width, height)
+            data.Add((byte)(page == 0 ? 2 : 1));
+            if (page == 0) { Effect(1134, true); Effect(0, false); } else Effect(1134, true);
+            data.Add(0); // out: no window
+            data.Add(1);
+            Effect(page == 0 ? 1134 : 4000, page == 1);
+            data.AddRange([0, 0, 1, 0, 1, 0, 1]); // animation, default buttons, palette, one group
+            data.AddRange([0, 1, 1]); // default valid button, one button
+            var button = new byte[35]; button[34] = 1; // one navigation command
+            data.AddRange(button); data.AddRange(new byte[12]);
+        }
+        var half = data.Count / 2;
+        var pes = new List<byte> { 0, 0, 1, 0xBF, 0, 0, 0x81, 0x80, 5, 0x21, 0, 1, 0, 1 };
+        var header = pes.Count;
+        foreach (var (part, seq) in new[] { (data.Take(half).ToList(), (byte)0x80), (data.Skip(half).ToList(), (byte)0x40) })
+        {
+            var length = 9 + part.Count;
+            pes.AddRange([0x18, (byte)(length >> 8), (byte)length, 0x07, 0x80, 0x04, 0x38, 0x30, 0, 0, 0x80, seq]);
+            pes.AddRange(part);
+        }
+        // durations: data offset → offset in the PES (the second fragment after its own 12-byte header) → offset in the file
+        int InFile(int o) => (header + 12 + o + (o >= half ? 12 : 0)) is var q ? q / 184 * 192 + 8 + q % 184 : 0;
+        var clip = new List<byte>();
+        for (var o = 0; o < pes.Count; o += 184)
+        {
+            clip.AddRange([0, 0, 0, 0, 0x47, (byte)(o == 0 ? 0x54 : 0x14), 0x00, 0x10]);
+            clip.AddRange(pes.Skip(o).Take(184).Concat(Enumerable.Repeat((byte)0xFF, Math.Max(0, o + 184 - pes.Count))));
+        }
+        return ([.. clip], [.. at.Select(o => new[] { InFile(o), InFile(o + 1), InFile(o + 2) })]);
     }
 
     /// <summary>The flags byte of the first object the first composition of a .sup places (header 13 + 11 bytes of composition + object id and window id).</summary>
