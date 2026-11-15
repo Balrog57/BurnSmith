@@ -268,7 +268,17 @@
             <ComboBoxItem Content="8x"/>
             <ComboBoxItem Content="6x"/>
             <ComboBoxItem Content="4x"/>
+            <ComboBoxItem Content="2x"/>
           </ComboBox>
+          <Button x:Name="BurnOptionsButton" Style="{StaticResource IconBtn}" Content="&#xE713;" Width="34" Height="34" Margin="4,0,0,0" Click="OnBurnOptionsClick"
+                  AutomationProperties.Name="Options de gravure" ToolTip="Options de gravure : vérifier le disque après la gravure, l'éjecter à la fin">
+            <Button.ContextMenu>
+              <ContextMenu Placement="Top">
+                <MenuItem x:Name="VerifyCheck" Header="Vérifier le disque après la gravure" IsCheckable="True" IsChecked="True" StaysOpenOnClick="True" Click="OnBurnOption"/>
+                <MenuItem x:Name="EjectCheck" Header="Éjecter le disque à la fin" IsCheckable="True" StaysOpenOnClick="True" Click="OnBurnOption"/>
+              </ContextMenu>
+            </Button.ContextMenu>
+          </Button>
         </StackPanel>
         <Button x:Name="StartButton" Style="{StaticResource Primary}" Grid.Column="6" Content="Démarrer" Margin="16,0,0,0"
                 MinWidth="150" Padding="24,10" FontSize="16" FontWeight="SemiBold" Click="OnStart"/>

@@ -129,6 +129,7 @@ public partial class MainWindow : Window
         MenuName.Text = "Chargement…";
         TitleList.ItemsSource = titles;
         SetKind("bd");
+        (VerifyCheck.IsChecked, EjectCheck.IsChecked) = (BurnSetting("BurnVerify", true), BurnSetting("BurnEject", false));
         RefreshDrives();
         Activated += (_, _) => RefreshDrives(); // a burner plugged in meanwhile shows up when the user comes back
         AfterTitlesChanged();
@@ -324,6 +325,40 @@ public partial class MainWindow : Window
     }
 
     void OnMode(object s, RoutedEventArgs e) => SetKind((string)((MenuItem)s).Tag);
+
+    void OnBurnOptionsClick(object s, RoutedEventArgs e)
+    {
+        BurnOptionsButton.ContextMenu.PlacementTarget = BurnOptionsButton;
+        BurnOptionsButton.ContextMenu.IsOpen = true;
+    }
+
+    // the burn options belong to this PC, not to a project: kept beside the app's language (HKCU\Software\BurnSmith)
+    const string SettingsKey = @"Software\BurnSmith";
+
+    static bool BurnSetting(string name, bool byDefault)
+    {
+        try { using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(SettingsKey); return key?.GetValue(name) is int v ? v != 0 : byDefault; }
+        catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or IOException) { return byDefault; }
+    }
+
+    void OnBurnOption(object s, RoutedEventArgs e)
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(SettingsKey);
+            key.SetValue("BurnVerify", VerifyCheck.IsChecked ? 1 : 0);
+            key.SetValue("BurnEject", EjectCheck.IsChecked ? 1 : 0);
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException) { AppFiles.LogError("Options de gravure", ex); }
+    }
+
+    /// <summary>Just before burning, off the UI thread: true when the rewritable disc in <paramref name="letter"/> holds data and the user agreed to erase it, false when it is blank; their « non » cancels.</summary>
+    bool EraseFirst(string letter)
+    {
+        if (Iso.UsedRewritable(letter) == null) return false;
+        return Dispatcher.Invoke(() => MessageBox.Show(this, $"Le disque dans {letter} contient déjà des données. L'effacer avant de graver ?", "BurnSmith",
+                   MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No)) == MessageBoxResult.Yes ? true : throw new OperationCanceledException();
+    }
 
     void SetKind(string k)
     {
@@ -1301,6 +1336,7 @@ public partial class MainWindow : Window
         var drive = DriveBox.SelectedItem as Imapi.Drive;
         var speed = Iso.Speeds[Math.Max(0, SpeedBox.SelectedIndex)];
         var burn = BurnCheck.IsChecked == true && drive != null;
+        var (verify, eject) = (VerifyCheck.IsChecked, EjectCheck.IsChecked);
         if (burn && cap.Unlimited) { MessageBox.Show(this, "« Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.", "BurnSmith"); return; }
         if (burn && MessageBox.Show(this,
                 $"Après la création, graver « {label} » sur {drive!.Letter} ?\n\nInsérez un disque vierge adapté ({cap.Name}). Le disque sera écrit définitivement.",
@@ -1340,7 +1376,7 @@ public partial class MainWindow : Window
             {
                 writing = true;
                 token.ThrowIfCancellationRequested();
-                Iso.Burn(iso, drive!.Letter, log, progress, token, speed);
+                Iso.Burn(iso, drive!.Letter, log, progress, token, speed, verify, eject, EraseFirst(drive.Letter));
             }
             if (!withIso) File.Delete(iso); // only made to burn
         });
@@ -1463,7 +1499,8 @@ public partial class MainWindow : Window
         if (answer != MessageBoxResult.Yes) return;
         writing = true;
         var speed = Iso.Speeds[Math.Max(0, SpeedBox.SelectedIndex)];
-        if (await Work("Gravure…", (log, progress, token) => Iso.Burn(iso, drive.Letter, log, progress, token, speed))) Append("Terminé.");
+        var (verify, eject) = (VerifyCheck.IsChecked, EjectCheck.IsChecked);
+        if (await Work("Gravure…", (log, progress, token) => Iso.Burn(iso, drive.Letter, log, progress, token, speed, verify, eject, EraseFirst(drive.Letter)))) Append("Terminé.");
     }
 
     async void OnErase(object s, RoutedEventArgs e)

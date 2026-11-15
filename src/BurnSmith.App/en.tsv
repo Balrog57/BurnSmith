@@ -46,6 +46,12 @@ Graveur	Burner
 Vitesse de gravure	Burning speed
 Vitesse de gravure. Plus lent est souvent plus sûr pour un DVD lu sur une vieille platine. Une vitesse que le disque n'offre pas laisse le choix au graveur.	Burning speed. Slower is often safer for a DVD played on an old player. A speed the disc does not offer leaves the choice to the burner.
 Vitesse max	Max speed
+Options de gravure	Burning options
+Options de gravure : vérifier le disque après la gravure, l'éjecter à la fin	Burning options: verify the disc after burning, eject it at the end
+Vérifier le disque après la gravure	Verify the disc after burning
+Éjecter le disque à la fin	Eject the disc at the end
+Le disque dans {0} contient déjà des données. L'effacer avant de graver ?	The disc in {0} already holds data. Erase it before burning?
+Le {0} dans {1} contient déjà des données : effacez-le avant de graver (burnsmith burn … --erase, ou burnsmith erase {1}).	The {0} in {1} already holds data: erase it before burning (burnsmith burn … --erase, or burnsmith erase {1}).
 Démarrer	Start
 Journal	Log
 

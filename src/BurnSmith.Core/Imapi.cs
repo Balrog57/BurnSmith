@@ -239,7 +239,7 @@ public static class Imapi
         finally { Release(source); Release(format); Release(recorder); }
 
         if (verify) Verify(isoFile, letter, log, progress, cancel);
-        log?.Invoke("done: disc written");
+        log?.Invoke(verify ? "done: disc written" : "done: disc written, without verification (as asked)");
     }
 
     /// <summary>Reads the disc back through its drive and compares every byte with the image.</summary>
@@ -271,6 +271,14 @@ public static class Imapi
             progress?.Report((double)offset / total);
         }
         log?.Invoke("verify: identique à l'image");
+    }
+
+    /// <summary>Opens the tray of the drive.</summary>
+    public static void Eject(string letter)
+    {
+        var recorder = OpenRecorder(FindDrive(letter));
+        try { recorder.EjectMedia(); }
+        finally { Release(recorder); }
     }
 
     /// <summary>Erases a rewritable disc (BD-RE, DVD±RW) quickly.</summary>

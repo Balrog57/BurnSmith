@@ -29,7 +29,7 @@ Sans argument, l'exe affiche son usage et sort avec 2.
 4. **Fabriquer le disque** : `burnsmith bd …` ou `burnsmith dvd …`. La commande contrôle le dossier à la fin.
 5. **Image ISO** : `burnsmith iso DOSSIER sortie.iso --label NOM` (ajouter `--dvd` pour un DVD).
 6. **Contrôler** : `burnsmith check-disc sortie.iso DOSSIER`.
-7. **Graver** (après accord) : `burnsmith drives` puis `burnsmith burn sortie.iso F: [--speed 4]`. La gravure relit le disque.
+7. **Graver** (après accord) : `burnsmith drives` puis `burnsmith burn sortie.iso F: [--speed 4] [--no-verify] [--eject] [--erase]`. La gravure relit le disque (sauf `--no-verify`) ; un BD-RE/DVD±RW déjà écrit demande `--erase`.
 
 ## Fabriquer un disque
 
@@ -93,7 +93,7 @@ Le résultat se donne ensuite à `--video`.
 - `burnsmith drives` : les graveurs et le disque qu'ils contiennent.
 - `burnsmith iso DOSSIER sortie.iso [--label X] [--dvd]`
 - `burnsmith repair-top-menu DOSSIER` : remet un Blu-ray à menu BD-J fait avant 1.0.33 (menu et épisodes dans un seul titre, Top Menu refusé pendant un épisode) sur la disposition d'aujourd'hui : le menu en Top Menu, un titre par vidéo ; son menu est gardé, le jar signé de nouveau. Un menu sans mode de lecture reçoit celui d'aujourd'hui (un épisode choisi enchaîne les suivants de son bouton « tout lire », menu après le dernier) ; un disque déjà rangé ne reçoit que ce mode. Refaire l'image ensuite avec `burnsmith iso`.
-- `burnsmith burn image.iso F: [--speed 4]` : grave un disque vierge puis le relit.
+- `burnsmith burn image.iso F: [--speed 4] [--no-verify] [--eject] [--erase]` : grave un disque vierge puis le relit ; `--no-verify` saute la relecture, `--eject` éjecte à la fin, `--erase` efface d'abord un réinscriptible qui contient des données (refusé sans).
 - `burnsmith verify image.iso F:` : compare un disque à son image.
 - `burnsmith erase F:` : efface un disque réinscriptible.
 - `burnsmith check-disc DOSSIER|image.iso [DOSSIER]` : structure d'un disque fini, sans lecteur.

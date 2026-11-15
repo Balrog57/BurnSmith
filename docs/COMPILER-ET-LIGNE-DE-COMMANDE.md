@@ -48,7 +48,7 @@ Autres options de `bd` / `dvd` : `--preview` écrit seulement les pages du menu 
 
 Une IA peut piloter tout cela : le skill `.claude/skills/burnsmith/SKILL.md` (installé dans `C:\Program Files\BurnSmith\skillurnsmith`, à copier dans le dossier de skills de son IA) lui décrit les commandes et le déroulé (lire la vidéo, choisir et prévisualiser le menu, fabriquer, contrôler, graver).
 
-`burnsmith burn image.iso F: [--speed 4]` grave une image (ImgBurn, sinon Windows) et vérifie le disque ; `--speed` est en x, absent = la vitesse maximale. Le journal d'ImgBurn va dans `imgburn.log`, à côté de `burnsmith.log`.
+`burnsmith burn image.iso F: [--speed 4] [--no-verify] [--eject] [--erase]` grave une image (ImgBurn, sinon Windows) et vérifie le disque ; `--speed` est en x (max, 8, 6, 4 ou 2), absent = la vitesse maximale ; `--no-verify` ne relit pas le disque, `--eject` l'éjecte à la fin, `--erase` efface d'abord un disque réinscriptible qui contient déjà des données (sans lui, la gravure est refusée). Le journal d'ImgBurn va dans `imgburn.log`, à côté de `burnsmith.log`.
 
 ## Structure
 
