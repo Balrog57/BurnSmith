@@ -76,9 +76,13 @@ public partial class MainWindow : Window
         public Dictionary<int, double> SubDelay { get; set; } = [];
         /// <summary>Seconds each kept audio track is heard later (earlier when negative), by its number in <see cref="Audio"/>.</summary>
         public Dictionary<int, double> AudioDelay { get; set; } = [];
+        /// <summary>Sound files added to the video (a dub found apart), numbered after its own audio tracks (see <see cref="DiscTitle.AudioFiles"/>).</summary>
+        public List<AudioTrack> AudioFiles { get; set; } = [];
+        /// <summary>dB each kept audio track is made louder (quieter when negative), by its number in <see cref="Audio"/>.</summary>
+        public Dictionary<int, double> AudioVolume { get; set; } = [];
         /// <summary>The names of the chapters of <see cref="ChapterAt"/>, one for one (null = "Chapitre N" on the menu).</summary>
         public IReadOnlyList<string?>? ChapterTitles { get; set; }
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects, Clips, ThumbAt, ThumbImage, Overview, SubDelay, AudioDelay, ChapterTitles);
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects, Clips, ThumbAt, ThumbImage, Overview, SubDelay, AudioDelay, ChapterTitles, AudioFiles, AudioVolume);
 
         /// <summary>The row of a title read from a project or an undo step.</summary>
         public static Entry From(DiscTitle d, SourceInfo info) => new(d.Video, info)
@@ -86,7 +90,7 @@ public partial class MainWindow : Window
             Name = d.DisplayName, Audio = [.. d.Audio ?? info.Audio.Take(1).Select(a => a.Index)], Subs = [.. d.Subtitles ?? []], Extra = [.. d.External ?? []], Start = d.Start, End = d.End, Volume = d.Volume, ChapterAt = d.ChapterAt,
             ChapterMinutes = d.ChapterMinutes, Bonus = d.Bonus, Intro = d.Intro, DefaultAudio = d.DefaultAudio, DefaultSub = d.DefaultSubtitle, TrackLanguage = new(d.TrackLanguage ?? new Dictionary<string, string>()),
             Effects = d.Effects, Clips = d.Clips, ThumbAt = d.ThumbAt, ThumbImage = d.ThumbImage, Overview = d.Overview, SubDelay = new(d.SubtitleDelay ?? new Dictionary<int, double>()),
-            AudioDelay = new(d.AudioDelay ?? new Dictionary<int, double>()), ChapterTitles = d.ChapterTitles,
+            AudioDelay = new(d.AudioDelay ?? new Dictionary<int, double>()), ChapterTitles = d.ChapterTitles, AudioFiles = [.. d.AudioFiles ?? []], AudioVolume = new(d.AudioVolume ?? new Dictionary<int, double>()),
         };
 
         /// <summary>Another row for the same video with the same settings (a title cut in two).</summary>
@@ -94,7 +98,7 @@ public partial class MainWindow : Window
         {
             Name = Name, Audio = [.. Audio], Subs = [.. Subs], Extra = [.. Extra], Start = Start, End = End, Volume = Volume, ChapterAt = ChapterAt,
             ChapterMinutes = ChapterMinutes, Bonus = Bonus, Intro = Intro, DefaultAudio = DefaultAudio, DefaultSub = DefaultSub, TrackLanguage = new(TrackLanguage), Effects = Effects, Clips = Clips,
-            ThumbAt = ThumbAt, ThumbImage = ThumbImage, Overview = Overview, SubDelay = new(SubDelay), AudioDelay = new(AudioDelay), ChapterTitles = ChapterTitles,
+            ThumbAt = ThumbAt, ThumbImage = ThumbImage, Overview = Overview, SubDelay = new(SubDelay), AudioDelay = new(AudioDelay), ChapterTitles = ChapterTitles, AudioFiles = [.. AudioFiles], AudioVolume = new(AudioVolume),
         };
     }
 
@@ -1105,7 +1109,7 @@ public partial class MainWindow : Window
         if (Row(button) is not { } entry) return;
         var kept = audio ? entry.Audio : entry.Subs;
         IEnumerable<(int Index, string Text, bool Enabled)> tracks = audio
-            ? entry.Tracks.Audio.Select(a => (a.Index, $"{a.Name}  ({a.Codec})", true))
+            ? entry.Tracks.Audio.Select(a => (a.Index, $"{a.Name}  ({(a.File != null ? Path.GetFileName(a.File) : a.Codec)})", true))
             : entry.Tracks.Subtitles.Select(t => (t.Index, t.Supported ? $"{t.Name}  ({(t.File != null ? Path.GetFileName(t.File) : t.Codec)})" : $"{t.Name}  ({t.Codec}, non pris en charge)", t.Supported));
         var menu = new ContextMenu { PlacementTarget = button, Placement = PlacementMode.Bottom };
         var keepAll = new MenuItem { Header = titles.Count > 1 ? "Tout garder sur toutes les vidéos" : "Tout garder" };
@@ -1123,6 +1127,13 @@ public partial class MainWindow : Window
         // a track the file leaves "und" or labels wrongly: one submenu per track of the video itself (a subtitle file's language is set further down)
         var own = audio ? entry.Tracks.Audio.Select(a => (a.Index, a.Name, a.Lang)) : entry.Tracks.Subtitles.Where(t => t.File == null).Select(t => (t.Index, t.Name, t.Lang));
         foreach (var (index, name, _) in own) menu.Items.Add(LanguageMenu(entry, audio, index, name));
+        if (audio)
+        {
+            menu.Items.Add(new Separator());
+            var addAudio = new MenuItem { Header = "Ajouter une piste audio…" };
+            addAudio.Click += (_, _) => AddAudioFiles(entry);
+            menu.Items.Add(addAudio);
+        }
         if (!audio)
         {
             menu.Items.Add(new Separator());
@@ -1163,6 +1174,7 @@ public partial class MainWindow : Window
                 if (seconds == 0) delays.Remove(index); else delays[index] = seconds;
             };
             menu.Items.Add(delay);
+            if (audio) menu.Items.Add(VolumeItem(entry, index, name));
         }
         if (titles.Count > 1)
         {
@@ -1257,6 +1269,46 @@ public partial class MainWindow : Window
         Update();
     }
 
+    /// <summary>« Ajouter une piste audio… »: sound files (a dub found apart) kept as more audio tracks of the video, set like its own (language, delay, volume).</summary>
+    void AddAudioFiles(Entry entry)
+    {
+        var patterns = string.Join(';', AudioTrack.Extensions.Select(x => "*" + x));
+        var dialog = new OpenFileDialog
+        {
+            Title = Loc.T($"Pistes audio de {entry.Name}"), Multiselect = true, InitialDirectory = Path.GetDirectoryName(entry.Path),
+            Filter = Loc.Filter($"Pistes audio ({patterns})|{patterns}|Tous les fichiers|*.*"),
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        foreach (var file in dialog.FileNames)
+        {
+            if (entry.AudioFiles.Any(x => string.Equals(x.File, file, StringComparison.OrdinalIgnoreCase))) continue;
+            try { entry.AudioFiles.Add(AudioTrack.FromFile(entry.Path, file)); }
+            catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException or System.Text.Json.JsonException) { Warn($"{Path.GetFileName(file)} : {e.Message}"); continue; }
+            entry.Audio.Add(entry.Info.Audio.Count + entry.AudioFiles.Count - 1);
+        }
+        entry.Refresh();
+        Update();
+    }
+
+    /// <summary>« Volume de « … » »: dB louder or quieter for one kept audio track; a track copied as it is is then made again.</summary>
+    MenuItem VolumeItem(Entry entry, int index, string name)
+    {
+        var db = entry.AudioVolume.GetValueOrDefault(index);
+        var item = new MenuItem { Header = $"Volume de « {name} »" + (db != 0 ? $" : {db.ToString("+0.#;-0.#", CultureInfo.CurrentCulture)} dB…" : "…") };
+        item.Click += (_, _) =>
+        {
+            const string what = "Volume de la piste";
+            if (Prompt.Ask(this, "Volume de la piste, en dB (de -30 à 30) : 6 = plus fort, -6 = moins fort, 0 = inchangé. Une piste copiée telle quelle (AC-3, DTS) est alors réencodée.", db.ToString("0.#", CultureInfo.CurrentCulture)) is not { } text) return;
+            if (!double.TryParse(text.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) || Math.Abs(value) > 30)
+            {
+                MessageBox.Show(this, "Entrez un nombre de dB entre -30 et 30, par exemple 3 ou -4,5.", what, MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            if (value == 0) entry.AudioVolume.Remove(index); else entry.AudioVolume[index] = value;
+        };
+        return item;
+    }
+
     /// <summary>Every track each video has, whatever its layout (episodes do not all have the same tracks).</summary>
     void KeepAll(bool audio)
     {
@@ -1296,7 +1348,7 @@ public partial class MainWindow : Window
     {
         foreach (var other in titles.Where(t => t != cur))
         {
-            other.Audio = cur.Audio.Where(i => other.Info.Audio.Any(a => a.Index == i)).ToList();
+            other.Audio = cur.Audio.Where(i => other.Tracks.Audio.Any(a => a.Index == i)).ToList(); // Tracks: an added sound file of that video counts too
             other.Subs = cur.Subs.Where(i => other.Tracks.Subtitles.Any(t => t.Index == i && t.Supported)).ToList();
             other.TrackLanguage = cur.TrackLanguage.Where(kv => int.Parse(kv.Key[1..]) is var n && (kv.Key[0] == 'a' ? other.Info.Audio.Any(a => a.Index == n) : other.Info.Subtitles.Any(t => t.Index == n))).ToDictionary(kv => kv.Key, kv => kv.Value);
             other.DefaultAudio = other.Audio.Contains(cur.DefaultAudio ?? -1) ? cur.DefaultAudio : null;

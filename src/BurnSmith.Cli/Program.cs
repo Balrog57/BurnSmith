@@ -1298,6 +1298,22 @@ if (a.Count >= 1 && a[0] == "check-edit")
               && BluRay.BdAudio(hd, new DiscTitle("x", Volume: 120), false, true) == "lpcm" && BluRay.BdAudio(hd, new DiscTitle("x", Start: 60), false, true) == "lpcm"
               && BluRay.BdAudio(dtsMa, new DiscTitle("x"), false, true) == "dts" && BluRay.BdAudio(hd, new DiscTitle("x"), false) == "ac3" && BluRay.BdAudio(flac, new DiscTitle("x"), false) == "ac3"
               && BluRay.BdAudio(new AudioTrack(3, "aac", 2, "fre", ""), new DiscTitle("x"), false, true) == "ac3");
+        var ac3 = new AudioTrack(0, "ac3", 6, "eng", "");
+        var louder = new DiscTitle("x", AudioVolume: new Dictionary<int, double> { [0] = -3, [1] = 6.5 });
+        Check("a track's volume: a dB filter for that track only, and an AC-3 that was copied is made again (a TrueHD kept becomes LPCM); 0 dB changes nothing",
+              louder.AudioVolumeFilter(0) == "volume=-3dB" && louder.AudioVolumeFilter(1) == "volume=6.5dB" && louder.AudioVolumeFilter(2) == ""
+              && new DiscTitle("x", AudioVolume: new Dictionary<int, double> { [0] = 0 }).AudioVolumeFilter(0) == ""
+              && BluRay.BdAudio(hd, louder, false, true) == "lpcm" && BluRay.BdAudio(hd, new DiscTitle("x", AudioVolume: new Dictionary<int, double> { [1] = 3 }), false, true) == "truehd"
+              && BluRay.BdAudio(new AudioTrack(0, "dts", 6, "eng", ""), louder, false) == "ac3" && BluRay.BdAudio(new AudioTrack(0, "dts", 6, "eng", ""), new DiscTitle("x"), false) == "dts");
+        var dub = new AudioTrack(0, "eac3", 6, "fre", "doublage", File: @"C:\dub.eac3");
+        var withDub = new DiscTitle("x", Start: 10, End: 70, Audio: [1, 2], AudioFiles: [dub], TrackLanguage: new Dictionary<string, string> { ["a2"] = "ger" });
+        var dubbed = withDub.Cut(new SourceInfo("h264", 1920, 1080, 24, "ac3", 6, 600, [ac3, ac3 with { Index = 1 }], []));
+        var mapArgs = new List<string> { "-ss", "10", "-t", "60", "-i", "x" };
+        var maps = withDub.AudioMaps(withDub.KeptAudio(dubbed), mapArgs, 60);
+        Check("a sound file added to a video: one more audio track numbered after the video's own, its language set like theirs, read as a second input cut like the video",
+              dubbed.Audio.Count == 3 && dubbed.Audio[2] is { Index: 2, File: @"C:\dub.eac3", Lang: "ger" } && withDub.KeptAudio(dubbed).Count == 2
+              && maps is ["0:a:1", "1:a:0"] && string.Join(' ', mapArgs) == @"-ss 10 -t 60 -i x -ss 10 -t 60 -i C:\dub.eac3"
+              && withDub.Files.Contains(@"C:\dub.eac3") && new DiscTitle("x").AudioMaps([ac3], [], 5) is ["0:a:0"]);
     }
     Check("a release file name gets a readable default name: cut at the first tag, an episode named by its number and title, its series for the season; a name with spaces kept",
           new DiscTitle("Title.2019.1080p.BluRay.x264-GRP.mkv").DisplayName == "Title 2019" && DiscTitle.Readable("Title.2019.1080p.BluRay.x264-GRP.mkv") == ("Title 2019", null)
@@ -2151,7 +2167,7 @@ if (a.Count >= 2 && a[0] == "queue")
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview [--safe-area]] [--trial [SECONDS]] [--shutdown] [--save-project FILE] [--max-compat] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]] [--shutdown] [--max-compat]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] [--shutdown]  |  burnsmith burn IMAGE.iso F: [--speed N|--max-compat] [--no-verify] [--eject] [--erase] | burnsmith repair-top-menu FOLDER | burnsmith scan-damage IMAGE.iso|FOLDER [--decode|--no-decode]  |  burnsmith replace-film DISC|IMAGE.iso --mkv FILM.mkv --out FOLDER [--iso OUT.iso] [--label X] [--playlist N] [--cut-start S] [--map A1=mkv:N,PG2=mkv:N] [--no-align] [--measure-only]  |  burnsmith check-film-sync  |  burnsmith label-from-scan SCAN.png|jpg OUT.png [--diameter-mm 118] [--dpi 300] [--hole-mm auto|N] [--debug OVERLAY.png]");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S --audio-volume N=DB --audio-file [LANG=]FILE] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview [--safe-area]] [--trial [SECONDS]] [--shutdown] [--save-project FILE] [--max-compat] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]] [--shutdown] [--max-compat]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] [--shutdown]  |  burnsmith burn IMAGE.iso F: [--speed N|--max-compat] [--no-verify] [--eject] [--erase] | burnsmith repair-top-menu FOLDER | burnsmith scan-damage IMAGE.iso|FOLDER [--decode|--no-decode]  |  burnsmith replace-film DISC|IMAGE.iso --mkv FILM.mkv --out FOLDER [--iso OUT.iso] [--label X] [--playlist N] [--cut-start S] [--map A1=mkv:N,PG2=mkv:N] [--no-align] [--measure-only]  |  burnsmith check-film-sync  |  burnsmith label-from-scan SCAN.png|jpg OUT.png [--diameter-mm 118] [--dpi 300] [--hole-mm auto|N] [--debug OVERLAY.png]");
     return 2;
 }
 
@@ -2255,6 +2271,28 @@ var titles = videos.Select((v, k) =>
     int? defaultAudio = int.TryParse(Own("--default-audio"), out var da) ? da : null, defaultSub = int.TryParse(Own("--default-sub"), out var ds) ? ds : null;
     // --audio after a --video is that video's own choice, as --sub; else the one for every video
     List<int>? audioKept = Own("--audio") is { } ownAudio ? [.. ownAudio.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse)] : Numbers("--audio");
+    // --audio-file FILE | --audio-file fra=FILE (repeatable, this video): a sound file (a dub found apart) kept as one more audio track, numbered after the video's own,
+    //   so --audio-delay, --audio-volume and --track-lang name it by that number (the first one of a video with 2 tracks is 2)
+    var audioFiles = own.Select((x, i) => (x, i)).Where(x => x.x == "--audio-file" && x.i + 1 < own.Count).Select(x =>
+    {
+        var spec = own[x.i + 1];
+        var eq = spec.IndexOf('=');
+        var lang = eq is 2 or 3 ? Languages.Code(spec[..eq]) : null;
+        var file = lang == null ? spec : spec[(eq + 1)..];
+        if (!File.Exists(file)) throw new ArgumentException($"--audio-file: file not found: {file}");
+        var track = AudioTrack.FromFile(v, file);
+        return lang == null ? track : track with { Lang = lang };
+    }).ToList();
+    if (audioFiles.Count > 0) // kept whatever --audio says, after the tracks it names (by default the video's first)
+    {
+        var videoAudio = BluRay.Probe(v).Audio;
+        audioKept = [.. (audioKept ?? [.. videoAudio.Take(1).Select(t => t.Index)]).Union(audioFiles.Select((_, k) => videoAudio.Count + k))];
+    }
+    // --audio-volume 0=-3,2=6 (this video): audio track N (numbered as --audio) that many dB louder, or quieter when negative (-30 to 30); a track copied as it is is then made again
+    Dictionary<int, double>? audioVolume = null;
+    foreach (var pair in Own("--audio-volume")?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [])
+        (audioVolume ??= [])[pair.Split('=') is [var n, var s] && int.TryParse(n, out var track) && double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var db) && Math.Abs(db) <= 30
+            ? track : throw new ArgumentException($"--audio-volume: an audio track number and dB from -30 to 30 are expected (0=-3), not '{pair}'")] = db;
     if (defaultAudio is { } wanted && !(audioKept ?? [0]).Contains(wanted)) throw new ArgumentException($"--default-audio {wanted} is not one of the audio tracks kept (--audio)");
     if (defaultSub is { } wantedSub && !(subs ?? []).Contains(wantedSub)) throw new ArgumentException($"--default-sub {wantedSub} is not one of the subtitles kept (--sub / --sub-file)");
     // --track-lang a0=fre,s1=eng (this video): the language of one of the file's own tracks (a = audio, s = subtitle, numbered as --audio / --sub), for a track left "und" or mislabelled
@@ -2272,7 +2310,7 @@ var titles = videos.Select((v, k) =>
                           clipList,
                           Own("--thumb-at") is { } thumbAt ? Time(thumbAt) : null, Own("--thumb") is { } thumb ? Path.GetFullPath(thumb) : null, // the menu thumbnail: a moment of the video, or a picture
                           Own("--overview"), // the video's summary on the menu pages that show one (Streaming)
-                          subDelay, audioDelay, chapterNames);
+                          subDelay, audioDelay, chapterNames, audioFiles.Count > 0 ? audioFiles : null, audioVolume);
 }).ToList();
 // --reencode (never copy the video), --crf N and --preset NAME (x264 quality of a Blu-ray), --dvd-kbps N (DVD video bit rate by hand)
 // --cpu (encode and decode on the processor; default: the NVIDIA card when there is one), --fps 23.976|24|25|29.97|50|59.94 (bd: the disc's rate; default: as the source)

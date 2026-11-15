@@ -3,10 +3,33 @@ using System.Globalization;
 namespace BurnSmith.Core;
 
 /// <summary><see cref="Index"/> counts audio streams of the source file only (ffmpeg's 0:a:N), not all streams. <see cref="SampleRate"/>, <see cref="Kbps"/> (average bit rate): 0 when the file does not say.
-/// <see cref="Lossless"/>: TrueHD, DTS-HD Master Audio, FLAC, PCM... (what "Son sans perte" keeps whole); <see cref="Bits"/>: its sample size, 0 = unknown.</summary>
-public sealed record AudioTrack(int Index, string Codec, int Channels, string Lang, string Title, int SampleRate = 48000, int Kbps = 0, bool Lossless = false, int Bits = 0)
+/// <see cref="Lossless"/>: TrueHD, DTS-HD Master Audio, FLAC, PCM... (what "Son sans perte" keeps whole); <see cref="Bits"/>: its sample size, 0 = unknown.
+/// <see cref="File"/>: a sound kept in a file of its own (a dub found apart), its first audio stream; such a track is numbered after the video's own.</summary>
+public sealed record AudioTrack(int Index, string Codec, int Channels, string Lang, string Title, int SampleRate = 48000, int Kbps = 0, bool Lossless = false, int Bits = 0, string? File = null)
 {
     public string Name => $"{Languages.Display(Lang, Title)} {Languages.ChannelLayout(Channels)}".Trim();
+
+    public static readonly string[] Extensions = [".ac3", ".eac3", ".dts", ".thd", ".mlp", ".flac", ".wav", ".w64", ".m4a", ".aac", ".mp3", ".mka", ".mkv", ".mp4", ".ogg", ".opus"];
+
+    /// <summary>
+    /// The first audio stream of <paramref name="file"/> as one more track of <paramref name="video"/> (its <see cref="Index"/> is set when the title counts it in):
+    /// the language the file says, else the one its name says ("doublage.fr.ac3"), else "und". The name stands in for a title.
+    /// </summary>
+    public static AudioTrack FromFile(string video, string file)
+    {
+        file = Path.GetFullPath(file);
+        using var doc = System.Text.Json.JsonDocument.Parse(Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-of", "json", "-select_streams", "a:0", "-show_streams", file]));
+        var s = doc.RootElement.GetProperty("streams").EnumerateArray().FirstOrDefault();
+        if (s.ValueKind == System.Text.Json.JsonValueKind.Undefined) throw new InvalidDataException($"no audio stream in {Path.GetFileName(file)}");
+        string Text(string name) => s.TryGetProperty(name, out var v) ? v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString() ?? "" : v.ToString() : "";
+        var lang = s.TryGetProperty("tags", out var tags) && tags.TryGetProperty("language", out var l) && l.GetString() is { Length: > 0 } tagged ? tagged : ExternalSubtitle.For(video, file).Lang;
+        var codec = Text("codec_name");
+        // as BluRay.Probe reads a track of the video
+        var lossless = codec is "truehd" or "mlp" or "flac" or "alac" || codec.StartsWith("pcm_", StringComparison.Ordinal) || Text("profile") == "DTS-HD MA";
+        var bits = int.TryParse(Text("bits_per_raw_sample"), out var raw) && raw > 0 ? raw : int.TryParse(Text("bits_per_sample"), out var held) ? held : 0;
+        return new AudioTrack(0, codec, int.TryParse(Text("channels"), out var c) ? c : 0, lang, Path.GetFileNameWithoutExtension(file),
+                              int.TryParse(Text("sample_rate"), out var hz) ? hz : 0, int.TryParse(Text("bit_rate"), out var bps) ? bps / 1000 : 0, lossless, bits, file);
+    }
 }
 
 /// <summary>
@@ -201,7 +224,9 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
                                string? Overview = null,
                                IReadOnlyDictionary<int, double>? SubtitleDelay = null, // by subtitle number (as Subtitles counts them): seconds its cues are shown later (earlier when negative)
                                IReadOnlyDictionary<int, double>? AudioDelay = null, // by audio track number (as Audio counts them): seconds its sound is heard later (earlier when negative)
-                               IReadOnlyList<string?>? ChapterTitles = null) // the names of the chapters of ChapterAt, in its order (null or empty = "Chapitre N" on the menu); a chapter at 0 names the first
+                               IReadOnlyList<string?>? ChapterTitles = null, // the names of the chapters of ChapterAt, in its order (null or empty = "Chapitre N" on the menu); a chapter at 0 names the first
+                               IReadOnlyList<AudioTrack>? AudioFiles = null, // sound files added to the video (AudioTrack.File), numbered after its own audio tracks in this order
+                               IReadOnlyDictionary<int, double>? AudioVolume = null) // by audio track number (as Audio counts them): dB louder (quieter when negative); a copied track is then made again
 {
     [System.Text.Json.Serialization.JsonIgnore] public string DisplayName => Name ?? Readable(Video).Name;
 
@@ -238,7 +263,7 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
     }
 
     /// <summary>Every file the title reads: the video, its subtitle files, and the effects' burnt subtitle and watermark.</summary>
-    [System.Text.Json.Serialization.JsonIgnore] public IEnumerable<string?> Files => [Video, .. External?.Select(e => e.File) ?? [], Effects?.BurnSubtitle, Effects?.Watermark, ThumbImage];
+    [System.Text.Json.Serialization.JsonIgnore] public IEnumerable<string?> Files => [Video, .. External?.Select(e => e.File) ?? [], .. AudioFiles?.Select(a => a.File) ?? [], Effects?.BurnSubtitle, Effects?.Watermark, ThumbImage];
 
     /// <summary>The files a build reads (titles and menu), which its output and work folders must not hold: see <see cref="Tools.KeepInputs"/>.</summary>
     public static IEnumerable<string?> Inputs(IEnumerable<DiscTitle> titles, Menu.MenuDesign? menu) =>
@@ -380,6 +405,7 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
     public SourceInfo WithSubtitleFiles(SourceInfo s)
     {
         if (External is { Count: > 0 }) s = s with { Subtitles = [.. s.Subtitles, .. External.Select((e, k) => e.Track(s.Subtitles.Count + k))] };
+        if (AudioFiles is { Count: > 0 }) s = s with { Audio = [.. s.Audio, .. AudioFiles.Select((a, k) => a with { Index = s.Audio.Count + k })] };
         if (TrackLanguage is not { Count: > 0 }) return s;
         // a subtitle file has its own language (see ExternalSubtitle), so only the video's own tracks are relabelled; every list, menu and disc reads the tracks through here
         return s with
@@ -418,6 +444,28 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
     {
         var delay = AudioDelay?.GetValueOrDefault(track) ?? 0;
         return delay > 0 ? $"adelay={(int)Math.Round(delay * 1000)}:all=1" : delay < 0 ? $"atrim=start={(-delay).ToString("0.###", CultureInfo.InvariantCulture)},asetpts=PTS-STARTPTS" : "";
+    }
+
+    /// <summary>The ffmpeg filter that makes a track louder or quieter by its <see cref="AudioVolume"/> (dB) when the sound is made again; "" at 0.</summary>
+    public string AudioVolumeFilter(int track) =>
+        AudioVolume?.GetValueOrDefault(track) is { } db and not 0 ? $"volume={db.ToString("0.##", CultureInfo.InvariantCulture)}dB" : "";
+
+    /// <summary>
+    /// Adds to <paramref name="args"/>, right after the video's own -i (input 0, cut by -ss / -t), one input per sound file among <paramref name="audio"/>, cut the same
+    /// way (<paramref name="span"/>: seconds read from <see cref="Start"/>), and gives each track's -map in order: "0:a:N" for the video's own, "K:a:0" for a file.
+    /// </summary>
+    public List<string> AudioMaps(IReadOnlyList<AudioTrack> audio, List<string> args, double span)
+    {
+        // shortcut: a 4K title copied with a later start begins on the keyframe before it, the file's sound on the exact second (up to a GOP late); seek the file to that keyframe if it shows
+
+        var first = args.Count(x => x == "-i");
+        var files = audio.Select(a => a.File).OfType<string>().Distinct().ToList();
+        foreach (var file in files)
+        {
+            if (Start > 0) args.AddRange(["-ss", Start.ToString(CultureInfo.InvariantCulture)]);
+            args.AddRange(["-t", span.ToString("0.###", CultureInfo.InvariantCulture), "-i", file]); // always -t: a dub a little longer than the film must not make the title longer
+        }
+        return [.. audio.Select(a => a.File == null ? $"0:a:{a.Index}" : $"{first + files.IndexOf(a.File)}:a:0")];
     }
 
     /// <summary>The audio tracks in disc order: the default one first, the others in the order kept.</summary>

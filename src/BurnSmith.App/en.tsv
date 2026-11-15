@@ -1006,3 +1006,12 @@ Compatibilité maximale	Maximum compatibility
 Ce que toutes les platines lisent : le menu simple (HDMV, pages fixes, sans menu pop-up, pas encore essayé sur une vraie platine) au lieu du menu Java, le son en Dolby Digital (AC-3) avec une piste AC-3 en premier, et la gravure à 4x.	What every player reads: the simple menu (HDMV, still pages, no pop-up menu, not yet tried on a real player) instead of the Java menu, the sound in Dolby Digital (AC-3) with an AC-3 track first, and burning at 4x.
 Les disques de 100 Go sont refusés par beaucoup de platines : préférez deux disques de 50 Go.	100 GB discs are refused by many players: prefer two 50 GB discs.
 À savoir : la PS5 ne lit aucun disque gravé, quel qu'il soit (Sony le dit dans son aide).	Good to know: the PS5 plays no burned disc of any kind (Sony says so in its support pages).
+# per-track audio volume, audio track from a separate file
+Ajouter une piste audio…	Add an audio track…
+Pistes audio de {0}	Audio tracks of {0}
+Pistes audio ({0})	Audio tracks ({0})
+Volume de « {0} »…	Volume of "{0}"…
+Volume de « {0} » : {1} dB…	Volume of "{0}": {1} dB…
+Volume de la piste	Track volume
+Volume de la piste, en dB (de -30 à 30) : 6 = plus fort, -6 = moins fort, 0 = inchangé. Une piste copiée telle quelle (AC-3, DTS) est alors réencodée.	Track volume, in dB (-30 to 30): 6 = louder, -6 = quieter, 0 = unchanged. A track copied as it is (AC-3, DTS) is then re-encoded.
+Entrez un nombre de dB entre -30 et 30, par exemple 3 ou -4,5.	Enter a number of dB between -30 and 30, for example 3 or -4.5.
