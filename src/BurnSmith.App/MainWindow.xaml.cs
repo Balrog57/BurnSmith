@@ -321,6 +321,13 @@ public partial class MainWindow : Window
         LogExpander.IsExpanded = true;
     }
 
+    /// <summary>« Copier le rapport »: the log, headed by the « À savoir avant de démarrer » of the last start, to paste where help is asked.</summary>
+    void OnCopyReport(object s, RoutedEventArgs e)
+    {
+        try { Clipboard.SetText(Log.Text); }
+        catch (System.Runtime.InteropServices.COMException) { MessageBox.Show(this, "Le presse-papiers est occupé par un autre programme : réessayez.", "BurnSmith"); }
+    }
+
     void SyncOutput()
     {
         if (!outEdited)
@@ -1471,8 +1478,19 @@ public partial class MainWindow : Window
         var uhd = kind == "uhd";
         var dvd = kind == "dvd";
         var withIso = IsoCheck.IsChecked == true;
+        // « À savoir avant de démarrer »: what the build is about to do, from the build's own decisions (Core.Recap); it heads the log, so « Copier le rapport » carries it
+        List<string> recap;
+        try
+        {
+            recap = dvd ? Recap.For(new DvdJob(discTitles, outDir, menu, minutes, cap.Usable, enc, play, look), path => infos[path])
+                        : Recap.For(new BluRayJob(discTitles, outDir, menu, uhd, "X", minutes, enc, cap.Usable, play, look, hdmv), path => infos[path]);
+        }
+        catch (Exception) { recap = []; } // only advice: the build itself says what is wrong
+        if (recap.Count > 0 && MessageBox.Show(this, Loc.T("À savoir avant de démarrer :") + "\n\n" + string.Join("\n", recap.Select(Loc.T)), "BurnSmith",
+                MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK) return;
         Log.Clear();
         PlayDiscButton.Visibility = Visibility.Collapsed; // the disc it opened may be the one this build replaces
+        if (recap.Count > 0) foreach (var line in (string[])["À savoir avant de démarrer :", .. recap, ""]) Append(line);
 
         var ok = await Work("Création du disque…", (log, progress, token) =>
         {

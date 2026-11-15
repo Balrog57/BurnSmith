@@ -994,7 +994,7 @@ public static class BluRay
     static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && (t.Start == 0 || uhd) && t.Gaps.Count == 0 && a.SampleRate == 48000 && a.Codec is "ac3" or "dts"; // not TrueHD: a disc wants its AC-3 core, which an mkv or ffmpeg never carries (tsMuxeR: "the disk will not play")
 
     /// <summary>Whether the title's video goes on the disc as it is (stream copy) instead of being re-encoded; <see cref="TargetKbps"/> and <see cref="Prepare"/> must agree on it.</summary>
-    static bool CopiesVideo(BluRayJob job, DiscTitle title, SourceInfo s, int kbps)
+    internal static bool CopiesVideo(BluRayJob job, DiscTitle title, SourceInfo s, int kbps)
     {
         var (w, h) = VideoSize(job);
         var rate = DiscRate(Fps(job, s), h).Ffmpeg;
