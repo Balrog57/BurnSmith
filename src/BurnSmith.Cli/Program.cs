@@ -681,6 +681,27 @@ if (a.Count >= 1 && a[0] == "check-elements")
         Check("les modèles se rangent par usage, Original quand le nom ne dit rien",
               TemplateUsage.Of("UHD Birthday1") == "Anniversaire" && TemplateUsage.Of("01movie") == "Film" && TemplateUsage.Of("Saison") == "Série"
               && TemplateUsage.Of("Natural 18") == "Voyage et nature" && TemplateUsage.Of("blue 16-9") == TemplateUsage.Original && TemplateUsage.Of("Wedding2") == "Mariage");
+        {
+            var userPicks = TemplatePicks.Dir;
+            TemplatePicks.Dir = Path.Combine(Path.GetTempPath(), "bs_picks_" + Guid.NewGuid().ToString("N")[..8]); // never the user's own stars
+            try
+            {
+                TemplateCatalog.Found wedding = new(new MenuDesign { Name = "Wedding2", Category = "Libres" }, null), autumn = new(new MenuDesign { Name = "Autumn 4-3", Category = "Libres" }, null),
+                    season = new(new MenuDesign { Name = "Saison", Category = TemplateLabel.Own }, null);
+                Check("la recherche de la galerie trouve le nom ou l'usage, sans casse ni accents",
+                      TemplatePicks.Matches(wedding, "MARIAGE") && TemplatePicks.Matches(season, "serie") && TemplatePicks.Matches(autumn, "autu") && TemplatePicks.Matches(autumn, " ")
+                      && !TemplatePicks.Matches(wedding, "série"));
+                TemplatePicks.Star("Autumn 16-9", true);
+                TemplatePicks.Dir = TemplatePicks.Dir; // read back from the file, as the next start does
+                var starredFirst = TemplatePicks.Sorted([wedding, season, autumn]).First() == autumn && autumn.Favorite && !wedding.Favorite;
+                TemplatePicks.Star("Autumn 4-3", false);
+                Check("une étoile couvre les deux formes d'un modèle, le met en tête, se garde et s'enlève", starredFirst && !autumn.Favorite && TemplatePicks.Favorites.Count == 0);
+                foreach (var n in new[] { "A", "B", "C", "D", "E", "F", "G", "C 4-3" }) TemplatePicks.Used(n);
+                Check($"« Récemment utilisés » : les {TemplatePicks.RecentCount} derniers, le plus récent d'abord, sans doublon",
+                      TemplatePicks.Recent() is ["C", "G", "F", "E", "D", "B"]);
+            }
+            finally { Tools.TryDelete(TemplatePicks.Dir); TemplatePicks.Dir = userPicks; }
+        }
         MenuDesign wide169 = new() { Name = "Autumn 16-9", Category = "Libres" }, narrow43 = new() { Name = "Autumn 4-3", Category = "Libres" }, alone = new() { Name = "Sun 4-3", Category = "Libres" };
         Check("un modèle en 16:9 et en 4:3 n'en fait qu'un, le choix de l'écran prend sa version ; un modèle d'une seule forme reste",
               TemplateShape.Base("Autumn 4-3") == "Autumn" && TemplateShape.Base("business (16-9-2)") == "business 2" && TemplateShape.Base("business (4-3)") == "business"
@@ -1795,13 +1816,28 @@ if (a.Count >= 1 && a[0] == "check-library")
     return libraryProblems == 0 && libraryBackgrounds.Count > 0 && pictureButtonsNeeded == pictureButtonsOffered ? 0 : 1;
 }
 
-// burnsmith templates : every template found, and the ones that cannot be drawn with the reason
+// burnsmith templates [TEXT] [--use USAGE] [--star NAME] [--unstar NAME] : every template found, and the ones that cannot be drawn with the reason;
+//   TEXT: only those with it in their name, use or group (the gallery's search box), --use: one of the gallery's groups (Film, Série, Mariage…),
+//   case and accents aside; favourites first, marked « | favori »; --star / --unstar: the gallery's star; RECENT: the last used in the menu editor
 if (a.Count >= 1 && a[0] == "templates")
 {
     var (usable, skipped) = TemplateCatalog.Scan();
-    foreach (var f in usable) Console.WriteLine($"OK    {f.Design.Category} | {f.Design.Name} | {f.Usage}"); // the program it came from, its name, its use (the gallery's groups)
-    foreach (var mine in Templates.List()) Console.WriteLine($"OK    Mes modèles | {mine.Name}"); // saved from the menu editor or by template-save
-    foreach (var s in skipped) Console.WriteLine($"SKIP  {s.Name} | {s.Why} | {s.Dir}");
+    foreach (var (flag, on) in new[] { ("--star", true), ("--unstar", false) })
+        if (Opt(flag) is { } starred)
+        {
+            if (usable.FirstOrDefault(f => f.Design.Name.Equals(starred, StringComparison.OrdinalIgnoreCase) || f.Label.Equals(starred, StringComparison.OrdinalIgnoreCase)) is not { } hit)
+            { Console.Error.WriteLine($"unknown template: {starred} (burnsmith templates lists them)"); return 2; }
+            TemplatePicks.Star(hit.Design.Name, on);
+        }
+    var text = a.Count > 1 && !a[1].StartsWith("--") ? a[1] : null;
+    var use = Opt("--use");
+    if (use != null && !TemplateUsage.All.Any(u => TemplatePicks.Contains(u, use))) { Console.Error.WriteLine($"unknown use: {use} ({string.Join(", ", TemplateUsage.All)})"); return 2; }
+    var filtered = text != null || use != null;
+    foreach (var f in TemplatePicks.Sorted(usable.Where(f => TemplatePicks.Matches(f, text) && (use == null || TemplatePicks.Contains(f.Usage, use)))))
+        Console.WriteLine($"OK    {f.Design.Category} | {f.Design.Name} | {f.Usage}{(f.Favorite ? " | favori" : "")}"); // the program it came from, its name, its use (the gallery's groups)
+    foreach (var mine in Templates.List().Where(m => use == null && (text == null || TemplatePicks.Contains(m.Name, text)))) Console.WriteLine($"OK    Mes modèles | {mine.Name}"); // saved from the menu editor or by template-save
+    foreach (var s in skipped.Where(_ => !filtered)) Console.WriteLine($"SKIP  {s.Name} | {s.Why} | {s.Dir}");
+    foreach (var r in TemplatePicks.Recent()) Console.WriteLine($"RECENT {r}");
     Console.WriteLine($"{usable.Count} usable, {skipped.Count} skipped");
     return 0;
 }

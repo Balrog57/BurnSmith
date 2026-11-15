@@ -1280,7 +1280,7 @@ public partial class MenuEditorWindow : Window
     public PlaybackOptions Playback { get; set; } = new();
 
     // ---------------------------------------------------------------- the templates, one family at a time
-    const string AllFamilies = "*", Mine = "+";
+    const string AllFamilies = "*", Mine = "+", Recent = "~";
     List<TemplateCatalog.Found> catalog = [];
     string? family;
 
@@ -1299,14 +1299,15 @@ public partial class MenuEditorWindow : Window
         var shown = Shown;
         var names = TemplateUsage.All.Where(u => shown.Any(f => f.Usage == u)).ToList();
         var own = TemplateUsage.Of(working.Name);
-        if (family is null || (family != AllFamilies && family != Mine && !names.Contains(family)))
+        var recent = Recents().Count;
+        if (family is null || (family != AllFamilies && family != Mine && !(family == Recent && recent > 0) && !names.Contains(family)))
             family = names.Contains(own) ? own : names.FirstOrDefault() ?? AllFamilies;
         Families.Children.Clear();
-        foreach (var name in names.Prepend(AllFamilies).Append(Mine))
+        foreach (var name in (recent > 0 ? names.Prepend(Recent) : names).Prepend(AllFamilies).Append(Mine))
         {
             var chip = new RadioButton
             {
-                Content = name == AllFamilies ? $"Tous ({shown.Count})" : name == Mine ? "Mes modèles" : $"{name} ({shown.Count(f => f.Usage == name)})",
+                Content = name == AllFamilies ? $"Tous ({shown.Count})" : name == Mine ? "Mes modèles" : name == Recent ? $"Récemment utilisés ({recent})" : $"{name} ({shown.Count(f => f.Usage == name)})",
                 GroupName = "family", Style = (Style)FindResource("Step"), Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 6), IsChecked = name == family,
             };
             chip.Checked += (_, _) => { family = name; ShowFamily(); };
@@ -1319,7 +1320,30 @@ public partial class MenuEditorWindow : Window
     {
         MinePanel.Visibility = family == Mine ? Visibility.Visible : Visibility.Collapsed;
         BuiltInList.Visibility = family == Mine ? Visibility.Collapsed : Visibility.Visible;
-        BuiltInList.ItemsSource = Shown.Where(f => family == AllFamilies || f.Usage == family).ToList();
+        var search = SearchBox.Text;
+        // a search looks through every template, whatever the group open; favourites first everywhere, the recent ones in the order used
+        BuiltInList.ItemsSource = family == Recent && search.Trim().Length == 0 ? Recents()
+            : TemplatePicks.Sorted(Shown.Where(f => search.Trim().Length > 0 ? TemplatePicks.Matches(f, search) : family == AllFamilies || f.Usage == family)).ToList();
+    }
+
+    /// <summary>The last templates used (OK of this window) that the gallery shows, the latest first.</summary>
+    List<TemplateCatalog.Found> Recents()
+    {
+        var shown = Shown;
+        return [.. TemplatePicks.Recent().Select(n => shown.FirstOrDefault(f => f.Label.Equals(n, StringComparison.OrdinalIgnoreCase))).OfType<TemplateCatalog.Found>()];
+    }
+
+    void OnSearch(object s, TextChangedEventArgs e)
+    {
+        if (family == Mine && SearchBox.Text.Trim().Length > 0) foreach (var chip in Families.Children.OfType<RadioButton>()) chip.IsChecked = chip == Families.Children[0]; // « Mes modèles » has no thumbnails to search: « Tous »
+        ShowFamily();
+    }
+
+    void OnStar(object s, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)s).DataContext is not TemplateCatalog.Found f) return;
+        TemplatePicks.Star(f.Design.Name, !f.Favorite);
+        ShowFamily(); // the item is redrawn with its star, and moves to the top or back
     }
 
     /// <summary>16:9 or 4:3: the gallery shows that version of each template, and the menu's own template takes it when it has one.</summary>
@@ -1491,6 +1515,7 @@ public partial class MenuEditorWindow : Window
     {
         if (error != null) { MessageBox.Show(this, "Corrigez d'abord l'erreur de l'aperçu :\n" + error, "BurnSmith"); return; }
         Playback = PlaybackOptions.FromMode(Math.Max(0, PlayModeBox.SelectedIndex), Playback.Rewind);
+        if (catalog.Any(f => f.Design.Name == working.Name)) TemplatePicks.Used(working.Name); // « Récemment utilisés »: the template this menu went out with
         DialogResult = true;
     }
 }

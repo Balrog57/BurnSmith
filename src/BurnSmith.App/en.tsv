@@ -931,3 +931,10 @@ titre {0} : le titre {1} est annoncé {2} secteurs après VIDEO_TS.IFO, il est �
 {0} Go	{0} GB
 # menu type, disc sizes, app language (added with the HDMV menu)
 « Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.	"No limit" cannot be burned: choose the size of the disc to burn, or untick burning.
+# template gallery: search, favourites, recent ones
+Chercher :	Search:
+Chercher un modèle	Search a template
+Un mot du nom ou de l'usage (mariage, série, voyage…) : la recherche porte sur tous les modèles	A word of the name or of the use (wedding, series, travel…): the search covers every template
+Favori : le modèle reste en tête de la galerie	Favorite: the template stays at the top of the gallery
+Favori	Favorite
+Récemment utilisés ({0})	Recently used ({0})

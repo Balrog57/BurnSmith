@@ -13,6 +13,7 @@ public static class TemplateCatalog
         /// <summary>The name the gallery shows: without the screen shape, which the « 16:9 / 4:3 » choice gives.</summary>
         public string Label => TemplateShape.Base(Design.Name);
         public string Usage => TemplateUsage.Of(Design.Name);
+        public bool Favorite => TemplatePicks.IsFavorite(Design.Name);
     }
 
     /// <summary>The version of <paramref name="design"/> for a 4:3 screen (<paramref name="narrow"/>) or a 16:9 one, when the template has both (--menu-aspect).</summary>
