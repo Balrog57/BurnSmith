@@ -91,6 +91,8 @@
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
           <!-- the project: open, save, undo, redo (Ctrl+O, Ctrl+S, Ctrl+Z, Ctrl+Y) -->
+          <Button Style="{StaticResource IconBtn}" Content="&#xE8A5;" Width="38" Height="36" FontSize="16" Click="OnNewProject" AutomationProperties.Name="Nouveau projet"
+                  ToolTip="Nouveau projet : aucune vidéo et les réglages habituels, le modèle de menu gardé (Annuler revient au projet d'avant). Le projet en cours est gardé tout seul et rouvert au prochain lancement"/>
           <Button Style="{StaticResource IconBtn}" Content="&#xE8E5;" Width="38" Height="36" FontSize="16" Click="OnOpenProject" AutomationProperties.Name="Ouvrir un projet"
                   ToolTip="Ouvrir un projet enregistré : ses vidéos, leurs réglages, le menu et les options du disque (Ctrl+O)"/>
           <Button Style="{StaticResource IconBtn}" Content="&#xE74E;" Width="38" Height="36" FontSize="16" Click="OnSaveProject" AutomationProperties.Name="Enregistrer le projet"

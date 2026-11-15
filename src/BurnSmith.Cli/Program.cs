@@ -1175,6 +1175,18 @@ if (a.Count >= 1 && a[0] == "check-edit")
     static bool NotProject(string text) { try { Project.Parse(text); return false; } catch (InvalidDataException) { return true; } }
     Check("what is not a project is refused: another JSON file, a text, a disc kind that does not exist",
           NotProject("{\"Name\":\"a menu template\"}") && NotProject("not json") && NotProject(new Project("vhs", []).ToJson()));
+    // the project the window keeps by itself: in the app's own folder, written whole, a video gone still reads (the window leaves it out)
+    var keptDir = Directory.CreateTempSubdirectory("burnsmith-check-autosave").FullName;
+    try
+    {
+        var keptFile = Path.Combine(keptDir, "autosave" + Project.Extension);
+        Project.WriteWhole(keptFile, new Project("bd", [new DiscTitle("a.mkv")]).ToJson());
+        Project.WriteWhole(keptFile, written.ToJson());
+        Check("the kept project: under the app's folder, never the user's; rewritten whole, no .tmp left; it reads back with its videos, gone or not",
+              Path.GetDirectoryName(Project.AutosaveFile()) == AppFiles.Root() && Project.AutosaveFile().EndsWith(Project.Extension)
+              && !File.Exists(keptFile + ".tmp") && Project.Load(keptFile).ToJson() == written.ToJson());
+    }
+    finally { Tools.TryDelete(keptDir); }
     // subtitles: the delay of a track and the look of the text ones
     var editDir = Directory.CreateTempSubdirectory("burnsmith-check-edit").FullName;
     try

@@ -951,3 +951,5 @@ Le PC n'a pas pu être éteint : {0}	The PC could not be shut down: {0}
 Le PC s'éteint dans une minute.	The PC shuts down in a minute.
 Le travail est fini : le PC s'éteint dans une minute.\n\nAnnuler l'extinction ?	The work is over: the PC shuts down in a minute.\n\nCancel the shutdown?
 Extinction annulée.	Shutdown cancelled.
+Nouveau projet	New project
+Nouveau projet : aucune vidéo et les réglages habituels, le modèle de menu gardé (Annuler revient au projet d'avant). Le projet en cours est gardé tout seul et rouvert au prochain lancement	New project: no video and the usual settings, the menu template kept (Undo brings the former project back). The current project is kept on its own and reopened at the next start
