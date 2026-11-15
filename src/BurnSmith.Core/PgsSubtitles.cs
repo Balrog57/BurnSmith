@@ -146,6 +146,47 @@ public static class PgsSubtitles
         return sets;
     }
 
+    /// <summary>When each picture comes on screen (seconds of the stream clock): the composition segments that place at least one object.</summary>
+    public static List<double> Starts(byte[] sup) => [.. Read(sup).Where(s => s.Objects > 0).Select(s => s.Pts / Clock)];
+
+    /// <summary>Of the objects the compositions place, how many and how many flagged forced (shown even with subtitles off).</summary>
+    public static (int Objects, int Forced) ForcedObjects(byte[] sup)
+    {
+        var (all, forced) = (0, 0);
+        ObjectFlags(sup, flags => { all++; if ((sup[flags] & 0x40) != 0) forced++; });
+        return (all, forced);
+    }
+
+    /// <summary>
+    /// Every segment's PTS and DTS put at <paramref name="time"/>(t) (seconds; a DTS of 0 stays 0, as tools write it when absent), in place.
+    /// <paramref name="clearForced"/> takes the forced flag off every placed object (a full track that must not show with subtitles off). Returns the flags cleared.
+    /// </summary>
+    public static int Retime(byte[] sup, Func<double, double> time, bool clearForced = false)
+    {
+        for (var p = 0; p + HeaderSize <= sup.Length; p += HeaderSize + Be16(sup.AsSpan(p + 11)))
+        {
+            if (sup[p] != 'P' || sup[p + 1] != 'G') throw new InvalidDataException($"not a PGS (.sup) file: no segment header at byte {p}");
+            foreach (var field in new[] { 2, 6 })
+                if (BinaryPrimitives.ReadUInt32BigEndian(sup.AsSpan(p + field)) is var t && (t != 0 || field == 2))
+                    BinaryPrimitives.WriteUInt32BigEndian(sup.AsSpan(p + field), (uint)Math.Max(0, Math.Round(time(t / Clock) * Clock)));
+        }
+        var cleared = 0;
+        if (clearForced) ObjectFlags(sup, flags => { if ((sup[flags] & 0x40) != 0) { sup[flags] &= 0xBF; cleared++; } });
+        return cleared;
+    }
+
+    /// <summary>Calls <paramref name="each"/> with the offset in <paramref name="sup"/> of the flags byte of each object a composition places.</summary>
+    static void ObjectFlags(byte[] sup, Action<int> each)
+    {
+        foreach (var set in Read(sup))
+        {
+            var (at, _, size) = set.Segments[0];
+            var body = sup.AsSpan(at + HeaderSize, size);
+            // object id, window id, flags (0x80 cropped: four more fields, 0x40 forced), x, y
+            for (int o = 11, left = body.Length > 10 ? body[10] : 0; left > 0 && o + 8 <= size; left--, o += (body[o + 3] & 0x80) != 0 ? 16 : 8) each(at + HeaderSize + o + 3);
+        }
+    }
+
     /// <summary>Width and height of the screen the pictures are placed on (1920x1080 on a Blu-ray); null when the file shows nothing.</summary>
     public static (int Width, int Height)? PlaneSize(byte[] sup) => Read(sup) is [{ } first, ..] ? (first.Width, first.Height) : null;
 
@@ -249,7 +290,7 @@ public static class PgsSubtitles
         for (int o = 11, left = body[10]; left > 0 && o + 8 <= size; left--)
         {
             if (objects.TryGetValue(Be16(body[o..]), out var obj)) placed.Add((Be16(body[(o + 4)..]), Be16(body[(o + 6)..]), obj.Width, obj.Height, obj.Index));
-            o += (body[o + 3] & 0x40) != 0 ? 16 : 8; // a cropped object (0x40; 0x80 is "forced") has four more fields
+            o += (body[o + 3] & 0x80) != 0 ? 16 : 8; // a cropped object (0x80; 0x40 is "forced") has four more fields
         }
         if (placed.Count == 0) return null;
         int x0 = placed.Min(p => p.X), y0 = placed.Min(p => p.Y), x1 = placed.Max(p => p.X + p.Width), y1 = placed.Max(p => p.Y + p.Height);

@@ -1872,6 +1872,28 @@ if (a.Count >= 2 && a[0] == "probe")
 }
 // burnsmith repair-top-menu FOLDER : a BD-J menu disc made before 1.0.32 (the Top Menu key refused during an episode) put on today's start and xlet, its menu kept; then "burnsmith iso" for a new image
 if (a.Count >= 2 && a[0] == "repair-top-menu") { var fixedIt = BluRay.RepairTopMenu(a[1]); Console.WriteLine(fixedIt ? "repaired: the Top Menu is the menu, each video plays in its own title" : "nothing to repair (not a BD-J menu disc of the old kind)"); return 0; }
+// burnsmith replace-film DISC(folder|.iso) --mkv FILM.mkv --out FOLDER [--iso OUT.iso] [--label X] [--playlist N] [--cut-start S] [--map A1=mkv:2,PG2=mkv:7] [--no-align] [--measure-only]
+//   a damaged Blu-ray's film replaced by a clean MKV, menus, bonuses and every other file kept byte for byte: the same sound and subtitle slots (A1, A2..., PG1...)
+//   filled from the MKV's tracks of those languages (full or forced; --map N = the MKV stream as ffprobe numbers it, 0 = the video), the MKV put on the disc's clock
+//   (scene cuts, sound offsets, subtitle drift: corrected), the chapters mapped; --playlist: the film's playlist (default: the longest); --cut-start: the MKV's first
+//   seconds removed, from the keyframe at or after S; --no-align: no measure, no correction; --measure-only: measures and prints, writes nothing. A check of the result ends it
+if (a.Count >= 2 && a[0] == "replace-film")
+{
+    var map = OptAll("--map").SelectMany(m => m.Split(',', StringSplitOptions.RemoveEmptyEntries)).Select(m => m.Split('='))
+        .ToDictionary(p => p[0].Trim().ToUpperInvariant(), p => p.Length == 2 && int.TryParse(p[1].Trim().Replace("mkv:", ""), out var n) ? n : throw new ArgumentException($"--map {string.Join('=', p)} : A1=mkv:N attendu"));
+    if (Opt("--mkv") is not { } mkv || Opt("--out") is not { } outFolder) { Console.Error.WriteLine("replace-film : --mkv et --out sont nécessaires"); return 2; }
+    return ReplaceFilm.Run(new ReplaceFilmJob(Path.GetFullPath(a[1]), Path.GetFullPath(mkv), Path.GetFullPath(outFolder), Opt("--iso") is { } isoOut ? Path.GetFullPath(isoOut) : null,
+        int.TryParse(Opt("--playlist"), out var plNumber) ? plNumber : null,
+        double.TryParse(Opt("--cut-start"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var cutAt) ? cutAt : null,
+        map, a.Contains("--no-align"), a.Contains("--measure-only"), Opt("--label")), Console.WriteLine);
+}
+// burnsmith check-film-sync : replace-film's measuring pieces on made-up data (scene-cut matching, sound cross-correlation, subtitle drift, PGS re-timing)
+if (a.Count >= 1 && a[0] == "check-film-sync")
+{
+    var problems = FilmSync.SelfCheck();
+    Console.WriteLine(problems.Count == 0 ? "ok   film sync" : string.Join(Environment.NewLine, problems.Select(p => "FAIL " + p)));
+    return problems.Count == 0 ? 0 : 1;
+}
 if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BURNSMITH", a.Contains("--dvd"), Console.WriteLine); return 0; }
 // burnsmith burn IMAGE.iso F: [--speed 4] : the speed is × 1x, absent = the drive's fastest (one disc: a second one is a second run)
 if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0); return 0; }
@@ -1920,7 +1942,7 @@ if (a.Count >= 2 && a[0] == "queue")
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER  |  burnsmith replace-film DISC|IMAGE.iso --mkv FILM.mkv --out FOLDER [--iso OUT.iso] [--label X] [--playlist N] [--cut-start S] [--map A1=mkv:N,PG2=mkv:N] [--no-align] [--measure-only]  |  burnsmith check-film-sync");
     return 2;
 }
 
