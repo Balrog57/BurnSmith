@@ -113,7 +113,9 @@ public partial class MainWindow : Window
     bool closeAfterWork;
     int making; // slideshows, songs and joins being made: long ffmpeg runs without a Cancel button
     MenuDesign design = new();
-    readonly Task defaultDesign;
+    Task defaultDesign; // done again when videos added call for another template than the one BurnSmith chose (autoDesign)
+    MenuDesign? autoDesign; // the template BurnSmith chose itself, for autoFor: any other (the editor's, a project's, an undo step's) is the user's and stays
+    string? autoFor;
 
     /// <summary>For the off-screen snapshot: what it shows must start from the default template.</summary>
     public Task DefaultDesignLoaded => defaultDesign;
@@ -145,8 +147,16 @@ public partial class MainWindow : Window
         var blank = design;
         try
         {
-            var found = await Task.Run(() => MenuRenderer.Sta(() => TemplateCatalog.Default().Clone()));
-            if (ReferenceEquals(design, blank)) UseDesign(found);
+            List<string> videos;
+            MenuDesign found;
+            do // again when videos were added during the scan
+            {
+                videos = MainVideos();
+                found = await Task.Run(() => MenuRenderer.Sta(() => TemplateCatalog.DefaultFor(videos).Clone()));
+            } while (TemplateCatalog.Suggested(videos) != TemplateCatalog.Suggested(MainVideos()));
+            if (!ReferenceEquals(design, blank)) return;
+            if (autoDesign == null || found.Name != design.Name) UseDesign(found);
+            (autoDesign, autoFor) = (design, TemplateCatalog.Suggested(videos));
         }
         catch (Exception e)
         {
@@ -234,6 +244,7 @@ public partial class MainWindow : Window
 
     /// <summary>The video the menu's picture, the disc's name and the audio / subtitle pages come from: the first that is not a bonus.</summary>
     Entry? MainEntry => titles.FirstOrDefault(t => !t.Bonus && !t.Intro) ?? titles.FirstOrDefault();
+    List<string> MainVideos() => [.. titles.Where(t => !t.Bonus && !t.Intro).Select(t => t.Path)];
 
     /// <summary>What the editor previews: the real chapters / episodes / bonus / tracks of the disc, or a sample while no video is loaded.</summary>
     MenuContent EditorContent()
@@ -719,6 +730,7 @@ public partial class MainWindow : Window
             if (!labelEdited) volume = Regex.Replace(name.ToUpperInvariant(), "[^A-Z0-9_]+", "_").Trim('_') is { Length: > 0 } l ? l[..Math.Min(32, l.Length)] : "MON_DISQUE";
             if (design.Untitled()) design.Title = name;
         }
+        if (ReferenceEquals(design, autoDesign) && defaultDesign.IsCompleted && TemplateCatalog.Suggested(MainVideos()) != autoFor) defaultDesign = LoadDefaultDesign();
         ProjectTitle.Text = titles.Count == 0 ? "Aucune source" : design.Title;
         UpdateMenuState();
         SyncOutput();
@@ -1200,6 +1212,8 @@ public partial class MainWindow : Window
         var ok = editor.ShowDialog() == true;
         openEditor = null;
         if (!ok) return;
+        if (editor.Result.Name != design.Name) // a template picked: the next disc starts from it (TemplateCatalog.DefaultFor)
+            try { TemplateCatalog.RememberChoice(editor.Result.Name); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { AppFiles.LogError("Dernier modèle choisi", ex); }
         design = editor.Result;
         playback = editor.Playback;
         MenuName.Text = design.Name;

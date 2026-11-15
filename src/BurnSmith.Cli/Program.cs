@@ -687,6 +687,27 @@ if (a.Count >= 1 && a[0] == "check-elements")
               && TemplateShape.IsNarrow("ocean 4-3") && !TemplateShape.IsNarrow("business (16-9-2)") && TemplateShape.Base("Birthday1") == "Birthday1"
               && TemplateShape.Pick(wide169, true, [wide169, narrow43, alone]) == narrow43 && TemplateShape.Pick(narrow43, false, [wide169, narrow43]) == wide169
               && TemplateShape.Pick(alone, false, [wide169, narrow43, alone]) == alone);
+        // the template a disc starts from: the user's last choice, else one for its videos (never Birthday1 any more)
+        Check("sans modèle choisi : un film, une saison SxxEyy, plusieurs vidéos ont chacun le leur",
+              TemplateCatalog.Suggested([]) == "Salle obscure" && TemplateCatalog.Suggested([@"D:\Films\Bright.2017.mkv"]) == "Salle obscure"
+              && TemplateCatalog.Suggested([@"D:\Cobra.Kai.S01E01.mkv", @"D:\Cobra Kai - s01e10 - Fin.mkv"]) == "Saison"
+              && TemplateCatalog.Suggested([@"D:\Cobra.Kai.S01E01.mkv", @"D:\Vacances 2024.mkv"]) == "Nuit d'encre" && TemplateCatalog.Suggested([@"D:\BS01E01X.mkv", @"D:\a.mkv"]) == "Nuit d'encre");
+        var lastKept = File.Exists(TemplateCatalog.LastChoiceFile) ? File.ReadAllText(TemplateCatalog.LastChoiceFile) : null;
+        try
+        {
+            File.Delete(TemplateCatalog.LastChoiceFile);
+            var (film, series, many) = (TemplateCatalog.DefaultFor(["film.mkv"]), TemplateCatalog.DefaultFor(["x.S01E01.mkv", "x.S01E02.mkv"]), TemplateCatalog.DefaultFor(["a.mkv", "b.mkv"]));
+            Check($"rien de choisi encore : {film.Name}, {series.Name}, {many.Name}", film.Name == "Salle obscure" && series.Name is "Saison" or "Séries" && many.Name == "Nuit d'encre");
+            TemplateCatalog.RememberChoice("Métal");
+            Check("le dernier modèle choisi passe avant les vidéos", TemplateCatalog.DefaultFor(["x.S01E01.mkv", "x.S01E02.mkv"]).Name == "Métal");
+            TemplateCatalog.RememberChoice("Modèle disparu");
+            Check("un dernier modèle qui n'existe plus est ignoré", TemplateCatalog.DefaultFor(["a.mkv", "b.mkv"]).Name == "Nuit d'encre");
+        }
+        finally
+        {
+            if (lastKept != null) File.WriteAllText(TemplateCatalog.LastChoiceFile, lastKept);
+            else File.Delete(TemplateCatalog.LastChoiceFile);
+        }
         Check("seuls les boutons de l'utilisateur peuvent être retirés", elButtons.Where(b => b.Removable).All(b => b.Source == ElementLibrary.MyButtons));
         var imported = ElementLibrary.ImportButton(normalPic, focusPic);
         try
@@ -1927,7 +1948,14 @@ if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--
 var design = a.Contains("--no-menu") ? null
     : Opt("--design") is { } saved && saved.EndsWith(".json", StringComparison.OrdinalIgnoreCase) // a template saved from the menu editor (Mes modèles)
         ? System.Text.Json.JsonSerializer.Deserialize<MenuDesign>(File.ReadAllText(saved)) ?? throw new InvalidOperationException($"not a template: {saved}")
-    : (TemplateCatalog.Find(Opt("--design")) ?? (Opt("--design") is { } unknown ? throw new InvalidOperationException($"unknown template: {unknown}") : TemplateCatalog.Default())).Clone();
+    : (TemplateCatalog.Find(Opt("--design")) ?? (Opt("--design") is { } unknown ? throw new InvalidOperationException($"unknown template: {unknown}") : TemplateCatalog.DefaultFor(MainVideos()))).Clone();
+// no --design: the app's rule (TemplateCatalog.DefaultFor), from the videos that are neither --bonus nor --intro (the flags written after their --video)
+List<string> MainVideos()
+{
+    var at = a.Select((v, i) => (v, i)).Where(x => x.v == "--video").Select(x => x.i).Append(a.Count).ToList();
+    return [.. videos.Where((_, k) => videos.Count == 1 || !a.Skip(at[k]).Take(at[k + 1] - at[k]).Any(f => f is "--bonus" or "--intro"))];
+}
+if (design != null && Opt("--design") == null) Console.WriteLine($"menu template: {design.Name} (none given: the last one chosen in the app, else one that suits the videos)");
 // --menu-aspect 16:9|4:3: the version of the template for that screen, when it has both (« Autumn 16-9 » / « Autumn 4-3 »); one made for a single shape stays
 if (design != null && Opt("--menu-aspect") is { } shape)
     design = shape is "4:3" or "16:9" ? TemplateCatalog.Shaped(design, shape == "4:3") is var twin && twin != design ? twin.Clone() : design

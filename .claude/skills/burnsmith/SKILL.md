@@ -24,7 +24,7 @@ Sans argument, l'exe affiche son usage et sort avec 2.
 ## Déroulé habituel
 
 1. **Lire la vidéo** : `burnsmith probe film.mkv` donne en JSON la vidéo et ses pistes. `Index` est le numéro que prennent `--audio` et `--sub`.
-2. **Choisir un modèle** : `burnsmith templates` les liste (`OK Catégorie | Nom`). `--design` prend le nom, un dossier de modèle, ou un `.json` de modèle enregistré.
+2. **Choisir un modèle** : `burnsmith templates` les liste (`OK Catégorie | Nom`). `--design` prend le nom, un dossier de modèle, ou un `.json` de modèle enregistré. Sans `--design`, comme l'application : le dernier modèle choisi dans l'éditeur de menu de l'application, sinon d'après les vidéos du film (bonus et vidéo de début à part) : une seule = « Salle obscure », des épisodes tous nommés SxxEyy = « Saison » (« Séries » si le modèle Streaming manque), plusieurs autres = « Nuit d'encre ». La sortie le dit (`menu template: NOM`).
 3. **Regarder le menu avant d'encoder** : ajouter `--preview` à la commande `bd` / `dvd` écrit seulement les pages en JPEG dans `--out` (`menu_root.jpg`…). Les lire avec l'outil de lecture d'images pour vérifier.
 4. **Fabriquer le disque** : `burnsmith bd …` ou `burnsmith dvd …`. La commande contrôle le dossier à la fin.
 5. **Image ISO** : `burnsmith iso DOSSIER sortie.iso --label NOM` (ajouter `--dvd` pour un DVD).
