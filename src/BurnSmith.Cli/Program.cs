@@ -1872,6 +1872,16 @@ if (a.Count >= 2 && a[0] == "probe")
 }
 // burnsmith repair-top-menu FOLDER : a BD-J menu disc made before 1.0.32 (the Top Menu key refused during an episode) put on today's start and xlet, its menu kept; then "burnsmith iso" for a new image
 if (a.Count >= 2 && a[0] == "repair-top-menu") { var fixedIt = BluRay.RepairTopMenu(a[1]); Console.WriteLine(fixedIt ? "repaired: the Top Menu is the menu, each video plays in its own title" : "nothing to repair (not a BD-J menu disc of the old kind)"); return 0; }
+// burnsmith label-from-scan SCAN.png|jpg OUT.png [--diameter-mm 118] [--dpi 300] [--hole-mm auto|N] [--debug OVERLAY.png] : le scan de la face imprimée
+// d'un disque devient une étiquette à imprimer (carré blanc hors du disque et au trou, centré sur le moyeu comme l'impression) ; --debug : le scan avec les cercles trouvés
+if (a.Count >= 3 && a[0] == "label-from-scan")
+{
+    double Mm(string name, string fallback) => double.Parse(Opt(name) ?? fallback, System.Globalization.CultureInfo.InvariantCulture);
+    var lfs = DiscLabel.Make(a[1], a[2], Mm("--diameter-mm", "118"), Mm("--dpi", "300"), Opt("--hole-mm") is null or "auto" ? null : Mm("--hole-mm", "0"), Opt("--debug"));
+    Console.WriteLine($"centre {lfs.CenterX:0.0}, {lfs.CenterY:0.0} ({(lfs.OnHub ? $"moyeu, rayon {lfs.HubRadius:0.0} px" : "bord extérieur")}) ; bord extérieur {lfs.OuterX:0.0}, {lfs.OuterY:0.0} rayon {lfs.OuterRadius:0.0} px ; trou rayon {lfs.HoleRadius:0} px ; {lfs.ScanDpi:0} ppp");
+    foreach (var note in lfs.Notes) Console.WriteLine("attention : " + note);
+    return 0;
+}
 if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BURNSMITH", a.Contains("--dvd"), Console.WriteLine); return 0; }
 // burnsmith burn IMAGE.iso F: [--speed 4] : the speed is × 1x, absent = the drive's fastest (one disc: a second one is a second run)
 if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0); return 0; }
@@ -1920,7 +1930,7 @@ if (a.Count >= 2 && a[0] == "queue")
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER  |  burnsmith label-from-scan SCAN.png|jpg OUT.png [--diameter-mm 118] [--dpi 300] [--hole-mm auto|N] [--debug OVERLAY.png]");
     return 2;
 }
 
