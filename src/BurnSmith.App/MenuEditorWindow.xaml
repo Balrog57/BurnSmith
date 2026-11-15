@@ -104,6 +104,11 @@
             <RadioButton x:Name="Shape169" Content="16:9" GroupName="shape" Style="{StaticResource Step}" Padding="10,4" Checked="OnShape"/>
             <RadioButton x:Name="Shape43" Content="4:3" GroupName="shape" Style="{StaticResource Step}" Padding="10,4" Checked="OnShape"/>
           </StackPanel>
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBlock Text="Chercher :" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBox x:Name="SearchBox" TextChanged="OnSearch" AutomationProperties.Name="Chercher un modèle"
+                     ToolTip="Un mot du nom ou de l'usage (mariage, série, voyage…) : la recherche porte sur tous les modèles"/>
+          </DockPanel>
           <WrapPanel x:Name="Families" DockPanel.Dock="Top"/>
           <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
             <Button Content="Ajouter un dossier de modèles…" HorizontalAlignment="Stretch" Click="OnAddFolder"
@@ -119,11 +124,32 @@
               <ListBox.ItemTemplate>
                 <DataTemplate>
                   <StackPanel Margin="0,2" ToolTip="{Binding Design.Name}">
-                    <Viewbox Stretch="Uniform">
-                      <Border Width="170" Height="96" Background="#22000000" CornerRadius="4">
-                        <Image Source="{Binding Thumbnail, Converter={StaticResource Thumb}}" Stretch="Uniform"/>
-                      </Border>
-                    </Viewbox>
+                    <Grid>
+                      <Viewbox Stretch="Uniform">
+                        <Border Width="170" Height="96" Background="#22000000" CornerRadius="4">
+                          <Image Source="{Binding Thumbnail, Converter={StaticResource Thumb}}" Stretch="Uniform"/>
+                        </Border>
+                      </Viewbox>
+                      <!-- the star: a favourite stays at the top of every group -->
+                      <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="3" Click="OnStar" Cursor="Hand"
+                              ToolTip="Favori : le modèle reste en tête de la galerie" AutomationProperties.Name="Favori">
+                        <Button.Template>
+                          <ControlTemplate TargetType="Button">
+                            <Border Background="#99000000" CornerRadius="3" Padding="4,0,4,1"><ContentPresenter/></Border>
+                          </ControlTemplate>
+                        </Button.Template>
+                        <TextBlock FontSize="15" Foreground="Gold">
+                          <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                              <Setter Property="Text" Value="☆"/>
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding Favorite}" Value="True"><Setter Property="Text" Value="★"/></DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </TextBlock.Style>
+                        </TextBlock>
+                      </Button>
+                    </Grid>
                     <TextBlock Text="{Binding Label}" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="12" Margin="0,3,0,0"/>
                   </StackPanel>
                 </DataTemplate>

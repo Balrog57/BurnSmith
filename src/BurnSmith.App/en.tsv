@@ -961,3 +961,10 @@ disque non inscriptible	disc that cannot be written
 le projet	the project
 l'image	the image
 Le disque de {0} ({1}, {2} Go) est trop petit pour {3} ({4} Go).\n\nMettez un disque plus grand avant la gravure. Continuer quand même ?	The disc in {0} ({1}, {2} GB) is too small for {3} ({4} GB).\n\nPut in a larger disc before burning. Go on anyway?
+# template gallery: search, favourites, recent ones
+Chercher :	Search:
+Chercher un modèle	Search a template
+Un mot du nom ou de l'usage (mariage, série, voyage…) : la recherche porte sur tous les modèles	A word of the name or of the use (wedding, series, travel…): the search covers every template
+Favori : le modèle reste en tête de la galerie	Favorite: the template stays at the top of the gallery
+Favori	Favorite
+Récemment utilisés ({0})	Recently used ({0})
