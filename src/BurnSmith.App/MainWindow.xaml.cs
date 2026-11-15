@@ -429,6 +429,7 @@ public partial class MainWindow : Window
         if (kept != null) { undo.Push(kept); redo.Clear(); }
         kept = now;
         (UndoButton.IsEnabled, RedoButton.IsEnabled) = (undo.Count > 0, redo.Count > 0);
+        SaveSoon();
     }
 
     void Step(Stack<string> from, Stack<string> to)
@@ -440,6 +441,53 @@ public partial class MainWindow : Window
         Apply(Project.Parse(from.Pop()));
         kept = Snapshot().ToJson(); // as the window took it
         (UndoButton.IsEnabled, RedoButton.IsEnabled) = (undo.Count > 0, redo.Count > 0);
+        SaveSoon();
+    }
+
+    // ---- the project kept by itself (Project.AutosaveFile): reopened at start, written two seconds after the last change of a burst ----
+
+    readonly System.Windows.Threading.DispatcherTimer autosave = new() { Interval = TimeSpan.FromSeconds(2) };
+    bool autosaving; // off until the former project is back (and in a snapshot run): the empty window must not replace it
+
+    void SaveSoon()
+    {
+        if (!autosaving) return;
+        autosave.Stop();
+        autosave.Start();
+    }
+
+    void WriteAutosave()
+    {
+        autosave.Stop();
+        if (busy || loading > 0 || kept == null) { autosave.Start(); return; } // a disc being made or a project being read: once it is over
+        try { Project.WriteWhole(Project.AutosaveFile(), kept); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { AppFiles.LogError("Enregistrement automatique du projet", e); }
+    }
+
+    /// <summary>At start: the project as the app left it, without a word unless a video is gone (it is left out, the log says so). Then each change is kept.</summary>
+    public async Task RestoreAutosave()
+    {
+        await defaultDesign;
+        if (File.Exists(Project.AutosaveFile())) await OpenProject(Project.AutosaveFile(), autosaved: true);
+        Remember();
+        undo.Clear(); // Annuler starts from the project reopened, not from the empty window
+        (UndoButton.IsEnabled, RedoButton.IsEnabled) = (false, false);
+        autosave.Tick += (_, _) => WriteAutosave();
+        Closed += (_, _) => { Remember(); if (autosave.IsEnabled) WriteAutosave(); }; // the last change, made less than two seconds before closing
+        autosaving = true;
+    }
+
+    /// <summary>« Nouveau projet » : no video, the usual disc settings, the menu template kept with its sample title. Annuler brings the former project back.</summary>
+    void OnNewProject(object s, RoutedEventArgs e)
+    {
+        if (busy || loading > 0) return;
+        Remember();
+        var fresh = design.Clone();
+        fresh.Title = fresh.ButtonLanguage == "en" ? "My Disc" : "Mon disque";
+        Apply(new Project(Design: fresh));
+        projectFile = null; // Ctrl+S asks where: the file opened before is not this project
+        Title = "BurnSmith";
+        Remember();
     }
 
     public void Undo() => Step(undo, redo);
@@ -476,13 +524,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Replaces what the window holds by a saved project (Annuler brings the former back). A video that is gone or unreadable is told and left out.</summary>
-    public async Task OpenProject(string file)
+    public async Task OpenProject(string file, bool autosaved = false)
     {
         if (busy) return;
         Project p;
         try { p = Project.Load(file); }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
         {
+            if (autosaved) { AppFiles.LogError("Projet repris au démarrage", e); return; } // nothing to ask at start: the window starts empty
             MessageBox.Show(this, $"Impossible d'ouvrir {Path.GetFileName(file)} : {e.Message}", "Projet", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -498,6 +547,7 @@ public partial class MainWindow : Window
                 catch (Exception ex) { Warn($"Projet : « {Path.GetFileName(video)} » est introuvable ou illisible, cette vidéo n'est pas reprise ({ex.Message.Split('\n')[0]})."); }
             }
             Apply(p);
+            if (autosaved) return; // the kept project is no file of the user's: Ctrl+S asks where
             projectFile = file;
             Title = Path.GetFileNameWithoutExtension(file) + " — BurnSmith";
         }

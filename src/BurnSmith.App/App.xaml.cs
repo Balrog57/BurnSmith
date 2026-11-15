@@ -40,6 +40,7 @@ public partial class App : Application
         main.Show();
         if (!snapshot && BurnSmith.Core.Updater.IsInstalled()) _ = CheckForUpdate(main); // while the videos load; never in a development build
         if (Array.IndexOf(e.Args, "--try-install") is var tryAt and >= 0 && tryAt + 1 < e.Args.Length) _ = InstallUpdate(main, () => Task.FromResult(e.Args[tryAt + 1]));
+        if (!snapshot || e.Args.Contains("restore")) await main.RestoreAutosave(); // the project as the app left it, before a file given to the exe; a snapshot starts empty unless it says restore
         foreach (var video in videos) await main.LoadSource(video);
         if (!snapshot) return;
         await main.DefaultDesignLoaded;

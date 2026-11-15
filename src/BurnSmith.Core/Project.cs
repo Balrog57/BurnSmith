@@ -39,6 +39,17 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
 
     public static Project Load(string file) => Parse(File.ReadAllText(file));
 
+    /// <summary>Where the window keeps the project it holds, rewritten after each change and reopened at its next start; never a file the user saved.</summary>
+    public static string AutosaveFile() => Path.Combine(AppFiles.Root(), "autosave" + Extension);
+
+    /// <summary>Writes <paramref name="json"/> beside <paramref name="file"/>, then puts it in its place: a crash half way leaves the former file whole.</summary>
+    public static void WriteWhole(string file, string json)
+    {
+        var tmp = file + ".tmp";
+        File.WriteAllText(tmp, json);
+        File.Move(tmp, file, true);
+    }
+
     /// <summary>The titles as the disc carries them: on a trial disc (<see cref="Trial"/> &gt; 0) each one cut to that many seconds, a passage at each chapter.</summary>
     public static List<DiscTitle> OnDisc(IReadOnlyList<DiscTitle> titles, int chapterMinutes, int trial, Func<string, SourceInfo> probe) =>
         trial <= 0 ? [.. titles] : [.. titles.Select(t => t.Trial(probe(t.Video), chapterMinutes, trial))];

@@ -931,3 +931,5 @@ titre {0} : le titre {1} est annoncé {2} secteurs après VIDEO_TS.IFO, il est �
 {0} Go	{0} GB
 # menu type, disc sizes, app language (added with the HDMV menu)
 « Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.	"No limit" cannot be burned: choose the size of the disc to burn, or untick burning.
+Nouveau projet	New project
+Nouveau projet : aucune vidéo et les réglages habituels, le modèle de menu gardé (Annuler revient au projet d'avant). Le projet en cours est gardé tout seul et rouvert au prochain lancement	New project: no video and the usual settings, the menu template kept (Undo brings the former project back). The current project is kept on its own and reopened at the next start
