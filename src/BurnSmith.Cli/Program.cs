@@ -1800,9 +1800,9 @@ if (a.Count >= 1 && a[0] == "check-edit")
     {
         var dtsFirst = new SourceInfo("h264", 1920, 1080, 24, "dts", 6, 600, [new(0, "dts", 6, "fre", ""), new(1, "ac3", 6, "eng", ""), new(2, "truehd", 8, "fre", "", Lossless: true)], []);
         var (compat, enc, hdmv) = Project.Compatible([new DiscTitle("x", Audio: [0, 1, 2]), new DiscTitle("x", Audio: [0, 1])], new EncodeOptions(Lossless: true), _ => dtsFirst);
-        Check("« Compatibilité maximale »: HDMV menu, no lossless sound; a DTS first gives way to a track of its language that becomes AC-3, never to another language; the slowest burn is 4x",
+        Check("« Compatibilité maximale »: HDMV menu, no lossless sound; a DTS first gives way to a track of its language that becomes AC-3, never to another language; the slowest burn is 2x",
               hdmv && !enc.Lossless && string.Join(',', compat[0].KeptAudio(dtsFirst).Select(a => a.Index)) == "2,0,1" && compat[1].DefaultAudio == null
-              && new DiscTitle("x", Audio: [1, 0]).Ac3First(dtsFirst).DefaultAudio == null && Iso.Speeds[^1] == 4);
+              && new DiscTitle("x", Audio: [1, 0]).Ac3First(dtsFirst).DefaultAudio == null && Iso.Speeds[^1] == 2);
         Check("warnings before a build: a 100 GB disc (Blu-ray 4K 93 GB usable) only; not a BD-66, a BD-50, a DVD or « Sans limite »",
               Project.Warning("uhd", 93) != null && Project.Warning("bd", 93) != null && Project.Warning("uhd", 61) == null && Project.Warning("bd", 46.5) == null && Project.Warning("dvd", 93) == null && Project.Warning("uhd", 0) == null);
     }
