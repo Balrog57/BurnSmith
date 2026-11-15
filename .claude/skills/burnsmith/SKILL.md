@@ -26,6 +26,7 @@ Sans argument, l'exe affiche son usage et sort avec 2.
 1. **Lire la vidéo** : `burnsmith probe film.mkv` donne en JSON la vidéo et ses pistes. `Index` est le numéro que prennent `--audio` et `--sub`.
 2. **Choisir un modèle** : `burnsmith templates` les liste (`OK Catégorie | Nom`). `--design` prend le nom, un dossier de modèle, ou un `.json` de modèle enregistré.
 3. **Regarder le menu avant d'encoder** : ajouter `--preview` à la commande `bd` / `dvd` écrit seulement les pages en JPEG dans `--out` (`menu_root.jpg`…). Les lire avec l'outil de lecture d'images pour vérifier.
+   **Savoir ce qui va se passer** : ajouter `--recap` à la commande `bd` / `dvd` (ou `burnsmith project disque.burnsmith --recap`) affiche seulement « À savoir avant de démarrer », ce que la fenêtre montre avant Démarrer : vidéos copiées telles quelles ou converties (et en combien de temps, à peu près), son refait (« Le son TrueHD 7.1 de la vidéo 2 sera refait en Dolby Digital 5.1 »), remplissage du disque, son et sous-titres au démarrage. Rien n'est encodé. Le dire à l'utilisateur avant un long build.
 4. **Fabriquer le disque** : `burnsmith bd …` ou `burnsmith dvd …`. La commande contrôle le dossier à la fin.
 5. **Image ISO** : `burnsmith iso DOSSIER sortie.iso --label NOM` (ajouter `--dvd` pour un DVD).
 6. **Contrôler** : `burnsmith check-disc sortie.iso DOSSIER`.
@@ -108,4 +109,4 @@ Le résultat se donne ensuite à `--video`.
 
 ## Vérifier le logiciel après une modification du code
 
-Depuis le dépôt seulement. `check-update`, `check-edit`, `check-elements`, `check-highlights`, `check-templates`, `check-fidelity`, `check-bd`, `check-reliability` (ajouter `--no-dvd` aux trois qui l'acceptent pour passer les vrais builds DVD, lents). Les lancer un par un : l'exe est verrouillé pendant qu'un contrôle tourne, donc pas de `dotnet build` en même temps.
+Depuis le dépôt seulement. `check-update`, `check-edit`, `check-elements`, `check-highlights`, `check-templates`, `check-fidelity`, `check-bd`, `check-reliability`, `check-recap` (ajouter `--no-dvd` aux trois qui l'acceptent pour passer les vrais builds DVD, lents). Les lancer un par un : l'exe est verrouillé pendant qu'un contrôle tourne, donc pas de `dotnet build` en même temps.

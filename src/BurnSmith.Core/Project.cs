@@ -43,6 +43,22 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
     public static List<DiscTitle> OnDisc(IReadOnlyList<DiscTitle> titles, int chapterMinutes, int trial, Func<string, SourceInfo> probe) =>
         trial <= 0 ? [.. titles] : [.. titles.Select(t => t.Trial(probe(t.Video), chapterMinutes, trial))];
 
+    /// <summary>What <see cref="Build"/> puts on the disc: the usable size, the titles (cut for a trial disc), the menu.</summary>
+    (double Usable, List<DiscTitle> List, MenuDesign? Menu) Disc(int trial)
+    {
+        var usable = CapacityGB > 0 ? CapacityGB : CapacityGB < 0 ? 0 : Kind == "dvd" ? 4.2 : Kind == "uhd" ? 93 : 23.3; // below 0 = no size limit, which the builds and the checks call 0
+        var list = OnDisc(Titles ?? [], ChapterMinutes, trial, BluRay.Probe);
+        return (usable, list, Menu || list.Count(t => !t.Intro) > 1 ? Design ?? TemplateCatalog.Default().Clone() : null);
+    }
+
+    /// <summary>« À savoir avant de démarrer » for this project (see Core.Recap): what <see cref="Build"/> would do, nothing built. `burnsmith project FILE --recap`.</summary>
+    public List<string> Recap(int trial)
+    {
+        var (usable, list, menu) = Disc(trial);
+        return Kind == "dvd" ? Core.Recap.For(new DvdJob(list, "", menu, ChapterMinutes, usable, Encode ?? new(FitDisc: true), Playback, Subtitles))
+            : Core.Recap.For(new BluRayJob(list, "", menu, Kind == "uhd", "X", ChapterMinutes, Encode ?? new(FitDisc: true), usable, Playback, Subtitles, HdmvMenu));
+    }
+
     // not "<folder>.iso": that name could belong to the user's own file
     public static string IsoFile(string folder) => Path.TrimEndingDirectorySeparator(folder) + "_BurnSmith.iso";
 
@@ -54,9 +70,7 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
     public List<string> Build(string? folder, int trial, Action<string> log, CancellationToken cancel = default, IProgress<double>? progress = null)
     {
         var dir = Path.GetFullPath(folder ?? (Out is { Length: > 0 } ? Path.TrimEndingDirectorySeparator(Out) + (trial > 0 ? "_essai" : "") : throw new ArgumentException("the project names no output folder")));
-        var usable = CapacityGB > 0 ? CapacityGB : CapacityGB < 0 ? 0 : Kind == "dvd" ? 4.2 : Kind == "uhd" ? 93 : 23.3; // below 0 = no size limit, which the builds and the checks call 0
-        var list = OnDisc(Titles ?? [], ChapterMinutes, trial, BluRay.Probe);
-        var menu = Menu || list.Count(t => !t.Intro) > 1 ? Design ?? TemplateCatalog.Default().Clone() : null;
+        var (usable, list, menu) = Disc(trial);
         var label = Label is { Length: > 0 } ? Label : "BURNSMITH";
         if (trial > 0) log($"trial disc: {trial} s of each video, in {dir}");
         if (Kind == "dvd") Dvd.Build(new DvdJob(list, dir, menu, ChapterMinutes, usable, Encode ?? new(FitDisc: true), Playback, Subtitles), log, cancel);

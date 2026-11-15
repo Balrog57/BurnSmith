@@ -931,3 +931,25 @@ titre {0} : le titre {1} est annoncé {2} secteurs après VIDEO_TS.IFO, il est �
 {0} Go	{0} GB
 # menu type, disc sizes, app language (added with the HDMV menu)
 « Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.	"No limit" cannot be burned: choose the size of the disc to burn, or untick burning.
+# « À savoir avant de démarrer » (Core/Recap.cs, shown before Démarrer, heads the log) and « Copier le rapport »
+À savoir avant de démarrer :	Good to know before starting:
+La vidéo est copiée telle quelle, sans perte.	The video is copied as it is, without loss.
+Les {0} vidéos sont copiées telles quelles, sans perte.	The {0} videos are copied as they are, without loss.
+La vidéo sera convertie (environ {0}).	The video will be converted (about {0}).
+Les {0} vidéos seront converties (environ {1}).	The {0} videos will be converted (about {1}).
+Vidéos copiées telles quelles : {0} ; converties : {1} (environ {2}).	Videos copied as they are: {0}; converted: {1} (about {2}).
+Le son {0} sera refait en {1}.	The {0} sound will be remade as {1}.
+Le son {0} de toutes les vidéos sera refait en {1}.	The {0} sound of every video will be remade as {1}.
+Le son {0} de la vidéo {1} sera refait en {2}.	The {0} sound of video {1} will be remade as {2}.
+Le son {0} des vidéos {1} sera refait en {2}.	The {0} sound of videos {1} will be remade as {2}.
+Environ {0} Go, sans limite de taille.	About {0} GB, no size limit.
+Trop grand : environ {0} Go pour {1} Go utilisables.	Too big: about {0} GB for {1} GB usable.
+Le disque sera rempli à {0} %.	The disc will be {0} % full.
+Au démarrage : pas de son.	At start: no sound.
+Au démarrage : son {0}, {1}.	At start: {0} sound, {1}.
+sous-titres {0} affichés	{0} subtitles shown
+sous-titres forcés actifs	forced subtitles on
+sans sous-titres	no subtitles
+Copier le rapport	Copy the report
+Copie le journal, précédé de « À savoir avant de démarrer », pour le coller là où vous demandez de l'aide	Copies the log, headed by "Good to know before starting", to paste where you ask for help
+Le presse-papiers est occupé par un autre programme : réessayez.	The clipboard is busy with another program: try again.

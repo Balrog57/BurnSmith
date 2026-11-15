@@ -78,6 +78,7 @@ public partial class App : Application
         if (e.Args.FirstOrDefault(a => a.StartsWith("remote=")) is { } remote && window is MenuEditorWindow piloted) await piloted.TryRemote(remote[7..]); // remote=Right,Enter: the Aperçu step's remote
         if (e.Args.Contains("zones") && window is MenuEditorWindow zoned) { zoned.TryZones(); await Task.Delay(2500); }
         if (e.Args.Contains("undo") && window is MenuEditorWindow undone) { await undone.TryUndo(); await Task.Delay(1000); }
+        if (e.Args.Contains("journal") && window == main) { main.LogExpander.IsExpanded = true; await Task.Delay(500); } // the log open, with « Copier le rapport »
         if (e.Args.Contains("queue") && window == main) { main.TryQueue(); await Task.Delay(500); } // the disc put in the queue: its count by the button
         if (e.Args.Contains("undo") && window == main) { main.TryUndo(); await Task.Delay(1500); } // the last video removed, then back: the list is whole and Rétablir is lit
         if (e.Args.Contains("guides") && window is MenuEditorWindow guided) await guided.TryGuides();

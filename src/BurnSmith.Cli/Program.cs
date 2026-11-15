@@ -121,6 +121,8 @@ if (a.Count >= 3 && a[0] is "slideshow" or "song" or "join")
 if (a.Count >= 1 && a[0] == "check-bd") return BdCheck.Run(a.Contains("--no-dvd"));
 // burnsmith check-reliability [--no-dvd] : Cancel on real Blu-ray and DVD encodes (how fast, no process left, no work folder, not a tool failure), half an image, a source gone, the error log, closing
 if (a.Count >= 1 && a[0] == "check-reliability") return ReliabilityCheck.Run(a.Contains("--no-dvd"));
+// burnsmith check-recap : « À savoir avant de démarrer » on made-up sources (no video read): copied / converted, sound remade, how full, what plays at the start
+if (a.Count >= 1 && a[0] == "check-recap") return RecapCheck.Run();
 // burnsmith check-templates [--matrix] [--only NAME] [--picture frame.jpg] (--only: the templates whose name contains NAME, no composed designs) : builds every template as film and series and checks pages, buttons, remote moves, pictures;
 // --matrix = every disc shape (1..40 chapters, 2..60 episodes, 1..9 audio, 0..9 subtitles) and 200 designs the menu editor can compose
 if (a.Count >= 1 && a[0] == "check-templates") return TemplateCheck.Run(Opt("--picture") is { } cp ? Path.GetFullPath(cp) : null, a.Contains("--matrix"), Opt("--only"));
@@ -1901,6 +1903,8 @@ int BuildProject(string file)
     Console.WriteLine(found.Count == 0 ? "disc checked: no problem" : "disc check: " + string.Join(" ; ", found));
     return found.Count == 0 ? 0 : 1;
 }
+// burnsmith project FILE.burnsmith --recap [--trial [SECONDS]] : only « À savoir avant de démarrer », what the build would do, nothing built (as bd / dvd --recap)
+if (a.Count >= 2 && a[0] == "project" && a.Contains("--recap")) { var recapped = Project.Load(a[1]); recapped.Recap(a.Contains("--trial") ? Trial() : recapped.Trial).ForEach(Console.WriteLine); return 0; }
 if (a.Count >= 2 && a[0] == "project") return BuildProject(a[1]);
 // burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] : the app's « File d'attente »: the projects built one after the other, each in its own folder
 //   (with its ISO when the project asks for one, nothing burnt); one that fails does not stop the next; exit 1 when any failed
@@ -2064,6 +2068,14 @@ if (a.Contains("--preview"))
 var dvdDisc = a[0] == "dvd";
 if (dvdDisc) (encode, capacity) = (encode with { DvdPal = a.Contains("--pal") ? true : a.Contains("--ntsc") ? false : null, DvdWide = !a.Contains("--4x3") }, Opt("--capacity") != null ? capacity : 4.2); // --capacity 7.6: a DVD-9
 var discKind = dvdDisc ? "dvd" : a.Contains("--uhd") ? "uhd" : "bd";
+// --recap: only « À savoir avant de démarrer », in everyday French (videos copied or converted and about how long, sound remade, how full the disc is, what plays at the start); nothing built
+if (a.Contains("--recap"))
+{
+    var recapTitles = Project.OnDisc(titles, chapters, Trial(), BluRay.Probe);
+    (dvdDisc ? Recap.For(new DvdJob(recapTitles, "", design, chapters, capacity, encode, playback, subtitleLook))
+             : Recap.For(new BluRayJob(recapTitles, "", design, discKind == "uhd", "X", chapters, encode, capacity, playback, subtitleLook, Hdmv()))).ForEach(Console.WriteLine);
+    return 0;
+}
 // --save-project FILE.burnsmith: nothing is built; the disc these flags describe is written as a project the app opens (« Ouvrir un projet ») and `burnsmith project` builds
 if (Opt("--save-project") is { } projectFile)
 {
