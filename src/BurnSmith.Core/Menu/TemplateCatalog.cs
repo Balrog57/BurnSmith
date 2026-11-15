@@ -5,7 +5,7 @@ namespace BurnSmith.Core.Menu;
 /// <see cref="Pack"/> when it was published), so a PC without any other program still gets them. A template found in a user folder wins
 /// over the carried one of the same name. The repository holds none of these files.
 /// </summary>
-public static class TemplateCatalog
+public static partial class TemplateCatalog
 {
     public sealed record Found(MenuDesign Design, string? Thumbnail)
     {
@@ -64,9 +64,37 @@ public static class TemplateCatalog
             foreach (var found in TemplateFolders(kid, depth - 1)) yield return found;
     }
 
-    /// <summary>The design a new project starts with: the first Blu-ray template named "Birthday1" when available, else a plain gradient.</summary>
+    /// <summary>The checks' fixed design, and <see cref="DefaultFor"/>'s last resort: the first Blu-ray template named "Birthday1" when available, else a plain gradient.</summary>
     public static MenuDesign Default() =>
         Scan().Usable.Select(f => f.Design).FirstOrDefault(d => d.Name.Equals("Birthday1", StringComparison.OrdinalIgnoreCase)) ?? new MenuDesign();
+
+    /// <summary>The name of the last template the user chose in the menu editor: a new disc starts from it.</summary>
+    public static string LastChoiceFile => Path.Combine(AppData, "BurnSmith", "last-template.txt");
+
+    public static void RememberChoice(string name)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(LastChoiceFile)!);
+        File.WriteAllText(LastChoiceFile, name);
+    }
+
+    static string? LastChoice() => File.Exists(LastChoiceFile) && File.ReadAllText(LastChoiceFile).Trim() is { Length: > 0 } name ? name : null;
+
+    /// <summary>
+    /// The template that suits the disc's feature videos (bonus and intro left out) when the user has chosen none: one video is a film
+    /// (« Salle obscure »), episodes all named SxxEyy are a season (« Saison »), other videos a neutral list of titles (« Nuit d'encre »).
+    /// </summary>
+    public static string Suggested(IReadOnlyCollection<string> videos) =>
+        videos.Count <= 1 ? "Salle obscure" : videos.All(v => Episode().IsMatch(Path.GetFileName(v))) ? "Saison" : "Nuit d'encre";
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"(?<![A-Za-z0-9])S\d{1,3}E\d{1,4}(?![0-9])", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex Episode();
+
+    /// <summary>
+    /// The design a disc starts from when no template was chosen for it (the app's new project, the command line without --design): the last
+    /// template the user chose, else <see cref="Suggested"/> (« Séries » where « Saison » is missing: it needs the Streaming template), else <see cref="Default"/>.
+    /// </summary>
+    public static MenuDesign DefaultFor(IReadOnlyCollection<string> videos) =>
+        Find(LastChoice()) ?? Find(Suggested(videos)) ?? (Suggested(videos) == "Saison" ? Find("Séries") : null) ?? Default();
 
     /// <summary>A template named on the command line: a template folder, a catalogue name, or one the user saved (« Mes modèles »).</summary>
     public static MenuDesign? Find(string? nameOrFolder) =>
