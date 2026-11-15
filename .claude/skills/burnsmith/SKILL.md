@@ -97,7 +97,7 @@ Le résultat se donne ensuite à `--video`.
 - `burnsmith verify image.iso F:` : compare un disque à son image.
 - `burnsmith erase F:` : efface un disque réinscriptible.
 - `burnsmith check-disc DOSSIER|image.iso [DOSSIER]` : structure d'un disque fini, sans lecteur.
-- `burnsmith scan-damage image.iso|DOSSIER [--decode]` : où une copie de disque (Blu-ray ou DVD) est abîmée, sans monter l'image : secteurs remplis de FF ou de zéros par le logiciel de copie, blocs de 6 144 octets remplacés par des paquets nuls, synchronisation perdue, paquets encore chiffrés, chacun placé dans son fichier et dans le temps (« 00005.m2ts (film, 1 h 32) : illisible de 76:18 à la fin ») ; les ruptures de continuité sont signalées à part (souvent d'origine). `--decode` fait aussi décoder chaque flux par ffmpeg (plusieurs minutes pour un film). Code de sortie 1 quand un dommage est trouvé.
+- `burnsmith scan-damage image.iso|DOSSIER [--decode|--no-decode]` : où une copie de disque (Blu-ray ou DVD) est abîmée, sans monter l'image : secteurs remplis de FF ou de zéros par le logiciel de copie, blocs de 6 144 octets remplacés par des paquets nuls, synchronisation perdue, paquets encore chiffrés, chacun placé dans son fichier et dans le temps (« 00005.m2ts (film, 1 h 32) : illisible de 76:18 à la fin ») ; les ruptures de continuité sont signalées à part (souvent d'origine). Les petits clips (images fixes, menus, moins de 64 Mo) sont aussi décodés par ffmpeg : une image que le décodeur a dû masquer (« image abîmée ») est un dommage, même sans paquet FF ni nul ; les flux de menu (IG) que ffmpeg prend pour du mp3 sont ignorés. `--decode` fait décoder chaque flux (plusieurs minutes pour un film), `--no-decode` aucun. Code de sortie 1 quand un dommage est trouvé.
 
 ## Modèles de menu
 

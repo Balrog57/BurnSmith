@@ -10,7 +10,8 @@ namespace BurnSmith.Core;
 /// Where a ripped disc (an .iso, or a folder holding BDMV / VIDEO_TS) is damaged. A ripper fills the sectors it could not read with 0xFF (some with zeros):
 /// such sectors are found in every file (zeros only in the streams, where a whole zero sector is never valid), each run placed in its file and, for a stream,
 /// in time (its PCR, or the SCR of a DVD pack). The streams are also read packet by packet: lost sync, packets still encrypted (AACS / CSS not removed),
-/// continuity breaks (a remark: authored discs have them too). With <c>decode</c> ffmpeg decodes each stream and its errors are counted (a remark too).
+/// continuity breaks (a remark: authored discs have them too). With <c>decode</c> ffmpeg decodes each stream (short ones always, unless <c>decodeShort</c> is off):
+/// a picture the decoder had to conceal is damage (a rotted still the packet scan cannot see), its other errors are a remark.
 /// The image is read without mounting it: UDF (1.02 for a DVD, 2.50 with its metadata partition for a Blu-ray) is walked here.
 /// </summary>
 public static class DamageScan
@@ -31,11 +32,12 @@ public static class DamageScan
         public double? Duration;
         public string? Role, Playlist;
         public double PlaylistShift; // playlist time = clip time + this
-        public readonly List<double> DecodeErrors = [];
-        public string? DecodeSample, DecodeFailed;
-        public bool Damaged => Runs.Count > 0 || LostPackets > 0 || Encrypted > 0 || NullDamage(this).Count > 0;
+        public readonly List<double> DecodeErrors = [], Concealed = [];
+        public string? DecodeSample, DecodeFailed, ConcealSample;
+        public bool Damaged => Runs.Count > 0 || LostPackets > 0 || Encrypted > 0 || Concealed.Count > 0 || NullDamage(this).Count > 0;
     }
 
+    const int ShortClip = 64 << 20; // decoded by default: stills, menus, a few seconds of video
     const int S = 2048, Unit = 6144; // an AACS aligned unit: 32 packets of 192 bytes, 3 sectors
 
     /// <summary>
@@ -50,7 +52,7 @@ public static class DamageScan
     }
 
     /// <summary>The report (one line per file with something to say, the clean ones on one line, a last summary line) and whether damage was found.</summary>
-    public static (List<string> Lines, bool Damaged) Run(string path, bool decode = false, Action<string>? progress = null)
+    public static (List<string> Lines, bool Damaged) Run(string path, bool decode = false, Action<string>? progress = null, bool decodeShort = true)
     {
         var clock = Stopwatch.StartNew();
         var entries = File.Exists(path) ? UdfFiles(path) : FolderFiles(path);
@@ -64,7 +66,8 @@ public static class DamageScan
             var clip = Kind(e) == 1 ? clips.GetValueOrDefault(Path.GetFileNameWithoutExtension(e.Name).ToUpperInvariant()) : null;
             if (clip != null) (f.Duration, f.Role, f.Playlist, f.PlaylistShift) = (clip.Duration, clip.Film ? "film" : null, clip.Playlist, clip.Shift);
             Scan(f, clip?.Start);
-            if (decode && Kind(e) != 0) { progress?.Invoke($"décodage de {e.Name} par ffmpeg"); Decode(f); }
+            if (decode && Kind(e) != 0) { progress?.Invoke($"décodage de {e.Name} par ffmpeg"); Decode(f, true); }
+            else if (decodeShort && Kind(e) != 0 && e.Size <= ShortClip) Decode(f, false); // a still or a menu clip: decoding it costs nothing
             found.Add(f);
         }
 
@@ -82,7 +85,7 @@ public static class DamageScan
     }
 
     /// <summary>
-    /// A made-up clip of 64 units, PCR every unit: clean, then with one unit of nulls in the middle, then with FF from unit 40. The problems found, empty when right.
+    /// A made-up clip of 64 units, PCR every unit: clean, then with one unit of nulls in the middle, then with FF from unit 40; then a still and an mp3 stream (what ffmpeg takes a menu's IG for) made by ffmpeg, scrambled inside. The problems found, empty when right.
     /// </summary>
     public static List<string> SelfCheck()
     {
@@ -120,6 +123,19 @@ public static class DamageScan
             Expect("clip sain", Clip(-1, 99), l => l.StartsWith("sains"));
             Expect("bloc de paquets nuls", Clip(20, 99), l => l.Contains("paquets nuls (1 bloc") && l.Contains("de 0:19 à 0:21"));
             Expect("FF jusqu'à la fin", Clip(-1, 40), l => l.Contains("illisible de 0:39 à la fin") && !l.Contains("paquets nuls"));
+            // made by ffmpeg, then 6 packets in the middle scrambled past their headers: what rot does inside a picture, with no FF or null packet to see
+            var ffmpeg = Tools.Find("ffmpeg.exe");
+            byte[] Made(params string[] source)
+            {
+                Tools.Run(ffmpeg, ["-y", "-v", "error", .. source, "-mpegts_m2ts_mode", "1", "-f", "mpegts", file]);
+                var b = File.ReadAllBytes(file);
+                for (var k = b.Length / 384; k < b.Length / 384 + 6; k++)
+                    for (var i = k * 192 + 12; i < k * 192 + 192; i++) b[i] = (byte)(i * 37);
+                return b;
+            }
+            Expect("image fixe abîmée (décodée sans --decode)", Made("-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=25", "-frames:v", "1", "-c:v", "libx264", "-preset", "ultrafast", "-qp", "10"),
+                   l => l.Contains("image abîmée") && l.Contains("vers 0:00"));
+            Expect("flux pris pour du mp3 (menu IG)", Made("-f", "lavfi", "-i", "sine=d=2", "-c:a", "libmp3lame"), l => l.StartsWith("sains"));
         }
         finally { Directory.Delete(dir, true); }
         return problems;
@@ -277,6 +293,8 @@ public static class DamageScan
             parts.Add($"synchronisation perdue sur {Num(lostPackets)} paquet{(lostPackets > 1 ? "s" : "")} ({lost.Count} zone{(lost.Count > 1 ? "s" : "")}, {Stretch(lost[0].Start, lost[0].End)}{(lost.Count > 1 ? " pour la première" : "")})");
         if (f.Encrypted > 0) parts.Add($"{Num(f.Encrypted)} paquets encore chiffrés ({(Kind(e) == 2 ? "CSS" : "AACS")} non retiré), dès {Where(f.EncryptedAt)}");
         if (f.Cc > 0) parts.Add($"à noter : {Num(f.Cc)} rupture{(f.Cc > 1 ? "s" : "")} de continuité, vers {string.Join(", ", f.CcAt.Select(Where).Distinct().Take(3))}{(f.CcAt.Select(Where).Distinct().Count() > 3 ? " etc." : "")} (souvent d'origine, pas un dommage)");
+        if (f.Concealed.Count > 0)
+            parts.Add($"image abîmée (le décodeur a dû masquer {f.Concealed.Count} erreur{(f.Concealed.Count > 1 ? "s" : "")}, une platine montre le défaut), vers {string.Join(", ", f.Concealed.Select(Clock).Distinct().Take(5))}{(f.Concealed.Select(Clock).Distinct().Count() > 5 ? " etc." : "")} (ex. « {f.ConcealSample} »)");
         if (f.DecodeFailed != null) parts.Add($"décodage impossible : {f.DecodeFailed}");
         if (f.DecodeErrors.Count > 0)
         {
@@ -356,23 +374,31 @@ public static class DamageScan
 
     // ---- ffmpeg
 
-    static void Decode(Found f)
+    /// <summary>ffmpeg decodes the stream; <paramref name="asked"/> false (a short clip decoded by default): ffmpeg missing or failing is not said.</summary>
+    static void Decode(Found f, bool asked)
     {
         string exe;
         try { exe = Tools.Find("ffmpeg.exe"); }
-        catch (FileNotFoundException e) { f.DecodeFailed = e.Message; return; }
+        catch (FileNotFoundException e) { if (asked) f.DecodeFailed = e.Message; return; }
         var psi = new ProcessStartInfo(exe) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         // shortcut: ffmpeg decodes the streams it picks (the main video and one audio), not every track; an error gets the time ffmpeg had written out then, a few seconds off
-        foreach (var x in new[] { "-hide_banner", "-nostats", "-v", "error", "-progress", "pipe:1", "-stats_period", "0.2","-f", Kind(f.Entry) == 1 ? "mpegts" : "mpeg", "-i", "pipe:0", "-f", "null", "-" })
+        foreach (var x in new[] { "-hide_banner", "-nostats", "-loglevel", "level+warning", "-progress", "pipe:1", "-stats_period", "0.2","-f", Kind(f.Entry) == 1 ? "mpegts" : "mpeg", "-i", "pipe:0", "-f", "null", "-" })
             psi.ArgumentList.Add(x);
         using var p = new Process { StartInfo = psi };
         double now = 0;
         string? last = null;
+        var nothing = false;
         p.OutputDataReceived += (_, e) => { if (e.Data?.StartsWith("out_time_us=") == true && long.TryParse(e.Data[12..], out var us)) Volatile.Write(ref now, us / 1e6); };
         p.ErrorDataReceived += (_, e) =>
         {
-            if (string.IsNullOrWhiteSpace(e.Data) || e.Data.StartsWith("[null @")) return; // the null output's own complaints (time stamps) are not the disc's
-            lock (f.DecodeErrors) { f.DecodeErrors.Add(Volatile.Read(ref now)); f.DecodeSample ??= Regex.Replace(e.Data, @" @ (0x)?[0-9a-fA-F]+\]", "]").Trim(); last = e.Data; }
+            if (e.Data?.Contains("does not contain any stream") == true) { nothing = true; return; } // no video or audio stream (a menu clip ffmpeg does not know)
+            if (string.IsNullOrWhiteSpace(e.Data) || e.Data.StartsWith("[null @") || e.Data.StartsWith("[out#")) return; // the null output's own complaints (time stamps) are not the disc's
+            // an interactive-graphics (menu) stream is misprobed as mp3 and fails the same on the official disc: a Blu-ray never carries mp3
+            if (Kind(f.Entry) == 1 && Regex.IsMatch(e.Data, @"[\[/:]mp3(float)? @")) return;
+            var said = Regex.Replace(e.Data, @" @ (0x)?[0-9a-fA-F]+\]| \[(warning|error|fatal)\]", m => m.Value.StartsWith(" @") ? "]" : "").Trim();
+            lock (f.DecodeErrors)
+                if (e.Data.Contains("concealing") || e.Data.Contains("corrupt decoded frame")) { f.Concealed.Add(Volatile.Read(ref now)); f.ConcealSample ??= said; }
+                else if (Regex.IsMatch(e.Data, @"\[(error|fatal)\]")) { f.DecodeErrors.Add(Volatile.Read(ref now)); f.DecodeSample ??= said; last = e.Data; }
         };
         p.Start();
         Tools.TieToApp(p);
@@ -382,7 +408,12 @@ public static class DamageScan
         catch (IOException) { } // ffmpeg stopped reading
         finally { try { p.StandardInput.Close(); } catch (IOException) { } }
         p.WaitForExit();
-        if (p.ExitCode != 0 && f.DecodeErrors.Count <= 1) { f.DecodeFailed = $"ffmpeg sort avec le code {p.ExitCode} ({last})"; f.DecodeErrors.Clear(); }
+        if (nothing || p.ExitCode != 0 && (f.DecodeErrors.Count <= 1 || !asked))
+        {
+            if (asked && !nothing) f.DecodeFailed = $"ffmpeg sort avec le code {p.ExitCode} ({last})";
+            f.DecodeErrors.Clear();
+        }
+        f.Concealed.Sort();
         f.DecodeErrors.Sort();
     }
 
