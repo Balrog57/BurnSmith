@@ -931,3 +931,8 @@ titre {0} : le titre {1} est annoncé {2} secteurs après VIDEO_TS.IFO, il est �
 {0} Go	{0} GB
 # menu type, disc sizes, app language (added with the HDMV menu)
 « Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.	"No limit" cannot be burned: choose the size of the disc to burn, or untick burning.
+# « Compatibilité maximale » and the warnings said before a build
+Compatibilité maximale	Maximum compatibility
+Ce que toutes les platines lisent : le menu simple (HDMV, pages fixes, sans menu pop-up, pas encore essayé sur une vraie platine) au lieu du menu Java, le son en Dolby Digital (AC-3) avec une piste AC-3 en premier, et la gravure à 4x.	What every player reads: the simple menu (HDMV, still pages, no pop-up menu, not yet tried on a real player) instead of the Java menu, the sound in Dolby Digital (AC-3) with an AC-3 track first, and burning at 4x.
+Les disques de 100 Go sont refusés par beaucoup de platines : préférez deux disques de 50 Go.	100 GB discs are refused by many players: prefer two 50 GB discs.
+À savoir : la PS5 ne lit aucun disque gravé, quel qu'il soit (Sony le dit dans son aide).	Good to know: the PS5 plays no burned disc of any kind (Sony says so in its support pages).

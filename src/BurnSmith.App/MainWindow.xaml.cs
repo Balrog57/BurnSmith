@@ -397,7 +397,8 @@ public partial class MainWindow : Window
 
     /// <summary>The disc as it stands: what a project file holds, and one undo step.</summary>
     Project Snapshot() => new(kind, titles.Select(t => t.ToDisc()).ToList(), design, MenuCheck.IsChecked == true, labelEdited ? volume : null, chapterMinutes, encode, playback, subtitleStyle,
-                              (CapacityBox.SelectedItem as Output)?.Name, (CapacityBox.SelectedItem as Output)?.Usable ?? 0, outEdited ? OutBox.Text : null, IsoCheck.IsChecked == true, TrialCheck.IsChecked == true ? TrialSeconds : 0, hdmvMenu);
+                              (CapacityBox.SelectedItem as Output)?.Name, (CapacityBox.SelectedItem as Output)?.Usable ?? 0, outEdited ? OutBox.Text : null, IsoCheck.IsChecked == true, TrialCheck.IsChecked == true ? TrialSeconds : 0, hdmvMenu,
+                              MaxCompat: CompatCheck.IsChecked == true);
 
     /// <summary>Five minutes of each video on a trial disc.</summary>
     const int TrialSeconds = 300;
@@ -417,6 +418,7 @@ public partial class MainWindow : Window
             if (probed.TryGetValue(t.Video, out var info)) titles.Add(Entry.From(t, info));
         (MenuCheck.IsChecked, IsoCheck.IsChecked, TrialCheck.IsChecked, outEdited) = (p.Menu, p.Iso, p.Trial > 0, p.Out != null);
         if (p.Out != null) OutBox.Text = p.Out;
+        CompatCheck.IsChecked = p.MaxCompat;
         AfterTitlesChanged(); // the disc's name, the output folder, the size and the menu picture follow
         _ = RefreshPreview();
     }
@@ -1302,8 +1304,10 @@ public partial class MainWindow : Window
         var speed = Iso.Speeds[Math.Max(0, SpeedBox.SelectedIndex)];
         var burn = BurnCheck.IsChecked == true && drive != null;
         if (burn && cap.Unlimited) { MessageBox.Show(this, "« Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.", "BurnSmith"); return; }
+        // what is known to fail on players, said before the job starts (the PS5 note: with the burn of a Blu-ray, and in the log)
+        if (Project.Warning(kind, cap.Usable) is { } warning && MessageBox.Show(this, warning, "BurnSmith", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
         if (burn && MessageBox.Show(this,
-                $"Après la création, graver « {label} » sur {drive!.Letter} ?\n\nInsérez un disque vierge adapté ({cap.Name}). Le disque sera écrit définitivement.",
+                Loc.T($"Après la création, graver « {label} » sur {drive!.Letter} ?\n\nInsérez un disque vierge adapté ({cap.Name}). Le disque sera écrit définitivement.") + (kind == "dvd" ? "" : "\n\n" + Loc.T(Project.Ps5Note)),
                 "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
 
         var minutes = chapterMinutes;
@@ -1312,12 +1316,14 @@ public partial class MainWindow : Window
         if (trial > 0) outDir = Path.TrimEndingDirectorySeparator(outDir) + "_essai";
         var infos = titles.GroupBy(t => t.Path).ToDictionary(g => g.Key, g => g.First().Info);
         var discTitles = Project.OnDisc(titles.Select(t => t.ToDisc()).ToList(), minutes, trial, path => infos[path]);
+        if (CompatCheck.IsChecked == true) { (discTitles, enc, hdmv) = Project.Compatible(discTitles, enc, path => infos[path]); speed = Iso.Speeds[^1]; } // « Compatibilité maximale »
         var menu = MenuCheck.IsChecked == true || NeedsMenu(discTitles) ? design.Clone() : null;
         var look = subtitleStyle;
         var uhd = kind == "uhd";
         var dvd = kind == "dvd";
         var withIso = IsoCheck.IsChecked == true;
         Log.Clear();
+        if (!dvd) Append(Project.Ps5Note);
 
         var ok = await Work("Création du disque…", (log, progress, token) =>
         {
@@ -1462,7 +1468,7 @@ public partial class MainWindow : Window
             "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (answer != MessageBoxResult.Yes) return;
         writing = true;
-        var speed = Iso.Speeds[Math.Max(0, SpeedBox.SelectedIndex)];
+        var speed = Iso.Speeds[CompatCheck.IsChecked == true ? ^1 : Math.Max(0, SpeedBox.SelectedIndex)]; // « Compatibilité maximale »: the slowest
         if (await Work("Gravure…", (log, progress, token) => Iso.Burn(iso, drive.Letter, log, progress, token, speed))) Append("Terminé.");
     }
 

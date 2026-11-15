@@ -1694,6 +1694,15 @@ if (a.Count >= 1 && a[0] == "check-edit")
     Check("default audio goes first, the others keep their order; a default that is not kept, null or already first change nothing",
           Kept(new DiscTitle("x", Audio: [0, 1, 2], DefaultAudio: 2)) == "2,0,1" && Kept(new DiscTitle("x", Audio: [0, 2], DefaultAudio: 1)) == "0,2" && Kept(new DiscTitle("x", Audio: [0, 1])) == "0,1"
           && Kept(new DiscTitle("x", Audio: [0, 1], DefaultAudio: 0)) == "0,1" && Kept(new DiscTitle("x", DefaultAudio: 1)) == "0");
+    {
+        var dtsFirst = new SourceInfo("h264", 1920, 1080, 24, "dts", 6, 600, [new(0, "dts", 6, "fre", ""), new(1, "ac3", 6, "eng", ""), new(2, "truehd", 8, "fre", "", Lossless: true)], []);
+        var (compat, enc, hdmv) = Project.Compatible([new DiscTitle("x", Audio: [0, 1, 2]), new DiscTitle("x", Audio: [0, 1])], new EncodeOptions(Lossless: true), _ => dtsFirst);
+        Check("« Compatibilité maximale »: HDMV menu, no lossless sound; a DTS first gives way to a track of its language that becomes AC-3, never to another language; the slowest burn is 4x",
+              hdmv && !enc.Lossless && string.Join(',', compat[0].KeptAudio(dtsFirst).Select(a => a.Index)) == "2,0,1" && compat[1].DefaultAudio == null
+              && new DiscTitle("x", Audio: [1, 0]).Ac3First(dtsFirst).DefaultAudio == null && Iso.Speeds[^1] == 4);
+        Check("warnings before a build: a 100 GB disc (Blu-ray 4K 93 GB usable) only; not a BD-66, a BD-50, a DVD or « Sans limite »",
+              Project.Warning("uhd", 93) != null && Project.Warning("bd", 93) != null && Project.Warning("uhd", 61) == null && Project.Warning("bd", 46.5) == null && Project.Warning("dvd", 93) == null && Project.Warning("uhd", 0) == null);
+    }
     SubtitleTrack[] carried = [new(0, "subrip", "eng", "", false), new(2, "hdmv_pgs_subtitle", "fre", "", false)];
     Check("default subtitle: its 1-based number among the tracks on the disc, 0 when none, not chosen or not carried",
           new DiscTitle("x", DefaultSubtitle: 2).DefaultSubtitleNumber(carried) == 2 && new DiscTitle("x", DefaultSubtitle: 0).DefaultSubtitleNumber(carried) == 1 && new DiscTitle("x").DefaultSubtitleNumber(carried) == 0 && new DiscTitle("x", DefaultSubtitle: 1).DefaultSubtitleNumber(carried) == 0);
@@ -1874,29 +1883,37 @@ if (a.Count >= 2 && a[0] == "probe")
 if (a.Count >= 2 && a[0] == "repair-top-menu") { var fixedIt = BluRay.RepairTopMenu(a[1]); Console.WriteLine(fixedIt ? "repaired: the Top Menu is the menu, each video plays in its own title" : "nothing to repair (not a BD-J menu disc of the old kind)"); return 0; }
 if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BURNSMITH", a.Contains("--dvd"), Console.WriteLine); return 0; }
 // burnsmith burn IMAGE.iso F: [--speed 4] : the speed is × 1x, absent = the drive's fastest (one disc: a second one is a second run)
-if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0); return 0; }
+//   [--max-compat] : « Compatibilité maximale »: without --speed, the slowest speed offered
+if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : a.Contains("--max-compat") ? Iso.Speeds[^1] : 0); return 0; }
 
 // --trial [SECONDS] (bd, dvd, project): a trial disc, each video cut to SECONDS in all (300 = five minutes), a passage at each chapter: the whole menu, made in minutes, to try in VLC before the real build
 // --menu-mode bdj|hdmv (bd): the Blu-ray menu as the BD-J program (default: everything the menu can do) or as native HDMV navigation (every player runs it
 // without Java; still pages, no pop-up menu: see HdmvMenu)
+// --max-compat (bd, dvd, project, burn): « Compatibilité maximale », what every player reads: the HDMV menu, every sound in AC-3 with a Dolby Digital track first,
+//   the slowest burn speed (see Project.Compatible). Before every build, the warnings that apply (a 100 GB disc) and, on a Blu-ray, the PS5 note are printed
 bool Hdmv() => Opt("--menu-mode") switch { null or "bdj" => false, "hdmv" => true, var other => throw new ArgumentException($"--menu-mode: bdj or hdmv expected, not '{other}'") };
 int Trial() => !a.Contains("--trial") ? 0 : int.TryParse(Opt("--trial"), out var seconds) && seconds > 0 ? seconds : 300;
 // what the builds below share: the folder made, then its structure checked against the disc it must fit
 int Make(string kind, List<DiscTitle> list, string folder, MenuDesign? menu, string label, int minutes, EncodeOptions enc, double usableGb, PlaybackOptions? play, SubtitleStyle? look, int trial, double checkGb)
 {
     list = Project.OnDisc(list, minutes, trial, BluRay.Probe);
+    var hdmv = Hdmv();
+    if (a.Contains("--max-compat")) (list, enc, hdmv) = Project.Compatible(list, enc, BluRay.Probe);
+    if (Project.Warning(kind, usableGb) is { } warning) Console.WriteLine("warning: " + warning);
+    if (kind != "dvd") Console.WriteLine("note: " + Project.Ps5Note);
     if (trial > 0) Console.WriteLine($"trial disc: {trial} s of each video");
     if (kind == "dvd") Dvd.Build(new DvdJob(list, folder, menu, minutes, usableGb, enc, play, look), Console.WriteLine);
-    else BluRay.Build(new BluRayJob(list, folder, menu, kind == "uhd", label, minutes, enc, usableGb, play, look, Hdmv()), Console.WriteLine);
+    else BluRay.Build(new BluRayJob(list, folder, menu, kind == "uhd", label, minutes, enc, usableGb, play, look, hdmv), Console.WriteLine);
     var found = DiscCheck.Folder(folder, checkGb);
     Console.WriteLine(found.Count == 0 ? "disc structure checked: no problem" : "disc structure: " + string.Join(" ; ", found));
     return found.Count == 0 ? 0 : 1;
 }
 // burnsmith project FILE.burnsmith [--out FOLDER] [--trial [SECONDS]] : builds the disc of a project saved by the app (« Enregistrer le projet ») or by --save-project,
-//   as its Démarrer button would: its videos, menu and options; --out replaces the project's folder, --trial its own trial setting
+//   as its Démarrer button would: its videos, menu and options; --out replaces the project's folder, --trial its own trial setting,
+//   --max-compat turns its « Compatibilité maximale » on
 int BuildProject(string file)
 {
-    var p = Project.Load(file);
+    var p = Project.Load(file) is var saved && a.Contains("--max-compat") ? saved with { MaxCompat = true } : saved;
     var found = p.Build(Opt("--out") is { } folder ? Path.GetFullPath(folder) : null, a.Contains("--trial") ? Trial() : p.Trial, Console.WriteLine);
     Console.WriteLine(found.Count == 0 ? "disc checked: no problem" : "disc check: " + string.Join(" ; ", found));
     return found.Count == 0 ? 0 : 1;
@@ -1920,7 +1937,7 @@ if (a.Count >= 2 && a[0] == "queue")
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--save-project FILE] [--max-compat] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]] [--max-compat]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]]  |  burnsmith burn IMAGE.iso F: [--speed N|--max-compat] | burnsmith repair-top-menu FOLDER");
     return 2;
 }
 
@@ -2067,7 +2084,7 @@ var discKind = dvdDisc ? "dvd" : a.Contains("--uhd") ? "uhd" : "bd";
 // --save-project FILE.burnsmith: nothing is built; the disc these flags describe is written as a project the app opens (« Ouvrir un projet ») and `burnsmith project` builds
 if (Opt("--save-project") is { } projectFile)
 {
-    new Project(discKind, titles, design, design != null, Opt("--label"), chapters, encode, playback, subtitleLook, null, Opt("--capacity") != null && capacity <= 0 ? -1 : capacity, Opt("--out") is { } kept ? Path.GetFullPath(kept) : null, false, Trial(), Hdmv()).Save(projectFile);
+    new Project(discKind, titles, design, design != null, Opt("--label"), chapters, encode, playback, subtitleLook, null, Opt("--capacity") != null && capacity <= 0 ? -1 : capacity, Opt("--out") is { } kept ? Path.GetFullPath(kept) : null, false, Trial(), Hdmv(), MaxCompat: a.Contains("--max-compat")).Save(projectFile);
     Console.WriteLine("ok   " + Path.GetFullPath(projectFile));
     return 0;
 }
