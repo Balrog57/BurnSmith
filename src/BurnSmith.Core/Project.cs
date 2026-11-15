@@ -75,12 +75,14 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
     {
         var usable = CapacityGB > 0 ? CapacityGB : CapacityGB < 0 ? 0 : Kind == "dvd" ? 4.2 : Kind == "uhd" ? 93 : 23.3; // below 0 = no size limit, which the builds and the checks call 0
         var list = OnDisc(Titles ?? [], ChapterMinutes, trial, BluRay.Probe);
-        return (usable, list, Menu || list.Count(t => !t.Intro) > 1 ? Design ?? TemplateCatalog.Default().Clone() : null);
+        return (usable, list, Menu || list.Count(t => !t.Intro) > 1 ? Design ?? TemplateCatalog.DefaultFor([.. list.Where(t => !t.Bonus && !t.Intro).Select(t => t.Video)]).Clone() : null);
     }
 
     /// <summary>« À savoir avant de démarrer » for this project (see Core.Recap): what <see cref="Build"/> would do, nothing built. `burnsmith project FILE --recap`.</summary>
     public List<string> Recap(int trial)
     {
+        if (MaxCompat && Compatible(Titles ?? [], Encode ?? new(FitDisc: true), BluRay.Probe) is var (compatible, encode, hdmv))
+            return (this with { MaxCompat = false, Titles = compatible, Encode = encode, HdmvMenu = hdmv }).Recap(trial);
         var (usable, list, menu) = Disc(trial);
         return Kind == "dvd" ? Core.Recap.For(new DvdJob(list, "", menu, ChapterMinutes, usable, Encode ?? new(FitDisc: true), Playback, Subtitles))
             : Core.Recap.For(new BluRayJob(list, "", menu, Kind == "uhd", "X", ChapterMinutes, Encode ?? new(FitDisc: true), usable, Playback, Subtitles, HdmvMenu));
@@ -99,10 +101,9 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
         if (MaxCompat && Compatible(Titles ?? [], Encode ?? new(FitDisc: true), BluRay.Probe) is var (compatible, encode, hdmv))
             return (this with { MaxCompat = false, Titles = compatible, Encode = encode, HdmvMenu = hdmv }).Build(folder, trial, log, cancel, progress);
         var dir = Path.GetFullPath(folder ?? (Out is { Length: > 0 } ? Path.TrimEndingDirectorySeparator(Out) + (trial > 0 ? "_essai" : "") : throw new ArgumentException("the project names no output folder")));
-        var (usable, which the builds and the checks call 0
+        var (usable, list, menu) = Disc(trial);
         if (Warning(Kind, usable) is { } warning) log(warning);
         if (Kind != "dvd") log(Ps5Note);
-        var list, menu) = TemplateCatalog.DefaultFor([.. list.Where(t => !t.Bonus && !t.Intro).Select(t => t.Video)]).CloneDisc(trial);
         var label = Label is { Length: > 0 } ? Label : "BURNSMITH";
         if (trial > 0) log($"trial disc: {trial} s of each video, in {dir}");
         if (Kind == "dvd") Dvd.Build(new DvdJob(list, dir, menu, ChapterMinutes, usable, Encode ?? new(FitDisc: true), Playback, Subtitles), log, cancel, progress);
