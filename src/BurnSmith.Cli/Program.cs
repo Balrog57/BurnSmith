@@ -1838,17 +1838,39 @@ if (a.Count >= 1 && a[0] == "templates")
     return 0;
 }
 
+// burnsmith check-drives : the burner list's wording and the "disc too small" rule, then the burners of this PC (read only: nothing is written or ejected)
+if (a.Count >= 1 && a[0] == "check-drives")
+{
+    var bad = 0;
+    void DriveCheck(string what, bool ok) { Console.WriteLine($"{(ok ? "ok  " : "FAIL")} {what}"); if (!ok) bad++; }
+    Imapi.Media bdr = new("BD-R", true, 25_025_314_816, 25_025_314_816), bdre = new("BD-RE", false, 0, 25_025_314_816),
+                closed = new("BD-R", false, 0, 20_000_000_000), dvd = new("DVD+R", true, 4_700_372_992, 4_700_372_992);
+    DriveCheck("a blank BD-R reads « BD-R vierge, 25 Go »", Iso.DiscState(bdr, true) == "BD-R vierge, 25 Go");
+    DriveCheck("a written BD-RE reads « BD-RE déjà écrit »", Iso.DiscState(bdre, true) == "BD-RE déjà écrit");
+    DriveCheck("an empty drive reads « pas de disque », a pressed disc « disque non inscriptible »", Iso.DiscState(null, false) == "pas de disque" && Iso.DiscState(null, true) == "disque non inscriptible");
+    DriveCheck("a BD-50 project on a blank BD-25 is too big, a BD-25 one fits", Iso.TooSmall(bdr, 46.5) && !Iso.TooSmall(bdr, 23.3));
+    DriveCheck("a written BD-RE is judged on its size once erased", Iso.TooSmall(bdre, 46.5) && !Iso.TooSmall(bdre, 23.3));
+    DriveCheck("a closed BD-R is not judged (it says only what it holds)", !Iso.TooSmall(closed, 46.5));
+    DriveCheck("a DVD-9 project on a DVD+R is too big, a DVD-5 one fits", Iso.TooSmall(dvd, 7.6) && !Iso.TooSmall(dvd, 4.2));
+    var listed = Iso.Drives();
+    foreach (var d in listed) Console.WriteLine($"     {d.Letter} {d.State} - {d.Name}");
+    DriveCheck("this PC: only drives that write are listed (no « Msft Virtual DVD-ROM »)", listed.All(d => d.Writes && !d.Name.Contains("Virtual", StringComparison.OrdinalIgnoreCase)));
+    DriveCheck("this PC: each burner IMAPI2 reaches says what is in it", listed.All(d => d.Id == d.Letter || d.State.Length > 0));
+    Console.WriteLine(bad == 0 ? "check-drives: all ok" : $"check-drives: {bad} failed");
+    return bad == 0 ? 0 : 1;
+}
+
 // burnsmith drives | iso <disc folder> <out.iso> [--label X] [--dvd] | burn <image.iso> <F:>   (images: IMAPI2; burning: ImgBurn when installed, else IMAPI2)
 if (a.Count >= 1 && a[0] == "drives")
 {
     Console.WriteLine($"ImgBurn: {Iso.ImgBurn() ?? "absent (burning through IMAPI2)"}");
     var drives = Iso.Drives();
-    foreach (var d in drives)
-    {
-        var disc = d.Letter.Length > 0 && d.Id != d.Letter ? Imapi.Inspect(d.Letter) : null; // Id == Letter: a drive only ImgBurn reaches
-        Console.WriteLine($"{(d.Letter.Length > 0 ? d.Letter : "?"),-3} {d.Name} - {(disc == null ? "no usable disc" : $"{disc.Kind}, {(disc.Blank ? "blank" : "not blank")}, {disc.FreeBytes / 1e9:0.0} GB free")}");
-    }
+    // the app's burner list: writers only (no mounted image), each with its disc; Id == Letter: a drive only ImgBurn reaches, its disc unknown
+    foreach (var d in drives) Console.WriteLine($"{d.Letter,-3} {(d.State.Length > 0 ? d.State : "disque inconnu (ImgBurn seul)")} - {d.Name}");
     if (drives.Count == 0) Console.WriteLine("no disc burner visible to Windows");
+    if (Opt("--capacity") is { } need && double.TryParse(need, System.Globalization.CultureInfo.InvariantCulture, out var needGb))
+        foreach (var d in drives)
+            if (Iso.Disc(d.Letter) is { } disc && Iso.TooSmall(disc, needGb)) Console.WriteLine($"warning: the {disc.Kind} in {d.Letter} holds {disc.TotalBytes / 1e9:0.0} GB, less than the {needGb:0.0} GB asked");
     Imapi.SelfTest();
     Console.WriteLine("IMAPI2: typed interfaces and progress events OK");
     return 0;
@@ -1939,6 +1961,8 @@ if (a.Count >= 3 && a[0] == "label-from-scan")
 if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BURNSMITH", a.Contains("--dvd"), Console.WriteLine); return 0; }
 // burnsmith burn IMAGE.iso F: [--speed 4] [--no-verify] [--eject] [--erase] : the speed is × 1x, absent = the drive's fastest (one disc: a second one is a second run);
 //   --no-verify skips reading the disc back, --eject opens the tray at the end, --erase erases a rewritable disc that already holds data (refused without it)
+if (a.Count >= 3 && a[0] == "burn" && File.Exists(a[1]) && Iso.Disc(a[2]) is { } inDrive && Iso.TooSmall(inDrive, new FileInfo(a[1]).Length / 1e9))
+    Console.WriteLine($"warning: the image ({new FileInfo(a[1]).Length / 1e9:0.0} GB) is larger than the {inDrive.Kind} in {a[2]} ({inDrive.TotalBytes / 1e9:0.0} GB)");
 if (a.Count >= 3 && a[0] == "burn")
 {
     Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0,

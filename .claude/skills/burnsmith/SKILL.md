@@ -91,7 +91,7 @@ Le résultat se donne ensuite à `--video`.
 
 ## Image, gravure, disque
 
-- `burnsmith drives` : les graveurs et le disque qu'ils contiennent.
+- `burnsmith drives [--capacity GO]` : les graveurs, comme la liste de la fenêtre : seulement ceux qui écrivent (pas le lecteur virtuel d'une image montée), chacun avec son disque (`F:  BD-R vierge, 25 Go`, `BD-RE déjà écrit`, `pas de disque`, `disque non inscriptible`). Avec `--capacity` (la taille utilisable du projet, comme pour `bd`), une ligne `warning:` pour chaque disque trop petit ; `burn` avertit de même quand l'image dépasse le disque inséré.
 - `burnsmith iso DOSSIER sortie.iso [--label X] [--dvd]`
 - `burnsmith repair-top-menu DOSSIER` : remet un Blu-ray à menu BD-J fait avant 1.0.33 (menu et épisodes dans un seul titre, Top Menu refusé pendant un épisode) sur la disposition d'aujourd'hui : le menu en Top Menu, un titre par vidéo ; son menu est gardé, le jar signé de nouveau. Un menu sans mode de lecture reçoit celui d'aujourd'hui (un épisode choisi enchaîne les suivants de son bouton « tout lire », menu après le dernier) ; un disque déjà rangé ne reçoit que ce mode. Refaire l'image ensuite avec `burnsmith iso`.
 - `burnsmith burn image.iso F: [--speed 4] [--no-verify] [--eject] [--erase]` : grave un disque vierge puis le relit ; `--no-verify` saute la relecture, `--eject` éjecte à la fin, `--erase` efface d'abord un réinscriptible qui contient des données (refusé sans).
@@ -110,4 +110,4 @@ Le résultat se donne ensuite à `--video`.
 
 ## Vérifier le logiciel après une modification du code
 
-Depuis le dépôt seulement. `check-update`, `check-edit`, `check-elements`, `check-highlights`, `check-templates`, `check-fidelity`, `check-bd`, `check-reliability` (ajouter `--no-dvd` aux trois qui l'acceptent pour passer les vrais builds DVD, lents). Les lancer un par un : l'exe est verrouillé pendant qu'un contrôle tourne, donc pas de `dotnet build` en même temps.
+Depuis le dépôt seulement. `check-update`, `check-edit`, `check-elements`, `check-highlights`, `check-templates`, `check-fidelity`, `check-bd`, `check-reliability`, `check-drives` (liste des graveurs : lit les lecteurs, n'écrit rien) (ajouter `--no-dvd` aux trois qui l'acceptent pour passer les vrais builds DVD, lents). Les lancer un par un : l'exe est verrouillé pendant qu'un contrôle tourne, donc pas de `dotnet build` en même temps.

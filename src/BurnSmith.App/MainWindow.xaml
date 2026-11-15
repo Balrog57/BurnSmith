@@ -262,10 +262,13 @@
         </StackPanel>
         <StackPanel Grid.Column="5" Orientation="Horizontal" Margin="10,0,0,0">
           <ToggleButton x:Name="BurnCheck" Content="Graver" Padding="16,8" IsEnabled="False" ToolTip="Grave le disque sur le graveur choisi après la création (une ISO temporaire est utilisée)"/>
-          <ComboBox x:Name="DriveBox" MinWidth="120" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Graveur">
+          <ComboBox x:Name="DriveBox" MinWidth="120" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Graveur" DropDownOpened="OnDrivesOpened">
             <ComboBox.ItemTemplate>
               <DataTemplate>
-                <TextBlock><Run Text="{Binding Letter, Mode=OneWay}"/><Run Text="  "/><Run Text="{Binding Name, Mode=OneWay}" Foreground="Gray"/></TextBlock>
+                <StackPanel Orientation="Horizontal" ToolTip="{Binding Name, Mode=OneWay}">
+                  <TextBlock Text="{Binding Letter, Mode=OneWay}"/>
+                  <TextBlock Text="{Binding State, Mode=OneWay}" Margin="8,0,0,0"/>
+                </StackPanel>
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>

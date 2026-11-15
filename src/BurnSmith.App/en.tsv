@@ -953,3 +953,11 @@ Le travail est fini : le PC s'éteint dans une minute.\n\nAnnuler l'extinction ?
 Extinction annulée.	Shutdown cancelled.
 Nouveau projet	New project
 Nouveau projet : aucune vidéo et les réglages habituels, le modèle de menu gardé (Annuler revient au projet d'avant). Le projet en cours est gardé tout seul et rouvert au prochain lancement	New project: no video and the usual settings, the menu template kept (Undo brings the former project back). The current project is kept on its own and reopened at the next start
+# burner list: writers only, the disc in each, disc too small
+pas de disque	no disc
+disque non inscriptible	disc that cannot be written
+{0} vierge, {1} Go	{0} blank, {1} GB
+{0} déjà écrit	{0} already written
+le projet	the project
+l'image	the image
+Le disque de {0} ({1}, {2} Go) est trop petit pour {3} ({4} Go).\n\nMettez un disque plus grand avant la gravure. Continuer quand même ?	The disc in {0} ({1}, {2} GB) is too small for {3} ({4} GB).\n\nPut in a larger disc before burning. Go on anyway?

@@ -10,7 +10,13 @@ namespace BurnSmith.Core;
 /// </summary>
 public static class Imapi
 {
-    public sealed record Drive(string Id, string Name, string Letter);
+    public sealed record Drive(string Id, string Name, string Letter)
+    {
+        /// <summary>False for a drive that only reads, such as the virtual one a mounted image gets: never offered for burning.</summary>
+        public bool Writes { get; init; } = true;
+        /// <summary>What is in it, as the burner list says it (<see cref="Iso.Drives"/>): « BD-R vierge, 25 Go », « pas de disque ».</summary>
+        public string State { get; init; } = "";
+    }
     public sealed record Media(string Kind, bool Blank, long FreeBytes, long TotalBytes);
 
     const int Sector = 2048;
@@ -44,13 +50,22 @@ public static class Imapi
                 {
                     recorder.InitializeDiscRecorder(id);
                     var letters = (recorder.VolumePathNames as Array)?.Cast<string>().ToArray() ?? [];
-                    list.Add(new Drive(id, $"{((string)recorder.VendorId).Trim()} {((string)recorder.ProductId).Trim()}", letters.FirstOrDefault()?.TrimEnd('\\') ?? ""));
+                    list.Add(new Drive(id, $"{((string)recorder.VendorId).Trim()} {((string)recorder.ProductId).Trim()}", letters.FirstOrDefault()?.TrimEnd('\\') ?? "") { Writes = CanWrite(recorder) });
                 }
                 finally { Release(recorder); }
             }
         }
         finally { Release(master); }
         return list;
+    }
+
+    /// <summary>Whether the drive can write a data disc at all, whatever disc is in it, as IMAPI2's data format judges it.</summary>
+    static bool CanWrite(object recorder)
+    {
+        var format = (IDiscFormat2Data)Create("IMAPI2.MsftDiscFormat2Data");
+        try { return format.IsRecorderSupported((IDiscRecorder2)recorder); }
+        catch (COMException) { return false; }
+        finally { Release(format); }
     }
 
     /// <summary>Checks, without a drive, that the typed COM views and the progress events can be created on this Windows.</summary>
