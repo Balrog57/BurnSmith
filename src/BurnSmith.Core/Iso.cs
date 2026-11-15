@@ -47,7 +47,7 @@ public static class Iso
     }
 
     /// <summary>The write speeds offered, × the disc's 1x (0 = the drive's fastest): values found in ImgBurn's list for DVD as for Blu-ray.</summary>
-    public static readonly int[] Speeds = [0, 8, 6, 4];
+    public static readonly int[] Speeds = [0, 8, 6, 4, 2];
 
     /// <summary>ImgBurn's log of the last burn, next to burnsmith.log.</summary>
     public static string ImgBurnLog() => Path.Combine(Path.GetDirectoryName(AppFiles.ErrorLog())!, "imgburn.log");
@@ -56,28 +56,52 @@ public static class Iso
     /// DVDFab's switches (DVDFab64.exe): no question asked, it waits for a disc, closes on success and stays open on an error so the user can read it.
     /// /SPEED must match an entry of ImgBurn's drop-down list ("4x", its ReadMe); the log is written when ImgBurn closes.
     /// </summary>
-    public static List<string> ImgBurnArgs(string iso, string drive, int speed, string logFile) =>
-        ["/MODE", "ISOWRITE", "/WAITFORMEDIA", "/START", "/CLOSESUCCESS", "/IGNORELOCKVOLUME", "/NOIMAGEDETAILS", "/VERIFY", "YES",
+    public static List<string> ImgBurnArgs(string iso, string drive, int speed, string logFile, bool verify = true, bool eject = false) =>
+        ["/MODE", "ISOWRITE", "/WAITFORMEDIA", "/START", "/CLOSESUCCESS", "/IGNORELOCKVOLUME", "/NOIMAGEDETAILS", "/VERIFY", verify ? "YES" : "NO", "/EJECT", eject ? "YES" : "NO",
          "/DEST", drive[..1].ToUpperInvariant(), "/SPEED", speed > 0 ? $"{speed}x" : "MAX", "/LOG", logFile, "/SRC", iso];
 
-    /// <summary>Burns an image to the blank disc in <paramref name="drive"/> ("F:") at <paramref name="speed"/> (× 1x, 0 = fastest) and verifies it.</summary>
-    public static void Burn(string isoFile, string drive, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default, int speed = 0)
+    static readonly string[] Rewritable = ["CD-RW", "DVD+RW", "DVD-RW", "DVD+RW DL", "BD-RE"];
+
+    /// <summary>The kind ("BD-RE") of the rewritable disc in <paramref name="drive"/> when it already holds data; null when it is blank, write-once, or IMAPI2 cannot see it.</summary>
+    public static string? UsedRewritable(string drive)
+    {
+        try { return Imapi.Inspect(drive) is { Blank: false } m && Rewritable.Contains(m.Kind) ? m.Kind : null; }
+        catch (Exception e) when (e is ArgumentException or PlatformNotSupportedException or System.Runtime.InteropServices.COMException or InvalidCastException) { return null; }
+    }
+
+    /// <summary>
+    /// Burns an image to the disc in <paramref name="drive"/> ("F:") at <paramref name="speed"/> (× 1x, 0 = fastest), then reads it back unless <paramref name="verify"/> is false,
+    /// and ejects it with <paramref name="eject"/>. A rewritable disc that holds data is erased first with <paramref name="erase"/>, else refused.
+    /// </summary>
+    public static void Burn(string isoFile, string drive, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default, int speed = 0,
+                            bool verify = true, bool eject = false, bool erase = false)
     {
         var iso = Path.GetFullPath(isoFile);
-        if (ImgBurn() is not { } exe) { Imapi.Burn(iso, drive, log, progress, verify: true, cancel, speed); return; }
         if (!File.Exists(iso)) throw new FileNotFoundException("image not found", iso);
         if (drive.Length < 2 || !char.IsAsciiLetter(drive[0]) || drive[1] != ':') throw new ArgumentException("drive must look like F:", nameof(drive));
+        if (UsedRewritable(drive) is { } used)
+        {
+            if (!erase) throw new InvalidOperationException($"Le {used} dans {drive[..2]} contient déjà des données : effacez-le avant de graver (burnsmith burn … --erase, ou burnsmith erase {drive[..2]}).");
+            Imapi.Erase(drive, log);
+        }
+        if (ImgBurn() is not { } exe)
+        {
+            Imapi.Burn(iso, drive, log, progress, verify, cancel, speed);
+            if (eject) Imapi.Eject(drive);
+            return;
+        }
         log?.Invoke($"burn: ImgBurn {Path.GetFileName(iso)} -> {drive[..2]} ({new FileInfo(iso).Length / 1e9:0.00} GB, {(speed > 0 ? $"{speed}x" : "vitesse max")})");
         var imgLog = ImgBurnLog();
         try { File.Delete(imgLog); } catch (IOException) { } // an older burn's log must not pass for this one's
         // shortcut: untested on real media, and no progress reaches the app (ImgBurn's window shows it)
-        try { Tools.WithCancel(cancel, () => Tools.Run(exe, ImgBurnArgs(iso, drive, speed, imgLog), outlivesApp: true)); } // a crash of the app must not spoil the disc being written
+        try { Tools.WithCancel(cancel, () => Tools.Run(exe, ImgBurnArgs(iso, drive, speed, imgLog, verify, eject), outlivesApp: true)); } // a crash of the app must not spoil the disc being written
         catch (InvalidOperationException e) when (File.Exists(imgLog))
         {
             // ImgBurn prints nothing: the reason is in its log (exit 1 = could not start, 2 = write failed, 3 = verify failed)
             throw new InvalidOperationException($"{e.Message.Split('\n')[0]}\n{string.Join("\n", File.ReadLines(imgLog).TakeLast(15))}\n(journal complet : {imgLog})", e);
         }
         if (File.Exists(imgLog)) log?.Invoke($"journal d'ImgBurn : {imgLog}");
+        if (!verify) { log?.Invoke("done: disc written, without verification (as asked)"); return; }
         // ImgBurn exits 0 when its verify is aborted (tray left open after "Cycling Tray before Verify", seen on a USB BD-RE): the disc is written, not checked
         if (File.Exists(imgLog) && File.ReadLines(imgLog).Any(l => l.Contains("Operation Aborted!")))
         { log?.Invoke("warning: disc written, but ImgBurn's verify did not run (tray left open?) - the disc is not checked"); return; }

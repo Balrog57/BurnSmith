@@ -1240,6 +1240,10 @@ if (a.Count >= 1 && a[0] == "check-edit")
     Check("ImgBurn gets the chosen speed as its list shows it (MAX, 4x), the drive letter and its log file",
           string.Join(" ", Iso.ImgBurnArgs(@"C:\a.iso", "f:", 4, @"C:\l.log")).Contains("/DEST F /SPEED 4x /LOG C:\\l.log /SRC C:\\a.iso")
           && Iso.ImgBurnArgs(@"C:\a.iso", "F:", 0, "l").Contains("MAX") && Iso.Speeds[0] == 0);
+    Check("ImgBurn verifies and leaves the disc in by default; without verify and with eject it is told so; 2x is offered and written as its list shows it",
+          string.Join(" ", Iso.ImgBurnArgs(@"C:\a.iso", "F:", 0, "l")).Contains("/VERIFY YES /EJECT NO")
+          && string.Join(" ", Iso.ImgBurnArgs(@"C:\a.iso", "F:", 2, "l", verify: false, eject: true)).Contains("/VERIFY NO /EJECT YES /DEST F /SPEED 2x")
+          && Iso.Speeds.Contains(2) && Iso.UsedRewritable("?") == null);
     var tracked = new SourceInfo("h264", 1920, 1080, 24, "ac3", 6, 600, [new(0, "dts", 6, "und", ""), new(1, "ac3", 2, "eng", "")], [new(0, "subrip", "und", "", false), new(1, "hdmv_pgs_subtitle", "fre", "", false)]);
     var relabel = new DiscTitle("x", Audio: [0, 1], Subtitles: [0, 1], External: [new ExternalSubtitle("s.srt", "ger")], TrackLanguage: new Dictionary<string, string> { ["a0"] = "fre", ["s0"] = "eng", ["s2"] = "spa" });
     var relabelled = relabel.Cut(tracked);
@@ -1921,8 +1925,14 @@ if (a.Count >= 3 && a[0] == "label-from-scan")
     return 0;
 }
 if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BURNSMITH", a.Contains("--dvd"), Console.WriteLine); return 0; }
-// burnsmith burn IMAGE.iso F: [--speed 4] : the speed is × 1x, absent = the drive's fastest (one disc: a second one is a second run)
-if (a.Count >= 3 && a[0] == "burn") { Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0); return 0; }
+// burnsmith burn IMAGE.iso F: [--speed 4] [--no-verify] [--eject] [--erase] : the speed is × 1x, absent = the drive's fastest (one disc: a second one is a second run);
+//   --no-verify skips reading the disc back, --eject opens the tray at the end, --erase erases a rewritable disc that already holds data (refused without it)
+if (a.Count >= 3 && a[0] == "burn")
+{
+    Iso.Burn(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  ")), speed: int.TryParse(Opt("--speed"), out var sp) ? sp : 0,
+             verify: !a.Contains("--no-verify"), eject: a.Contains("--eject"), erase: a.Contains("--erase"));
+    return 0;
+}
 
 // --trial [SECONDS] (bd, dvd, project): a trial disc, each video cut to SECONDS in all (300 = five minutes), a passage at each chapter: the whole menu, made in minutes, to try in VLC before the real build
 // --menu-mode bdj|hdmv (bd): the Blu-ray menu as the BD-J program (default: everything the menu can do) or as native HDMV navigation (every player runs it
@@ -1976,7 +1986,7 @@ if (a.Count >= 2 && a[0] == "queue")
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--shutdown] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]] [--shutdown]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] [--shutdown]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER | burnsmith scan-damage IMAGE.iso|FOLDER [--decode|--no-decode]  |  burnsmith replace-film DISC|IMAGE.iso --mkv FILM.mkv --out FOLDER [--iso OUT.iso] [--label X] [--playlist N] [--cut-start S] [--map A1=mkv:N,PG2=mkv:N] [--no-align] [--measure-only]  |  burnsmith check-film-sync  |  burnsmith label-from-scan SCAN.png|jpg OUT.png [--diameter-mm 118] [--dpi 300] [--hole-mm auto|N] [--debug OVERLAY.png]");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--shutdown] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]] [--shutdown]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] [--shutdown]  |  burnsmith burn IMAGE.iso F: [--speed N] [--no-verify] [--eject] [--erase] | burnsmith repair-top-menu FOLDER | burnsmith scan-damage IMAGE.iso|FOLDER [--decode|--no-decode]  |  burnsmith replace-film DISC|IMAGE.iso --mkv FILM.mkv --out FOLDER [--iso OUT.iso] [--label X] [--playlist N] [--cut-start S] [--map A1=mkv:N,PG2=mkv:N] [--no-align] [--measure-only]  |  burnsmith check-film-sync  |  burnsmith label-from-scan SCAN.png|jpg OUT.png [--diameter-mm 118] [--dpi 300] [--hole-mm auto|N] [--debug OVERLAY.png]");
     return 2;
 }
 
