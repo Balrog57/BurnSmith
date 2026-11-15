@@ -98,6 +98,22 @@ if (a.Count >= 2 && a[0] == "check-disc")
     Console.WriteLine(found.Count == 0 ? "ok   disc structure" : string.Join(Environment.NewLine, found.Select(p => "FAIL " + p)));
     return found.Count == 0 ? 0 : 1;
 }
+// burnsmith scan-damage <file.iso | disc folder> [--decode | --no-decode] : where a ripped disc is damaged (sectors filled with FF or zeros, lost sync, packets still encrypted,
+//   each placed in its file and in time), read without mounting; short clips (stills, menus) are decoded by ffmpeg too, --decode decodes every stream,
+//   --no-decode none; a picture the decoder had to conceal is damage; 1 when damage is found
+if (a.Count >= 2 && a[0] == "scan-damage")
+{
+    var (report, damaged) = DamageScan.Run(a[1], a.Contains("--decode"), line => Console.Error.WriteLine(line), !a.Contains("--no-decode"));
+    foreach (var line in report) Console.WriteLine(line);
+    return damaged ? 1 : 0;
+}
+// burnsmith check-scan-damage : scan-damage on made-up clips (clean, a unit of null packets, FF to the end, a scrambled still, a scrambled mp3 stream); 1 when one is misjudged
+if (a.Count >= 1 && a[0] == "check-scan-damage")
+{
+    var wrong = DamageScan.SelfCheck();
+    Console.WriteLine(wrong.Count == 0 ? "ok   scan-damage" : string.Join(Environment.NewLine, wrong.Select(p => "FAIL " + p)));
+    return wrong.Count == 0 ? 0 : 1;
+}
 // burnsmith slideshow <out.mkv> [--seconds 5] [--music song]... <photo>... : photos shown one after the other (with the songs under them) as a video, to give to --video
 // burnsmith song <out.mkv> <audio> [--cover picture] : a song as a video (its cover, or black, for as long as it plays)
 // burnsmith join <out.mkv> <video> <video>... : videos with the same streams end to end in one file (streams copied)
@@ -1928,7 +1944,7 @@ if (a.Count >= 2 && a[0] == "queue")
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--shutdown] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]] [--shutdown]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] [--shutdown]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview] [--trial [SECONDS]] [--shutdown] [--save-project FILE] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]] [--shutdown]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] [--shutdown]  |  burnsmith burn IMAGE.iso F: [--speed N] | burnsmith repair-top-menu FOLDER | burnsmith scan-damage IMAGE.iso|FOLDER [--decode|--no-decode]");
     return 2;
 }
 
