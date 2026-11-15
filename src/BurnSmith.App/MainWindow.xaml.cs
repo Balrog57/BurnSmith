@@ -1318,6 +1318,7 @@ public partial class MainWindow : Window
         var dvd = kind == "dvd";
         var withIso = IsoCheck.IsChecked == true;
         Log.Clear();
+        PlayDiscButton.Visibility = Visibility.Collapsed; // the disc it opened may be the one this build replaces
 
         var ok = await Work("Création du disque…", (log, progress, token) =>
         {
@@ -1345,6 +1346,38 @@ public partial class MainWindow : Window
             if (!withIso) File.Delete(iso); // only made to burn
         });
         if (ok) Append(trial == 0 ? "Terminé." : $"Disque d'essai terminé. Ouvrez {(withIso ? IsoFile(outDir) : outDir)} dans VLC (Média > Ouvrir un disque) pour vérifier le menu, puis décochez « Essai » pour le vrai disque.");
+        if (ok) ShowPlayDisc(withIso ? IsoFile(outDir) : outDir);
+    }
+
+    // ---- « Lire sur l'ordinateur » ----
+
+    string? madeDisc; // the last disc made: its ISO when there is one, else its folder
+
+    void ShowPlayDisc(string disc)
+    {
+        madeDisc = disc;
+        PlayDiscButton.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>For the snapshot run (<c>playdisc</c>): the button as it shows after a disc was made.</summary>
+    internal void TryPlayDisc() => ShowPlayDisc(OutBox.Text);
+
+    void OnPlayDisc(object s, RoutedEventArgs e)
+    {
+        if (madeDisc == null) return;
+        try
+        {
+            if (!Vlc.Play(madeDisc))
+            {
+                if (MessageBox.Show(this, "VLC n'est pas installé sur cet ordinateur. C'est un lecteur gratuit qui lit les dossiers et les images ISO de Blu-ray et de DVD.\n\nOuvrir videolan.org pour le télécharger ?",
+                        "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
+                    Process.Start(new ProcessStartInfo(Vlc.Site) { UseShellExecute = true });
+                return;
+            }
+            Append($"Ouvert dans VLC : {madeDisc}");
+            if (!Vlc.Arguments(madeDisc).StartsWith("\"dvd:")) Append(Vlc.JavaNote); // a Blu-ray, or an ISO that may be one
+        }
+        catch (Exception ex) { Warn("Impossible d'ouvrir le disque dans VLC : " + ex.Message); }
     }
 
     static string IsoFile(string folder) => Project.IsoFile(folder);

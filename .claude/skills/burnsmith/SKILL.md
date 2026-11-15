@@ -97,6 +97,7 @@ Le résultat se donne ensuite à `--video`.
 - `burnsmith verify image.iso F:` : compare un disque à son image.
 - `burnsmith erase F:` : efface un disque réinscriptible.
 - `burnsmith check-disc DOSSIER|image.iso [DOSSIER]` : structure d'un disque fini, sans lecteur.
+- `burnsmith play DOSSIER|image.iso` : ouvre le disque dans le VLC installé sur le PC (bouton « Lire sur l'ordinateur » de la fenêtre), en `bluray:///` ou `dvd:///` pour un dossier ; code 1 si VLC n'est pas installé (https://www.videolan.org/vlc/). VLC n'affiche un menu BD-J qu'avec Java installé ; sans Java, il lit le disque sans menu. Ouvre une fenêtre sur le bureau de l'utilisateur : ne pas l'utiliser pour un contrôle automatique (`check-play` vérifie la ligne de commande sans lancer VLC).
 
 ## Modèles de menu
 
@@ -108,4 +109,4 @@ Le résultat se donne ensuite à `--video`.
 
 ## Vérifier le logiciel après une modification du code
 
-Depuis le dépôt seulement. `check-update`, `check-edit`, `check-elements`, `check-highlights`, `check-templates`, `check-fidelity`, `check-bd`, `check-reliability` (ajouter `--no-dvd` aux trois qui l'acceptent pour passer les vrais builds DVD, lents). Les lancer un par un : l'exe est verrouillé pendant qu'un contrôle tourne, donc pas de `dotnet build` en même temps.
+Depuis le dépôt seulement. `check-update`, `check-edit`, `check-elements`, `check-highlights`, `check-templates`, `check-fidelity`, `check-bd`, `check-reliability`, `check-play` (ajouter `--no-dvd` aux trois qui l'acceptent pour passer les vrais builds DVD, lents). Les lancer un par un : l'exe est verrouillé pendant qu'un contrôle tourne, donc pas de `dotnet build` en même temps.
