@@ -71,20 +71,24 @@ public static class FilmSync
     /// Mono 8 kHz samples of an audio stream (<paramref name="map"/>, an ffmpeg -map such as "0:2" or "0:i:0x1100") from <paramref name="from"/> s of the file's clock.
     /// <paramref name="slow"/> &gt; 1 plays the sound that much slower (a PAL release brought back to film speed). Empty when nothing decodes there.
     /// </summary>
-    public static float[] Samples(string file, double start, string map, double from, double length, double slow, string work)
+    public static float[] Samples(string file, double start, string map, double from, double length, double slow, string work, Action<string>? failed = null)
     {
         var raw = Path.Combine(work, $"pcm_{Guid.NewGuid():N}.raw");
         var filter = slow != 1 ? $"aresample=48000,asetrate={F(48000 / slow)},aresample=8000" : "aresample=8000";
-        try
-        {
-            Tools.Run(Tools.Find("ffmpeg.exe"), ["-hide_banner", "-v", "error", "-ss", F(Math.Max(0, from - start)), "-i", file, "-map", map, "-t", F(length), "-ac", "1", "-af", filter, "-f", "s16le", "-y", raw]);
-            var bytes = File.ReadAllBytes(raw);
-            var samples = new float[bytes.Length / 2];
-            for (var i = 0; i < samples.Length; i++) samples[i] = BitConverter.ToInt16(bytes, 2 * i);
-            return samples;
-        }
-        catch (InvalidOperationException) { return []; } // a damaged part of a disc decodes to nothing
-        finally { Tools.TryDelete(raw); }
+        for (var attempt = 1; ; attempt++)
+            try
+            {
+                Tools.Run(Tools.Find("ffmpeg.exe"), ["-hide_banner", "-v", "error", "-ss", F(Math.Max(0, from - start)), "-i", file, "-map", map, "-t", F(length), "-ac", "1", "-af", filter, "-f", "s16le", "-y", raw]);
+                var bytes = File.ReadAllBytes(raw);
+                var samples = new float[bytes.Length / 2];
+                for (var i = 0; i < samples.Length; i++) samples[i] = BitConverter.ToInt16(bytes, 2 * i);
+                if (samples.Length > 0 || attempt == 2) return samples;
+            }
+            catch (Exception e) when (e is InvalidOperationException or IOException) // a damaged part of a disc decodes to nothing
+            {
+                if (attempt == 2) { failed?.Invoke($"{Path.GetFileName(file)} à {F(from)} s : {e.Message.Split('\n').LastOrDefault(l => l.Trim().Length > 0)?.Trim()}"); return []; }
+            }
+            finally { try { File.Delete(raw); } catch (IOException) { } }
     }
 
     /// <summary>

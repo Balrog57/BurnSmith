@@ -17,7 +17,7 @@ public sealed record ReplaceFilmJob(string Disc, string Mkv, string Out, string?
 /// taken from the MKV track of that language (full or forced); then the new film is put on the old one's clock: scene cuts give the picture mapping
 /// (a PAL disc runs 25/23.976 faster), cross-correlation each sound's offset (tsMuxeR timeshift), subtitle starts each subtitle track's drift (the
 /// .sup re-timed), and the chapters are the old marks mapped and put on frames. tsMuxeR writes the clip, its info and the playlist at the old numbers.
-/// A sub-path of the old playlist (a pop-up menu clip at 25 fps) is not carried over: on a 24p film it froze the picture on a real player.
+/// The old playlist's sub-paths and IG entry (the pop-up menu) are grafted on the new one and the menu clip told the new frame rate; the PCR goes on its own PID (0x1001).
 /// shortcut: one play item, one video, AVC/HEVC/VC-1/MPEG-2 with DTS/AC-3/LPCM sound; a film made of several clips or TrueHD from the MKV is refused.
 /// </summary>
 public static class ReplaceFilm
@@ -70,9 +70,8 @@ public static class ReplaceFilm
             $"{item.Audio.Count} son(s), {item.Pg.Count} sous-titre(s), {pl.Chapters.Count} chapitres");
         foreach (var (s, i) in item.Audio.Select((s, i) => (s, i))) log($"  A{i + 1}  PID 0x{s.Pid:X4} {Mpls.CodingName(s.Coding)} {s.Lang}");
         foreach (var (s, i) in item.Pg.Select((s, i) => (s, i))) log($"  PG{i + 1} PID 0x{s.Pid:X4} {s.Lang}");
-        if (pl.SubPathTypes.Count > 0)
-            log($"  non repris : {pl.SubPathTypes.Count} sous-chemin(s) (type {string.Join(", ", pl.SubPathTypes)}{(pl.SubPathTypes.Contains(3) ? ", menu pop-up" : "")}) : sur un film 24p, un menu pop-up à 25 i/s fige l'image d'une vraie platine");
-        if (item.Ig.Count > 0) log($"  non repris : {item.Ig.Count} piste(s) IG (le menu pop-up du film)");
+        if (pl.SubPathTypes.Count > 0 || item.Ig.Count > 0)
+            log($"  {pl.SubPathTypes.Count} sous-chemin(s) (type {string.Join(", ", pl.SubPathTypes)}{(pl.SubPathTypes.Contains(3) ? ", menu pop-up" : "")}) et {item.Ig.Count} piste(s) IG : greffés tels quels sur la nouvelle liste");
         foreach (var other in lists.Where(p => p.Number != chosen.Number && p.List!.Items.Any(i => i.Clip == item.Clip)))
             log($"  attention : {other.Number:00000}.mpls joue aussi {item.Clip}.m2ts ; ses temps ne correspondront plus au nouveau film");
 
@@ -160,7 +159,7 @@ public static class ReplaceFilm
         {
             var meta = new List<string>
             {
-                $"MUXOPT --blu-ray --new-audio-pes --vbr --label=\"{Label(job)}\" --custom-chapters={string.Join(';', marks.Select(Clock))} --mplsOffset={chosen.Number} --m2tsOffset={clip}",
+                $"MUXOPT --blu-ray --new-audio-pes --vbr --vbv-len=500 --no-pcr-on-video-pid --label=\"{Label(job)}\" --custom-chapters={string.Join(';', marks.Select(Clock))} --mplsOffset={chosen.Number} --m2tsOffset={clip}",
                 $"{VideoCodec(video)}, \"{Slash(film)}\"{(video.Codec == "h264" ? ", insertSEI, contSPS" : "")}, track={video.Index + 1}",
             };
             meta.AddRange(audio.Select(s => $"{Muxed(s.Source!)}, \"{Slash(film)}\", track={s.Source!.Index + 1}, lang={s.Original.Lang}{(s.ShiftMs != 0 ? $", timeshift={s.ShiftMs}ms" : "")}"));
@@ -288,15 +287,28 @@ public static class ReplaceFilm
             if (new FileInfo(to).Length != new FileInfo(file).Length) throw new IOException($"copie incomplète : {rel}");
             copied++;
         }
-        foreach (var (rel, made) in replaced)
+        var newPlaylist = Path.Combine(output, Rel("PLAYLIST", $"{chosen.Number:00000}.mpls"));
+        foreach (var (rel, made) in replaced) File.Move(made, Path.Combine(output, rel));
+        // the pop-up menu kept: the old sub-paths and IG entry grafted on tsMuxeR's playlist (without them the Pop-up key is refused), the menu clip told the film's new rate
+        if (pl.SubPathTypes.Count > 0 || item.Ig.Count > 0)
         {
-            File.Move(made, Path.Combine(output, rel));
-            var backup = Path.Combine(output, "BDMV", "BACKUP", rel[5..]);
-            if (!rel.Contains("STREAM") && Directory.Exists(Path.GetDirectoryName(backup))) File.Copy(Path.Combine(output, rel), backup);
+            File.WriteAllBytes(newPlaylist, Mpls.Graft(File.ReadAllBytes(newPlaylist), File.ReadAllBytes(chosen.File), out var subClips));
+            var (from, to) = (item.Video[0].Rate, Mpls.Read(newPlaylist).Items[0].Video[0].Rate);
+            foreach (var sub in subClips.Distinct().Where(_ => from != to))
+            {
+                var file = Path.Combine(output, Rel("STREAM", sub + ".m2ts"));
+                var data = File.ReadAllBytes(file);
+                var changed = item.Ig.Sum(ig => SetIgRate(data, ig.Pid, to));
+                File.WriteAllBytes(file, data);
+                log($"  menu pop-up {sub}.m2ts : {changed} composition(s) IG passées de {Mpls.Fps(from):0.###} à {Mpls.Fps(to):0.###} i/s");
+            }
+            log($"  repris : {pl.SubPathTypes.Count} sous-chemin(s) et {item.Ig.Count} piste(s) IG de l'ancienne liste (menu pop-up)");
         }
+        foreach (var rel in replaced.Keys.Where(r => !r.Contains("STREAM")))
+            if (Path.Combine(output, "BDMV", "BACKUP", rel[5..]) is var backup && Directory.Exists(Path.GetDirectoryName(backup))) File.Copy(Path.Combine(output, rel), backup);
         log($"  {copied} fichiers du disque copiés tels quels ; {item.Clip}.m2ts, {item.Clip}.clpi et {chosen.Number:00000}.mpls remplacés (et leur copie BACKUP)");
 
-        var failed = Verify(output, chosen.Number, item, audio, subs, anchors, chapters, fpsN, k, a, original, ffprobeStart, work, log);
+        var failed = Verify(output, chosen.Number, item, pl.SubPathTypes, audio, subs, anchors, chapters, fpsN, k, a, original, ffprobeStart, work, log);
         if (job.Iso is { } iso)
         {
             log("Image ISO...");
@@ -309,7 +321,7 @@ public static class ReplaceFilm
     }
 
     /// <summary>The finished disc measured again against the old one: playlist streams and marks, picture, sound and subtitle residuals. Returns the points out of tolerance.</summary>
-    static int Verify(string output, int number, Mpls.Item item, List<Slot> audio, List<Slot> subs, List<(double At, List<double> Cuts)> anchors, List<double> chapters,
+    static int Verify(string output, int number, Mpls.Item item, List<int> sourcePaths, List<Slot> audio, List<Slot> subs, List<(double At, List<double> Cuts)> anchors, List<double> chapters,
                       double fpsN, double k, double a, string original, double ffprobeStart, string work, Action<string> log)
     {
         var bad = 0;
@@ -321,6 +333,10 @@ public static class ReplaceFilm
         Check(fresh.Audio.Select(s => s.Lang).SequenceEqual(item.Audio.Select(s => s.Lang)) && fresh.Audio.Select(s => s.Coding).SequenceEqual(item.Audio.Select(s => s.Coding)),
               $"sons : {string.Join(", ", fresh.Audio.Select((s, i) => $"A{i + 1} {Mpls.CodingName(s.Coding)} {s.Lang}"))}");
         Check(fresh.Pg.Select(s => s.Lang).SequenceEqual(item.Pg.Select(s => s.Lang)), $"sous-titres : {string.Join(", ", fresh.Pg.Select((s, i) => $"PG{i + 1} {s.Lang}"))}");
+        Check(fresh.Ig.Select(s => s.Pid).SequenceEqual(item.Ig.Select(s => s.Pid)) && pl.SubPathTypes.SequenceEqual(sourcePaths),
+              $"menu pop-up : {fresh.Ig.Count} piste(s) IG, sous-chemin(s) de type {string.Join(", ", pl.SubPathTypes)} (l'ancienne liste : {item.Ig.Count}, {string.Join(", ", sourcePaths)})");
+        var pcr = PcrPids(Path.Combine(output, "BDMV", "STREAM", item.Clip + ".m2ts"));
+        Check(pcr.SetEquals([0x1001]), $"PCR sur {string.Join(", ", pcr.Select(p => $"0x{p:X4}"))} (attendu : 0x1001, pas celui de l'image)");
         var marks = pl.Chapters.Select(m => ((double)m.Time - fresh.In) / 45000.0).ToList();
         Check(marks.Count == chapters.Count && marks.Zip(chapters).All(p => Math.Abs(p.First - p.Second) <= 1 / fpsN),
               $"{marks.Count} chapitres (le disque en avait {chapters.Count}), écart max {Ms(marks.Zip(chapters).Select(p => Math.Abs(p.First - p.Second)).DefaultIfEmpty().Max())}");
@@ -367,18 +383,62 @@ public static class ReplaceFilm
                                                  IEnumerable<(double At, List<double> Cuts)> windows, Func<double, double> map, double k, string work)
     {
         var measured = new List<(double Offset, double Peak)>();
+        var lost = new List<string>();
         foreach (var (at, _) in windows)
         {
-            var o = FilmSync.Samples(original, startO, $"0:i:0x{pidO:X}", at + 5, 40 / k, k, work);
-            var n = FilmSync.Samples(disc, startD, $"0:i:0x{pidD:X}", map(at + 5) - 2, 44, 1, work);
+            var o = FilmSync.Samples(original, startO, $"0:i:0x{pidO:X}", at + 5, 40 / k, k, work, lost.Add);
+            var n = FilmSync.Samples(disc, startD, $"0:i:0x{pidD:X}", map(at + 5) - 2, 44, 1, work, lost.Add);
             var (lag, peak) = FilmSync.Locate(o, n);
             if (!double.IsNaN(lag)) measured.Add((lag - 2, peak));
+            else if (o.Length > 0 && n.Length > 0) lost.Add($"fenêtre à {at + 5:0} s : {o.Length} échantillons du disque, {n.Length} du nouveau");
         }
         var trusted = measured.Where(m => m.Peak >= 0.2).ToList();
-        var shown = string.Join(", ", measured.Select(m => $"{Ms(m.Offset)} (pic {m.Peak:0.00})"));
+        var shown = string.Join(", ", measured.Select(m => $"{Ms(m.Offset)} (pic {m.Peak:0.00})").Concat(lost.Select(l => "illisible : " + l)));
         // windows that disagree measure a different mix, not an offset (the VO of a remux against a disc's: −59 to +98 ms seen)
         if (trusted.Count > 0 && trusted.Max(m => m.Offset) - trusted.Min(m => m.Offset) > 0.020) return (null, shown + " : mesures dispersées, mixage différent ?");
         return (trusted.Count > 0 ? FilmSync.Median(trusted.Select(m => m.Offset)) : null, shown);
+    }
+
+    /// <summary>
+    /// Sets the frame-rate code (high nibble after width and height) of the video descriptor in every first fragment of an IG composition (ICS) of
+    /// PID <paramref name="pid"/> in a .m2ts, in place; returns how many were changed. A pop-up menu clip must say the rate of the film it rides on.
+    /// </summary>
+    public static int SetIgRate(byte[] m2ts, int pid, int code)
+    {
+        var pes = new List<List<int>>();
+        List<int>? open = null;
+        for (var p = 4; p + 188 <= m2ts.Length; p += 192)
+        {
+            if (m2ts[p] != 0x47 || ((m2ts[p + 1] & 0x1F) << 8 | m2ts[p + 2]) != pid) continue;
+            var afc = (m2ts[p + 3] >> 4) & 3;
+            var o = 4 + ((afc & 2) != 0 ? 1 + m2ts[p + 4] : 0);
+            if ((m2ts[p + 1] & 0x40) != 0) pes.Add(open = []);
+            if (open != null && (afc & 1) != 0) open.AddRange(Enumerable.Range(p + o, Math.Max(0, 188 - o)));
+        }
+        var changed = 0;
+        foreach (var at in pes)
+        {
+            if (at.Count < 9) continue;
+            for (var s = 9 + m2ts[at[8]]; s + 12 <= at.Count; s += 3 + (m2ts[at[s + 1]] << 8 | m2ts[at[s + 2]]))
+                if (m2ts[at[s]] == 0x18 && (m2ts[at[s + 11]] & 0x80) != 0) // ICS, first in sequence: the video descriptor is in this piece
+                {
+                    m2ts[at[s + 7]] = (byte)(code << 4 | m2ts[at[s + 7]] & 15);
+                    changed++;
+                }
+        }
+        return changed;
+    }
+
+    /// <summary>The PIDs that carry a PCR in the first packets of a .m2ts (a Blu-ray player wants it on its own PID, 0x1001, not on the video's).</summary>
+    public static HashSet<int> PcrPids(string m2ts)
+    {
+        var found = new HashSet<int>();
+        using var f = File.OpenRead(m2ts);
+        var b = new byte[192 * 50000];
+        var n = f.Read(b, 0, b.Length);
+        for (var p = 4; p + 188 <= n; p += 192)
+            if (b[p] == 0x47 && (b[p + 3] & 0x20) != 0 && b[p + 4] > 0 && (b[p + 5] & 0x10) != 0) found.Add((b[p + 1] & 0x1F) << 8 | b[p + 2]);
+        return found;
     }
 
     static Mpls? TryRead(string file) { try { return Mpls.Read(file); } catch (Exception e) when (e is InvalidDataException or NotSupportedException or ArgumentException or IndexOutOfRangeException) { return null; } }

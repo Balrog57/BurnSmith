@@ -79,6 +79,53 @@ public sealed record Mpls(List<Mpls.Item> Items, List<int> SubPathTypes, List<Mp
         return new Item(clip, U32(b, o + 14), U32(b, o + 18), groups[0], groups[1], groups[2], groups[3]);
     }
 
+    /// <summary>
+    /// <paramref name="fresh"/> (a one-item playlist tsMuxeR wrote, no sub-path) with the sub-paths of <paramref name="original"/> grafted byte for byte and the IG entries
+    /// of the original's STN added to the fresh play item (they point at those sub-paths: a pop-up menu clip). Also gives the clips the sub-paths play.
+    /// </summary>
+    public static byte[] Graft(byte[] fresh, byte[] original, out List<string> subClips)
+    {
+        static (int List, int Marks, int Item, int ItemEnd) Parts(byte[] b)
+        {
+            int list = (int)U32(b, 8), item = list + 10;
+            return (list, (int)U32(b, 12), item, item + 2 + U16(b, item));
+        }
+        static (int Start, int End) IgEntries(byte[] b, int stn)
+        {
+            var r = stn + 16;
+            for (var g = 0; g < 4; g++)
+                for (var i = 0; i < b[stn + 4 + g]; i++)
+                {
+                    if (g == 3 && i == 0) return (r, End(b, r, b[stn + 7]));
+                    r += 1 + b[r]; r += 1 + b[r];
+                }
+            return (r, r);
+        }
+        static int End(byte[] b, int r, int n) { for (var i = 0; i < n; i++) { r += 1 + b[r]; r += 1 + b[r]; } return r; }
+        var (ol, om, oi, oe) = Parts(original);
+        var (nl, nm, ni, ne) = Parts(fresh);
+        if (U16(fresh, nl + 6) != 1 || U16(fresh, nl + 8) != 0 || U32(fresh, 16) != 0 || U32(original, 16) != 0)
+            throw new NotSupportedException("playlist graft: one play item, no sub-path and no extension data expected");
+        var (igStart, igEnd) = IgEntries(original, oi + 34);
+        var stn = fresh.AsSpan(ni + 34, ne - ni - 34).ToArray();
+        if (stn[7] != 0 || End(stn, 16, stn[4] + stn[5] + stn[6]) != stn.Length) throw new NotSupportedException("playlist graft: the fresh STN must end after its video, audio and PG entries");
+        byte[] newStn = [.. stn, .. original.AsSpan(igStart, igEnd - igStart)];
+        newStn[7] = original[oi + 34 + 7];
+        BinaryPrimitives.WriteUInt16BigEndian(newStn, (ushort)(newStn.Length - 2));
+        byte[] item = [.. fresh.AsSpan(ni, 34), .. newStn];
+        BinaryPrimitives.WriteUInt16BigEndian(item, (ushort)(item.Length - 2));
+        var subs = original.AsSpan(oe, om - oe).ToArray();
+        byte[] list = [0, 0, 0, 0, 0, 0, 0, 1, .. original.AsSpan(ol + 8, 2), .. item, .. subs];
+        BinaryPrimitives.WriteUInt32BigEndian(list, (uint)(list.Length - 4));
+        byte[] output = [.. fresh.AsSpan(0, nl), .. list, .. fresh.AsSpan(nm)];
+        BinaryPrimitives.WriteUInt32BigEndian(output.AsSpan(12), (uint)(nl + list.Length));
+        // the clips: each sub-path's sub-play-items (length, reserved, type, flags, reserved, count, then items: length, clip name...)
+        subClips = [];
+        for (var o = 0; o < subs.Length; o += 4 + (int)U32(subs, o))
+            for (int i = 0, p = o + 10; i < subs[o + 9]; i++, p += 2 + U16(subs, p)) subClips.Add(Encoding.ASCII.GetString(subs, p + 2, 5));
+        return output;
+    }
+
     /// <summary>Frames per second of a video rate code of the STN table (1 = 23.976 ... 7 = 59.94); 0 when unknown.</summary>
     public static double Fps(int rateCode) => rateCode switch { 1 => 24000 / 1001.0, 2 => 24, 3 => 25, 4 => 30000 / 1001.0, 6 => 50, 7 => 60000 / 1001.0, _ => 0 };
 
