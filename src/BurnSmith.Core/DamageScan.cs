@@ -23,6 +23,7 @@ public static class DamageScan
         public readonly Entry Entry = e;
         public readonly List<(long Start, long End, byte Fill)> Runs = [];
         public readonly List<(long Start, long End)> Lost = [];
+        public readonly List<(long Start, long End)> NullUnits = [];
         public long LostPackets, Encrypted, EncryptedAt = -1, Cc, FfBytes, ZeroBytes;
         public readonly List<long> CcAt = [];
         public readonly List<long> TimeOff = [];
@@ -32,10 +33,21 @@ public static class DamageScan
         public double PlaylistShift; // playlist time = clip time + this
         public readonly List<double> DecodeErrors = [];
         public string? DecodeSample, DecodeFailed;
-        public bool Damaged => Runs.Count > 0 || LostPackets > 0 || Encrypted > 0;
+        public bool Damaged => Runs.Count > 0 || LostPackets > 0 || Encrypted > 0 || NullDamage(this).Count > 0;
     }
 
-    const int S = 2048;
+    const int S = 2048, Unit = 6144; // an AACS aligned unit: 32 packets of 192 bytes, 3 sectors
+
+    /// <summary>
+    /// An aligned unit made only of null packets (PID 0x1FFF): what a ripper puts for a unit it could not read (Judge Dredd's bonus clips). A muxer spreads its null
+    /// packets among the others, so the official disc's clips have no such unit.
+    /// </summary>
+    internal static bool NullUnit(ReadOnlySpan<byte> unit)
+    {
+        for (var q = 0; q < Unit; q += 192)
+            if (unit[q + 4] != 0x47 || (unit[q + 5] & 0x1F) != 0x1F || unit[q + 6] != 0xFF) return false;
+        return true;
+    }
 
     /// <summary>The report (one line per file with something to say, the clean ones on one line, a last summary line) and whether damage was found.</summary>
     public static (List<string> Lines, bool Damaged) Run(string path, bool decode = false, Action<string>? progress = null)
@@ -69,6 +81,50 @@ public static class DamageScan
         return (lines, bad > 0);
     }
 
+    /// <summary>
+    /// A made-up clip of 64 units, PCR every unit: clean, then with one unit of nulls in the middle, then with FF from unit 40. The problems found, empty when right.
+    /// </summary>
+    public static List<string> SelfCheck()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"burnsmith-scan-{Environment.ProcessId}");
+        var stream = Path.Combine(dir, "BDMV", "STREAM");
+        Directory.CreateDirectory(stream);
+        var problems = new List<string>();
+        try
+        {
+            byte[] Clip(int nullUnit, int ffFrom)
+            {
+                var b = new byte[64 * Unit];
+                for (int k = 0, cc = 0; k < b.Length / 192; k++)
+                {
+                    var p = k * 192;
+                    var u = p / Unit;
+                    if (u >= ffFrom) { b.AsSpan(p, 192).Fill(0xFF); continue; }
+                    BinaryPrimitives.WriteUInt32BigEndian(b.AsSpan(p), (uint)k * 100 + 1);
+                    b[p + 4] = 0x47;
+                    if (u == nullUnit || k % 7 == 6 && p % Unit != 0) { b[p + 5] = 0x1F; b[p + 6] = 0xFF; b[p + 7] = 0x10; b.AsSpan(p + 8, 184).Fill(0xFF); continue; } // scattered nulls are normal
+                    b[p + 5] = 0x10; b[p + 6] = 0x11;
+                    if (p % Unit == 0) { b[p + 7] = (byte)(0x30 | cc++ & 15); b[p + 8] = 7; b[p + 9] = 0x10; BinaryPrimitives.WriteUInt32BigEndian(b.AsSpan(p + 10), (uint)(u * 90000 >> 1)); } // a PCR each second
+                    else b[p + 7] = (byte)(0x10 | cc++ & 15);
+                }
+                return b;
+            }
+            var file = Path.Combine(stream, "00001.m2ts");
+            void Expect(string what, byte[] clip, Func<string, bool> ok)
+            {
+                File.WriteAllBytes(file, clip);
+                var (lines, damaged) = Run(Path.Combine(dir));
+                var first = lines[0];
+                if (!ok(first) || damaged != first.StartsWith("00001.m2ts")) problems.Add($"{what} : {first} (dommage : {damaged})");
+            }
+            Expect("clip sain", Clip(-1, 99), l => l.StartsWith("sains"));
+            Expect("bloc de paquets nuls", Clip(20, 99), l => l.Contains("paquets nuls (1 bloc") && l.Contains("de 0:19 à 0:21"));
+            Expect("FF jusqu'à la fin", Clip(-1, 40), l => l.Contains("illisible de 0:39 à la fin") && !l.Contains("paquets nuls"));
+        }
+        finally { Directory.Delete(dir, true); }
+        return problems;
+    }
+
     /// <summary>0 another file, 1 a Blu-ray stream (192-byte packets), 2 a DVD stream (2048-byte packs).</summary>
     static int Kind(Entry e) => Path.GetExtension(e.Name).ToLowerInvariant() switch { ".m2ts" or ".mts" => 1, ".vob" => 2, _ => 0 };
 
@@ -88,7 +144,8 @@ public static class DamageScan
         void Mark(long at, double seconds)
         {
             origin ??= seconds;
-            if (f.TimeOff.Count == 0 || at - f.TimeOff[^1] >= 1 << 18) { f.TimeOff.Add(at); f.TimeSec.Add(Math.Max(0, seconds - origin.Value)); }
+            var t = Math.Max(0, seconds - origin.Value);
+            if (f.TimeOff.Count == 0 || at - f.TimeOff[^1] >= 1 << 18 || Math.Abs(t - f.TimeSec[^1]) >= 0.5) { f.TimeOff.Add(at); f.TimeSec.Add(t); } // a slow bonus clip needs a mark each half second
         }
         while ((n = ReadFull(s, buf)) > 0)
         {
@@ -100,6 +157,14 @@ public static class DamageScan
                     filled[o / S] = fill >= 0;
                     if (fill >= 0) Filled(f, pos + o, sector.Length, fill);
                 }
+            if (kind == 1)
+                for (int u = 0; u + Unit <= n; u += Unit)
+                    if (NullUnit(buf.AsSpan(u, Unit)))
+                    {
+                        var at = pos + u;
+                        if (f.NullUnits.Count > 0 && f.NullUnits[^1].End == at) f.NullUnits[^1] = (f.NullUnits[^1].Start, at + Unit);
+                        else f.NullUnits.Add((at, at + Unit));
+                    }
             if (kind == 1)
                 for (int p = 0; p + 192 <= n; p += 192)
                 {
@@ -159,6 +224,10 @@ public static class DamageScan
         else f.Runs.Add((at, at + size, (byte)fill));
     }
 
+    /// <summary>The null units that are damage: not those of a stretch already told as FF, nor padding that ends the file.</summary>
+    static List<(long Start, long End)> NullDamage(Found f) =>
+        f.NullUnits.Where(x => !f.Runs.Any(r => x.End > r.Start - (1 << 20) && x.Start < r.End + (1 << 20))).ToList();
+
     static void Lost(Found f, long at, int size)
     {
         f.LostPackets++;
@@ -195,6 +264,13 @@ public static class DamageScan
             var sectors = e.InImage ? $", secteur {Num(Sector(e, places[0].Start))} et suivants" : "";
             parts.Add(places.Count == 1 ? $"illisible {Stretch(places[0].Start, places[0].End)}, {span}{sectors}"
                 : $"illisible à {places.Count} endroits, {span} : {string.Join(", ", places.Take(5).Select(x => Stretch(x.Start, x.End)))}{(places.Count > 5 ? " etc." : "")}{sectors}");
+        }
+        if (NullDamage(f) is { Count: > 0 } nulls)
+        {
+            var units = nulls.Sum(x => x.End - x.Start) / Unit;
+            parts.Add($"illisible {(nulls.Count == 1 ? "à 1 endroit" : $"à {nulls.Count} endroits")}, remplacé par des paquets nuls ({Num(units)} bloc{(units > 1 ? "s" : "")} de 6 144 octets, {Size(units * Unit)}) : "
+                      + string.Join(", ", nulls.Take(5).Select(x => Stretch(x.Start, x.End))) + (nulls.Count > 5 ? " etc." : "")
+                      + (e.InImage ? $", secteur {Num(Sector(e, nulls[0].Start))} et suivants" : ""));
         }
         var lostPackets = lost.Sum(l => (l.End - l.Start) / (Kind(e) == 2 ? S : 192));
         if (lostPackets > 0)

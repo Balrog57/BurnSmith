@@ -106,6 +106,13 @@ if (a.Count >= 2 && a[0] == "scan-damage")
     foreach (var line in report) Console.WriteLine(line);
     return damaged ? 1 : 0;
 }
+// burnsmith check-scan-damage : scan-damage on made-up clips (clean, a unit of null packets, FF to the end); 1 when one is misjudged
+if (a.Count >= 1 && a[0] == "check-scan-damage")
+{
+    var wrong = DamageScan.SelfCheck();
+    Console.WriteLine(wrong.Count == 0 ? "ok   scan-damage" : string.Join(Environment.NewLine, wrong.Select(p => "FAIL " + p)));
+    return wrong.Count == 0 ? 0 : 1;
+}
 // burnsmith slideshow <out.mkv> [--seconds 5] [--music song]... <photo>... : photos shown one after the other (with the songs under them) as a video, to give to --video
 // burnsmith song <out.mkv> <audio> [--cover picture] : a song as a video (its cover, or black, for as long as it plays)
 // burnsmith join <out.mkv> <video> <video>... : videos with the same streams end to end in one file (streams copied)
