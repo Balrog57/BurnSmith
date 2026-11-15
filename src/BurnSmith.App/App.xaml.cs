@@ -81,6 +81,7 @@ public partial class App : Application
         if (e.Args.Contains("undo") && window is MenuEditorWindow undone) { await undone.TryUndo(); await Task.Delay(1000); }
         if (e.Args.Contains("queue") && window == main) { main.TryQueue(); await Task.Delay(500); } // the disc put in the queue: its count by the button
         if (e.Args.Contains("undo") && window == main) { main.TryUndo(); await Task.Delay(1500); } // the last video removed, then back: the list is whole and Rétablir is lit
+        if (e.Args.Contains("playdisc") && window == main) { main.TryPlayDisc(); await Task.Delay(500); } // « Lire sur l'ordinateur » as it shows once a disc is made
         if (e.Args.Contains("guides") && window is MenuEditorWindow guided) await guided.TryGuides();
         var bmp = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
         bmp.Render(window);

@@ -104,6 +104,13 @@
                   ToolTip="Annuler la dernière modification (Ctrl+Z)"/>
           <Button x:Name="RedoButton" Style="{StaticResource IconBtn}" Content="&#xE7A6;" Width="38" Height="36" FontSize="16" IsEnabled="False" Click="OnRedo" Margin="0,0,16,0" AutomationProperties.Name="Rétablir"
                   ToolTip="Rétablir ce qui a été annulé (Ctrl+Y)"/>
+          <Button x:Name="PlayDiscButton" Visibility="Collapsed" Click="OnPlayDisc" Padding="14,8" Margin="0,0,8,0"
+                  ToolTip="Ouvre dans VLC le disque qui vient d'être fait (son image ISO s'il y en a une), pour le regarder sur cet ordinateur. Le menu d'un Blu-ray BD-J n'y apparaît que si Java est installé.">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE768;" Margin="0,0,8,0" VerticalAlignment="Center"/>
+              <TextBlock Text="Lire sur l'ordinateur"/>
+            </StackPanel>
+          </Button>
           <Button x:Name="BurnButton" IsEnabled="False" Click="OnBurnIso" Padding="14,8" Margin="0,0,8,0" ToolTip="Grave une image ISO existante sur le disque du graveur choisi">
             <StackPanel Orientation="Horizontal">
               <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE958;" Margin="0,0,8,0" VerticalAlignment="Center"/>

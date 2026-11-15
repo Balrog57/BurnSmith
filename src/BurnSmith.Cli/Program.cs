@@ -2026,6 +2026,46 @@ if (a.Count >= 3 && a[0] == "burn")
              verify: !a.Contains("--no-verify"), eject: a.Contains("--eject"), erase: a.Contains("--erase"));
     return 0;
 }
+// burnsmith play FOLDER|IMAGE.iso : the disc opened in the VLC installed on this PC (« Lire sur l'ordinateur »); 1 when VLC is not installed
+if (a.Count >= 2 && a[0] == "play")
+{
+    Console.WriteLine($"vlc {Vlc.Arguments(a[1])}");
+    if (!Vlc.Play(a[1])) { Console.WriteLine($"VLC n'est pas installé sur cet ordinateur : {Vlc.Site}"); return 1; }
+    if (!Vlc.Arguments(a[1]).StartsWith("\"dvd:")) Console.WriteLine(Vlc.JavaNote);
+    return 0;
+}
+// burnsmith check-play : VLC's command line for a disc (bluray:/// or dvd:///, quoted, an ISO as it is), without starting VLC
+if (a.Count >= 1 && a[0] == "check-play")
+{
+    var playFailed = 0;
+    void Pl(string what, bool ok, string shown) { if (!ok) playFailed++; Console.WriteLine($"{(ok ? "ok  " : "FAIL")} {what} : {shown}"); }
+    var playRoot = Path.Combine(Path.GetTempPath(), "bs_play " + Guid.NewGuid().ToString("N")[..8]);
+    try
+    {
+        var bd = Directory.CreateDirectory(Path.Combine(playRoot, "JUDGE DREDD", "BDMV")).Parent!.FullName;
+        var dvdDir = Directory.CreateDirectory(Path.Combine(playRoot, "Épisodes #1 à 100%", "VIDEO_TS")).Parent!.FullName;
+        var image = Path.Combine(playRoot, "JUDGE DREDD.iso");
+        File.WriteAllBytes(image, []);
+        var url = "bluray:///" + bd.Replace('\\', '/');
+        // one argument for Windows: a quote at each end, none inside, no backslash before the last (it would escape it)
+        static bool One(string s) => s.Length > 2 && s[0] == '"' && s[^1] == '"' && s.Count(c => c == '"') == 2 && s[^2] != '\\';
+        var b = Vlc.Arguments(bd);
+        Pl("a Blu-ray folder with a space is bluray:/// and one argument", b == $"\"{url}\"" && One(b), b);
+        Pl("its BDMV folder, or a trailing \\, give the same", Vlc.Arguments(Path.Combine(bd, "BDMV")) == b && Vlc.Arguments(bd + "\\") == b, Vlc.Arguments(Path.Combine(bd, "BDMV")));
+        var d = Vlc.Arguments(dvdDir);
+        Pl("a DVD folder is dvd:///, # and % escaped (VLC reads # as title:chapter)", d == $"\"dvd:///{dvdDir.Replace('\\', '/').Replace("%", "%25").Replace("#", "%23")}\"" && One(d) && !d.Contains('#'), d);
+        var i = Vlc.Arguments(image);
+        Pl("an ISO is passed as it is, quoted", i == $"\"{image}\"" && One(i), i);
+        var refused = false;
+        try { Vlc.Arguments(playRoot); } catch (InvalidOperationException) { refused = true; }
+        Pl("a folder with no disc is refused before VLC starts", refused, playRoot);
+        var exe = Vlc.Find();
+        Pl("VLC found is the installed one, never the test copy under tools\\vlc", exe == null || !exe.Contains(@"\tools\vlc\", StringComparison.OrdinalIgnoreCase), exe ?? "VLC not installed here (the window then offers videolan.org)");
+    }
+    finally { Directory.Delete(playRoot, true); }
+    Console.WriteLine(playFailed == 0 ? "all ok" : $"{playFailed} failed");
+    return playFailed == 0 ? 0 : 1;
+}
 
 // --trial [SECONDS] (bd, dvd, project): a trial disc, each video cut to SECONDS in all (300 = five minutes), a passage at each chapter: the whole menu, made in minutes, to try in VLC before the real build
 // --menu-mode bdj|hdmv (bd): the Blu-ray menu as the BD-J program (default: everything the menu can do) or as native HDMV navigation (every player runs it

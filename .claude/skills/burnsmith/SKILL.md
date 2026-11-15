@@ -99,6 +99,7 @@ Le résultat se donne ensuite à `--video`.
 - `burnsmith erase F:` : efface un disque réinscriptible.
 - `burnsmith check-disc DOSSIER|image.iso [DOSSIER]` : structure d'un disque fini, sans lecteur.
 - `burnsmith scan-damage image.iso|DOSSIER [--decode|--no-decode]` : où une copie de disque (Blu-ray ou DVD) est abîmée, sans monter l'image : secteurs remplis de FF ou de zéros par le logiciel de copie, blocs de 6 144 octets remplacés par des paquets nuls, synchronisation perdue, paquets encore chiffrés, chacun placé dans son fichier et dans le temps (« 00005.m2ts (film, 1 h 32) : illisible de 76:18 à la fin ») ; les ruptures de continuité sont signalées à part (souvent d'origine). Les petits clips (images fixes, menus, moins de 64 Mo) sont aussi décodés par ffmpeg : une image que le décodeur a dû masquer (« image abîmée ») est un dommage, même sans paquet FF ni nul ; les flux de menu (IG) que ffmpeg prend pour du mp3 sont ignorés. `--decode` fait décoder chaque flux (plusieurs minutes pour un film), `--no-decode` aucun. Code de sortie 1 quand un dommage est trouvé.
+- `burnsmith play DOSSIER|image.iso` : ouvre le disque dans le VLC installé sur le PC (bouton « Lire sur l'ordinateur » de la fenêtre), en `bluray:///` ou `dvd:///` pour un dossier ; code 1 si VLC n'est pas installé (https://www.videolan.org/vlc/). VLC n'affiche un menu BD-J qu'avec Java installé ; sans Java, il lit le disque sans menu. Ouvre une fenêtre sur le bureau de l'utilisateur : ne pas l'utiliser pour un contrôle automatique (`check-play` vérifie la ligne de commande sans lancer VLC).
 
 ## Modèles de menu
 
@@ -111,4 +112,4 @@ Le résultat se donne ensuite à `--video`.
 
 ## Vérifier le logiciel après une modification du code
 
-Depuis le dépôt seulement. `check-update`, `check-edit`, `check-elements`, `check-highlights`, `check-templates`, `check-fidelity`, `check-bd`, `check-reliability`, `check-drives` (liste des graveurs : lit les lecteurs, n'écrit rien) (ajouter `--no-dvd` aux trois qui l'acceptent pour passer les vrais builds DVD, lents). Les lancer un par un : l'exe est verrouillé pendant qu'un contrôle tourne, donc pas de `dotnet build` en même temps.
+Depuis le dépôt seulement. `check-update`, `check-edit`, `check-elements`, `check-highlights`, `check-templates`, `check-fidelity`, `check-bd`, `check-reliability`, `check-drives` (liste des graveurs : lit les lecteurs, n'écrit rien), `check-play` (ajouter `--no-dvd` aux trois qui l'acceptent pour passer les vrais builds DVD, lents). Les lancer un par un : l'exe est verrouillé pendant qu'un contrôle tourne, donc pas de `dotnet build` en même temps.
