@@ -931,3 +931,12 @@ titre {0} : le titre {1} est annoncé {2} secteurs après VIDEO_TS.IFO, il est �
 {0} Go	{0} GB
 # menu type, disc sizes, app language (added with the HDMV menu)
 « Sans limite » ne se grave pas : choisissez la taille du disque à graver, ou décochez la gravure.	"No limit" cannot be burned: choose the size of the disc to burn, or untick burning.
+# per-track audio volume, audio track from a separate file
+Ajouter une piste audio…	Add an audio track…
+Pistes audio de {0}	Audio tracks of {0}
+Pistes audio ({0})	Audio tracks ({0})
+Volume de « {0} »…	Volume of "{0}"…
+Volume de « {0} » : {1} dB…	Volume of "{0}": {1} dB…
+Volume de la piste	Track volume
+Volume de la piste, en dB (de -30 à 30) : 6 = plus fort, -6 = moins fort, 0 = inchangé. Une piste copiée telle quelle (AC-3, DTS) est alors réencodée.	Track volume, in dB (-30 to 30): 6 = louder, -6 = quieter, 0 = unchanged. A track copied as it is (AC-3, DTS) is then re-encoded.
+Entrez un nombre de dB entre -30 et 30, par exemple 3 ou -4,5.	Enter a number of dB between -30 and 30, for example 3 or -4.5.

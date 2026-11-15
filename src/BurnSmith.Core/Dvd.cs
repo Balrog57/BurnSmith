@@ -147,13 +147,15 @@ public static class Dvd
         if (title.Start > 0) args.AddRange(["-ss", title.Start.ToString(Inv)]);
         var span = src.Duration + title.GapLength; // the part read: from the first clip's start to the last one's end
         if (title.End != null) args.AddRange(["-t", span.ToString("0.###", Inv)]);
-        args.AddRange(["-i", title.Video, "-map", "0:v:0"]);
-        foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
+        args.AddRange(["-i", title.Video]);
+        var maps = title.AudioMaps(audio, args, span); // a sound file added to the video is one more input
+        args.AddRange(["-map", "0:v:0"]);
+        foreach (var map in maps) args.AddRange(["-map", map]);
         var fit = $"{src.HalfStereo}scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={(wide ? 1024 : 768)}:576:force_original_aspect_ratio=decrease,pad={(wide ? 1024 : 768)}:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h}:in_color_matrix={(src.Height >= 720 || src.Hdr != "SDR" ? "bt709" : "bt601")}:out_color_matrix=bt601,setsar={sar},{rate}"; // a player decodes a DVD as BT.601
         var plain = title.Effects is null or { IsEmpty: true }; // effects are placed in the source's pixels: with some, the picture keeps its size until they are drawn
         var vf = (title.Effects ?? new()).Vf(src.Width, src.Height, title.Start, fit, plain ? BluRay.ToSdr(src.Hdr, src.Width, src.Height, wide ? 1024 : 768) : BluRay.ToSdr(src.Hdr)); // a DVD has no HDR
         if (title.GapFilter(false) is { Length: > 0 } dropV) vf += "," + dropV;
-        string Af(int track) => string.Join(",", new[] { title.AudioDelayFilter(track), title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "" }.Where(f => f.Length > 0));
+        string Af(int track) => string.Join(",", new[] { title.AudioDelayFilter(track), title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "", title.AudioVolumeFilter(track) }.Where(f => f.Length > 0));
         args.AddRange(["-vf", vf,
             "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", wide ? "16:9" : "4:3", "-b:v", $"{videoBps / 1000}k"]);
         if (audio.Count == 0) args.Add("-an");

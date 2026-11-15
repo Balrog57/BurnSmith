@@ -941,7 +941,7 @@ public static class BluRay
     static string AudioMode(AudioTrack a, DiscTitle t, bool uhd, bool lossless) =>
         CopiesAudio(a, t, uhd) ? "copy" : !lossless || !a.Lossless ? "ac3"
         // 48 kHz only: tsMuxeR counts a TrueHD's samples against the core's 1536 at 48 kHz
-        : a.Codec == "truehd" && a.SampleRate == 48000 && t.Volume == 100 && t.Start == 0 && t.Gaps.Count == 0 ? "thd" : "lpcm";
+        : a.Codec == "truehd" && a.SampleRate == 48000 && t.Volume == 100 && t.AudioVolumeFilter(a.Index) == "" && t.Start == 0 && t.Gaps.Count == 0 ? "thd" : "lpcm";
 
     /// <summary>A lossless track's file beside prepared.ts: tsMuxeR reads neither TrueHD nor LPCM out of ffmpeg's transport stream.</summary>
     static string AudioFile(string prepared, int track, string kind) => Path.ChangeExtension(prepared, $".a{track}.{kind}");
@@ -983,7 +983,7 @@ public static class BluRay
     /// Only 48 kHz is copied: a disc does not take 44.1 kHz.
     /// </summary>
     const string OverlapDrop = "noise=drop='if(lt(pts+duration/2,ld(0)),1,0*st(0,pts+duration))'"; // ld(0): where the last frame kept ends
-    static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && (t.Start == 0 || uhd) && t.Gaps.Count == 0 && a.SampleRate == 48000 && a.Codec is "ac3" or "dts"; // not TrueHD: a disc wants its AC-3 core, which an mkv or ffmpeg never carries (tsMuxeR: "the disk will not play")
+    static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && t.AudioVolumeFilter(a.Index) == "" && (t.Start == 0 || uhd) && t.Gaps.Count == 0 && a.SampleRate == 48000 && a.Codec is "ac3" or "dts"; // not TrueHD: a disc wants its AC-3 core, which an mkv or ffmpeg never carries (tsMuxeR: "the disk will not play")
 
     /// <summary>Whether the title's video goes on the disc as it is (stream copy) instead of being re-encoded; <see cref="TargetKbps"/> and <see cref="Prepare"/> must agree on it.</summary>
     static bool CopiesVideo(BluRayJob job, DiscTitle title, SourceInfo s, int kbps)
@@ -1024,8 +1024,9 @@ public static class BluRay
         var span = s.Duration + title.GapLength; // the part read: from the first clip's start to the last one's end
         if (title.End != null) args.AddRange(["-t", span.ToString("0.###", Inv)]);
         args.AddRange(["-i", title.Video]);
+        var maps = title.AudioMaps(audio, args, span); // a sound file added to the video is one more input
         if (!noVideo) args.AddRange(["-map", "0:v:0"]);
-        foreach (var a in audio) args.AddRange(["-map", $"0:a:{a.Index}"]);
+        foreach (var map in maps) args.AddRange(["-map", map]);
         if (videoOk && !noVideo) args.AddRange(["-c:v", "copy"]);
         // a UHD disc takes Dolby Vision only as two tracks (profile 7): tsMuxeR puts a single-layer one on the enhancement-layer PID, with no base, and no player reads it
         if (videoOk && job.Uhd && s.Hdr == "Dolby Vision" && !s.DualLayer)
@@ -1080,9 +1081,11 @@ public static class BluRay
             args.AddRange(kbps > 0 ? ["-b:v", kbps.ToString(Inv) + "k"] : ["-crf", Math.Clamp(enc.Crf, 10, 28).ToString(Inv)]);
             args.AddRange(["-x264-params", $"bluray-compat=1:level=41:vbv-maxrate={maxrate}:vbv-bufsize=30000:keyint=24:slices=4:bframes=3:b-pyramid=strict:open-gop=0{Fields(rate, h)}"]);
         }
-        var af = string.Join(",", new[] { title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "" }.Where(f => f.Length > 0));
+        string Af(int track) => string.Join(",", new[] { title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "", title.AudioVolumeFilter(track) }.Where(f => f.Length > 0));
         for (var j = 0; j < audio.Count; j++)
         {
+            if (title.AudioVolumeFilter(audio[j].Index) is { Length: > 0 } louder && AudioMode(audio[j], title with { AudioVolume = null }, job.Uhd, enc.Lossless) is var kept && kept != AudioMode(audio[j], title, job.Uhd, enc.Lossless))
+                log($"{title.DisplayName}: {audio[j].Name}: {louder}, so the track is made again as {BdAudio(audio[j], title, job.Uhd, enc.Lossless)} instead of {(kept == "copy" ? "copied" : "kept as TrueHD")}");
             // a DVD rip joins its scenes with sound frames that overlap (the same time written two or three times); tsMuxeR plays every frame one after the
             // other, so the sound fell behind the picture at each join (0.55 s at the end of 13 deleted scenes): a frame that starts before the last one ends is left out
             // shortcut: overlaps under half a frame are kept and add up, and a hole in the sound is not filled; re-encode such a track (aresample=async=1) if one turns up
@@ -1091,7 +1094,7 @@ public static class BluRay
             {
                 args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", audio[j].Channels > 2 ? "640k" : "448k", $"-ar:a:{j}", "48000"]);
                 if (audio[j].Channels > 6) args.AddRange([$"-ac:a:{j}", "6"]); // AC-3 tops out at 5.1
-                if (af.Length > 0) args.AddRange([$"-filter:a:{j}", af]);
+                if (Af(audio[j].Index) is { Length: > 0 } af) args.AddRange([$"-filter:a:{j}", af]);
             }
         }
         args.AddRange(["-sn", "-dn", output]);
@@ -1103,16 +1106,16 @@ public static class BluRay
             if (mode == "thd")
             {
                 // setts: an mkv times its units to the millisecond, two of them often the same, and ffmpeg warns about each one (their times are not written anyway)
-                args.AddRange(["-map", $"0:a:{a.Index}", "-c:a", "copy", "-bsf:a", "setts=ts=N", "-f", "truehd", AudioFile(output, j, "thd")]);
-                args.AddRange(["-map", $"0:a:{a.Index}", "-c:a", "ac3", "-b:a", a.Channels > 2 ? "640k" : "448k", "-ar", "48000", "-ac", Math.Min(a.Channels, 6).ToString(Inv), "-f", "ac3", AudioFile(output, j, "ac3")]);
+                args.AddRange(["-map", maps[j], "-c:a", "copy", "-bsf:a", "setts=ts=N", "-f", "truehd", AudioFile(output, j, "thd")]);
+                args.AddRange(["-map", maps[j], "-c:a", "ac3", "-b:a", a.Channels > 2 ? "640k" : "448k", "-ar", "48000", "-ac", Math.Min(a.Channels, 6).ToString(Inv), "-f", "ac3", AudioFile(output, j, "ac3")]);
                 log($"{title.DisplayName}: {a.Name}: TrueHD kept as it is, with the AC-3 core a disc wants");
             }
             else if (mode == "lpcm")
             {
                 // .w64: a film's 24-bit 5.1 passes the 4 GB of a .wav; a disc has no 6.1, so seven channels become 7.1
-                args.AddRange(["-map", $"0:a:{a.Index}", "-c:a", LpcmBits(a) == 16 ? "pcm_s16le" : "pcm_s24le", "-ar", LpcmRate(a).ToString(Inv)]);
+                args.AddRange(["-map", maps[j], "-c:a", LpcmBits(a) == 16 ? "pcm_s16le" : "pcm_s24le", "-ar", LpcmRate(a).ToString(Inv)]);
                 if (a.Channels is 7 or > 8) args.AddRange(["-ac", "8"]);
-                if (af.Length > 0) args.AddRange(["-af", af]);
+                if (Af(a.Index) is { Length: > 0 } af) args.AddRange(["-af", af]);
                 args.Add(AudioFile(output, j, "w64"));
                 log($"{title.DisplayName}: {a.Name}: kept without loss, as LPCM {LpcmRate(a) / 1000} kHz {LpcmBits(a)} bits");
             }
