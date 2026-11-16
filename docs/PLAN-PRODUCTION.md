@@ -36,7 +36,7 @@ PowerDVD 24 a refusé les deux ISO UHD comme format non pris en charge. L'édite
 
 **Listes de lecture Blu-ray.** `check-disc` acceptait une liste `00001.mpls` réduite à son en-tête de huit octets. Il vérifie maintenant les limites des tables de lecture et de repères, ainsi que l'existence de l'élément visé par chaque repère. La suite `check-bd` couvre la liste tronquée et le repère qui vise un élément inexistant.
 
-**UHD HDR10+ sans menu.** L'ISO de la mire démarre directement dans VLC et produit des images décodées. FFprobe retrouve les métadonnées dynamiques SMPTE ST 2094-40 dans le flux gravable. Le rendu HDR10+ sur écran reste à vérifier. VLC atteint la fin du titre et reste ouvert malgré `--play-and-exit`. Vérifier ce comportement sur un Blu-ray témoin sans menu avant de modifier les commandes de fin de titre.
+**UHD HDR10+ sans menu.** L'ISO de la mire démarre directement dans VLC et produit des images décodées. FFprobe retrouve les métadonnées dynamiques SMPTE ST 2094-40 dans le flux gravable. Le rendu HDR10+ sur écran reste à vérifier. En mode navigation Blu-ray, VLC atteint la fin du titre et reste ouvert malgré `--play-and-exit`. Un Blu-ray SDR sans menu reproduit ce comportement. En lecture directe du titre (`--no-bluray-menu`), VLC quitte à la fin des deux ISO.
 
 ## Ordre des corrections et critères de passage
 
