@@ -71,7 +71,7 @@ Tout est dans [`docs/`](docs/README.md) :
 
 ## Reste à faire
 
-Les essais sur Panasonic ont validé le Blu-ray 1080p avec menu HDMV, le pop-up BD-J animé et la lecture UHD HDR10 avec menu HDMV ou BD-J. Le [plan de production](docs/PLAN-PRODUCTION.md) détaille ces essais et la validation Dolby Vision qui reste à faire.
+Les essais sur Panasonic ont validé le Blu-ray 1080p avec menu HDMV, le pop-up BD-J animé et la lecture UHD HDR10 avec menu HDMV ou BD-J. Une mire UHD avec menu BD-J a aussi été lue en Dolby Vision après conversion au profil 7 MEL. Le [plan de production](docs/PLAN-PRODUCTION.md) détaille les résultats sur platine.
 
 ## Licence
 
