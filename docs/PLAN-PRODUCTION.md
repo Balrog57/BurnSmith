@@ -36,6 +36,8 @@ PowerDVD 24 a refusé les deux ISO UHD comme format non pris en charge. L'édite
 
 **Listes de lecture Blu-ray.** `check-disc` acceptait une liste `00001.mpls` réduite à son en-tête de huit octets. Il vérifie maintenant les limites des tables de lecture et de repères, ainsi que l'existence de l'élément visé par chaque repère. La suite `check-bd` couvre la liste tronquée et le repère qui vise un élément inexistant.
 
+**Démarrage et titres Blu-ray.** Une copie de l'UHD avec un objet HDMV de démarrage inexistant passait le contrôle de dossier et bloquait dans VLC avant le menu. Le contrôle vérifie maintenant les tables de `index.bdmv` et `MovieObject.bdmv`, ainsi que les cibles HDMV et BD-J de la première lecture, du menu principal et des titres. Dans VLC, une ISO Blu-ray 1080p BD-J neuve a enchaîné l'introduction, le menu, la lecture du film et le retour automatique. La commande Top Menu pendant la lecture a aussi rouvert le menu. [Index libbluray](https://raw.githubusercontent.com/ShiftMediaProject/libbluray/master/src/libbluray/bdnav/index_parse.c)
+
 **UHD HDR10+ sans menu.** L'ISO de la mire démarre directement dans VLC et produit des images décodées. FFprobe retrouve les métadonnées dynamiques SMPTE ST 2094-40 dans le flux gravable. Le rendu HDR10+ sur écran reste à vérifier. En mode navigation Blu-ray, VLC atteint la fin du titre et reste ouvert malgré `--play-and-exit`. Un Blu-ray SDR sans menu reproduit ce comportement. En lecture directe du titre (`--no-bluray-menu`), VLC quitte à la fin des deux ISO.
 
 ## Ordre des corrections et critères de passage

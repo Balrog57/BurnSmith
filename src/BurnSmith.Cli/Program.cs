@@ -1384,8 +1384,14 @@ if (a.Count >= 1 && a[0] == "check-edit")
     {
         var bdmv = Path.Combine(discDir, "BDMV");
         foreach (var sub in new[] { "BACKUP", "PLAYLIST", "CLIPINF", "STREAM" }) Directory.CreateDirectory(Path.Combine(bdmv, sub));
-        foreach (var (file, magic) in new[] { ("index.bdmv", "INDX0200"), ("MovieObject.bdmv", "MOBJ0200"), ("BACKUP/index.bdmv", "INDX0200"), ("BACKUP/MovieObject.bdmv", "MOBJ0200"), ("CLIPINF/00001.clpi", "HDMV0200") })
-            File.WriteAllText(Path.Combine(bdmv, file), magic);
+        File.WriteAllText(Path.Combine(bdmv, "CLIPINF/00001.clpi"), "HDMV0200");
+        var index = BurnSmith.Core.Disc.MovieObjectFile.Index([0], 0, ushort.MaxValue, 6, 1);
+        var objects = BurnSmith.Core.Disc.MovieObjectFile.Write([[BurnSmith.Core.Disc.Nav.PlayPlaylist(1)]]);
+        foreach (var folder in new[] { bdmv, Path.Combine(bdmv, "BACKUP") })
+        {
+            File.WriteAllBytes(Path.Combine(folder, "index.bdmv"), index);
+            File.WriteAllBytes(Path.Combine(folder, "MovieObject.bdmv"), objects);
+        }
         var playlist = new BinaryWriterBE();
         playlist.Str("MPLS0200", 8); playlist.U32(40); playlist.U32(100); playlist.Zero(24);
         playlist.U32(56); playlist.U16(0); playlist.U16(1); playlist.U16(0);

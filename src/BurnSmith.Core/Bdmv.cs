@@ -24,20 +24,28 @@ public static class Bdmv
         return Disc.MovieObjectFile.Write(objects, Version(movieObject));
     }
 
-    /// <summary>"0200", or "0300" on a 4K disc (tsMuxeR --blu-ray-v3): the same layout, and the file must keep the disc's version.</summary>
+    /// <summary>The version code is preserved when rewriting the movie objects.</summary>
     static string Version(byte[] movieObject) => movieObject.Length >= 8 && movieObject.AsSpan(0, 4).SequenceEqual("MOBJ"u8) ? Encoding.ASCII.GetString(movieObject, 4, 4) : "";
 
-    static List<IReadOnlyList<byte[]>> ReadObjects(byte[] movieObject)
+    internal static List<IReadOnlyList<byte[]>> ReadObjects(byte[] movieObject)
     {
         const int first = 8 + 4 + 28 + 4 + 4 + 2; // "MOBJ0200", extension start, reserved, body length, reserved, number of objects
-        if (movieObject.Length < first || Version(movieObject) is not ("0200" or "0300")) throw new InvalidDataException("not a MovieObject.bdmv");
+        if (movieObject.Length < first || Version(movieObject) is not ("0100" or "0200" or "0240" or "0300"))
+            throw new InvalidDataException("en-tête des objets HDMV absent ou invalide");
+        const int body = 44;
+        var length = BinaryPrimitives.ReadUInt32BigEndian(movieObject.AsSpan(body - 4));
+        if (length < first - body || length > movieObject.Length - body)
+            throw new InvalidDataException("table des objets HDMV tronquée");
+        var end = body + (int)length;
         var count = BinaryPrimitives.ReadUInt16BigEndian(movieObject.AsSpan(first - 2));
         var objects = new List<IReadOnlyList<byte[]>>();
         for (int at = first, i = 0; i < count; i++)
         {
+            if (at > end - 4) throw new InvalidDataException($"objet HDMV {i} tronqué");
             var n = BinaryPrimitives.ReadUInt16BigEndian(movieObject.AsSpan(at + 2));
-            objects.Add([.. Enumerable.Range(0, n).Select(c => movieObject.AsSpan(at + 4 + c * 12, 12).ToArray())]);
-            at += 4 + n * 12;
+            if (n > (end - at - 4) / Disc.Nav.Size) throw new InvalidDataException($"commandes de l'objet HDMV {i} tronquées");
+            objects.Add([.. Enumerable.Range(0, n).Select(c => movieObject.AsSpan(at + 4 + c * Disc.Nav.Size, Disc.Nav.Size).ToArray())]);
+            at += 4 + n * Disc.Nav.Size;
         }
         return objects;
     }

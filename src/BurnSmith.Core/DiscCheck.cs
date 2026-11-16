@@ -76,10 +76,64 @@ public static class DiscCheck
         else if (File.Exists(a) && !File.ReadAllBytes(a).AsSpan().SequenceEqual(File.ReadAllBytes(b))) problems.Add($"la copie de secours {shown} diffère de l'original");
     }
 
+    static void CheckBluRayIndex(string bdmv, List<string> problems)
+    {
+        var movieObject = Path.Combine(bdmv, "MovieObject.bdmv");
+        int? objects = null;
+        if (Starts(movieObject, "MOBJ", "BDMV\\MovieObject.bdmv", problems))
+        {
+            try { objects = Bdmv.ReadObjects(File.ReadAllBytes(movieObject)).Count; }
+            catch (InvalidDataException ex) { problems.Add($"BDMV\\MovieObject.bdmv : {ex.Message}"); }
+        }
+        var index = Path.Combine(bdmv, "index.bdmv");
+        if (!Starts(index, "INDX", "BDMV\\index.bdmv", problems)) return;
+        var bytes = File.ReadAllBytes(index);
+        const string shown = "BDMV\\index.bdmv";
+        var start = bytes.Length >= 12 ? BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(8)) : 0;
+        if (start < 78 || start > bytes.Length - 4)
+        {
+            problems.Add($"{shown} : adresse de la table des titres hors du fichier");
+            return;
+        }
+        var length = BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan((int)start));
+        if (length < 26 || length > bytes.Length - (int)start - 4)
+        {
+            problems.Add($"{shown} : table des titres tronquée");
+            return;
+        }
+        var table = bytes.AsSpan((int)start + 4, (int)length);
+        var titles = BinaryPrimitives.ReadUInt16BigEndian(table[24..]);
+        if (titles > (table.Length - 26) / 12)
+        {
+            problems.Add($"{shown} : table des titres tronquée");
+            return;
+        }
+        for (var i = 0; i < titles + 2; i++)
+        {
+            var entry = table[(i * 12 + (i >= 2 ? 2 : 0))..];
+            var title = i switch { 0 => "Première lecture", 1 => "Menu principal", _ => $"Titre {i - 1}" };
+            switch (entry[0] >> 6)
+            {
+                case 1:
+                    var id = BinaryPrimitives.ReadUInt16BigEndian(entry[6..]);
+                    if (objects is int count && id >= count && !(i < 2 && id == ushort.MaxValue))
+                        problems.Add($"{shown} : {title}, objet HDMV {id} inexistant");
+                    break;
+                case 2:
+                    var name = Encoding.ASCII.GetString(entry.Slice(6, 5));
+                    if (!name.All(char.IsAsciiDigit) || !File.Exists(Path.Combine(bdmv, "BDJO", name + ".bdjo")))
+                        problems.Add($"{shown} : {title}, descripteur BD-J {name}.bdjo absent ou invalide");
+                    break;
+                default:
+                    problems.Add($"{shown} : {title}, type d'objet inconnu");
+                    break;
+            }
+        }
+    }
+
     static void CheckBluRay(string bdmv, List<string> problems)
     {
-        Starts(Path.Combine(bdmv, "index.bdmv"), "INDX", "BDMV\\index.bdmv", problems);
-        Starts(Path.Combine(bdmv, "MovieObject.bdmv"), "MOBJ", "BDMV\\MovieObject.bdmv", problems);
+        CheckBluRayIndex(bdmv, problems);
         foreach (var name in new[] { "index.bdmv", "MovieObject.bdmv" }) Same(Path.Combine(bdmv, name), Path.Combine(bdmv, "BACKUP", name), "BACKUP\\" + name, problems);
         var lists = Directory.Exists(Path.Combine(bdmv, "PLAYLIST")) ? Directory.GetFiles(Path.Combine(bdmv, "PLAYLIST"), "*.mpls") : [];
         if (lists.Length == 0) problems.Add("aucune liste de lecture (PLAYLIST\\*.mpls)");

@@ -266,6 +266,27 @@ static class BdCheck
             var id = File.ReadAllBytes(Path.Combine(disc, "CERTIFICATE", "id.bdmv"));
             Check("4K BD-J disc identifier uses version 0300, including the backup",
                 id.AsSpan().StartsWith("BDID0300"u8) && id.AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(disc, "CERTIFICATE", "BACKUP", "id.bdmv"))));
+            var index = Path.Combine(disc, "BDMV", "index.bdmv");
+            var originalIndex = File.ReadAllBytes(index);
+            var badIndex = originalIndex.ToArray();
+            var table = (int)BinaryPrimitives.ReadUInt32BigEndian(badIndex.AsSpan(8)) + 4;
+            BinaryPrimitives.WriteUInt16BigEndian(badIndex.AsSpan(table + 6), 32767);
+            "99999"u8.CopyTo(badIndex.AsSpan(table + 18));
+            File.WriteAllBytes(index, badIndex);
+            var badTargets = DiscCheck.Folder(disc);
+            Check("disc check rejects missing First Playback and Top Menu targets",
+                badTargets.Any(p => p.Contains("Première lecture, objet HDMV 32767 inexistant"))
+                && badTargets.Any(p => p.Contains("Menu principal, descripteur BD-J 99999.bdjo absent")));
+            File.WriteAllBytes(index, originalIndex[..8]);
+            Check("disc check rejects a Blu-ray index with only the magic and version",
+                DiscCheck.Folder(disc).Any(p => p.Contains("index.bdmv") && p.Contains("table des titres hors du fichier")));
+            File.WriteAllBytes(index, originalIndex);
+            var movieObject = Path.Combine(disc, "BDMV", "MovieObject.bdmv");
+            var originalObject = File.ReadAllBytes(movieObject);
+            File.WriteAllBytes(movieObject, originalObject[..^1]);
+            Check("disc check rejects a truncated HDMV object table",
+                DiscCheck.Folder(disc).Any(p => p.Contains("MovieObject.bdmv") && p.Contains("tronquée")));
+            File.WriteAllBytes(movieObject, originalObject);
             var descriptor = Path.Combine(disc, "BDMV", "BDJO", "00000.bdjo");
             var valid = File.ReadAllBytes(descriptor);
             File.WriteAllBytes(descriptor, valid[..8]);
