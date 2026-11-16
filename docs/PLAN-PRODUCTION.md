@@ -34,8 +34,11 @@ Pour chaque essai de disque, produire une ISO, contrôler sa structure avec `che
 | UHD HDR10 avec menu BD-J | Les 8 800 secteurs correspondent à l'image. | La platine reconnaît un Ultra HD Blu-ray et le téléviseur signale HDR. Le menu et le film ne démarrent pas. |
 | Blu-ray 1080p HDMV (SDR) | Les 57 056 secteurs correspondent à l'image. | Marc confirme que le disque et son menu fonctionnent. L'absence d'indication HDR est attendue en SDR. |
 | UHD HDR10 sans menu | Les 8 608 secteurs correspondent à l'image. | Marc confirme que la mire de 9 secondes démarre et se lit en HDR. |
+| UHD HDR10 avec menu HDMV | Les 11 968 secteurs correspondent à l'image. | Affichage du menu et lancement de la mire HDR à confirmer. |
 
-Les ISO UHD sans menu et UHD HDMV ont le même flux multiplexé que le disque UHD BD-J. Les deux passent `check-disc` et décodent le film en 3840 × 2160 dans VLC. La lecture directe confirmée sur Panasonic, le prochain essai sur platine est la variante UHD HDMV pour vérifier si son menu peut lancer ce même film en HDR.
+Les ISO UHD sans menu et UHD HDMV ont le même flux multiplexé que le disque UHD BD-J. Les deux passent `check-disc` et décodent le film en 3840 × 2160 dans VLC.
+
+Le format UHD inclut le BD-J. Blu-Disc Studio documente un profil BD-J 6 pour ses projets UHD, tandis que BurnSmith écrit un descripteur d'application BD-J de profil 1, version 1.0.0, y compris en UHD. Cet écart est une piste pour le blocage au démarrage. Il reste à vérifier les champs du BDJO sur un disque UHD de référence et à reproduire la correction sur platine. [Blu-ray Disc Association](https://blu-raydisc.info/format-spec/rom4-spec.php), [documentation Blu-Disc Studio](https://blu-disc.net/help/project_properties.general.htm).
 
 ## Clôture du projet
 
