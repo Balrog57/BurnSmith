@@ -482,7 +482,7 @@ static class BdCheck
 
     /// <summary>
     /// The pop-up menu: with the option, the menu file has a "pop" page per title (resume, chapters, settings, main menu), its chapter pages and the
-    /// shared settings page, drawn as transparent overlays; without it, nothing of the pop-up is on the disc.
+    /// settings pages for the audio choices actually present, drawn as transparent overlays; without it, nothing of the pop-up is on the disc.
     /// </summary>
     static void Popup()
     {
@@ -503,6 +503,7 @@ static class BdCheck
                 Has("page pop1 bg_pop1.png") && Has("page pop2 bg_pop2.png") && Has("button pop1 resume ") && Has("button pop1 chapters ") && Has("button pop1 settings ") && Has("button pop1 main "),
                 string.Join(" | ", txt.Where(l => l.StartsWith("page pop", StringComparison.Ordinal))));
             Check("pop-up: the bonus (one chapter) has no chapters button", !Has("button pop2 chapters "));
+            Check("pop-up: the bonus (one audio, no subtitles) has no settings button", !Has("button pop2 settings "));
             Check("pop-up: the film's 3 chapters seek in its own playlist", Has("button popc1_1 c3 ") && txt.Any(l => l.StartsWith("button popc1_1 c3 ", StringComparison.Ordinal) && l.EndsWith(" chapter 1 2", StringComparison.Ordinal)));
             Check("pop-up: settings page with its own marker offset, back leads to the bar",
                 txt.Any(l => System.Text.RegularExpressions.Regex.IsMatch(l, @"^page popset bg_popset\.png -?\d+$")) && txt.Any(l => l.StartsWith("button popset back ", StringComparison.Ordinal) && l.EndsWith(" popup", StringComparison.Ordinal)));
@@ -513,8 +514,13 @@ static class BdCheck
             var bgra = new System.Windows.Media.Imaging.FormatConvertedBitmap(bar, System.Windows.Media.PixelFormats.Bgra32, null, 0);
             byte Alpha(int x, int y) { var px = new byte[4]; bgra.CopyPixels(new System.Windows.Int32Rect(x, y, 1, 1), px, 4, 0); return px[3]; }
             Check("pop-up: transparent over the film, solid on the bar", Alpha(0, 0) == 0 && Alpha(5, bgra.PixelHeight - 5) > 100, $"alpha {Alpha(0, 0)} / {Alpha(5, bgra.PixelHeight - 5)}");
-            var bars = MenuBuilder.Popup(new MenuDesign { MainMenuLabel = "Main" }, new MenuContent(1, null, []), [(1, 1)]);
+            var bars = MenuBuilder.Popup(new MenuDesign { MainMenuLabel = "Main" }, new MenuContent(1, null, []),
+                [(1, 1, ["French", "English"]), (2, 1, ["English", "German"]), (3, 1, ["French", "English"])]);
             Check("pop-up: the main menu button says what the design sets", bars[0].Ops.OfType<Label>().Any(l => l.Value == "Main"));
+            string? Setup(int playlist) => bars.Single(p => p.Id == $"pop{playlist}").Buttons.Single(b => b.Id == "settings").Action.Page;
+            Check("pop-up: different audio tracks get their own labels; identical choices share a page",
+                Setup(1) == Setup(3) && Setup(1) != Setup(2)
+                && bars.Single(p => p.Id == Setup(2)).Ops.OfType<Label>().Any(l => l.Value == "German"));
             var plainDisc = Bd("nopopup", titles, menu: new MenuDesign());
             var without = Jar(plainDisc);
             Check("no pop-up option: no pop-up page, the menu file as before", !without.Keys.Any(k => k.Contains("pop")) && !System.Text.Encoding.UTF8.GetString(without["menu.txt"]).Contains(" pop"));

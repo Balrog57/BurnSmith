@@ -495,11 +495,10 @@ public static class MenuBuilder
     }
 
     /// <summary>
-    /// The Blu-ray pop-up menu: per title (playlist, chapter count) a bar "pop{playlist}" over the bottom of the film (resume, chapters, settings,
-    /// main menu), its chapter pages "popc{playlist}_N", and one "popset" page for the audio / subtitle choice. The xlet opens "pop" + the playlist that
-    /// plays; the action "popup" goes back to that bar.
+    /// The Blu-ray pop-up menu: each playlist has a bar and chapter pages, and playlists with the same audio choices share a settings page.
+    /// The xlet opens "pop" + the playlist that plays; the action "popup" goes back to that bar.
     /// </summary>
-    public static List<MenuPage> Popup(MenuDesign d, MenuContent c, IReadOnlyList<(int Playlist, int Chapters)> titles)
+    public static List<MenuPage> Popup(MenuDesign d, MenuContent c, IEnumerable<(int Playlist, int Chapters, IReadOnlyList<string> Audio)> titles)
     {
         var g = PopupDesign(d);
         var veil = new Fill(new Box(0, 0, W, H), "#000000", 0.6, 0);
@@ -511,11 +510,24 @@ public static class MenuBuilder
             Buttons = p.Buttons.Select(b => b.Action is { Kind: "page", Page: "root" } ? b with { Action = new MenuAction("popup") } : b).ToList(),
         };
         var pages = new List<MenuPage>();
-        foreach (var (playlist, chapters) in titles)
+        var settings = new List<(IReadOnlyList<string> Audio, MenuPage Page)>();
+        foreach (var (playlist, chapters, audio) in titles)
         {
             var entries = new List<(string Id, string Text, MenuAction Action)> { ("resume", d.ResumeLabel, new MenuAction("resume")) };
             if (chapters > 1) entries.Add(("chapters", d.ScenesLabel, new MenuAction("page", $"popc{playlist}_1")));
-            if (c.HasSettings) entries.Add(("settings", d.SettingsLabel, new MenuAction("page", "popset")));
+            var setup = c with { Audio = audio };
+            if (setup.HasSettings)
+            {
+                var choices = setup.AudioNames.Count > 1 ? setup.AudioNames : [];
+                var page = settings.FirstOrDefault(s => s.Audio.SequenceEqual(choices)).Page;
+                if (page == null)
+                {
+                    var id = settings.Count == 0 ? "popset" : $"popset{playlist}";
+                    page = Popped(Settings(g, setup, null, null), id);
+                    settings.Add((choices, page));
+                }
+                entries.Add(("settings", d.SettingsLabel, new MenuAction("page", page.Id)));
+            }
             entries.Add(("main", d.MainMenuLabel, new MenuAction("menu")));
             const int bw = 380, gap = 50;
             var n = entries.Count;
@@ -538,7 +550,7 @@ public static class MenuBuilder
             var total = PageCount(cells.Count, PerPage(g));
             for (var i = 1; i <= total; i++) pages.Add(Popped(Grid(g, c, cells, i, total, $"popc{playlist}_", d.ScenesLabel), $"popc{playlist}_{i}"));
         }
-        if (c.HasSettings) pages.Add(Popped(Settings(g, c, null, null), "popset"));
+        pages.AddRange(settings.Select(s => s.Page));
         return pages;
     }
 

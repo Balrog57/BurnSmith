@@ -440,7 +440,8 @@ public static class BluRay
             var menuPages = MenuBuilder.Build(job.Menu, content);
             if (MenuBuilder.TracksLeftOut(menuPages, content) is { } leftOut) log(leftOut);
             foreach (var unsafeLine in SafeArea.Warnings(menuPages, job.Menu)) log(unsafeLine);
-            var popup = job.Menu.Popup && !job.HdmvMenu ? MenuBuilder.Popup(job.Menu, content, muxed.Select((m, i) => (MoviePlaylist + i, m.ChapterTimes.Count)).ToList()) : null;
+            var popup = job.Menu.Popup && !job.HdmvMenu ? MenuBuilder.Popup(job.Menu, content,
+                muxed.Select((m, i) => (MoviePlaylist + i, m.ChapterTimes.Count, (IReadOnlyList<string>)m.Audio))) : null;
             if (popup != null) log($"menu: pop-up menu on {job.Titles.Count} title(s)");
             // the BD-J graphics plane is 1920x1080 on a 4K disc too (the player scales it up): 3840x2160 pages ran the xlet out of heap
             if (job.HdmvMenu)
