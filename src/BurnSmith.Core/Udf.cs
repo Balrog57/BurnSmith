@@ -31,7 +31,7 @@ public static class Udf
 
     /// <summary>
     /// The 3D films of a disc folder as tsMuxeR writes them: base clip N and dependent clip N+1, both with the points their streams are cut at
-    /// (ExtentStartPoint of the .clpi, in bytes). Empty for a 2D disc.
+    /// (ExtentStartPoint of the .clpi, in bytes). The dependent clip also has ProgramInfo_SS.
     /// </summary>
     public static List<(string Base, string Dependent, List<long> BaseCuts, List<long> DependentCuts)> Interleaved(string folder)
     {
@@ -43,28 +43,48 @@ public static class Udf
             var name = Path.GetFileNameWithoutExtension(clpi);
             if (!int.TryParse(name, out var n) || list.Any(p => p.Item2 == name) || ExtentStarts(clpi) is not { } b) continue;
             var dependent = $"{n + 1:00000}";
-            if (ExtentStarts(Path.Combine(clipinf, dependent + ".clpi")) is { } d && d.Count == b.Count) list.Add((name, dependent, b, d));
+            if (ExtentStarts(Path.Combine(clipinf, dependent + ".clpi"), dependent: true) is { } d && d.Count == b.Count) list.Add((name, dependent, b, d));
         }
         return list;
     }
 
-    /// <summary>The ExtentStartPoint of a .clpi (extension data 2/4), as byte offsets in its .m2ts; null when it has none (a 2D clip).</summary>
-    static List<long>? ExtentStarts(string clpi)
+    /// <summary>The ExtentStartPoint of a .clpi (extension data 2/4), as byte offsets in its .m2ts.</summary>
+    static List<long>? ExtentStarts(string clpi, bool dependent = false)
     {
         if (!File.Exists(clpi)) return null;
         var c = File.ReadAllBytes(clpi);
         uint U32(int o) => BinaryPrimitives.ReadUInt32BigEndian(c.AsSpan(o));
-        if (c.Length < 0x1C || U32(0x18) is var ext && ext == 0 || ext + 12 > c.Length) return null;
+        if (c.Length < 0x1C) return null;
+        var address = U32(0x18);
+        if (address < 0x1C || address > c.Length - 12) return null;
+        var ext = (int)address;
+        var length = U32(ext);
+        if (length < 8 || length > c.Length - ext - 4) return null;
+        var end = ext + 4 + (int)length;
+        List<long>? cuts = null;
+        var hasProgramInfoSs = false;
         for (var i = 0; i < c[ext + 11]; i++)
         {
-            var e = (int)ext + 12 + i * 12;
-            if (e + 12 > c.Length) return null;
-            if (BinaryPrimitives.ReadUInt16BigEndian(c.AsSpan(e)) != 2 || BinaryPrimitives.ReadUInt16BigEndian(c.AsSpan(e + 2)) != 4) continue;
-            var p = (int)(ext + U32(e + 4));
+            var e = ext + 12 + i * 12;
+            if (e > end - 12) return null;
+            var type = U32(e);
+            if (type is not (0x00020004 or 0x00020005)) continue;
+            var offset = U32(e + 4);
+            var size = U32(e + 8);
+            if (offset > end - ext || size > end - ext - offset) return null;
+            var p = ext + (int)offset;
+            if (type == 0x00020005)
+            {
+                // tsMuxeR writes extent starts for IG subclips too. ProgramInfo_SS identifies the MVC view.
+                hasProgramInfoSs = size >= 6 && U32(p) >= 2 && U32(p) <= size - 4 && c[p + 5] != 0;
+                continue;
+            }
+            if (size < 8) return null;
             var count = BinaryPrimitives.ReadUInt16BigEndian(c.AsSpan(p + 6));
-            return p + 8 + 4 * count > c.Length ? null : [.. Enumerable.Range(0, count).Select(k => U32(p + 8 + 4 * k) * 192L)];
+            if (count == 0 || count > (size - 8) / 4) return null;
+            cuts = [.. Enumerable.Range(0, count).Select(k => U32(p + 8 + 4 * k) * 192L)];
         }
-        return null;
+        return !dependent || hasProgramInfoSs ? cuts : null;
     }
 
     /// <summary>Writes the image of <paramref name="folder"/>: every file as it is, plus BDMV\STREAM\SSIF\N.ssif for each 3D film (<see cref="Interleaved"/>).</summary>

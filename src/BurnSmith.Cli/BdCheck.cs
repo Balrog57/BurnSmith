@@ -348,20 +348,42 @@ static class BdCheck
             Directory.CreateDirectory(clipinf);
             var random = new Random(3);
             byte[] Noise(int n) { var b = new byte[n]; random.NextBytes(b); return b; }
-            List<byte[]> Clip3D(string name, int[] units)
+            List<byte[]> Clip3D(string name, int[] units, bool dependent = false)
             {
                 var data = Noise(units.Sum() * 6144);
-                var clpi = new byte[0x38 + 8 + 4 * units.Length];
+                const int ext = 0x20;
+                var extent = dependent ? 0x44 : 0x38;
+                var extentSize = 8 + 4 * units.Length;
+                var program = extent + extentSize;
+                var clpi = new byte[program + (dependent ? 38 : 0)];
                 "HDMV0200"u8.CopyTo(clpi);
-                BinaryPrimitives.WriteUInt32BigEndian(clpi.AsSpan(0x18), 0x20); // extension data
-                clpi[0x2B] = 1;
-                BinaryPrimitives.WriteUInt16BigEndian(clpi.AsSpan(0x2C), 2); BinaryPrimitives.WriteUInt16BigEndian(clpi.AsSpan(0x2E), 4); // ExtentStartPoint
-                BinaryPrimitives.WriteUInt32BigEndian(clpi.AsSpan(0x30), 24);
-                BinaryPrimitives.WriteUInt16BigEndian(clpi.AsSpan(0x38 + 6), (ushort)units.Length);
+                void U32(int at, int value) => BinaryPrimitives.WriteUInt32BigEndian(clpi.AsSpan(at), (uint)value);
+                U32(0x18, ext);
+                U32(ext, clpi.Length - ext - 4);
+                U32(ext + 4, extent - ext);
+                clpi[ext + 11] = (byte)(dependent ? 2 : 1);
+                U32(ext + 12, 0x00020004); // ExtentStartPoint
+                U32(ext + 16, extent - ext);
+                U32(ext + 20, extentSize);
+                U32(extent, extentSize - 4);
+                BinaryPrimitives.WriteUInt16BigEndian(clpi.AsSpan(extent + 6), (ushort)units.Length);
+                if (dependent)
+                {
+                    U32(ext + 24, 0x00020005); // ProgramInfo_SS
+                    U32(ext + 28, program - ext);
+                    U32(ext + 32, 38);
+                    U32(program, 34);
+                    clpi[program + 5] = 1; // one program and one MVC stream
+                    clpi[program + 12] = 1;
+                    clpi[program + 14] = 0x10;
+                    clpi[program + 15] = 0x12;
+                    clpi[program + 16] = 21;
+                    clpi[program + 17] = 0x20;
+                }
                 var pieces = new List<byte[]>();
                 for (int i = 0, at = 0; i < units.Length; at += units[i++])
                 {
-                    BinaryPrimitives.WriteUInt32BigEndian(clpi.AsSpan(0x38 + 8 + 4 * i), (uint)(at * 32)); // source packets of 192 bytes
+                    U32(extent + 8 + 4 * i, at * 32); // source packets of 192 bytes
                     pieces.Add(data[(at * 6144)..((at + units[i]) * 6144)]);
                 }
                 File.WriteAllBytes(Path.Combine(stream, name + ".m2ts"), data);
@@ -369,7 +391,8 @@ static class BdCheck
                 return pieces;
             }
             // 300 pieces each: more extents than one file entry holds (112), so its list goes on in continuation sectors, as with a real film (~1600 pieces)
-            var (left, right) = (Clip3D("00202", [.. Enumerable.Range(0, 300).Select(_ => random.Next(1, 4))]), Clip3D("00203", [.. Enumerable.Range(0, 300).Select(_ => random.Next(1, 3))]));
+            var (left, right) = (Clip3D("00202", [.. Enumerable.Range(0, 300).Select(_ => random.Next(1, 4))]),
+                                 Clip3D("00203", [.. Enumerable.Range(0, 300).Select(_ => random.Next(1, 3))], dependent: true));
             for (var i = 0; i < 80; i++) File.WriteAllBytes(Path.Combine(stream, $"{300 + i:00000}.m2ts"), Noise(random.Next(1, 5000)));
             File.WriteAllBytes(Path.Combine(stream, "00400.m2ts"), []);
             File.WriteAllBytes(Path.Combine(disc, "BDMV", "index.bdmv"), Noise(120));
@@ -693,6 +716,7 @@ static class BdCheck
             Check("HDMV: no BD-J on the disc, and the log says what the menu leaves out", !new[] { "JAR", "BDJO" }.Any(d => Directory.Exists(Path.Combine(bdmv, d)) && Directory.EnumerateFiles(Path.Combine(bdmv, d)).Any()) && log.Any(l => l.Contains("pop-up")));
             var pages = Directory.GetFiles(Path.Combine(bdmv, "PLAYLIST"), "001??.mpls").Length;
             Check("HDMV: a playlist, a video clip and a graphics clip per page", pages >= 3 && Enumerable.Range(0, pages * 2).All(k => File.Exists(Path.Combine(bdmv, "STREAM", $"{HdmvMenu.FirstClip + k:00000}.m2ts"))), $"{pages} pages");
+            Check("HDMV 2D: video and IG clip pairs do not create any SSIF files", Udf.Interleaved(Path.GetDirectoryName(bdmv)!).Count == 0);
             var indexFile = File.ReadAllBytes(Path.Combine(bdmv, "index.bdmv"));
             var table = (int)BinaryPrimitives.ReadUInt32BigEndian(indexFile.AsSpan(8)) + 4;
             int Word(byte[] file, int at) => BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(at));
