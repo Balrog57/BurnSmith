@@ -22,6 +22,12 @@ La version Windows peut être considérée prête pour l'usage courant après le
 
 Pour chaque version, construire l'installateur à partir du commit de version et vérifier le parcours de mise à jour depuis une version installée, avec conservation des réglages et des projets. Relancer les contrôles CLI concernés et publier les résultats matériels avec les combinaisons effectivement essayées.
 
+## Clôture du projet
+
+1. Fusionner dans `main` toutes les PR et branches de travail du projet. Avant de retirer une branche ou son worktree, vérifier que ses changements sont intégrés et récupérer tout travail local encore utile.
+2. Pousser `main` et vérifier que la CI passe sur le commit final. Publier la version finale depuis ce même commit.
+3. Une fois le travail intégré, retirer les branches et worktrees devenus inutiles. Ranger hors du dépôt les fichiers privés à conserver. À la fin, il reste un seul dossier de travail BurnSmith, sur `main`, sans changement en attente et synchronisé avec `origin/main`. Aucune PR du projet ne reste ouverte.
+
 ## Archive du 5 novembre 2026
 
 Les sections suivantes décrivent l'état historique de la 0.5.1 et les décisions de cette date.
