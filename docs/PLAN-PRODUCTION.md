@@ -24,7 +24,7 @@ La version Windows peut être considérée prête pour l'usage courant après le
 
 Pour chaque version, construire l'installateur à partir du commit de version et vérifier le parcours de mise à jour depuis une version installée, avec conservation des réglages et des projets. Relancer les contrôles CLI concernés et publier les résultats matériels avec les combinaisons effectivement essayées.
 
-Pour chaque essai de disque, produire une ISO, contrôler sa structure avec `check-disc` et ouvrir l'image dans VLC. Vérifier la lecture, les chapitres, le retour au menu et les pistes présentes. Préparer ensuite un lot d'ISO et lister les points qui nécessitent la platine. La gravure sur BD-RE attend l'accord de Marc sur ce lot.
+Pour chaque essai de disque, produire une ISO, contrôler sa structure avec `check-disc` et ouvrir l'image dans VLC. Vérifier la lecture, les chapitres, le retour au menu et les pistes présentes. Préparer ensuite un lot d'ISO et lister les points qui nécessitent la platine. La gravure sur le BD-RE de test se fait à 2× (`--speed 2`), après accord de Marc sur le lot.
 
 ### Essais sur BD-RE
 
