@@ -194,6 +194,20 @@ static class ReliabilityCheck
                 Check("the log is next to the app's other files", Path.GetDirectoryName(AppFiles.ErrorLog()) == AppFiles.Root(), AppFiles.ErrorLog());
             });
 
+            Part("burn verify", () =>
+            {
+                string[] written = ["I 16:11:10 Writing Track 1 of 1...", "I 16:51:45 Operation Successfully Completed! - Duration: 00:40:34", "I 16:51:45 ImgBurn closed!"];
+                string[] aborted = [.. written[..2], "I 18:53:27 Cycling Tray before Verify...", "E 20:19:41 Operation Aborted!"];
+                string[] verified = [.. written[..2], "I 16:52:30 Verifying Session 1 of 1...", "I 16:52:30 Verifying Track 1 of 1...", "I 17:30:00 Operation Successfully Completed! - Duration: 00:37:30", "I 17:30:00 Average Verify Rate: 9 000 KiB/s (2.0x)"];
+                Check("ImgBurn's log of a burn with no verify at all (Axel F): not verified", !Iso.ImgBurnVerified(written));
+                Check("ImgBurn's log of a verify aborted, tray left open (Bright): not verified", !Iso.ImgBurnVerified(aborted));
+                Check("ImgBurn's log of a verify run to its end: verified", Iso.ImgBurnVerified(verified));
+                var free = "DEFGHIJKLMNOPQRSTUVWXYZ".First(c => !Directory.Exists($"{c}:\\"));
+                var shown = "";
+                try { Imapi.Verify(F("long.mkv"), $"{free}:"); } catch (IOException e) { shown = e.Message; }
+                Check("verify on a drive with no disc: a clear message, no crash", shown.StartsWith($"pas de disque dans {free}:"), shown);
+            });
+
             // last: it is for good, in this process
             Part("closing", () =>
             {

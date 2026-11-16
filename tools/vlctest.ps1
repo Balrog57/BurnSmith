@@ -15,7 +15,7 @@ Get-Process vlc -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $vlc 
 $mrl = "${Scheme}:///" + $Disc.Replace('\', '/')
 $p = Start-Process $vlc -PassThru -ArgumentList @('--no-one-instance', '--no-qt-privacy-ask', '--no-video-title-show', '--no-qt-error-dialogs',
     '--extraintf=rc', "--rc-host=127.0.0.1:$Port", '--rc-quiet', "--snapshot-path=$OutDir", '--snapshot-format=png', '--snapshot-prefix=snap',
-    '-vv', '--file-logging', "--logfile=$OutDir\vlc.log", $mrl)
+    '-vv', '--file-logging', "--logfile=`"$OutDir\vlc.log`"", "`"$mrl`"") # quoted: Start-Process joins the list with spaces, so a folder like "JUDGE DREDD" split the MRL in two
 Start-Sleep $Wait
 
 $tcp = New-Object Net.Sockets.TcpClient('127.0.0.1', $Port)

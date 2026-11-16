@@ -82,6 +82,13 @@ public static class Iso
         ["/MODE", "ISOWRITE", "/WAITFORMEDIA", "/START", "/CLOSESUCCESS", "/IGNORELOCKVOLUME", "/NOIMAGEDETAILS", "/VERIFY", verify ? "YES" : "NO", "/EJECT", eject ? "YES" : "NO",
          "/DEST", drive[..1].ToUpperInvariant(), "/SPEED", speed > 0 ? $"{speed}x" : "MAX", "/LOG", logFile, "/SRC", iso];
 
+    /// <summary>
+    /// ImgBurn's log shows a verify that ran to its end: a "Verifying" line, then "Operation Successfully Completed!" after it.
+    /// ImgBurn exits 0 without one: verify aborted (tray left open after "Cycling Tray before Verify") or never started (Axel F, 2026-11-15, BD-RE on a USB BU40N).
+    /// </summary>
+    public static bool ImgBurnVerified(IEnumerable<string> logLines) =>
+        logLines.SkipWhile(l => !l.Contains("Verifying")).Any(l => l.Contains("Operation Successfully Completed!"));
+
     static readonly string[] Rewritable = ["CD-RW", "DVD+RW", "DVD-RW", "DVD+RW DL", "BD-RE"];
 
     /// <summary>The kind ("BD-RE") of the rewritable disc in <paramref name="drive"/> when it already holds data; null when it is blank, write-once, or IMAPI2 cannot see it.</summary>
@@ -95,7 +102,8 @@ public static class Iso
     /// Burns an image to the disc in <paramref name="drive"/> ("F:") at <paramref name="speed"/> (× 1x, 0 = fastest), then reads it back unless <paramref name="verify"/> is false,
     /// and ejects it with <paramref name="eject"/>. A rewritable disc that holds data is erased first with <paramref name="erase"/>, else refused.
     /// </summary>
-    public static void Burn(string isoFile, string drive, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default, int speed = 0,
+    /// <returns>False when ImgBurn wrote the disc but did not complete a requested verification.</returns>
+    public static bool Burn(string isoFile, string drive, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default, int speed = 0,
                             bool verify = true, bool eject = false, bool erase = false)
     {
         var iso = Path.GetFullPath(isoFile);
@@ -110,7 +118,7 @@ public static class Iso
         {
             Imapi.Burn(iso, drive, log, progress, verify, cancel, speed);
             if (eject) Imapi.Eject(drive);
-            return;
+            return true;
         }
         log?.Invoke($"burn: ImgBurn {Path.GetFileName(iso)} -> {drive[..2]} ({new FileInfo(iso).Length / 1e9:0.00} GB, {(speed > 0 ? $"{speed}x" : "vitesse max")})");
         var imgLog = ImgBurnLog();
@@ -123,10 +131,10 @@ public static class Iso
             throw new InvalidOperationException($"{e.Message.Split('\n')[0]}\n{string.Join("\n", File.ReadLines(imgLog).TakeLast(15))}\n(journal complet : {imgLog})", e);
         }
         if (File.Exists(imgLog)) log?.Invoke($"journal d'ImgBurn : {imgLog}");
-        if (!verify) { log?.Invoke("done: disc written, without verification (as asked)"); return; }
-        // ImgBurn exits 0 when its verify is aborted (tray left open after "Cycling Tray before Verify", seen on a USB BD-RE): the disc is written, not checked
-        if (File.Exists(imgLog) && File.ReadLines(imgLog).Any(l => l.Contains("Operation Aborted!")))
-        { log?.Invoke("warning: disc written, but ImgBurn's verify did not run (tray left open?) - the disc is not checked"); return; }
-        log?.Invoke("done: disc written");
+        if (!verify) { log?.Invoke("done: disc written, without verification (as asked)"); return true; }
+        if (!File.Exists(imgLog) || !ImgBurnVerified(File.ReadLines(imgLog)))
+        { log?.Invoke($"attention : disque écrit mais pas contrôlé, ImgBurn n'a pas relu le disque (tiroir resté ouvert ?) - burnsmith verify IMAGE {drive[..2]} le contrôle"); return false; }
+        log?.Invoke("done: disc written and verified");
+        return true;
     }
 }

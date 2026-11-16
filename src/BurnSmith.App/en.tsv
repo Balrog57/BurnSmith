@@ -175,6 +175,7 @@ Vérification de l'image ISO : aucune anomalie.	ISO image check: no problem foun
 Vérification de l'image ISO : {0}	ISO image check: {0}
 Le disque n'est pas gravé, l'image ISO a des anomalies : {0}	The disc is not burned, the ISO image has problems: {0}
 Terminé.	Done.
+Attention : disque écrit mais pas contrôlé. ImgBurn n'a pas relu le disque (tiroir resté ouvert ?) : gardez l'image ISO pour le contrôler ou le regraver.	Warning: disc written but not verified. ImgBurn did not read the disc back (tray left open?): keep the ISO image to check it or burn it again.
 Disque d'essai terminé. Ouvrez {0} dans VLC (Média > Ouvrir un disque) pour vérifier le menu, puis décochez « Essai » pour le vrai disque.	Trial disc done. Open {0} in VLC (Media > Open Disc) to check the menu, then untick "Trial" for the real disc.
 Ajouter ce disque à la file	Add this disc to the queue
 Ajouter des projets enregistrés…	Add saved projects…

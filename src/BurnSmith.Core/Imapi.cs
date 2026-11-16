@@ -260,6 +260,8 @@ public static class Imapi
     /// <summary>Reads the disc back through its drive and compares every byte with the image.</summary>
     public static void Verify(string isoFile, string letter, Action<string>? log = null, IProgress<double>? progress = null, CancellationToken cancel = default)
     {
+        // an open or empty tray: File.OpenHandle would throw "Le périphérique n'est pas prêt"
+        if (!new DriveInfo(letter[..1]).IsReady) throw new IOException($"pas de disque dans {letter[..2].ToUpperInvariant()} (tiroir ouvert ou vide) : rien à vérifier");
         log?.Invoke("verify: lecture du disque…");
         const int chunk = 1 << 20;
         var a = new byte[chunk];

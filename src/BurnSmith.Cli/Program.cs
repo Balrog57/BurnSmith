@@ -1972,7 +1972,11 @@ if (a.Count >= 1 && a[0] == "drives")
 }
 // burnsmith erase <F:> : erases a rewritable disc quickly (the app's "Effacer")
 if (a.Count >= 2 && a[0] == "erase") { Imapi.Erase(a[1], Console.WriteLine); return 0; }
-if (a.Count >= 3 && a[0] == "verify") { Imapi.Verify(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  "))); return 0; }
+if (a.Count >= 3 && a[0] == "verify")
+{
+    try { Imapi.Verify(a[1], a[2], Console.WriteLine, new Progress<double>(p => Console.Write($"\r{p:P0}  "))); return 0; }
+    catch (IOException e) { Console.Error.WriteLine(e.Message); return 1; } // no disc, or a disc that differs from the image
+}
 // burnsmith hold-tool FILE [--free] : ffmpeg for a minute, its progress in FILE; check-reliability ends this process by force and looks for that ffmpeg
 if (a.Count >= 2 && a[0] == "hold-tool")
 {
@@ -2057,6 +2061,7 @@ if (a.Count >= 3 && a[0] == "iso") { Iso.Build(a[1], a[2], Opt("--label") ?? "BU
 // burnsmith burn IMAGE.iso F: [--speed 4] [--no-verify] [--eject] [--erase] : the speed is × 1x, absent = the drive's fastest (one disc: a second one is a second run);
 //   --no-verify skips reading the disc back, --eject opens the tray at the end, --erase erases a rewritable disc that already holds data (refused without it)
 //   [--max-compat] : « Compatibilité maximale »: without --speed, the slowest speed offered
+// Exit 0 also when the disc is written but ImgBurn did not verify it. The log reports the warning.
 if (a.Count >= 3 && a[0] == "burn" && File.Exists(a[1]) && Iso.Disc(a[2]) is { } inDrive && Iso.TooSmall(inDrive, new FileInfo(a[1]).Length / 1e9))
     Console.WriteLine($"warning: the image ({new FileInfo(a[1]).Length / 1e9:0.0} GB) is larger than the {inDrive.Kind} in {a[2]} ({inDrive.TotalBytes / 1e9:0.0} GB)");
 if (a.Count >= 3 && a[0] == "burn")

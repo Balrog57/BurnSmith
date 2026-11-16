@@ -1550,6 +1550,7 @@ public partial class MainWindow : Window
         if (recap.Count > 0) foreach (var line in (string[])["À savoir avant de démarrer :", .. recap, ""]) Append(line);
         if (!dvd) Append(Project.Ps5Note);
 
+        var verified = true;
         var ok = await Work("Création du disque…", (log, progress, token) =>
         {
             if (trial > 0) log($"Disque d'essai : {trial / 60} minutes de chaque vidéo, un passage à chaque chapitre, dans {outDir}");
@@ -1571,12 +1572,13 @@ public partial class MainWindow : Window
             {
                 writing = true;
                 token.ThrowIfCancellationRequested();
-                Iso.Burn(iso, drive!.Letter, log, progress, token, speed, verify, eject, EraseFirst(drive.Letter));
+                verified = Iso.Burn(iso, drive!.Letter, log, progress, token, speed, verify, eject, EraseFirst(drive.Letter));
             }
-            if (!withIso) File.Delete(iso); // only made to burn
+            if (!withIso && verified) File.Delete(iso); // keep the image if readback did not finish
         });
-        if (ok) Append(trial == 0 ? "Terminé." : $"Disque d'essai terminé. Ouvrez {(withIso ? IsoFile(outDir) : outDir)} dans VLC (Média > Ouvrir un disque) pour vérifier le menu, puis décochez « Essai » pour le vrai disque.");
-        if (ok) ShowPlayDisc(withIso ? IsoFile(outDir) : outDir);
+        if (ok && !verified) Warn(NotVerified);
+        else if (ok) Append(trial == 0 ? "Terminé." : $"Disque d'essai terminé. Ouvrez {(withIso ? IsoFile(outDir) : outDir)} dans VLC (Média > Ouvrir un disque) pour vérifier le menu, puis décochez « Essai » pour le vrai disque.");
+        if (ok) ShowPlayDisc(withIso || !verified ? IsoFile(outDir) : outDir);
     }
 
     // ---- « Lire sur l'ordinateur » ----
@@ -1611,6 +1613,8 @@ public partial class MainWindow : Window
     }
 
     static string IsoFile(string folder) => Project.IsoFile(folder);
+
+    const string NotVerified = "Attention : disque écrit mais pas contrôlé. ImgBurn n'a pas relu le disque (tiroir resté ouvert ?) : gardez l'image ISO pour le contrôler ou le regraver.";
 
     // ---- queue ----
 
@@ -1728,7 +1732,12 @@ public partial class MainWindow : Window
         writing = true;
         var speed = Iso.Speeds[CompatCheck.IsChecked == true ? ^1 : Math.Max(0, SpeedBox.SelectedIndex)]; // « Compatibilité maximale »: the slowest
         var (verify, eject) = (VerifyCheck.IsChecked, EjectCheck.IsChecked);
-        if (await Work("Gravure…", (log, progress, token) => Iso.Burn(iso, drive.Letter, log, progress, token, speed, verify, eject, EraseFirst(drive.Letter)))) Append("Terminé.");
+        var verified = true;
+        if (await Work("Gravure…", (log, progress, token) => verified = Iso.Burn(iso, drive.Letter, log, progress, token, speed, verify, eject, EraseFirst(drive.Letter))))
+        {
+            if (verified) Append("Terminé.");
+            else Warn(NotVerified);
+        }
     }
 
     async void OnErase(object s, RoutedEventArgs e)
