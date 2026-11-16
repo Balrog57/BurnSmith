@@ -51,6 +51,12 @@ La variante de démarrage direct BD-J reprend `BDID0300` et change uniquement l'
 
 Le passage du profil d'application de 1 à 6 débloque le démarrage direct BD-J sur Panasonic. La version d'application reste 1.0.0. La dernière variante rétablit l'entrée First Playback de BurnSmith, avec des titres distincts pour le film et le menu. VLC confirme la transition de titre au retour automatique. Sur la platine, le menu retrouve ses couleurs d'origine et l'écran repasse en SDR. [Profil UHD documenté par Blu-Disc Studio](https://blu-disc.net/help/project_properties.general.htm).
 
+### Validation du menu UHD BD-J complet
+
+- **Navigation** · Sur l'ISO, vérifier que les flèches atteignent chaque bouton, que Lecture ouvre le bon titre, et que le retour automatique et la touche Top Menu réouvrent le menu. Blu-Disc Studio distingue le titre du menu du titre du film et propose un simulateur avec journal des actions. [Actions de navigation](https://blu-disc.net/help/button_actions_common.htm) · [Options de simulation](https://blu-disc.net/help/options.htm)
+- **Pop-up en lecture** · Sur platine, ouvrir le pop-up en HDR, sauter à un chapitre, sélectionner la deuxième piste audio, activer puis désactiver un sous-titre et reprendre la lecture. Vérifier que le film reste en HDR et que le menu principal retrouve ses couleurs après la fin du film. Blu-Disc Studio expose ces actions et prévoit une conversion des graphismes superposés et des sous-titres pour le HDR. [Actions de lecture](https://blu-disc.net/help/button_actions_common.htm) · [Réglages HDR](https://blu-disc.net/help/project_properties.additional.htm)
+- **Lot BD25** · L'ISO de test contient un fond animé, deux pistes audio, un sous-titre et un pop-up. Dans VLC, le fond animé, la lecture HDR10 et le retour au menu passent. ImgBurn a vérifié ses 13 952 secteurs après gravure à 2×. Le pop-up et les transitions de couleur restent à confirmer sur Panasonic pour cette combinaison.
+
 ## Clôture du projet
 
 1. Fusionner dans `main` toutes les PR et branches de travail du projet. Avant de retirer une branche ou son worktree, vérifier que ses changements sont intégrés et récupérer tout travail local encore utile.
