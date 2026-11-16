@@ -36,12 +36,15 @@ Pour chaque essai de disque, produire une ISO, contrôler sa structure avec `che
 | UHD HDR10 sans menu | Les 8 608 secteurs correspondent à l'image. | Marc confirme que la mire de 9 secondes démarre et se lit en HDR. |
 | UHD HDR10 avec menu HDMV | Les 11 968 secteurs correspondent à l'image. | Marc confirme que le menu s'affiche en SDR et que Lecture lance la mire en HDR. Les clips vidéo du menu sont signalés en BT.709 et la mire en PQ / BT.2020. |
 | UHD HDR10 BD-J avec en-têtes `BDJO0300` | Les 8 800 secteurs correspondent à l'image. | Le Panasonic affiche 4K HDR puis reste bloqué. Le menu ne démarre pas. |
+| UHD HDR10 BD-J avec en-têtes `BDJO0300` et `BDID0300` | Les 8 800 secteurs correspondent à l'image. | Le menu ne démarre toujours pas sur le Panasonic. |
 
 Les ISO UHD sans menu et UHD HDMV ont le même flux multiplexé que le disque UHD BD-J. Les deux passent `check-disc` et décodent le film en 3840 × 2160 dans VLC.
 
 Le format UHD inclut le BD-J. Blu-Disc Studio documente un profil BD-J 6 pour ses projets UHD, tandis que BurnSmith écrit un descripteur d'application BD-J de profil 1, version 1.0.0, y compris en UHD. Cet écart est une piste pour le blocage au démarrage. Il reste à vérifier les champs du BDJO sur un disque UHD de référence et à reproduire la correction sur platine. [Blu-ray Disc Association](https://blu-raydisc.info/format-spec/rom4-spec.php), [documentation Blu-Disc Studio](https://blu-disc.net/help/project_properties.general.htm).
 
-La variante suivante reprend l'ISO `BDJO0300` et passe les deux en-têtes de `CERTIFICATE/id.bdmv` à `BDID0300`. L'identifiant du disque, les certificats, l'application et le film sont identiques à ceux de la variante précédente. Elle passe `check-disc` et VLC ouvre le menu puis lit le clip 4K. L'essai sur Panasonic reste à faire. [Prise en charge de `BDID0300` dans libbluray](https://www.mail-archive.com/libbluray-devel@videolan.org/msg02774.html).
+La variante `BDID0300` change seulement les deux en-têtes de `CERTIFICATE/id.bdmv` par rapport à l'ISO `BDJO0300`. Elle passe `check-disc` et VLC, puis reproduit le blocage sur platine. [Prise en charge de `BDID0300` dans libbluray](https://www.mail-archive.com/libbluray-devel@videolan.org/msg02774.html).
+
+La variante de démarrage direct BD-J reprend `BDID0300` et change uniquement l'entrée First Playback d'`index.bdmv` et de sa sauvegarde. Elle lance le BDJO du menu directement. Le démarrage précédent chargeait un objet HDMV qui initialisait deux registres puis sautait au titre du menu. Le contrôle de structure passe et VLC affiche le menu puis décode la mire en 4K. [Documentation de First Playback](https://bdedit.pel.hu/).
 
 ## Clôture du projet
 
