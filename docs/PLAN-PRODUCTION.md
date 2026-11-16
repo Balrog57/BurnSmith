@@ -33,8 +33,9 @@ Pour chaque essai de disque, produire une ISO, contrôler sa structure avec `che
 | Blu-ray 1080p BD-J animé | Les 55 040 secteurs correspondent à l'image. | Marc confirme le pop-up et la reprise pendant la lecture. |
 | UHD HDR10 avec menu BD-J | Les 8 800 secteurs correspondent à l'image. | La platine reconnaît un Ultra HD Blu-ray et le téléviseur signale HDR. Le menu et le film ne démarrent pas. |
 | Blu-ray 1080p HDMV (SDR) | Les 57 056 secteurs correspondent à l'image. | Marc confirme que le disque et son menu fonctionnent. L'absence d'indication HDR est attendue en SDR. |
+| UHD HDR10 sans menu | Les 8 608 secteurs correspondent à l'image. | Marc confirme que la mire de 9 secondes démarre et se lit en HDR. |
 
-Deux ISO de diagnostic UHD ont le même flux multiplexé que le disque UHD BD-J. L'une démarre directement le film, l'autre utilise un menu HDMV. Les deux passent `check-disc` et décodent le film en 3840 × 2160 dans VLC. Le test sur platine commencera par la version sans menu pour voir si le film démarre.
+Les ISO UHD sans menu et UHD HDMV ont le même flux multiplexé que le disque UHD BD-J. Les deux passent `check-disc` et décodent le film en 3840 × 2160 dans VLC. La lecture directe confirmée sur Panasonic, le prochain essai sur platine est la variante UHD HDMV pour vérifier si son menu peut lancer ce même film en HDR.
 
 ## Clôture du projet
 
