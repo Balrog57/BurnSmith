@@ -37,6 +37,7 @@ Pour chaque essai de disque, produire une ISO, contrôler sa structure avec `che
 | UHD HDR10 avec menu HDMV | Les 11 968 secteurs correspondent à l'image. | Marc confirme que le menu s'affiche en SDR et que Lecture lance la mire en HDR. Les clips vidéo du menu sont signalés en BT.709 et la mire en PQ / BT.2020. |
 | UHD HDR10 BD-J avec en-têtes `BDJO0300` | Les 8 800 secteurs correspondent à l'image. | Le Panasonic affiche 4K HDR puis reste bloqué. Le menu ne démarre pas. |
 | UHD HDR10 BD-J avec en-têtes `BDJO0300` et `BDID0300` | Les 8 800 secteurs correspondent à l'image. | Le menu ne démarre toujours pas sur le Panasonic. |
+| UHD HDR10 BD-J en First Playback | Les 8 800 secteurs correspondent à l'image. | Le Panasonic reste bloqué au démarrage et le menu ne s'affiche pas. |
 
 Les ISO UHD sans menu et UHD HDMV ont le même flux multiplexé que le disque UHD BD-J. Les deux passent `check-disc` et décodent le film en 3840 × 2160 dans VLC.
 
@@ -44,7 +45,9 @@ Le format UHD inclut le BD-J. Blu-Disc Studio documente un profil BD-J 6 pour se
 
 La variante `BDID0300` change seulement les deux en-têtes de `CERTIFICATE/id.bdmv` par rapport à l'ISO `BDJO0300`. Elle passe `check-disc` et VLC, puis reproduit le blocage sur platine. [Prise en charge de `BDID0300` dans libbluray](https://www.mail-archive.com/libbluray-devel@videolan.org/msg02774.html).
 
-La variante de démarrage direct BD-J reprend `BDID0300` et change uniquement l'entrée First Playback d'`index.bdmv` et de sa sauvegarde. Elle lance le BDJO du menu directement. Le démarrage précédent chargeait un objet HDMV qui initialisait deux registres puis sautait au titre du menu. Le contrôle de structure passe et VLC affiche le menu puis décode la mire en 4K. [Documentation de First Playback](https://bdedit.pel.hu/).
+La variante de démarrage direct BD-J reprend `BDID0300` et change uniquement l'entrée First Playback d'`index.bdmv` et de sa sauvegarde. Elle lance le BDJO du menu directement et reproduit le blocage sur Panasonic. [Documentation de First Playback](https://bdedit.pel.hu/).
+
+La variante suivante conserve ce démarrage et change uniquement le numéro de profil de l'application BD-J de 1 à 6. L'application déclare toujours la version 1.0.0. Le contrôle de structure passe et VLC ouvre le menu puis lit la mire en 4K. [Profil UHD documenté par Blu-Disc Studio](https://blu-disc.net/help/project_properties.general.htm).
 
 ## Clôture du projet
 
