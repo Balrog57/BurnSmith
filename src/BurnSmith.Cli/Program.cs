@@ -734,22 +734,18 @@ if (a.Count >= 1 && a[0] == "check-elements")
               TemplateCatalog.Suggested([]) == "Salle obscure" && TemplateCatalog.Suggested([@"D:\Films\Bright.2017.mkv"]) == "Salle obscure"
               && TemplateCatalog.Suggested([@"D:\Cobra.Kai.S01E01.mkv", @"D:\Cobra Kai - s01e10 - Fin.mkv"]) == "Saison"
               && TemplateCatalog.Suggested([@"D:\Cobra.Kai.S01E01.mkv", @"D:\Vacances 2024.mkv"]) == "Nuit d'encre" && TemplateCatalog.Suggested([@"D:\BS01E01X.mkv", @"D:\a.mkv"]) == "Nuit d'encre");
-        var lastKept = File.Exists(TemplateCatalog.LastChoiceFile) ? File.ReadAllText(TemplateCatalog.LastChoiceFile) : null;
+        var choiceRoot = Directory.CreateTempSubdirectory("burnsmith-last-template-").FullName;
+        var choiceFile = Path.Combine(choiceRoot, "profile", "last-template.txt");
         try
         {
-            File.Delete(TemplateCatalog.LastChoiceFile);
-            var (film, series, many) = (TemplateCatalog.DefaultFor(["film.mkv"]), TemplateCatalog.DefaultFor(["x.S01E01.mkv", "x.S01E02.mkv"]), TemplateCatalog.DefaultFor(["a.mkv", "b.mkv"]));
+            var (film, series, many) = (TemplateCatalog.DefaultFor(["film.mkv"], choiceFile), TemplateCatalog.DefaultFor(["x.S01E01.mkv", "x.S01E02.mkv"], choiceFile), TemplateCatalog.DefaultFor(["a.mkv", "b.mkv"], choiceFile));
             Check($"rien de choisi encore : {film.Name}, {series.Name}, {many.Name}", film.Name == "Salle obscure" && series.Name is "Saison" or "Séries" && many.Name == "Nuit d'encre");
-            TemplateCatalog.RememberChoice("Métal");
-            Check("le dernier modèle choisi passe avant les vidéos", TemplateCatalog.DefaultFor(["x.S01E01.mkv", "x.S01E02.mkv"]).Name == "Métal");
-            TemplateCatalog.RememberChoice("Modèle disparu");
-            Check("un dernier modèle qui n'existe plus est ignoré", TemplateCatalog.DefaultFor(["a.mkv", "b.mkv"]).Name == "Nuit d'encre");
+            TemplateCatalog.RememberChoice("Métal", choiceFile);
+            Check("le dernier modèle choisi passe avant les vidéos", TemplateCatalog.DefaultFor(["x.S01E01.mkv", "x.S01E02.mkv"], choiceFile).Name == "Métal");
+            TemplateCatalog.RememberChoice("Modèle disparu", choiceFile);
+            Check("un dernier modèle qui n'existe plus est ignoré", TemplateCatalog.DefaultFor(["a.mkv", "b.mkv"], choiceFile).Name == "Nuit d'encre");
         }
-        finally
-        {
-            if (lastKept != null) File.WriteAllText(TemplateCatalog.LastChoiceFile, lastKept);
-            else File.Delete(TemplateCatalog.LastChoiceFile);
-        }
+        finally { Directory.Delete(choiceRoot, recursive: true); }
         Check("seuls les boutons de l'utilisateur peuvent être retirés", elButtons.Where(b => b.Removable).All(b => b.Source == ElementLibrary.MyButtons));
         var imported = ElementLibrary.ImportButton(normalPic, focusPic);
         try

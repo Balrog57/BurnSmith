@@ -72,13 +72,14 @@ public static partial class TemplateCatalog
     /// <summary>The name of the last template the user chose in the menu editor: a new disc starts from it.</summary>
     public static string LastChoiceFile => Path.Combine(AppData, "BurnSmith", "last-template.txt");
 
-    public static void RememberChoice(string name)
+    public static void RememberChoice(string name, string? choiceFile = null)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(LastChoiceFile)!);
-        File.WriteAllText(LastChoiceFile, name);
+        choiceFile ??= LastChoiceFile;
+        Directory.CreateDirectory(Path.GetDirectoryName(choiceFile)!);
+        File.WriteAllText(choiceFile, name);
     }
 
-    static string? LastChoice() => File.Exists(LastChoiceFile) && File.ReadAllText(LastChoiceFile).Trim() is { Length: > 0 } name ? name : null;
+    static string? LastChoice(string file) => File.Exists(file) && File.ReadAllText(file).Trim() is { Length: > 0 } name ? name : null;
 
     /// <summary>
     /// The template that suits the disc's feature videos (bonus and intro left out) when the user has chosen none: one video is a film
@@ -94,8 +95,8 @@ public static partial class TemplateCatalog
     /// The design a disc starts from when no template was chosen for it (the app's new project, the command line without --design): the last
     /// template the user chose, else <see cref="Suggested"/> (« Séries » where « Saison » is missing: it needs the Streaming template), else <see cref="Default"/>.
     /// </summary>
-    public static MenuDesign DefaultFor(IReadOnlyCollection<string> videos) =>
-        Find(LastChoice()) ?? Find(Suggested(videos)) ?? (Suggested(videos) == "Saison" ? Find("Séries") : null) ?? Default();
+    public static MenuDesign DefaultFor(IReadOnlyCollection<string> videos, string? choiceFile = null) =>
+        Find(LastChoice(choiceFile ?? LastChoiceFile)) ?? Find(Suggested(videos)) ?? (Suggested(videos) == "Saison" ? Find("Séries") : null) ?? Default();
 
     /// <summary>A template named on the command line: a template folder, a catalogue name, or one the user saved (« Mes modèles »).</summary>
     public static MenuDesign? Find(string? nameOrFolder) =>
