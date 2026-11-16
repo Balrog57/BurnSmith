@@ -26,6 +26,16 @@ Pour chaque version, construire l'installateur à partir du commit de version et
 
 Pour chaque essai de disque, produire une ISO, contrôler sa structure avec `check-disc` et ouvrir l'image dans VLC. Vérifier la lecture, les chapitres, le retour au menu et les pistes présentes. Préparer ensuite un lot d'ISO et lister les points qui nécessitent la platine. La gravure sur BD-RE attend l'accord de Marc sur ce lot.
 
+### Essais sur BD-RE
+
+| Image | Relecture ImgBurn sur le BU40N | Résultat sur Panasonic |
+|---|---|---|
+| Blu-ray 1080p BD-J animé | Les 55 040 secteurs correspondent à l'image. | Marc confirme le pop-up et la reprise pendant la lecture. |
+| UHD HDR10 avec menu BD-J | Les 8 800 secteurs correspondent à l'image. | La platine reconnaît un Ultra HD Blu-ray et le téléviseur signale HDR. Le menu et le film ne démarrent pas. |
+| Blu-ray 1080p HDMV | Les 57 056 secteurs correspondent à l'image. | Menu, lecture et retour au menu à confirmer. |
+
+Deux ISO de diagnostic UHD ont le même flux multiplexé que le disque UHD BD-J. L'une démarre directement le film, l'autre utilise un menu HDMV. Les deux passent `check-disc` et décodent le film en 3840 × 2160 dans VLC. Le test sur platine commencera par la version sans menu pour voir si le film démarre.
+
 ## Clôture du projet
 
 1. Fusionner dans `main` toutes les PR et branches de travail du projet. Avant de retirer une branche ou son worktree, vérifier que ses changements sont intégrés et récupérer tout travail local encore utile.
