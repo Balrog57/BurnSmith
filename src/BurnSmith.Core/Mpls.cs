@@ -24,6 +24,42 @@ public sealed record Mpls(List<Mpls.Item> Items, List<int> SubPathTypes, List<Mp
     static int U16(byte[] b, int o) => BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(o));
     static uint U32(byte[] b, int o) => BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(o));
 
+    internal static string? StructuralProblem(byte[] b)
+    {
+        if (b.Length < 20) return "en-tête MPLS tronqué";
+        bool Section(int field, int minimum, out int start, out int end)
+        {
+            var address = U32(b, field);
+            start = end = 0;
+            if (address < 20 || address > b.Length - 4) return false;
+            start = (int)address;
+            var size = U32(b, start);
+            if (size < minimum || size > b.Length - start - 4) return false;
+            end = start + 4 + (int)size;
+            return true;
+        }
+        if (!Section(8, 6, out var list, out var listEnd)) return "table de lecture MPLS hors du fichier ou tronquée";
+        if (!Section(12, 2, out var marks, out var marksEnd) || marks < listEnd)
+            return "table des repères MPLS hors du fichier ou tronquée";
+
+        var count = U16(b, list + 6);
+        if (count == 0) return "liste de lecture MPLS vide";
+        var item = list + 10;
+        for (var i = 0; i < count; i++)
+        {
+            if (item > listEnd - 2) return $"élément de lecture {i + 1} manquant";
+            var size = U16(b, item);
+            if (size < 32 || size > listEnd - item - 2) return $"élément de lecture {i + 1} tronqué";
+            item += 2 + size;
+        }
+
+        var markCount = U16(b, marks + 4);
+        if (markCount > (marksEnd - marks - 6) / 14) return "table des repères MPLS tronquée";
+        for (int i = 0, mark = marks + 6; i < markCount; i++, mark += 14)
+            if (U16(b, mark + 2) >= count) return $"repère {i + 1} : élément de lecture inexistant";
+        return null;
+    }
+
     public static Mpls Read(string file) => Read(File.ReadAllBytes(file));
 
     public static Mpls Read(byte[] b)

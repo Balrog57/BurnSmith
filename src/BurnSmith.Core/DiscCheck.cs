@@ -86,8 +86,11 @@ public static class DiscCheck
         var clips = new SortedSet<string>();
         foreach (var list in lists)
         {
-            if (!Starts(list, "MPLS", "PLAYLIST\\" + Path.GetFileName(list), problems)) continue;
-            foreach (Match m in Regex.Matches(Encoding.Latin1.GetString(File.ReadAllBytes(list)), @"(\d{5})M2TS")) clips.Add(m.Groups[1].Value);
+            var shown = "PLAYLIST\\" + Path.GetFileName(list);
+            if (!Starts(list, "MPLS", shown, problems)) continue;
+            var bytes = File.ReadAllBytes(list);
+            if (Mpls.StructuralProblem(bytes) is { } problem) problems.Add($"{shown} : {problem}");
+            foreach (Match m in Regex.Matches(Encoding.Latin1.GetString(bytes), @"(\d{5})M2TS")) clips.Add(m.Groups[1].Value);
         }
         foreach (var clip in clips)
         {

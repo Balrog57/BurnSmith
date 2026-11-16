@@ -1384,8 +1384,14 @@ if (a.Count >= 1 && a[0] == "check-edit")
     {
         var bdmv = Path.Combine(discDir, "BDMV");
         foreach (var sub in new[] { "BACKUP", "PLAYLIST", "CLIPINF", "STREAM" }) Directory.CreateDirectory(Path.Combine(bdmv, sub));
-        foreach (var (file, magic) in new[] { ("index.bdmv", "INDX0200"), ("MovieObject.bdmv", "MOBJ0200"), ("BACKUP/index.bdmv", "INDX0200"), ("BACKUP/MovieObject.bdmv", "MOBJ0200"), ("PLAYLIST/00001.mpls", "MPLS0200 00001M2TS"), ("CLIPINF/00001.clpi", "HDMV0200") })
+        foreach (var (file, magic) in new[] { ("index.bdmv", "INDX0200"), ("MovieObject.bdmv", "MOBJ0200"), ("BACKUP/index.bdmv", "INDX0200"), ("BACKUP/MovieObject.bdmv", "MOBJ0200"), ("CLIPINF/00001.clpi", "HDMV0200") })
             File.WriteAllText(Path.Combine(bdmv, file), magic);
+        var playlist = new BinaryWriterBE();
+        playlist.Str("MPLS0200", 8); playlist.U32(40); playlist.U32(100); playlist.Zero(24);
+        playlist.U32(56); playlist.U16(0); playlist.U16(1); playlist.U16(0);
+        playlist.U16(48); playlist.Str("00001M2TS", 9); playlist.Zero(39);
+        playlist.U32(2); playlist.U16(0);
+        File.WriteAllBytes(Path.Combine(bdmv, "PLAYLIST", "00001.mpls"), playlist.ToArray());
         var packets = new byte[192 * 50];
         for (var k = 0; k < 50; k++) packets[192 * k + 4] = 0x47;
         var stream = Path.Combine(bdmv, "STREAM", "00001.m2ts");

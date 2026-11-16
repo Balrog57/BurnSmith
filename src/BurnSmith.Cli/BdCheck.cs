@@ -276,6 +276,18 @@ static class BdCheck
             Check("disc check rejects a BD-J application table cut short",
                 DiscCheck.Folder(disc).Any(p => p.Contains("00000.bdjo") && p.Contains("table d'applications")));
             File.WriteAllBytes(descriptor, valid);
+            var playlist = Path.Combine(disc, "BDMV", "PLAYLIST", "00001.mpls");
+            var validPlaylist = File.ReadAllBytes(playlist);
+            File.WriteAllBytes(playlist, validPlaylist[..8]);
+            Check("disc check rejects a Blu-ray playlist with no tables",
+                DiscCheck.Folder(disc).Any(p => p.Contains("00001.mpls") && p.Contains("tronqué")));
+            var brokenMark = validPlaylist.ToArray();
+            var marks = (int)BinaryPrimitives.ReadUInt32BigEndian(brokenMark.AsSpan(12));
+            BinaryPrimitives.WriteUInt16BigEndian(brokenMark.AsSpan(marks + 8), ushort.MaxValue);
+            File.WriteAllBytes(playlist, brokenMark);
+            Check("disc check rejects a chapter pointing to a nonexistent play item",
+                DiscCheck.Folder(disc).Any(p => p.Contains("00001.mpls") && p.Contains("élément de lecture inexistant")));
+            File.WriteAllBytes(playlist, validPlaylist);
         });
         Part("3D side by side", () =>
         {
