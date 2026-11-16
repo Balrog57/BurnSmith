@@ -34,7 +34,7 @@ Pour chaque essai de disque, produire une ISO, contrôler sa structure avec `che
 | UHD HDR10 avec menu BD-J | Les 8 800 secteurs correspondent à l'image. | La platine reconnaît un Ultra HD Blu-ray et le téléviseur signale HDR. Le menu et le film ne démarrent pas. |
 | Blu-ray 1080p HDMV (SDR) | Les 57 056 secteurs correspondent à l'image. | Marc confirme que le disque et son menu fonctionnent. L'absence d'indication HDR est attendue en SDR. |
 | UHD HDR10 sans menu | Les 8 608 secteurs correspondent à l'image. | Marc confirme que la mire de 9 secondes démarre et se lit en HDR. |
-| UHD HDR10 avec menu HDMV | Les 11 968 secteurs correspondent à l'image. | Affichage du menu et lancement de la mire HDR à confirmer. |
+| UHD HDR10 avec menu HDMV | Les 11 968 secteurs correspondent à l'image. | Marc confirme que le menu s'affiche en SDR et que Lecture lance la mire en HDR. Les clips vidéo du menu sont signalés en BT.709 et la mire en PQ / BT.2020. |
 
 Les ISO UHD sans menu et UHD HDMV ont le même flux multiplexé que le disque UHD BD-J. Les deux passent `check-disc` et décodent le film en 3840 × 2160 dans VLC.
 
