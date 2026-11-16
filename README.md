@@ -71,8 +71,7 @@ Tout est dans [`docs/`](docs/README.md) :
 
 ## Reste à faire
 
-- **Essai d'un Blu-ray gravé sur lecteur de salon** (le DVD est fait) ; le menu HDMV natif (choix BD-J / HDMV dans Paramètres avancés) et le menu BD-J, signé comme ceux de DVDFab, ne sont pas encore essayés sur lecteur de salon ; fond animé et pop-up dans le menu HDMV.
-- Amélioration IA / HDR, menu contextuel dans l'éditeur.
+Le DVD et un Blu-ray 1080p à menu BD-J (Bright sur BD-RE, chapitres compris) ont été lus sur platine. Les prochains essais portent sur le Blu-ray 4K, le menu HDMV et le menu BD-J animé avec pop-up. Le [plan de production](docs/PLAN-PRODUCTION.md) détaille le parcours du premier disque, la reprise des conversions et la répartition d'une saison entre plusieurs disques.
 
 ## Licence
 

@@ -1,4 +1,30 @@
-# BurnSmith: verified facts and production plan (2026-11-05)
+# Plan de production de BurnSmith
+
+Mis à jour le 16 novembre 2026 à partir du rapport « BurnSmith — ce qui manque, ce que les utilisateurs demandent, pistes d'amélioration » et de l'état de `main`. Le rapport décrivait la 1.0.27. Ses pistes d'amélioration servent à prioriser le travail restant.
+
+## Acquis
+
+`main` comprend l'enregistrement et la restauration automatique du projet, les chapitres importés et nommés, l'audio externe avec décalage et volume, le style et le décalage des sous-titres, le son sans perte sur Blu-ray, la file de fabrication, le disque d'essai, l'ouverture dans VLC, le récapitulatif, le temps restant et la notification de fin. L'interface est disponible en français et en anglais. La galerie propose une recherche, des favoris et les modèles récents. Le menu HDMV simple existe. La compatibilité maximale l'utilise avec des réglages audio et de gravure adaptés.
+
+Le DVD a été essayé sur platine. Le Blu-ray 1080p BD-J de Bright a été lu sur BD-RE, chapitres compris. Cette preuve couvre cette combinaison de disque et de lecteur.
+
+## Priorités restantes
+
+| Priorité | Travail | Critère de fin |
+|---|---|---|
+| 1. Valider sur matériel | Essayer des disques courts avec menu HDMV, menu BD-J animé et pop-up, puis UHD HDR10 et Dolby Vision sur matériel compatible. Contrôler aussi la gravure et la relecture ImgBurn sur BD-RE, y compris avec éjection. | Consigner le modèle et le firmware du lecteur, le support, la version de BurnSmith, puis le démarrage, Top Menu, les chapitres, la fin d'un titre et le choix des pistes. Vérifier l'activation HDR ou Dolby Vision sur l'écran. |
+| 2. Simplifier le premier disque | Rendre visibles les étapes Vidéos → Menu → Sortie. Donner un choix clair entre dossier, ISO et gravure, et rapprocher les réglages courants du projet. Alléger le panneau Élément quand aucune sélection n'est active. | Un nouvel utilisateur fabrique un disque d'essai, puis retrouve son projet au redémarrage. Vérifier le parcours à la souris et au clavier, en français et en anglais. |
+| 3. Reprendre une fabrication interrompue | Réutiliser les titres déjà convertis. Associer chaque résultat à sa source et aux réglages qui influencent l'encodage, et écrire les résultats de façon atomique. | Après un échec au titre 3, la reprise réutilise les deux titres valides. Changer le menu seul réutilise les conversions, et modifier une piste invalide le titre concerné. |
+| 4. Terminer le flux séries et copies | Proposer la répartition des titres entre plusieurs disques à partir de la capacité estimée et envoyer les projets dérivés dans la file existante. Permettre plusieurs gravures à partir d'une ISO, avec demande de changement de disque. | Une saison conserve l'ordre, le menu et les pistes sur chaque volume, chaque ISO respecte la capacité choisie et deux copies se font avec une seule fabrication. |
+| 5. Entretenir le multiplexeur | Comparer le tsMuxeR embarqué à une version candidate sur un lot de référence comprenant HDMV, TrueHD, Dolby Vision, HDR10+ et sous-titres PGS. | Conserver les pistes, la navigation et la synchronisation. Documenter les régressions éventuelles et vérifier la lecture matérielle des cas modifiés avant de changer la version embarquée. |
+
+La version Windows peut être considérée prête pour l'usage courant après les validations matérielles et le parcours de premier disque. La reprise et les volumes multiples améliorent les projets longs. Le simulateur complet, les sous-menus libres, les animations de boutons, les jaquettes intégrées, Mac/Linux et l'amélioration d'image par IA restent des évolutions ultérieures.
+
+Pour chaque version, construire l'installateur à partir du commit de version et vérifier le parcours de mise à jour depuis une version installée, avec conservation des réglages et des projets. Relancer les contrôles CLI concernés et publier les résultats matériels avec les combinaisons effectivement essayées.
+
+## Archive du 5 novembre 2026
+
+Les sections suivantes décrivent l'état historique de la 0.5.1 et les décisions de cette date.
 
 Sources: five reports written on 2026-11-05, checked against the repository, GitHub and test runs. Only the code review is kept: `docs/RAPPORT-SESSION-2026-11-05.md` (finding numbers below refer to it). This document replaces the other four.
 
