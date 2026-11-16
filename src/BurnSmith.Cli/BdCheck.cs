@@ -146,6 +146,7 @@ static class BdCheck
             FitDisc();
             Signature();
             Popup();
+            DvdAudio();
             Hdmv();
             Damaged();
             WorkFolder();
@@ -155,6 +156,35 @@ static class BdCheck
         finally { Tools.TryDelete(root); }
         Console.WriteLine(failed == 0 ? "check-bd: all passed" : $"check-bd: {failed} FAILED");
         return failed == 0 ? 0 : 1;
+    }
+
+    static void DvdAudio()
+    {
+        DvdPart("DVD audio per title", () =>
+        {
+            var original = Clip("dvdaudio.mkv", "testsrc2=s=720x576:r=25:d=3", 48000, Fine, Ac3At48);
+            var two = F("dvdaudio2.mkv");
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", original, "-map", "0", "-map", "0:a", "-c", "copy",
+                "-metadata:s:a:0", "language=eng", "-metadata:s:a:1", "language=fre", two]);
+            var disc = F("dvdaudio");
+            Dvd.Build(new DvdJob([new DiscTitle(two, Audio: [0, 1]),
+                new DiscTitle(original, Bonus: true, TrackLanguage: new Dictionary<string, string> { ["a0"] = "jpn" }),
+                new DiscTitle(two, Audio: [1, 0], Bonus: true)], disc, new MenuDesign(), Encode: new EncodeOptions(DvdPal: true)));
+            var iso = F("dvdaudio.iso");
+            Iso.Build(disc, iso, "DVD_AUDIO", dvd: true);
+            string[] Read(int title)
+            {
+                using var json = JsonDocument.Parse(Tools.Run(ffprobe, ["-v", "error", "-f", "dvdvideo", "-title", title.ToString(CultureInfo.InvariantCulture),
+                    "-preindex", "1", "-count_packets", "-select_streams", "a", "-show_entries", "stream=id,nb_read_packets:stream_tags=language", "-of", "json", iso]));
+                return [.. json.RootElement.GetProperty("streams").EnumerateArray()
+                    .Select(s => $"{s.GetProperty("id")}:{s.GetProperty("tags").GetProperty("language")}:{s.TryGetProperty("nb_read_packets", out var count) && int.Parse(count.GetString()!, CultureInfo.InvariantCulture) > 0}")
+                    .Order()];
+            }
+            Check("DVD: each title exposes only real audio streams with the correct language and physical index",
+                Read(1).SequenceEqual(["0x80:eng:True", "0x81:fre:True"])
+                && Read(2).SequenceEqual(["0x80:jpn:True"])
+                && Read(3).SequenceEqual(["0x80:fre:True", "0x81:eng:True"]));
+        });
     }
 
     /// <summary>Finding 2: a disc carries 48 kHz, whatever the sound was and whichever path made it.</summary>
@@ -236,6 +266,16 @@ static class BdCheck
             var id = File.ReadAllBytes(Path.Combine(disc, "CERTIFICATE", "id.bdmv"));
             Check("4K BD-J disc identifier uses version 0300, including the backup",
                 id.AsSpan().StartsWith("BDID0300"u8) && id.AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(disc, "CERTIFICATE", "BACKUP", "id.bdmv"))));
+            var descriptor = Path.Combine(disc, "BDMV", "BDJO", "00000.bdjo");
+            var valid = File.ReadAllBytes(descriptor);
+            File.WriteAllBytes(descriptor, valid[..8]);
+            Check("disc check rejects a BD-J descriptor with only the magic and version",
+                DiscCheck.Folder(disc).Any(p => p.Contains("00000.bdjo") && p.Contains("en-tête")));
+            var address = BinaryPrimitives.ReadUInt32BigEndian(valid.AsSpan(20));
+            File.WriteAllBytes(descriptor, valid[..((int)address + 6)]);
+            Check("disc check rejects a BD-J application table cut short",
+                DiscCheck.Folder(disc).Any(p => p.Contains("00000.bdjo") && p.Contains("table d'applications")));
+            File.WriteAllBytes(descriptor, valid);
         });
         Part("3D side by side", () =>
         {
@@ -515,12 +555,16 @@ static class BdCheck
             byte Alpha(int x, int y) { var px = new byte[4]; bgra.CopyPixels(new System.Windows.Int32Rect(x, y, 1, 1), px, 4, 0); return px[3]; }
             Check("pop-up: transparent over the film, solid on the bar", Alpha(0, 0) == 0 && Alpha(5, bgra.PixelHeight - 5) > 100, $"alpha {Alpha(0, 0)} / {Alpha(5, bgra.PixelHeight - 5)}");
             var bars = MenuBuilder.Popup(new MenuDesign { MainMenuLabel = "Main" }, new MenuContent(1, null, []),
-                [(1, 1, ["French", "English"]), (2, 1, ["English", "German"]), (3, 1, ["French", "English"])]);
+                [(1, 1, ["French", "English"], []), (2, 1, ["English", "German"], []), (3, 1, ["French", "English"], []),
+                 (4, 1, ["Japanese"], [("Bonus subtitles", 2)])]);
             Check("pop-up: the main menu button says what the design sets", bars[0].Ops.OfType<Label>().Any(l => l.Value == "Main"));
             string? Setup(int playlist) => bars.Single(p => p.Id == $"pop{playlist}").Buttons.Single(b => b.Id == "settings").Action.Page;
             Check("pop-up: different audio tracks get their own labels; identical choices share a page",
                 Setup(1) == Setup(3) && Setup(1) != Setup(2)
                 && bars.Single(p => p.Id == Setup(2)).Ops.OfType<Label>().Any(l => l.Value == "German"));
+            var bonusSettings = bars.Single(p => p.Id == Setup(4));
+            Check("pop-up: the bonus offers its own subtitle stream, skipping the invisible slot",
+                bonusSettings.Buttons.Where(b => b.Action.Kind == "sub").Select(b => b.Action.Mark).SequenceEqual([0, 2]));
             var plainDisc = Bd("nopopup", titles, menu: new MenuDesign());
             var without = Jar(plainDisc);
             Check("no pop-up option: no pop-up page, the menu file as before", !without.Keys.Any(k => k.Contains("pop")) && !System.Text.Encoding.UTF8.GetString(without["menu.txt"]).Contains(" pop"));

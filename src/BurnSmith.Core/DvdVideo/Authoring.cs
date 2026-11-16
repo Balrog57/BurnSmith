@@ -11,7 +11,8 @@ public sealed record Button(int X0, int Y0, int X1, int Y1, int Up, int Down, in
 /// is 0), the commands before and after it, a still that waits forever at its end, its buttons, its 16 colours (RGB).
 /// </summary>
 public sealed record Chain(string? Vob, IReadOnlyList<double> Chapters, IReadOnlyList<ulong> Pre, IReadOnlyList<ulong> Post, bool Still = false,
-                           IReadOnlyList<Button>? Buttons = null, int[]? Colors = null, byte[]? Highlight = null);
+                           IReadOnlyList<Button>? Buttons = null, int[]? Colors = null, byte[]? Highlight = null,
+                           IReadOnlyList<int>? AudioSlots = null);
 
 /// <summary>An audio stream of the titles: AC-3, its channels, its two-letter language ("" unknown).</summary>
 public sealed record AudioStream(int Channels, string Lang);
@@ -294,7 +295,12 @@ public static class Authoring
         b[3] = (byte)cells.Count;
         var total = cells.Sum(x => x.EndPts - x.StartPts);
         BinaryPrimitives.WriteUInt32BigEndian(span[4..], cells.Count > 0 ? Bcd(total, pal) : 0xC0);
-        for (var a = 0; a < audioCount; a++) { b[0x0C + 2 * a] = (byte)(0x80 | a); }
+        if (c.AudioSlots is { } slots)
+        {
+            for (var physical = 0; physical < slots.Count; physical++)
+                b[0x0C + 2 * slots[physical]] = (byte)(0x80 | physical);
+        }
+        else for (var a = 0; a < audioCount; a++) b[0x0C + 2 * a] = (byte)(0x80 | a);
         for (var s = 0; s < subCount; s++) // 4:3 column, then wide and letterbox for a 16:9 picture
             if (wide) { b[0x1C + 4 * s] = 0x80; b[0x1D + 4 * s] = (byte)s; b[0x1E + 4 * s] = (byte)s; }
             else b[0x1C + 4 * s] = (byte)(0x80 | s);

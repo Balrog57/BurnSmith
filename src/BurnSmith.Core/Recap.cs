@@ -13,7 +13,7 @@ public static class Recap
         var sources = job.Titles.Select(t => t.Cut((probe ?? BluRay.Probe)(t.Video))).ToList();
         var kbps = BluRay.TargetKbps(job, sources, _ => { });
         var copied = job.Titles.Select((t, i) => BluRay.CopiesVideo(job, t, sources[i], kbps)).ToList();
-        // shortcut: speeds guessed (times real time) from builds on Marc's PC, NVIDIA card or processor; measure them if the minutes are far off
+        // shortcut: speeds estimated from test builds on an NVIDIA GPU and a CPU; measure them if the minutes are far off
         double Speed() => job.Encode?.Gpu != false && BluRay.Nvenc.Value ? (job.Uhd ? 1.5 : 4) : job.Uhd ? 0.25 : 1;
         var lossless = job.Encode?.Lossless == true;
         return Lines(job.Titles, sources, copied, (a, t) => BluRay.BdAudio(a, t, job.Uhd, lossless), Speed, BluRay.EstimateGB(job, sources), job.CapacityGB,

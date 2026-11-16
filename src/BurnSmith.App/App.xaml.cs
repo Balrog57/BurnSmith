@@ -43,6 +43,7 @@ public partial class App : Application
         if (!snapshot || e.Args.Contains("restore")) await main.RestoreAutosave(); // the project as the app left it, before a file given to the exe; a snapshot starts empty unless it says restore
         foreach (var video in videos) await main.LoadSource(video);
         if (!snapshot) return;
+        main.OutBox.Text = @"C:\Disques\EXEMPLE"; // keep the Windows profile path out of documentation captures
         await main.DefaultDesignLoaded;
         if (e.Args.FirstOrDefault(a => a.StartsWith("design=")) is { } design && TemplateCatalog.Find(design[7..]) is { } start) main.UseDesign(start);
 

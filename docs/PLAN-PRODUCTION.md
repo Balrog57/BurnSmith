@@ -1,49 +1,69 @@
 # Plan de production de BurnSmith
 
-Mis à jour le 16 novembre 2026 à partir du rapport « BurnSmith — ce qui manque, ce que les utilisateurs demandent, pistes d'amélioration » et de l'état de `main`. Le rapport décrivait la 1.0.27. Ses pistes d'amélioration servent à prioriser le travail restant.
+Mis à jour le 16 novembre 2026 pour BurnSmith 1.0.36. **La création et la navigation des disques passent avant le travail sur l'interface d'authoring.** Le rapport « BurnSmith — ce qui manque, ce que les utilisateurs demandent, pistes d'amélioration » décrit la 1.0.27. Les pages 5 à 6 aident à faire le point sur les fonctions déjà livrées et les pages 9 à 10 sur le travail restant. Les propositions d'interface des pages 11 à 12 seront reprises quand les parcours de création auront passé leurs essais. Les essais actuels portent exclusivement sur des ISO dans VLC et PowerDVD. Le BD-RE est suspendu.
 
 ## Acquis
 
 `main` comprend l'enregistrement et la restauration automatique du projet, les chapitres importés et nommés, l'audio externe avec décalage et volume, le style et le décalage des sous-titres, le son sans perte sur Blu-ray, la file de fabrication, le disque d'essai, l'ouverture dans VLC, le récapitulatif, le temps restant et la notification de fin. L'interface est disponible en français et en anglais. La galerie propose une recherche, des favoris et les modèles récents. Le menu HDMV simple existe. La compatibilité maximale l'utilise avec des réglages audio et de gravure adaptés.
 
-Le DVD a été essayé sur platine. Le Blu-ray 1080p BD-J de Bright a été lu sur BD-RE, chapitres compris.
+**Résultats sur ISO 1.0.36.** VLC a lu les ISO UHD HDR10 et Dolby Vision. Une touche de remplacement dans des copies de test a permis d'ouvrir le pop-up. Les sous-titres du film et du bonus ont été activés puis désactivés pendant la lecture HDR10. Sur l'ISO Dolby Vision, le changement de piste TrueHD Atmos vers DTS-HD MA a produit du PCM stéréo non silencieux avant et après le changement. Les métadonnées Dolby Vision profil 7 MEL sont présentes dans l'ISO. VLC a utilisé une sortie SDR Rec.709 sur le Samsung de test. Le rendu Dolby Vision et la sortie bitstream n'ont pas été vérifiés sur ce PC.
 
-Marc a confirmé la validation des menus du lot de référence sur les Panasonic 820 et 9000. Le lot comprend dix ISO : *Bright*, *Le Flic de Beverly Hills – Axel F*, les six saisons de *Cobra Kai* et les deux disques de *The Originals*, saison 5. Ce lot sert de référence pour les menus. Les essais à venir ciblent les configurations et les fonctions qui restent à vérifier, notamment le pop-up, l'activation HDR et la vérification ImgBurn.
+PowerDVD 24 a refusé les deux ISO UHD comme format non pris en charge. L'éditeur de PowerDVD documente l'abandon de la lecture des disques UHD sur Windows. Les deux témoins Blu-ray 1080p, BD-J et HDMV, ont laissé un écran noir après le chargement. Les fonctions de navigation et de choix des pistes restent à vérifier dans PowerDVD. [Assistance CyberLink](https://support.cyberlink.com/faq/uhd-blu-ray-playback-removed-windows-powerdvd)
 
-## Priorités restantes
+**Références sur platine.** Le DVD a été essayé sur platine et le Blu-ray 1080p BD-J de *Bright* a été lu sur BD-RE, chapitres compris. Les menus du lot de référence ont été validés sur Panasonic 820 et 9000. Ce lot comprend dix ISO, soit *Bright*, *Le Flic de Beverly Hills – Axel F*, les six saisons de *Cobra Kai* et les deux disques de *The Originals*, saison 5. Les essais UHD avec la chaîne Denon et LG sont documentés dans l'historique ci-dessous.
 
-| Priorité | Travail | Critère de fin |
-|---|---|---|
-| 1. Valider les ISO, puis la lecture sur platine | Fabriquer des ISO de test et les lire directement dans VLC. Utiliser le lot déjà validé sur Panasonic comme référence. Regrouper les points matériels à vérifier : comportement du menu HDMV, animation et pop-up BD-J, UHD HDR10 et Dolby Vision, ainsi que la gravure, la relecture ImgBurn et l'éjection sur le BD-RE réservé aux essais. | Consigner les résultats VLC, puis le modèle et le firmware du lecteur, le support, la version de BurnSmith, le démarrage, Top Menu, les chapitres, la fin d'un titre et le choix des pistes. Vérifier l'activation HDR ou Dolby Vision sur l'écran. |
-| 2. Simplifier le premier disque | Rendre visibles les étapes Vidéos → Menu → Sortie. Donner un choix clair entre dossier, ISO et gravure, et rapprocher les réglages courants du projet. Alléger le panneau Élément quand aucune sélection n'est active. | Un nouvel utilisateur fabrique un disque d'essai, puis retrouve son projet au redémarrage. Vérifier le parcours à la souris et au clavier, en français et en anglais. |
-| 3. Reprendre une fabrication interrompue | Réutiliser les titres déjà convertis. Associer chaque résultat à sa source et aux réglages qui influencent l'encodage, et écrire les résultats de façon atomique. | Après un échec au titre 3, la reprise réutilise les deux titres valides. Changer le menu seul réutilise les conversions, et modifier une piste invalide le titre concerné. |
-| 4. Terminer le flux séries et copies | Proposer la répartition des titres entre plusieurs disques à partir de la capacité estimée et envoyer les projets dérivés dans la file existante. Permettre plusieurs gravures à partir d'une ISO, avec demande de changement de disque. | Une saison conserve l'ordre, le menu et les pistes sur chaque volume, chaque ISO respecte la capacité choisie et deux copies se font avec une seule fabrication. |
-| 5. Entretenir le multiplexeur | Comparer le tsMuxeR embarqué à une version candidate sur un lot de référence comprenant HDMV, TrueHD, Dolby Vision, HDR10+ et sous-titres PGS. | Conserver les pistes, la navigation et la synchronisation. Documenter les régressions éventuelles et vérifier la lecture matérielle des cas modifiés avant de changer la version embarquée. |
+## Ce que les projets comparables apportent au moteur
 
-La version Windows peut être considérée prête pour l'usage courant après les validations matérielles et le parcours de premier disque. La reprise et les volumes multiples améliorent les projets longs. Le simulateur complet, les sous-menus libres, les animations de boutons, les jaquettes intégrées, Mac/Linux et l'amélioration d'image par IA restent des évolutions ultérieures.
+**Blu-Disc Studio UHD** documente le profil BD-J 6, les paramètres de débit et de capacité du média, les rôles distincts du titre de menu et du titre de film et la trace des actions dans le simulateur. Cela donne des cas à vérifier sur les ISO de BurnSmith dès maintenant, dont démarrage, Top Menu, passage au titre suivant et retour automatique. Les réglages HDR des graphismes et sous-titres serviront à comparer la lisibilité du pop-up sur une chaîne HDR lorsque ces essais reprendront. La reprise de lecture persistante et les actions programmables par titre restent des fonctions distinctes de la commande Reprendre du pop-up actuel. [Réglages de projet](https://blu-disc.net/help/project_properties.general.htm) · [Simulation](https://blu-disc.net/help/options.htm) · [Graphismes HDR](https://blu-disc.net/help/project_properties.additional.htm) · [Actions de navigation](https://blu-disc.net/help/button_actions_common.htm)
 
-Pour chaque version, construire l'installateur à partir du commit de version et vérifier le parcours de mise à jour depuis une version installée, avec conservation des réglages et des projets. Relancer les contrôles CLI concernés et publier les résultats matériels avec les combinaisons effectivement essayées.
+**bdmvkit et oncemore** montrent deux contrôles utiles pour le Blu-ray HD avec menu natif. bdmvkit écrit les listes de lecture, les points d'accès et les commandes HDMV. La commande `validate` d'oncemore signale notamment les titres ou menus inaccessibles et les menus sans issue. BurnSmith peut appliquer ces contrôles à ses propres références et cibles. Ces projets servent de comparaison pour le HDMV classique. Les essais BD-J UHD gardent leur propre lot. [bdmvkit](https://github.com/kajisho5/bdmvkit) · [oncemore](https://github.com/kajisho5/oncemore)
 
-Pour chaque essai de disque, produire une ISO, contrôler sa structure avec `check-disc` et ouvrir l'image dans VLC. Vérifier la lecture, les chapitres, le retour au menu et les pistes présentes. Préparer ensuite un lot d'ISO et lister les points qui nécessitent la platine. Marc a autorisé la réutilisation du BD-RE réservé aux essais. La gravure se fait à 2× (`--speed 2`), avec relecture.
+**DVD Forge** vérifie les liens entre boutons, teste les changements de page et relit l'ISO avec un validateur indépendant du générateur. Les contrôles UDF, BDMV et DVD-Video décrits par le projet donnent des cas de corruption à injecter dans les tests BurnSmith. Ses tests et son simulateur partagent le même routage. C'est un principe à reprendre quand la navigation de BurnSmith sera éprouvée. [DVD Forge](https://github.com/Nicolasalucin/dvd-forge)
 
-### Essais sur BD-RE
+**DVDStyler et dvdauthor** servent de références pour le DVD-Video à plusieurs pistes, les chapitres et ce qui se passe après chaque titre. VLC/libdvdnav permet d'exercer les commandes de navigation à partir d'une ISO. Le démultiplexeur DVD-Video de FFmpeg permet de lire les pistes annoncées et de compter les paquets effectivement présents titre par titre. [DVDStyler](https://www.dvdstyler.org/en/) · [dvdauthor](https://dvdauthor.sourceforge.net/doc/) · [libdvdnav](https://images.videolan.org/developers/libdvdnav.html) · [FFmpeg DVD-Video](https://ffmpeg.org/ffmpeg-formats.html#dvdvideo)
+
+**BDMV Author et tsMuxeR.** Le dépôt historique de tsMuxeR est archivé. BurnSmith embarque déjà la version patchée livrée par BDMV Author 0.1.133, dont les fichiers sont vérifiés par SHA-256. Garder cette version comme référence et comparer chaque candidat sur les mêmes sources et ISO. Le cache persistant des encodages de BDMV Author fournit aussi un exemple de réutilisation lors d'un changement de menu. [tsMuxeR](https://github.com/justdan96/tsMuxer) · [Cache de BDMV Author](https://github.com/blenheimears/bdmvauthor#project-files-and-cache) · [Moteur embarqué](COMPILER-ET-LIGNE-DE-COMMANDE.md)
+
+## Défauts à reproduire avant chaque correction
+
+**Contrôle BDJO corrigé localement.** Sur une copie d'un disque produit par BurnSmith, le contrôle de dossier 1.0.36 a accepté un `00000.bdjo` réduit aux huit octets `BDJO0300`. Le descripteur n'avait plus de table d'applications. Avec la correction locale, `check-disc` rejette ce dossier et identifie le fichier en cause. Le dossier Dolby Vision d'origine passe le contrôle. La compilation et `check-bd` complet, essais DVD compris, passent aussi avec les nouveaux cas de descripteur tronqué et de table invalide.
+
+**Pistes DVD corrigées localement.** Sur l'ISO PAL 1.0.36, le bonus japonais annonçait deux pistes, dont une vide, et les libellés du bonus aux pistes inversées ne correspondaient pas aux flux. La nouvelle image annonce uniquement les pistes présentes dans chaque titre. Le choix français sélectionne le bon flux même quand l'ordre physique est inversé. Si le choix manque, le titre utilise une piste présente. FFprobe a confirmé les langues et les paquets dans les trois titres. Dans VLC, les sons de contrôle à 880 Hz pour le français et à 660 Hz pour le japonais ont été vérifiés en PCM. L'essai interactif NTSC reste à faire. [FFmpeg DVD-Video](https://ffmpeg.org/ffmpeg-formats.html#dvdvideo)
+
+**Sous-titres des bonus BD-J corrigés localement.** L'ISO UHD HDR10 1.0.36 transportait une piste PGS française dans le bonus, mais son pop-up ne proposait aucun choix si le film ne contenait aucun sous-titre. Sur l'ISO reconstruit, le pop-up propose la piste du bonus. Les captures et le journal de VLC confirment l'apparition du texte, sa disparition sur demande et le retour au film sans sous-titre. Le pop-up a été testé avec une touche de remplacement sur une copie de l'ISO.
+
+**Sous-titres forcés en BD-J à vérifier.** Le menu principal et la correspondance des sous-titres forcés partent encore du premier titre. À la lecture, le moteur peut choisir une autre piste audio si celle demandée manque, puis chercher le sous-titre forcé à partir du numéro demandé. Reproduire un passage du film au bonus dans lequel la piste audio souhaitée est absente, puis vérifier que le sous-titre forcé suit la piste réellement jouée.
+
+## Ordre des corrections et critères de passage
+
+1. **Durcir la validation du dossier et de l'ISO.** Commencer par le contrôle BDJO et couvrir ensuite les références entre titres, listes de lecture, clips et cibles des boutons, les chapitres hors limites et les flux déclarés absents. Pour chaque contrôle, une sortie conforme doit passer et le cas problématique doit produire un diagnostic qui identifie le fichier ou le titre en cause. Contrôler les flux contenus dans l'ISO et sa capacité après multiplexage.
+2. **Corriger et vérifier les choix de lecture par titre.** Partir des cas d'échec ci-dessus et écrire les corrections dans le moteur BurnSmith. Fabriquer des ISO avec film, épisode et bonus aux pistes différentes. Vérifier la correspondance entre le libellé, l'index de piste et la langue réellement jouée, ainsi que le choix de repli si la piste n'existe pas. Exercer les sous-titres forcés, complets et désactivés à partir de sources SRT et PGS. Vérifier dans le même scénario les chapitres, Tout lire sans le bonus, la fin de titre et Top Menu.
+3. **Passer un lot représentatif sur ISO.** Créer des DVD PAL et NTSC, des Blu-ray 1080p BD-J et HDMV et des UHD HDR10, HDR10+ et Dolby Vision. Inclure au moins un cas sans menu et une introduction. Vérifier les profils Dolby Vision converti et copié ainsi que les pistes TrueHD/Atmos et DTS-HD MA avec les outils d'inspection. Exercer la lecture et les menus dans VLC, puis essayer PowerDVD lorsqu'il ouvre le format. Consigner par ISO la version du lecteur, les étapes réussies et les blocages observés. `check-disc` valide la structure. Le décodage, les menus et la sortie audio/vidéo ont chacun leur propre preuve.
+4. **Reprendre une fabrication interrompue.** Réutiliser les conversions terminées avec une clé qui tient compte des sources, des réglages d'encodage et des versions des outils. Publier chaque résultat complet de façon atomique. Après un échec au titre 3, les deux titres déjà vérifiés doivent être réutilisés. Une modification du menu seul doit réutiliser les conversions et une modification de piste doit invalider le titre qui la porte.
+5. **Comparer le multiplexeur et terminer le flux séries.** Pour un candidat tsMuxeR, comparer pistes et métadonnées, synchronisation, débit, points d'accès, navigation et taille des images avec le moteur embarqué. Ensuite, éprouver la répartition d'une saison sur plusieurs ISO en gardant ordre, chapitres, choix de pistes et capacité de chaque volume.
+
+L'interface d'authoring reprend après la validation des parcours couverts par le lot. Les capacités qui exigent une platine ou une chaîne HDR et bitstream restent consignées séparément. Construire l'installateur depuis le commit de version, relancer les contrôles concernés et vérifier la mise à jour avec conservation des réglages et des projets.
+
+## Historique des essais matériels
+
+### Essais sur BD-RE effectués précédemment
 
 | Image | Relecture ImgBurn sur le BU40N | Résultat sur Panasonic |
 |---|---|---|
-| Blu-ray 1080p BD-J animé | Les 55 040 secteurs correspondent à l'image. | Marc confirme le pop-up et la reprise pendant la lecture. |
+| Blu-ray 1080p BD-J animé | Les 55 040 secteurs correspondent à l'image. | Le pop-up et la reprise pendant la lecture fonctionnent. |
 | UHD HDR10 avec menu BD-J | Les 8 800 secteurs correspondent à l'image. | La platine reconnaît un Ultra HD Blu-ray et le téléviseur signale HDR. Le menu et le film ne démarrent pas. |
-| Blu-ray 1080p HDMV (SDR) | Les 57 056 secteurs correspondent à l'image. | Marc confirme que le disque et son menu fonctionnent. L'absence d'indication HDR est attendue en SDR. |
-| UHD HDR10 sans menu | Les 8 608 secteurs correspondent à l'image. | Marc confirme que la mire de 9 secondes démarre et se lit en HDR. |
-| UHD HDR10 avec menu HDMV | Les 11 968 secteurs correspondent à l'image. | Marc confirme que le menu s'affiche en SDR et que Lecture lance la mire en HDR. Les clips vidéo du menu sont signalés en BT.709 et la mire en PQ / BT.2020. |
+| Blu-ray 1080p HDMV (SDR) | Les 57 056 secteurs correspondent à l'image. | Le disque et son menu fonctionnent. L'absence d'indication HDR est attendue en SDR. |
+| UHD HDR10 sans menu | Les 8 608 secteurs correspondent à l'image. | La mire de 9 secondes démarre et se lit en HDR. |
+| UHD HDR10 avec menu HDMV | Les 11 968 secteurs correspondent à l'image. | Le menu s'affiche en SDR et Lecture lance la mire en HDR. Les clips vidéo du menu sont signalés en BT.709 et la mire en PQ / BT.2020. |
 | UHD HDR10 BD-J avec en-têtes `BDJO0300` | Les 8 800 secteurs correspondent à l'image. | Le Panasonic affiche 4K HDR puis reste bloqué. Le menu ne démarre pas. |
 | UHD HDR10 BD-J avec en-têtes `BDJO0300` et `BDID0300` | Les 8 800 secteurs correspondent à l'image. | Le menu ne démarre toujours pas sur le Panasonic. |
 | UHD HDR10 BD-J en First Playback | Les 8 800 secteurs correspondent à l'image. | Le Panasonic reste bloqué au démarrage et le menu ne s'affiche pas. |
-| UHD HDR10 BD-J en First Playback, profil 6 | Les 8 800 secteurs correspondent à l'image. | Marc confirme que le menu s'affiche et que Lecture lance la mire en HDR. Le retour manuel retrouve l'apparence initiale du menu. Au retour automatique, les couleurs diffèrent. Le mode HDR de l'écran à cet instant reste à confirmer. |
-| UHD HDR10 BD-J profil 6, navigation BurnSmith | Les 8 800 secteurs correspondent à l'image. | Marc confirme que le menu reste en SDR au démarrage et au retour automatique, avec les mêmes couleurs. La mire se lit en HDR. |
+| UHD HDR10 BD-J en First Playback, profil 6 | Les 8 800 secteurs correspondent à l'image. | Le menu s'affiche et Lecture lance la mire en HDR. Le retour manuel retrouve l'apparence initiale du menu. Au retour automatique, les couleurs diffèrent. Le mode HDR de l'écran à cet instant reste à confirmer. |
+| UHD HDR10 BD-J profil 6, navigation BurnSmith | Les 8 800 secteurs correspondent à l'image. | Le menu reste en SDR au démarrage et au retour automatique, avec les mêmes couleurs. La mire se lit en HDR. |
 
 Les ISO UHD sans menu et UHD HDMV ont le même flux multiplexé que le disque UHD BD-J. Les deux passent `check-disc` et décodent le film en 3840 × 2160 dans VLC.
 
-Le format UHD inclut le BD-J. Blu-Disc Studio documente un profil BD-J 6 pour ses projets UHD, tandis que BurnSmith écrit un descripteur d'application BD-J de profil 1, version 1.0.0, y compris en UHD. Cet écart est une piste pour le blocage au démarrage. Il reste à vérifier les champs du BDJO sur un disque UHD de référence et à reproduire la correction sur platine. [Blu-ray Disc Association](https://blu-raydisc.info/format-spec/rom4-spec.php), [documentation Blu-Disc Studio](https://blu-disc.net/help/project_properties.general.htm).
+Le format UHD inclut le BD-J. Les premières variantes BurnSmith écrivaient le profil 1, version d'application 1.0.0. BurnSmith écrit désormais le profil 6 pour l'UHD, comme le documente Blu-Disc Studio. Le dernier essai du tableau confirme le démarrage de cette configuration sur Panasonic. [Blu-ray Disc Association](https://blu-raydisc.info/format-spec/rom4-spec.php) · [Documentation Blu-Disc Studio](https://blu-disc.net/help/project_properties.general.htm)
 
 La variante `BDID0300` change seulement les deux en-têtes de `CERTIFICATE/id.bdmv` par rapport à l'ISO `BDJO0300`. Elle passe `check-disc` et VLC, puis reproduit le blocage sur platine. [Prise en charge de `BDID0300` dans libbluray](https://www.mail-archive.com/libbluray-devel@videolan.org/msg02774.html).
 
@@ -55,9 +75,9 @@ Le passage du profil d'application de 1 à 6 débloque le démarrage direct BD-J
 
 - **Navigation** · Sur l'ISO, vérifier que les flèches atteignent chaque bouton, que Lecture ouvre le bon titre, et que le retour automatique et la touche Top Menu réouvrent le menu. Blu-Disc Studio distingue le titre du menu du titre du film et propose un simulateur avec journal des actions. [Actions de navigation](https://blu-disc.net/help/button_actions_common.htm) · [Options de simulation](https://blu-disc.net/help/options.htm)
 - **Pop-up en lecture** · Sur platine, ouvrir le pop-up en HDR, sauter à un chapitre, sélectionner la deuxième piste audio, activer puis désactiver un sous-titre et reprendre la lecture. Vérifier que le film reste en HDR et que le menu principal retrouve ses couleurs après la fin du film. Blu-Disc Studio expose ces actions et prévoit une conversion des graphismes superposés et des sous-titres pour le HDR. [Actions de lecture](https://blu-disc.net/help/button_actions_common.htm) · [Réglages HDR](https://blu-disc.net/help/project_properties.additional.htm)
-- **Lot BD25** · L'ISO de test contient un fond animé, deux pistes audio, un sous-titre et un pop-up. Dans VLC, le fond animé, la lecture HDR10 et le retour au menu passent. ImgBurn a vérifié ses 13 952 secteurs après gravure à 2×. Marc a confirmé le bon fonctionnement du lot sur Panasonic, dont l'ouverture du pop-up en lecture HDR, la reprise et le retour au menu.
-- **Dolby Vision et Atmos** · La mire Dolby Vision 8.1, convertie en profil 7 MEL par BurnSmith, a été associée à une piste de démonstration TrueHD Atmos. ImgBurn a vérifié les 44 192 secteurs du BD-RE gravé à 2×. Marc a confirmé l'affichage Dolby Vision et la présence d'effets audio sur Panasonic. FFprobe identifie la piste du disque comme Dolby TrueHD + Dolby Atmos.
-- **Deux pistes sans perte** · Un extrait de *Blade Runner 2049* a été préparé en Dolby Vision profil 7 MEL avec un menu BD-J et deux choix audio dans le pop-up. Marc confirme le fonctionnement des deux pistes sur le Panasonic 9000 : VO Dolby TrueHD Atmos 7.1 et VF DTS-HD Master Audio 5.1. Matériel indiqué pour l'essai : ampli Denon 3800 et téléviseurs LG OLED C2 et C5. ImgBurn a vérifié les 76 384 secteurs du BD-RE gravé à 2×. La copie sans réencodage d'une source Dolby Vision profil 7 d'origine reste à vérifier sur platine.
+- **Lot BD25** · L'ISO de test contient un fond animé, deux pistes audio, un sous-titre et un pop-up. Dans VLC, le fond animé, la lecture HDR10 et le retour au menu passent. ImgBurn a vérifié ses 13 952 secteurs après gravure à 2×. Le lot a été validé sur Panasonic, notamment l'ouverture du pop-up en lecture HDR, la reprise et le retour au menu.
+- **Dolby Vision et Atmos** · La mire Dolby Vision 8.1, convertie en profil 7 MEL par BurnSmith, a été associée à une piste de démonstration TrueHD Atmos. ImgBurn a vérifié les 44 192 secteurs du BD-RE gravé à 2×. L'affichage Dolby Vision et la présence d'effets audio ont été vérifiés sur Panasonic. FFprobe identifie la piste du disque comme Dolby TrueHD + Dolby Atmos.
+- **Deux pistes sans perte** · Un extrait de *Blade Runner 2049* a été préparé en Dolby Vision profil 7 MEL avec un menu BD-J et deux choix audio dans le pop-up. Les deux pistes ont été validées sur le Panasonic 9000 : VO Dolby TrueHD Atmos 7.1 et VF DTS-HD Master Audio 5.1. Matériel indiqué pour l'essai : ampli Denon 3800 et téléviseurs LG OLED C2 et C5. ImgBurn a vérifié les 76 384 secteurs du BD-RE gravé à 2×. La copie sans réencodage d'une source Dolby Vision profil 7 d'origine reste à vérifier sur platine.
 
 ## Clôture du projet
 
@@ -82,7 +102,7 @@ Only two labels are used. **Checked** means seen today in the code, git, GitHub 
 | Published release | v0.5.1 is Latest, tag at `d5d619b`, with `BurnSmith-Setup-0.5.1.exe` (356,216,337 bytes) and `BurnSmith.exe`, both with a GitHub SHA-256 digest |
 | `main` | `a567dd3`, 5 commits ahead of `origin/main` (`d5d619b`), not pushed |
 | Version in the code | 0.5.1, the same number as the release although the code is newer |
-| Installed on Marc's PC | 0.5.0 in `C:\Program Files\BurnSmith` |
+| Installed on test PC | 0.5.0 in `C:\Program Files\BurnSmith` |
 | Local build | `dist\BurnSmith-Setup-0.5.1.exe` from `627e3cd`, not the same file as the GitHub one, unsigned, not installed |
 | Code size | about 10,900 lines of C#, about 7,500 of them in `BurnSmith.Core` |
 | Tests | No test project, no CI (`.github/` absent). Checks are CLI commands. |
@@ -158,24 +178,24 @@ These prove that discs and menus build with the right structure. They do not pro
 - **Writers:** one worktree and branch per phase. Two sessions never change the same files at the same time.
 - **Done means:** build with 0 warnings; all checks in section 1 still pass; the defect is reproduced before the fix and gone after it, with a check that fails if it returns.
 - **Release builds:** always from `git archive <sha>`, never from a working tree with other sessions' edits.
-- **Never without Marc's explicit OK:** push, tag, GitHub release, installing on his PC, committing another session's uncommitted work, deleting a branch or worktree.
+- **Requires explicit approval:** push, tag, GitHub release, installing on the test PC, committing another session's uncommitted work, deleting a branch or worktree.
 - **Not in this plan:** the vendor artwork decision (recorded and final) and the features listed above.
 
 ### Phases
 
 | Phase | Work | Findings | Main files | Depends on |
 |---|---|---|---|---|
-| 1. Merge | Merge `langue-des-pistes`, then `fond-par-page`, into `main`. Rebuild and rerun all checks. Marc decides on the menu editor branch. | none | `Program.cs`, `MainWindow.xaml.cs`, `Tracks.cs`, menu files | Marc's OK to merge |
+| 1. Merge | Merge `langue-des-pistes`, then `fond-par-page`, into `main`. Rebuild and rerun all checks. The project owner decides on the menu editor branch. | none | `Program.cs`, `MainWindow.xaml.cs`, `Tracks.cs`, menu files | Merge approval |
 | 2. Discs and data | Safe `PrepareOutput`, 48 kHz, copy only compatible video, one frame-rate helper, DVD preflight, intro in fit-to-disc, work folder cleanup, PGS decoding. New `check-bd`. | 1, 2, 3, 4, 7, 10, 11, 12, 13 (part) | `Tools.cs` (`PrepareOutput`), `BluRay.cs`, `Dvd.cs`, `Tracks.cs`, `Disc/PgsStream.cs`, `Cli/` | Phase 1 |
 | 3. App reliability | Real Cancel with process kill, `Closing` guard, no update during work, global handler with log file, UI start not blocked. | 5, 8, 14 | `Tools.Run`, `BluRay.Build`, `Dvd.Build`, `MainWindow`, `App.xaml.cs` | Phase 2 (same files) |
 | 4. Release safety | Bundled tools first in a release, refuse a missing digest, clean old installers, pin ffmpeg in `publish.ps1`, fail on empty templates. | 6, 9 (digest), 15, 16 (part) | `Tools.Find`, `Updater.cs`, `publish.ps1` | Phase 1; can run beside phase 3 if `Tools.cs` edits are merged in turn |
 | 5. CI | GitHub Action on Windows: build and `check-*`. Add the hand checks to `check-edit`. | 13 | `.github/`, `Cli/` | Phase 2 |
-| 6. Release and hardware | Version 0.5.2, build from `git archive`, install, real update 0.5.0 → 0.5.2, uninstall. Burn a DVD-RW and play it on a player. | 9 (signing is Marc's choice) | none | Phases 2 to 5 and Marc for each step |
+| 6. Release and hardware | Version 0.5.2, build from `git archive`, install, real update 0.5.0 → 0.5.2, uninstall. Burn a DVD-RW and play it on a player. | 9 (signing requires a project decision) | none | Phases 2 to 5 and approval for release and hardware tests |
 
-The native HDMV menu stays on hold until Marc has the DVD-RW result from phase 6.
+The native HDMV menu stays on hold until the DVD-RW result is available from phase 6.
 
-### Decisions only Marc can make
+### Decisions requiring approval
 
 1. Phase 1: is the menu editor branch committed and merged now, or left out of 0.5.2? It has not been tried with the mouse and is expected to conflict with `fond-par-page`.
 2. Phase 6: go-ahead to push and publish, and whether to buy a code-signing certificate.
-3. Phase 6: he runs the UAC prompts, the burn and the player test.
+3. Phase 6: the test operator handles UAC prompts and verifies player playback.

@@ -39,6 +39,7 @@ public static class Vm
 
     /// <summary>Audio stream (0-based), optionally then a link to menu PGC <paramref name="linkPgc"/>.</summary>
     public static ulong Audio(int stream, int linkPgc = 0) => Bytes(0x51, linkPgc > 0 ? 4 : 0, 0, 0x80 | stream, 0, 0, linkPgc >> 8, linkPgc);
+    public static ulong AudioReg(int reg) => Bytes(0x41, 0, 0, 0x80 | reg);
 
     /// <summary>Subpicture: 62 = none, 64 + n = stream n shown.</summary>
     public static ulong Subtitle(int value, int linkPgc = 0) => Bytes(0x51, linkPgc > 0 ? 4 : 0, 0, 0, 0x80 | value, 0, linkPgc >> 8, linkPgc);

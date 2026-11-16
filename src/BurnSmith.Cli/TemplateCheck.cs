@@ -103,7 +103,7 @@ static class TemplateCheck
     static MenuDesign Credited(MenuDesign d)
     {
         var c = d.Clone();
-        c.Credits = "Un film de Marc\nMusique : Clara D.\nMerci à toute la famille";
+        c.Credits = "Un film de démonstration\nMusique originale\nMerci à l’équipe";
         c.Loop = true;
         return c;
     }

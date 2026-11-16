@@ -12,7 +12,7 @@
 AppId={{1CF61A99-C6D2-443A-84E7-6C5363916B1D}
 AppName=BurnSmith
 AppVersion={#AppVersion}
-AppPublisher=Balrog57
+AppPublisher=BurnSmith
 AppPublisherURL=https://github.com/Balrog57/BurnSmith
 AppSupportURL=https://github.com/Balrog57/BurnSmith/issues
 DefaultDirName={autopf}\BurnSmith

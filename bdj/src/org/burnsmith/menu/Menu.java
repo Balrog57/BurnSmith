@@ -102,7 +102,8 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             if (marker == null) return;
             for (int i = 0; i < p.buttons.size(); i++) {
                 Button m = (Button) p.buttons.elementAt(i);
-                boolean on = (m.action.equals("audio") && m.n1 == audio) || (m.action.equals("sub") && m.n1 == sub);
+                boolean on = (m.action.equals("audio") && m.n1 == audio)
+                    || (m.action.equals("sub") && m.n1 == (popupOpen ? subtitleChoice() : sub));
                 if (on) g.drawImage(marker, m.x + (p.markerDx != Integer.MIN_VALUE ? p.markerDx : markerDx), m.y + (m.h - markerH) / 2, this);
             }
         }
@@ -122,8 +123,10 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private int width = 1920, height = 1080;
     private boolean listening;
     private int audio = 1, sub = 0; // current choice: audio stream number, subtitle stream number (0 = off)
+    private int localSub = -1; // a pop-up choice that only exists on the current title
     /** "forced" lines: audio stream number -> the forced subtitle stream shown while subtitles are off (the lines the film's language needs). */
     private final Hashtable forced = new Hashtable();
+    private final Hashtable subtitleTracks = new Hashtable(), forcedTracks = new Hashtable();
     private Image marker;
     private String markerName;
     private int markerW, markerH, markerDx;
@@ -276,6 +279,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
 
     private void showMenu() {
         popupOpen = false;
+        localSub = -1;
         startLoop();
         show(firstPage);
         scene.setVisible(true);
@@ -390,9 +394,13 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             if (player != null) applyTracks(player); // chosen in the pop-up: the film changes at once
             view.repaint();
         } else if (b.action.equals("sub")) {
-            sub = b.n1;
-            writeGpr(GPR_SUB, sub + 1);
-            log("subtitle choice " + sub);
+            if (popupOpen && b.n1 > 0 && !hasSubtitle(titleFirst, b.n1)) localSub = b.n1;
+            else {
+                localSub = -1;
+                sub = b.n1;
+                writeGpr(GPR_SUB, sub + 1);
+            }
+            log("subtitle choice " + b.n1);
             if (player != null) applyTracks(player);
             view.repaint();
         } else if (b.action.equals("resume")) {
@@ -438,14 +446,23 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         return chain && titleCount > 0 && playlist >= titleFirst && playlist < titleFirst + titleCount ? titleFirst + titleCount : 0;
     }
 
+    private boolean hasSubtitle(int playlist, int number) {
+        Vector tracks = (Vector) subtitleTracks.get(new Integer(playlist));
+        return tracks == null || tracks.contains(new Integer(number)); // older menus have no playlist track table
+    }
+
+    private int subtitleChoice() {
+        return localSub >= 0 ? localSub : hasSubtitle(playing, sub) ? sub : 0;
+    }
+
     /** Applies the audio / subtitle choice to a playlist that is running. Failures only cost the choice, never the playback. */
     private void applyTracks(Player p) {
+        int played = audio;
         try {
             Control c = p.getControl("org.bluray.media.PrimaryAudioControl");
             if (c instanceof PrimaryAudioControl) {
                 // a bonus can hold fewer audio streams than the titles the choice was made for: a number it has not would play it silent
                 int[] have = ((PrimaryAudioControl) c).listAvailableStreamNumbers();
-                int played = audio;
                 if (have != null && have.length > 0) {
                     played = have[0];
                     for (int i = 0; i < have.length; i++) if (have[i] == audio) played = audio;
@@ -462,15 +479,17 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             Control c = p.getControl("org.bluray.media.SubtitlingControl");
             if (c instanceof SubtitlingControl) {
                 SubtitlingControl s = (SubtitlingControl) c;
-                Integer own = sub > 0 ? null : (Integer) forced.get(new Integer(audio));
-                int shown = sub > 0 ? sub : own != null ? own.intValue() : 0;
+                int selected = subtitleChoice();
+                Integer own = selected > 0 ? null : (Integer) (subtitleTracks.containsKey(new Integer(playing))
+                    ? forcedTracks.get(playing + ":" + played) : forced.get(new Integer(played)));
+                int shown = selected > 0 ? selected : own != null ? own.intValue() : 0;
                 if (shown > 0) {
                     s.selectStreamNumber(shown);
                     s.setSubtitling(true);
                 } else {
                     s.setSubtitling(false);
                 }
-                log("subtitle stream " + shown + " selected" + (own != null ? " (forced, audio " + audio + ")" : ""));
+                log("subtitle stream " + shown + " selected" + (own != null ? " (forced, audio " + played + ")" : ""));
             } else {
                 log("no SubtitlingControl");
             }
@@ -492,6 +511,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             if (hasPopup) startListening(); // the Pop-up key must reach the xlet while the film plays
             else stopListening();
             stopLoop();
+            if (playing != playlist) localSub = -1;
             playing = playlist;
             player = Manager.createPlayer(new MediaLocator(loc.toExternalForm()));
             player.addControllerListener(this);
@@ -667,6 +687,14 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
                 sub = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("forced")) {
                 forced.put(new Integer(Integer.parseInt(t.nextToken())), new Integer(Integer.parseInt(t.nextToken())));
+            } else if (cmd.equals("subtracks")) {
+                Integer playlist = new Integer(Integer.parseInt(t.nextToken()));
+                Vector tracks = new Vector();
+                while (t.hasMoreTokens()) tracks.addElement(new Integer(Integer.parseInt(t.nextToken())));
+                subtitleTracks.put(playlist, tracks);
+            } else if (cmd.equals("forced-track")) {
+                String key = t.nextToken() + ":" + t.nextToken();
+                forcedTracks.put(key, new Integer(Integer.parseInt(t.nextToken())));
             } else if (cmd.equals("popupkey")) {
                 popupKey = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("loop")) {

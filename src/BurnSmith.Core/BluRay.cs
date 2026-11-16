@@ -299,8 +299,8 @@ public static class BluRay
     }
 
     /// <summary>What one muxed title gives the menu: its preview source and the names of the tracks that really went on the disc.</summary>
-    sealed record Muxed(string Prepared, List<string> Audio, List<string> Subtitles, List<double> ChapterTimes, int DefaultSubtitle,
-                        List<string> AudioLangs, List<(string Lang, bool Forced)> SubFlags);
+    sealed record Muxed(string Prepared, List<string> Audio, List<SubtitleTrack> Subtitles, List<double> ChapterTimes, int DefaultSubtitle,
+                        List<string> AudioLangs);
 
     /// <summary>
     /// The forced subtitle tracks placed last, each in the language of an audio track ("French (Forced)" after "French"): the menu does not list them,
@@ -425,12 +425,12 @@ public static class BluRay
             }
             TitleEntry Entry(int i, string name) => new(job.Titles[i].DisplayName, MoviePlaylist + i, (job.Titles[i].ThumbImage is { } img ? Cover(name, img, 480, 270) : null)
                 ?? Thumb(name, i, job.Titles[i].ThumbAt ?? sources[i].Duration * 0.1, 480, 270), job.Titles[i].Overview);
-            var (listed, forced) = ForcedTracks(muxed[0].AudioLangs, muxed[0].SubFlags);
+            var (listed, forced) = ForcedTracks(muxed[0].AudioLangs, muxed[0].Subtitles.Select(s => (s.Lang, s.Forced)).ToList());
             if (forced.Count > 0) log($"menu: {forced.Count} forced subtitle track(s) shown with their audio while subtitles are off, not listed");
             var content = new MenuContent(MoviePlaylist, Thumb("preview", 0, sources[0].Duration * 0.1, 800, 450),
                 series ? [] : muxed[0].ChapterTimes.Select((t, i) => Thumb($"c{i + 1}", 0, t + 3, 480, 270)).ToList(),
                 series ? Enumerable.Range(0, mainCount).Select(i => Entry(i, $"t{i + 1}")).ToList() : null,
-                muxed[0].Audio, muxed[0].Subtitles.Take(listed).ToList(),
+                muxed[0].Audio, muxed[0].Subtitles.Take(listed).Select(s => s.Name).ToList(),
                 mainCount < job.Titles.Count ? Enumerable.Range(mainCount, job.Titles.Count - mainCount).Select(i => Entry(i, $"b{i - mainCount + 1}")).ToList() : null)
                 { ChapterNames = series ? null : job.Titles[0].ChapterNames(sources[0].Duration, job.ChapterMinutes) };
             var menuDir = Path.Combine(work, "menu");
@@ -440,8 +440,16 @@ public static class BluRay
             var menuPages = MenuBuilder.Build(job.Menu, content);
             if (MenuBuilder.TracksLeftOut(menuPages, content) is { } leftOut) log(leftOut);
             foreach (var unsafeLine in SafeArea.Warnings(menuPages, job.Menu)) log(unsafeLine);
+            var subtitleTracks = muxed.Select(m =>
+            {
+                var (visible, automatic) = ForcedTracks(m.AudioLangs, m.Subtitles.Select(s => (s.Lang, s.Forced)).ToList());
+                return (Visible: m.Subtitles.Take(visible).Select((s, k) => (Track: s, Number: k + 1))
+                    .Where(s => s.Track.Index >= 0).Select(s => (s.Track.Name, s.Number)).ToList(),
+                    Forced: automatic.Where(f => m.Subtitles[f.Sub - 1].Index >= 0).ToList());
+            }).ToList();
             var popup = job.Menu.Popup && !job.HdmvMenu ? MenuBuilder.Popup(job.Menu, content,
-                muxed.Select((m, i) => (MoviePlaylist + i, m.ChapterTimes.Count, (IReadOnlyList<string>)m.Audio))) : null;
+                muxed.Select((m, i) => (MoviePlaylist + i, m.ChapterTimes.Count, (IReadOnlyList<string>)m.Audio,
+                    (IReadOnlyList<(string Name, int Number)>)subtitleTracks[i].Visible))) : null;
             if (popup != null) log($"menu: pop-up menu on {job.Titles.Count} title(s)");
             // the BD-J graphics plane is 1920x1080 on a 4K disc too (the player scales it up): 3840x2160 pages ran the xlet out of heap
             if (job.HdmvMenu)
@@ -449,7 +457,9 @@ public static class BluRay
                 HdmvMenu.Add(job, menuPages, mainCount, muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, forced, intro != null, work, log);
                 return;
             }
-            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, Math.Min(1, VideoSize(job).H / 1080.0), job.Playback ?? new(), mainCount, overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, popup: popup, forced: forced); // the xlet chains only the main titles
+            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, Math.Min(1, VideoSize(job).H / 1080.0), job.Playback ?? new(), mainCount,
+                overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, popup: popup,
+                subtitleTracks: subtitleTracks.Select((s, i) => (MoviePlaylist + i, s.Visible.Select(t => t.Number), (IReadOnlyList<(int Audio, int Sub)>)s.Forced)));
             AddMenu(job, menuDir, intro != null, log);
         }
         else if (muxed[0].DefaultSubtitle > 0 || intro != null)
@@ -758,8 +768,9 @@ public static class BluRay
         try { Tools.Run(Tools.Find("tsMuxeR.exe"), [meta, dest], log); }
         catch (InvalidOperationException) { foreach (var line in lines) log("meta: " + line); throw; } // the work folder goes with the failure: what was asked stays in the log
         // a 3D title's prepared.ts holds no picture to take thumbnails from
-        return new Muxed(mvc ? title.Video : prepared, audio.Select(a => a.Name).ToList(), subs.Select(s => s.Track.Name).ToList(), chapterTimes, title.DefaultSubtitleNumber(subs.Select(s => s.Track).ToList()),
-                         audio.Select(a => a.Lang).ToList(), subs.Select(s => (s.Track.Lang, s.Track.Forced)).ToList());
+        var carried = subs.Select(s => s.Track).ToList();
+        return new Muxed(mvc ? title.Video : prepared, audio.Select(a => a.Name).ToList(), carried, chapterTimes, title.DefaultSubtitleNumber(carried),
+                         audio.Select(a => a.Lang).ToList());
     }
 
     /// <summary>
@@ -787,7 +798,7 @@ public static class BluRay
             log($"subtitle {k + 1} '{s.Name}': {(s.Index < 0 ? "not in this video" : "nothing to show in the part kept")}, an invisible track keeps its number");
             file = Path.ChangeExtension(file, ".sup");
             File.WriteAllBytes(file, PgsSubtitles.Blank(plane.Width, plane.Height));
-            subs[k] = (s with { Codec = "hdmv_pgs_subtitle", File = null }, file);
+            subs[k] = (s with { Index = -1, Codec = "hdmv_pgs_subtitle", File = null }, file);
         }
     }
 

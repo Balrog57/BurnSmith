@@ -952,7 +952,7 @@ public partial class MainWindow : Window
             entry.Overview = text.Trim().Length > 0 ? text.Trim() : null;
         };
         menu.Items.Add(overview);
-        // SplitEntry / JoinWithNext are kept but out of the menu for now (Marc, 2026-11-07)
+        // SplitEntry / JoinWithNext are kept but out of the menu for now.
         menu.IsOpen = true;
     }
 

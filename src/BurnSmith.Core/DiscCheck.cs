@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -95,13 +96,36 @@ public static class DiscCheck
             if (!File.Exists(stream)) { problems.Add($"STREAM\\{clip}.m2ts manque (une liste de lecture l'utilise)"); continue; }
             Packets(stream, 192, 4, $"STREAM\\{clip}.m2ts", problems);
         }
-        if (Directory.Exists(Path.Combine(bdmv, "JAR")) && Directory.GetFiles(Path.Combine(bdmv, "JAR")).Length > 0 && !(Directory.Exists(Path.Combine(bdmv, "BDJO")) && Directory.GetFiles(Path.Combine(bdmv, "BDJO"), "*.bdjo").Length > 0))
-            problems.Add("le menu BD-J (JAR) n'a pas de fichier BDJO");
-
         // a player starts a signed BD-J application only with the disc's certificates and a signature they vouch for
         var jars = Directory.Exists(Path.Combine(bdmv, "JAR")) ? Directory.GetFiles(Path.Combine(bdmv, "JAR"), "*.jar") : [];
         var cert = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(bdmv))!, "CERTIFICATE");
         if (jars.Length == 0) return;
+        var bdjoDir = Path.Combine(bdmv, "BDJO");
+        var bdjos = Directory.Exists(bdjoDir) ? Directory.GetFiles(bdjoDir, "*.bdjo") : [];
+        if (bdjos.Length == 0) problems.Add("le menu BD-J (JAR) n'a pas de fichier BDJO");
+        Span<byte> header = stackalloc byte[48];
+        foreach (var bdjo in bdjos)
+        {
+            var shown = "BDJO\\" + Path.GetFileName(bdjo);
+            using var f = File.OpenRead(bdjo);
+            if (f.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) != header.Length || !header[..4].SequenceEqual("BDJO"u8))
+            {
+                problems.Add($"{shown} : en-tête BD-J absent ou tronqué");
+                continue;
+            }
+            var applications = BinaryPrimitives.ReadUInt32BigEndian(header[20..]);
+            if (applications < header.Length || applications > f.Length - 6)
+            {
+                problems.Add($"{shown} : adresse de la table d'applications BD-J hors du fichier");
+                continue;
+            }
+            f.Position = applications;
+            Span<byte> size = header[..4];
+            f.ReadExactly(size);
+            var length = BinaryPrimitives.ReadUInt32BigEndian(size);
+            if (length < 2 || length > f.Length - f.Position)
+                problems.Add($"{shown} : table d'applications BD-J tronquée ou invalide");
+        }
         foreach (var name in new[] { "app.discroot.crt", "bu.discroot.crt", "id.bdmv" })
             if (!File.Exists(Path.Combine(cert, name))) problems.Add($"CERTIFICATE\\{name} manque : une platine refusera le menu BD-J");
             else Same(Path.Combine(cert, name), Path.Combine(cert, "BACKUP", name), "CERTIFICATE\\BACKUP\\" + name, problems);

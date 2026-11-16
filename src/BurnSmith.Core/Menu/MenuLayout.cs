@@ -495,10 +495,11 @@ public static class MenuBuilder
     }
 
     /// <summary>
-    /// The Blu-ray pop-up menu: each playlist has a bar and chapter pages, and playlists with the same audio choices share a settings page.
+    /// The Blu-ray pop-up menu: each playlist has a bar and chapter pages, and playlists with the same track choices share a settings page.
     /// The xlet opens "pop" + the playlist that plays; the action "popup" goes back to that bar.
     /// </summary>
-    public static List<MenuPage> Popup(MenuDesign d, MenuContent c, IEnumerable<(int Playlist, int Chapters, IReadOnlyList<string> Audio)> titles)
+    public static List<MenuPage> Popup(MenuDesign d, MenuContent c,
+        IEnumerable<(int Playlist, int Chapters, IReadOnlyList<string> Audio, IReadOnlyList<(string Name, int Number)> Subtitles)> titles)
     {
         var g = PopupDesign(d);
         var veil = new Fill(new Box(0, 0, W, H), "#000000", 0.6, 0);
@@ -510,21 +511,22 @@ public static class MenuBuilder
             Buttons = p.Buttons.Select(b => b.Action is { Kind: "page", Page: "root" } ? b with { Action = new MenuAction("popup") } : b).ToList(),
         };
         var pages = new List<MenuPage>();
-        var settings = new List<(IReadOnlyList<string> Audio, MenuPage Page)>();
-        foreach (var (playlist, chapters, audio) in titles)
+        var settings = new List<(IReadOnlyList<string> Audio, IReadOnlyList<(string Name, int Number)> Subtitles, MenuPage Page)>();
+        foreach (var (playlist, chapters, audio, subtitles) in titles)
         {
             var entries = new List<(string Id, string Text, MenuAction Action)> { ("resume", d.ResumeLabel, new MenuAction("resume")) };
             if (chapters > 1) entries.Add(("chapters", d.ScenesLabel, new MenuAction("page", $"popc{playlist}_1")));
-            var setup = c with { Audio = audio };
+            var subChoices = subtitles.Take(MaxSubtitles).ToList();
+            var setup = c with { Audio = audio, Subtitles = subChoices.Select(s => s.Name).ToList() };
             if (setup.HasSettings)
             {
                 var choices = setup.AudioNames.Count > 1 ? setup.AudioNames : [];
-                var page = settings.FirstOrDefault(s => s.Audio.SequenceEqual(choices)).Page;
+                var page = settings.FirstOrDefault(s => s.Audio.SequenceEqual(choices) && s.Subtitles.SequenceEqual(subChoices)).Page;
                 if (page == null)
                 {
                     var id = settings.Count == 0 ? "popset" : $"popset{playlist}";
-                    page = Popped(Settings(g, setup, null, null), id);
-                    settings.Add((choices, page));
+                    page = Popped(Settings(g, setup, null, null, subtitleNumbers: [0, .. subChoices.Select(s => s.Number)]), id);
+                    settings.Add((choices, subChoices, page));
                 }
                 entries.Add(("settings", d.SettingsLabel, new MenuAction("page", page.Id)));
             }
@@ -558,7 +560,8 @@ public static class MenuBuilder
     /// Audio and subtitle choice, one column each. With <paramref name="activeAudio"/> / <paramref name="activeSub"/> null no
     /// marker is drawn (the BD-J menu draws it live); a DVD has no live drawing, so it uses one page per choice.
     /// </summary>
-    public static MenuPage Settings(MenuDesign d, MenuContent c, int? activeAudio, int? activeSub, string id = "settings")
+    public static MenuPage Settings(MenuDesign d, MenuContent c, int? activeAudio, int? activeSub, string id = "settings",
+        IReadOnlyList<int>? subtitleNumbers = null)
     {
         var pack = Pack(d);
         if (pack is { HasSetupLists: true } or { HasSetupPages: true }) return pack.Settings(d, c, activeAudio, activeSub, id);
@@ -573,7 +576,8 @@ public static class MenuBuilder
         int AudioX() => both ? 200 : (W - colW) / 2;
         int SubX() => both ? W - 200 - colW : (W - colW) / 2;
 
-        List<string> Column(string header, int x, IReadOnlyList<string> names, int firstNumber, string idPrefix, string kind, int? active)
+        List<string> Column(string header, int x, IReadOnlyList<string> names, int firstNumber, string idPrefix, string kind, int? active,
+            IReadOnlyList<int>? numbers = null)
         {
             ops.Add(new Label(header, new Box(x, 200, colW, 70), 46, true)); // centred like the rows under it
             var ids = new List<string>();
@@ -581,7 +585,7 @@ public static class MenuBuilder
             var w = Math.Min(colW, (int)Math.Ceiling(names.Max(n => MenuRenderer.TextWidth(d, n, 44, true))) + 40);
             for (var i = 0; i < names.Count; i++)
             {
-                var number = firstNumber + i;
+                var number = numbers?[i] ?? firstNumber + i;
                 var box = new Box(x + (colW - w) / 2, top + i * pitch, w, rowH);
                 ops.AddRange(Button(d, box, names[i], 44));
                 if (active == number) ops.Add(new Fill(new Box(box.X - MarkerSize - MarkerGap, box.Y + (rowH - MarkerSize) / 2, MarkerSize, MarkerSize), d.Accent, 1, MarkerSize / 2));
@@ -594,7 +598,7 @@ public static class MenuBuilder
 
         var left = audio.Count > 0 ? Column(d.AudioLabel, AudioX(), audio, 1, "a", "audio", activeAudio) : [];
         var subNames = subs.Count > 0 ? new[] { d.OffLabel }.Concat(subs).ToList() : [];
-        var right = subs.Count > 0 ? Column(d.SubtitlesLabel, SubX(), subNames, 0, "s", "sub", activeSub) : [];
+        var right = subs.Count > 0 ? Column(d.SubtitlesLabel, SubX(), subNames, 0, "s", "sub", activeSub, subtitleNumbers) : [];
 
         var back = pack?.SetupBack ?? new Box((W - 300) / 2, 950, 300, 90);
         ops.AddRange(Button(d, back, d.BackLabel, 46));
