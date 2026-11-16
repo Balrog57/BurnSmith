@@ -21,7 +21,7 @@ public static class BdjSign
     const string Sha1 = "1.3.14.3.2.26", Sha1Rsa = "1.2.840.113549.1.1.5", RsaKey = "1.2.840.113549.1.1.1";
 
     /// <summary>Writes <paramref name="jar"/> with its entries, signed, and the CERTIFICATE folder of the disc in <paramref name="discRoot"/> (the folder holding BDMV).</summary>
-    public static void Write(string jar, IReadOnlyList<(string Name, byte[] Data)> entries, string discRoot)
+    public static void Write(string jar, IReadOnlyList<(string Name, byte[] Data)> entries, string discRoot, bool uhd = false)
     {
         // 1024-bit RSA with SHA-1: the profile the players of 2006 check, the one DVDFab's menus carry
         using var rootKey = RSA.Create(1024);
@@ -50,7 +50,7 @@ public static class BdjSign
             }
 
         var id = new byte[89]; // the length HD Cookbook's id.bdmv has
-        "BDID0200"u8.CopyTo(id);
+        (uhd ? "BDID0300"u8 : "BDID0200"u8).CopyTo(id);
         BinaryPrimitives.WriteUInt32BigEndian(id.AsSpan(40), OrgId);
         RandomNumberGenerator.Fill(id.AsSpan(44, 16)); // disc ID: a player keeps what it saves per disc under it
         foreach (var dir in new[] { "CERTIFICATE", @"CERTIFICATE\BACKUP" })

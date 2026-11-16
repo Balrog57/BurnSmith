@@ -71,7 +71,7 @@ Tout est dans [`docs/`](docs/README.md) :
 
 ## Reste à faire
 
-Le DVD et un Blu-ray 1080p à menu BD-J (Bright sur BD-RE, chapitres compris) ont été lus sur platine. Les prochains essais portent sur le Blu-ray 4K, le menu HDMV et le menu BD-J animé avec pop-up. Le [plan de production](docs/PLAN-PRODUCTION.md) détaille le parcours du premier disque, la reprise des conversions et la répartition d'une saison entre plusieurs disques.
+Les essais sur Panasonic ont validé le Blu-ray 1080p avec menu HDMV, le pop-up BD-J animé et la lecture UHD HDR10 avec menu HDMV ou BD-J. Le [plan de production](docs/PLAN-PRODUCTION.md) détaille ces essais et la validation Dolby Vision qui reste à faire.
 
 ## Licence
 

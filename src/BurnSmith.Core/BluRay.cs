@@ -1340,7 +1340,7 @@ public static class BluRay
 
         var entries = JarFiles(Assets.Find(@"bdj\menu.jar"));
         foreach (var f in Directory.EnumerateFiles(menuDir)) entries.Add((Path.GetFileName(f), File.ReadAllBytes(f)));
-        BdjSign.Write(Path.Combine(bdmv, "JAR", "00000.jar"), entries, job.OutDir);
+        BdjSign.Write(Path.Combine(bdmv, "JAR", "00000.jar"), entries, job.OutDir, job.Uhd);
         TitleLayout(bdmv, job.Titles.Count, job.Uhd ? Bdmv.HaviUhd1080 : job.Encode?.Hd720 == true ? Bdmv.HaviHd720 : Bdmv.HaviHd1080, intro);
     }
 
@@ -1404,7 +1404,7 @@ public static class BluRay
         var havi = old[(int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(old.AsSpan(8)) + 4 + 5] >> 4; // terminal info: length, font name, then the HAVi configuration
         var videos = Enumerable.Range(MoviePlaylist, IntroPlaylist - MoviePlaylist).TakeWhile(n => File.Exists(Path.Combine(bdmv, "PLAYLIST", $"{n:00000}.mpls"))).Count();
         File.Delete(jar); // read above; the signer writes a new file
-        BdjSign.Write(jar, [.. xlet, .. menu], discRoot);
+        BdjSign.Write(jar, [.. xlet, .. menu], discRoot, uhd: havi == Bdmv.HaviUhd1080);
         // the objects an earlier start left in MovieObject.bdmv stay there, unused
         if (layout) TitleLayout(bdmv, videos, havi, File.Exists(Path.Combine(bdmv, "PLAYLIST", $"{IntroPlaylist:00000}.mpls")));
         return true;

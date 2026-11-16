@@ -39,6 +39,7 @@ Pour chaque essai de disque, produire une ISO, contrôler sa structure avec `che
 | UHD HDR10 BD-J avec en-têtes `BDJO0300` et `BDID0300` | Les 8 800 secteurs correspondent à l'image. | Le menu ne démarre toujours pas sur le Panasonic. |
 | UHD HDR10 BD-J en First Playback | Les 8 800 secteurs correspondent à l'image. | Le Panasonic reste bloqué au démarrage et le menu ne s'affiche pas. |
 | UHD HDR10 BD-J en First Playback, profil 6 | Les 8 800 secteurs correspondent à l'image. | Marc confirme que le menu s'affiche et que Lecture lance la mire en HDR. Le retour manuel retrouve l'apparence initiale du menu. Au retour automatique, les couleurs diffèrent. Le mode HDR de l'écran à cet instant reste à confirmer. |
+| UHD HDR10 BD-J profil 6, navigation BurnSmith | Les 8 800 secteurs correspondent à l'image. | Marc confirme que le menu reste en SDR au démarrage et au retour automatique, avec les mêmes couleurs. La mire se lit en HDR. |
 
 Les ISO UHD sans menu et UHD HDMV ont le même flux multiplexé que le disque UHD BD-J. Les deux passent `check-disc` et décodent le film en 3840 × 2160 dans VLC.
 
@@ -48,7 +49,7 @@ La variante `BDID0300` change seulement les deux en-têtes de `CERTIFICATE/id.bd
 
 La variante de démarrage direct BD-J reprend `BDID0300` et change uniquement l'entrée First Playback d'`index.bdmv` et de sa sauvegarde. Elle lance le BDJO du menu directement et reproduit le blocage sur Panasonic. [Documentation de First Playback](https://bdedit.pel.hu/).
 
-Le passage du profil d'application de 1 à 6 débloque le démarrage direct BD-J sur Panasonic. La version d'application reste 1.0.0. La nouvelle variante rétablit uniquement l'entrée First Playback normale de BurnSmith. Elle donne un titre distinct au film et au retour automatique au menu. Dans VLC, le journal confirme le passage au titre du film puis le retour au titre du menu. L'apparence du menu au retour automatique reste à vérifier sur la platine. [Profil UHD documenté par Blu-Disc Studio](https://blu-disc.net/help/project_properties.general.htm).
+Le passage du profil d'application de 1 à 6 débloque le démarrage direct BD-J sur Panasonic. La version d'application reste 1.0.0. La dernière variante rétablit l'entrée First Playback de BurnSmith, avec des titres distincts pour le film et le menu. VLC confirme la transition de titre au retour automatique. Sur la platine, le menu retrouve ses couleurs d'origine et l'écran repasse en SDR. [Profil UHD documenté par Blu-Disc Studio](https://blu-disc.net/help/project_properties.general.htm).
 
 ## Clôture du projet
 

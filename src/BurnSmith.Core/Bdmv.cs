@@ -101,6 +101,7 @@ public static class Bdmv
     /// </summary>
     public static byte[] Bdjo(string initialClass, int haviConfig, string jar = "00000", uint orgId = BdjSign.OrgId, ushort appId = 0x4000)
     {
+        var uhd = haviConfig == HaviUhd1080;
         var terminal = new BinaryWriterBE();
         terminal.U32(10); terminal.Str("00000", 5);       // default font name (no font file needed: we draw images only)
         terminal.U8(haviConfig << 4); terminal.Zero(4);
@@ -114,7 +115,7 @@ public static class Bdmv
 
         var body = new BinaryWriterBE(); // application descriptor
         body.U16(0x1000);                                  // one profile
-        body.U16(1); body.U8(1); body.U8(0); body.U8(0); body.U8(0); // profile 1, version 1.0.0
+        body.U16(uhd ? 6 : 1); body.U8(1); body.U8(0); body.U8(0); body.U8(0); // application version 1.0.0
         body.U8(3);                                        // priority
         body.U8(0xd0);                                     // binding / visibility
         body.U16(0);                                       // no application names
@@ -143,7 +144,7 @@ public static class Bdmv
 
         var sections = new[] { terminal.ToArray(), cache.ToArray(), playlists.ToArray(), table.ToArray(), keys, files.ToArray() };
         var o = new BinaryWriterBE();
-        o.Str("BDJO0200", 8);
+        o.Str(uhd ? "BDJO0300" : "BDJO0200", 8);
         var addr = 48;
         foreach (var s in sections) { o.U32(addr); addr += s.Length; }
         o.Zero(48 - o.Length);

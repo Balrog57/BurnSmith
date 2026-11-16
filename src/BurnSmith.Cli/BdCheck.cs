@@ -221,8 +221,21 @@ static class BdCheck
         {
             Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=3840x2160:r=24:d=1", "-f", "lavfi", "-i", "sine=f=440:d=1", "-map", "0:v", "-map", "1:a",
                                "-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error", "-pix_fmt", "yuv420p10le", "-c:a", "ac3", F("uhd.mkv")]);
-            var s = Look(Stream(Bd("uhd", [new DiscTitle(F("uhd.mkv"))], new EncodeOptions(), uhd: true), 1));
+            var disc = Bd("uhd", [new DiscTitle(F("uhd.mkv"))], new EncodeOptions(), menu: new MenuDesign(), uhd: true);
+            var s = Look(Stream(disc, 1));
             Check("a 4K disc still copies its 10-bit HEVC source", s.PixFmt == "yuv420p10le", s.PixFmt);
+            foreach (var name in new[] { "00000.bdjo", "00001.bdjo" })
+            {
+                var bdjo = File.ReadAllBytes(Path.Combine(disc, "BDMV", "BDJO", name));
+                var applicationTable = (int)BinaryPrimitives.ReadUInt32BigEndian(bdjo.AsSpan(20));
+                Check($"4K BD-J {name}: version 0300, profile 6 and application version 1.0.0, including the backup",
+                    bdjo.AsSpan().StartsWith("BDJO0300"u8)
+                    && bdjo.AsSpan(applicationTable + 26, 6).SequenceEqual(new byte[] { 0, 6, 1, 0, 0, 0 })
+                    && bdjo.AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(disc, "BDMV", "BACKUP", "BDJO", name))));
+            }
+            var id = File.ReadAllBytes(Path.Combine(disc, "CERTIFICATE", "id.bdmv"));
+            Check("4K BD-J disc identifier uses version 0300, including the backup",
+                id.AsSpan().StartsWith("BDID0300"u8) && id.AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(disc, "CERTIFICATE", "BACKUP", "id.bdmv"))));
         });
         Part("3D side by side", () =>
         {
