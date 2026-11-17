@@ -1,6 +1,6 @@
 # Plan de production de BurnSmith
 
-Mis à jour le 16 novembre 2026 pour BurnSmith 1.0.36. **La création et la navigation des disques passent avant le travail sur l'interface d'authoring.** Le rapport « BurnSmith — ce qui manque, ce que les utilisateurs demandent, pistes d'amélioration » décrit la 1.0.27. Les pages 5 à 6 aident à faire le point sur les fonctions déjà livrées et les pages 9 à 10 sur le travail restant. Les propositions d'interface des pages 11 à 12 seront reprises quand les parcours de création auront passé leurs essais. Les essais actuels portent exclusivement sur des ISO dans VLC et PowerDVD. Le BD-RE est suspendu.
+Mis à jour le 17 novembre 2026 à partir de BurnSmith 1.0.36 et de la branche principale. **La création et la navigation des disques passent avant le travail sur l'interface d'authoring.** Le rapport « BurnSmith — ce qui manque, ce que les utilisateurs demandent, pistes d'amélioration » décrit la 1.0.27. Les pages 5 à 6 aident à faire le point sur les fonctions déjà livrées et les pages 9 à 10 sur le travail restant. Les propositions d'interface des pages 11 à 12 seront reprises quand les parcours de création auront passé leurs essais. Les essais actuels portent exclusivement sur des ISO dans VLC et PowerDVD. Le BD-RE est suspendu.
 
 ## Acquis
 
@@ -36,6 +36,8 @@ PowerDVD 24 a refusé les deux ISO UHD comme format non pris en charge. L'édite
 
 **Listes de lecture Blu-ray.** `check-disc` acceptait une liste `00001.mpls` réduite à son en-tête de huit octets. Il vérifie maintenant les limites des tables de lecture et de repères, ainsi que l'existence de l'élément visé par chaque repère. La suite `check-bd` couvre la liste tronquée et le repère qui vise un élément inexistant.
 
+**Repères Blu-ray hors clip.** Une copie de test avec un chapitre placé après la fin de son élément de lecture passait aussi `check-disc`. Le contrôle vérifie maintenant que chaque repère de chapitre est dans l'intervalle de l'élément référencé. `check-bd` rejette les repères placés juste avant le début ou juste après la fin. [Interprétation des repères dans libbluray](https://raw.githubusercontent.com/ShiftMediaProject/libbluray/master/src/libbluray/bdnav/navigation.c)
+
 **Démarrage et titres Blu-ray.** Une copie de l'UHD avec un objet HDMV de démarrage inexistant passait le contrôle de dossier et bloquait dans VLC avant le menu. Le contrôle vérifie maintenant les tables de `index.bdmv` et `MovieObject.bdmv`, ainsi que les cibles HDMV et BD-J de la première lecture, du menu principal et des titres. Dans VLC, une ISO Blu-ray 1080p BD-J neuve a enchaîné l'introduction, le menu, la lecture du film et le retour automatique. La commande Top Menu pendant la lecture a aussi rouvert le menu. [Index libbluray](https://raw.githubusercontent.com/ShiftMediaProject/libbluray/master/src/libbluray/bdnav/index_parse.c)
 
 **ISO HDMV 2D.** Le multiplexeur place des informations de découpe dans les clips vidéo et graphiques des menus HDMV. BurnSmith vérifie désormais la table `ProgramInfo_SS` de la vue dépendante avant de fabriquer un `.ssif`. La nouvelle ISO HDMV 2D est écrite par IMAPI, conserve ses clips de menu et ne contient plus de `.ssif`. L'essai MVC synthétique vérifie toujours l'assemblage des deux vues dans l'image. [Écriture des extensions CLPI dans tsMuxeR](https://github.com/justdan96/tsMuxer/blob/master/tsMuxer/tsPacket.cpp)
@@ -43,6 +45,8 @@ PowerDVD 24 a refusé les deux ISO UHD comme format non pris en charge. L'édite
 **Chapitre suivant dans VLC 3.0.24.** Les listes HDMV et BD-J 1080p contiennent les repères 0, 8 et 16 s et les boutons du disque ouvrent le chapitre de 8 s. Avec la mire à très bas débit, la lecture anticipée amène libbluray à signaler le deuxième chapitre alors que VLC affiche 0 ou 1 s. La commande « Suivant » incrémente ce numéro et lance le troisième chapitre. Avec une mire à environ 8 Mbit/s de même durée, la même commande atteint le repère de 8 s sur les deux ISO. Les repères produits par BurnSmith restent aux positions demandées. [Suivi des repères par libbluray](https://raw.githubusercontent.com/ShiftMediaProject/libbluray/master/src/libbluray/bluray.c) · [Commande Suivant de VLC 3.0.24](https://github.com/videolan/vlc/blob/3.0.24/src/input/input.c#L2111)
 
 **UHD HDR10+ sans menu.** L'ISO de la mire démarre directement dans VLC et produit des images décodées. FFprobe retrouve les métadonnées dynamiques SMPTE ST 2094-40 dans le flux gravable. Le rendu HDR10+ sur écran reste à vérifier. En mode navigation Blu-ray, VLC atteint la fin du titre et reste ouvert malgré `--play-and-exit`. Un Blu-ray SDR sans menu reproduit ce comportement. En lecture directe du titre (`--no-bluray-menu`), VLC quitte à la fin des deux ISO.
+
+**Tout lire.** Sur quatre nouvelles ISO, DVD PAL, Blu-ray HDMV, Blu-ray BD-J et UHD HDR10 BD-J, VLC a enchaîné les deux épisodes dans l'ordre et est revenu au menu après le deuxième. Le bonus est resté accessible depuis sa page. Les captures DVD et les journaux Blu-ray confirment le parcours.
 
 ## Ordre des corrections et critères de passage
 

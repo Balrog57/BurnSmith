@@ -308,6 +308,17 @@ static class BdCheck
             File.WriteAllBytes(playlist, brokenMark);
             Check("disc check rejects a chapter pointing to a nonexistent play item",
                 DiscCheck.Folder(disc).Any(p => p.Contains("00001.mpls") && p.Contains("élément de lecture inexistant")));
+            var firstItem = (int)BinaryPrimitives.ReadUInt32BigEndian(validPlaylist.AsSpan(8)) + 10;
+            var start = BinaryPrimitives.ReadUInt32BigEndian(validPlaylist.AsSpan(firstItem + 14));
+            var end = BinaryPrimitives.ReadUInt32BigEndian(validPlaylist.AsSpan(firstItem + 18));
+            validPlaylist.CopyTo(brokenMark, 0);
+            foreach (var (time, position) in new[] { (unchecked(start - 1), "before"), (unchecked(end + 1), "after") })
+            {
+                BinaryPrimitives.WriteUInt32BigEndian(brokenMark.AsSpan(marks + 10), time);
+                File.WriteAllBytes(playlist, brokenMark);
+                Check($"disc check rejects a chapter {position} its play item",
+                    DiscCheck.Folder(disc).Any(p => p.Contains("00001.mpls") && p.Contains("repère hors des limites")));
+            }
             File.WriteAllBytes(playlist, validPlaylist);
         });
         Part("3D side by side", () =>

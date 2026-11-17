@@ -44,19 +44,30 @@ public sealed record Mpls(List<Mpls.Item> Items, List<int> SubPathTypes, List<Mp
 
         var count = U16(b, list + 6);
         if (count == 0) return "liste de lecture MPLS vide";
+        var bounds = new (uint In, uint Out)[count];
         var item = list + 10;
         for (var i = 0; i < count; i++)
         {
             if (item > listEnd - 2) return $"élément de lecture {i + 1} manquant";
             var size = U16(b, item);
             if (size < 32 || size > listEnd - item - 2) return $"élément de lecture {i + 1} tronqué";
+            bounds[i] = (U32(b, item + 14), U32(b, item + 18));
             item += 2 + size;
         }
 
         var markCount = U16(b, marks + 4);
         if (markCount > (marksEnd - marks - 6) / 14) return "table des repères MPLS tronquée";
         for (int i = 0, mark = marks + 6; i < markCount; i++, mark += 14)
-            if (U16(b, mark + 2) >= count) return $"repère {i + 1} : élément de lecture inexistant";
+        {
+            var reference = U16(b, mark + 2);
+            if (reference >= count) return $"repère {i + 1} : élément de lecture inexistant";
+            if (b[mark + 1] != 1) continue;
+            var (start, end) = bounds[reference];
+            // Relative offsets preserve a clip's interval when the 45 kHz clock wraps.
+            var time = U32(b, mark + 4);
+            if (unchecked(time - start) > unchecked(end - start))
+                return $"chapitre {i + 1} : repère hors des limites de l'élément de lecture {reference + 1}";
+        }
         return null;
     }
 
