@@ -132,7 +132,9 @@
           <TextBlock Text="Vitesse de conversion (processeur)" Style="{StaticResource Label}"/>
           <ComboBox x:Name="SpeedBox" HorizontalAlignment="Stretch"/>
           <CheckBox x:Name="LosslessBox" Content="Son sans perte" Margin="0,12,0,0" Click="OnRefresh"
-                    ToolTip="Garde le son sans perte du fichier au lieu de le refaire en AC-3 : le TrueHD tel quel (avec le cœur AC-3 qu'un disque demande), le FLAC et le PCM en LPCM. Le DTS-HD est toujours copié tel quel. Prend plus de place sur le disque."/>
+                    ToolTip="Garde les pistes Blu-ray compatibles, dont le DTS-HD et le TrueHD complet avec sa piste AC-3 de secours. Quand le son doit être décodé, BurnSmith utilise le LPCM. Cela peut prendre plus de place."/>
+          <CheckBox x:Name="CopyEac3Box" Content="Conserver le Dolby Digital Plus (E-AC-3)" Margin="0,8,0,0" Click="OnRefresh"
+                    ToolTip="Copie le Dolby Digital Plus à 48 kHz quand les réglages le permettent. La lecture du Dolby Digital Plus autonome sur platine reste à vérifier. Une conversion en LPCM ou AC-3 ne conserve pas les objets Atmos."/>
           <TextBlock TextWrapping="Wrap" Opacity="0.65" Margin="0,12,0,0"
                      Text="« Adapter au disque » garde la vidéo telle quelle tant qu'elle tient sur le support, sinon la refait au débit qui remplit le disque. « Identique à la source » copie la vidéo si elle est déjà en H.264 1080p à 23,976 / 24 / 25 i/s, sinon la refait à qualité constante."/>
         </StackPanel>

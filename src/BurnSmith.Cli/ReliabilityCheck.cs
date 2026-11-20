@@ -73,6 +73,7 @@ static class ReliabilityCheck
         Directory.CreateDirectory(root);
         try
         {
+            Check("verification consumes partial reads and refuses a short or differing image", Imapi.CheckVerifyReads());
             var ffmpeg = Tools.Find("ffmpeg.exe");
             var clip = F("long.mkv");
             Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "color=s=64x64:r=24:d=3000", "-f", "lavfi", "-i", "sine=f=440:d=3000", "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "ac3", clip]);

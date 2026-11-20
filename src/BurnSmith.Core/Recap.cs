@@ -15,8 +15,8 @@ public static class Recap
         var copied = job.Titles.Select((t, i) => BluRay.CopiesVideo(job, t, sources[i], kbps)).ToList();
         // shortcut: speeds estimated from test builds on an NVIDIA GPU and a CPU; measure them if the minutes are far off
         double Speed() => job.Encode?.Gpu != false && BluRay.Nvenc.Value ? (job.Uhd ? 1.5 : 4) : job.Uhd ? 0.25 : 1;
-        var lossless = job.Encode?.Lossless == true;
-        return Lines(job.Titles, sources, copied, (a, t) => BluRay.BdAudio(a, t, job.Uhd, lossless), Speed, BluRay.EstimateGB(job, sources), job.CapacityGB,
+        var lossless = job.Encode?.Lossless != false;
+        return Lines(job.Titles, sources, copied, (a, t) => BluRay.BdAudio(a, t, job.Uhd, lossless, job.Encode?.CopyEac3 != false), Speed, BluRay.EstimateGB(job, sources), job.CapacityGB,
                      job.Menu != null); // forced subtitles follow the sound through the BD-J menu's player
     }
 

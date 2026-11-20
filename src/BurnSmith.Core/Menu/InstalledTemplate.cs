@@ -1144,6 +1144,11 @@ public sealed class InstalledTemplate
     /// <summary>Row width of the audio list: the BD-J menu draws its "active" dot a fixed distance from each row's left edge.</summary>
     public int MarkerOffset => (template.Child("setup")?.Child("audiolist")?.Child("title")?.Rect("frame_rect").W ?? 600) - MenuBuilder.MarkerSize - RowMarkerGap + MenuBuilder.FocusMargin;
 
+    // The marker rectangle supplies its size and its horizontal offset from the button's focus box.
+    internal (string Path, Box Bounds)? TrackMarker =>
+        common.Child("trackmarker") is { } node && Asset(node.Text) is { } image && node.Rect() is { W: > 0, H: > 0 } bounds
+            ? (image, bounds) : null;
+
     public MenuPage Settings(MenuDesign d, MenuContent c, int? activeAudio, int? activeSub, string id)
     {
         if (HasSetupPages) return SetupPage(d, c, activeAudio, activeSub, id);

@@ -133,6 +133,8 @@ public static class MenuBuilder
     /// <summary>Distance of the "active track" dot from the left edge of its button, as written to the BD-J menu file.</summary>
     public static int MarkerOffset(MenuDesign d) => Pack(d) is { HasSetupLists: true } p ? p.MarkerOffset : FocusMargin - MarkerSize - MarkerGap;
 
+    internal static (string Path, Box Bounds)? TrackMarker(MenuDesign d) => Pack(d)?.TrackMarker;
+
     /// <summary>Les pages de réglages de ce disque, celle où mène le bouton « Réglages » d'abord : une seule, <c>settings</c>, sauf pour un modèle à liste unique.</summary>
     public static List<string> SettingsIds(MenuDesign d, MenuContent c) => !c.HasSettings ? [] : Pack(d)?.SettingsIds(c) ?? ["settings"];
 

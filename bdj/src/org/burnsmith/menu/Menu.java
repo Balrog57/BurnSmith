@@ -12,6 +12,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.Hashtable;
 import java.util.StringTokenizer;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.Vector;
 
 import javax.media.Control;
@@ -31,6 +33,9 @@ import javax.tv.xlet.XletContext;
 import javax.tv.xlet.XletStateChangeException;
 
 import org.bluray.media.PlaybackControl;
+import org.bluray.media.PlaybackListener;
+import org.bluray.media.PlaybackMarkEvent;
+import org.bluray.media.PlaybackPlayItemEvent;
 import org.bluray.media.PrimaryAudioControl;
 import org.bluray.media.SubtitlingControl;
 import org.bluray.net.BDLocator;
@@ -53,8 +58,10 @@ import org.havi.ui.event.HRcEvent;
  *   size W H
  *   page ID BACKGROUND_IMAGE [MARKER_DX]   (MARKER_DX: this page's own marker offset, else the marker line's)
  *   button PAGE ID X Y W H FOCUS_IMAGE LEFT RIGHT UP DOWN ACTION [ARG1 [ARG2]]
+ *   focus-frames IMAGE IMAGE ...; focus-slot X Y W H (for the preceding button)
  *   marker IMAGE W H DX
  *   loop PLAYLIST
+ *   loop-return-mark INDEX  (jump back to mark 0 before the loop playlist finishes)
  *   playback menu|first CHAIN REWIND FIRST_PLAYLIST COUNT   (CHAIN, REWIND: 1 or 0; absent = menu, no chaining, back to the menu)
  *   defaults AUDIO SUB   (the audio / subtitle stream number the disc starts with; absent = 1 and 0, no subtitles)
  *   forced AUDIO SUB     (repeatable: with subtitles off and that audio stream playing, subtitle stream SUB is shown, a forced track the menu does not list)
@@ -74,13 +81,14 @@ import org.havi.ui.event.HRcEvent;
  * With "loop", a short playlist plays behind the menu and starts again when it ends; the page images are then transparent overlays
  * (the graphics plane is cleared before each paint, or moved focus frames would stay on screen).
  */
-public class Menu implements Xlet, UserEventListener, ControllerListener {
+public class Menu implements Xlet, UserEventListener, ControllerListener, PlaybackListener {
 
     private static class Button {
         String id, left, right, up, down, action, arg;
         int x, y, w, h, n1, n2;
         String focusName;
         Image focus;
+        int motionX, motionY, motionW, motionH;
     }
 
     private static class Page {
@@ -98,7 +106,11 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             if (p == null) return;
             Image bg = p.bg, hl = b == null ? null : b.focus; // read once: show() frees the previous page's pictures while this may run
             if (bg != null) g.drawImage(bg, 0, 0, this);
-            if (hl != null) g.drawImage(hl, b.x, b.y, this);
+            Image[] frames = focusFrames;
+            if (b != null && b.motionW > 0 && frames != null) {
+                int frame = (int) ((System.currentTimeMillis() / 100) % frames.length);
+                g.drawImage(frames[frame], b.motionX, b.motionY, b.motionW, b.motionH, this);
+            } else if (hl != null) g.drawImage(hl, b.x, b.y, this);
             if (marker == null) return;
             for (int i = 0; i < p.buttons.size(); i++) {
                 Button m = (Button) p.buttons.elementAt(i);
@@ -112,14 +124,22 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private XletContext ctx;
     private HScene scene;
     private View view;
-    private Player player, loopPlayer;
+    private Player player;
+    private volatile Player loopPlayer;
+    private volatile PlaybackControl loopControl;
     private int pendingMark = -1; // chapter to skip to once the player starts (-1: none)
     private int loopPlaylist; // menu video playing behind the pages, 0 = none
+    private int loopReturnMark = -1;
+    private volatile long nextLoopJump;
     private final Hashtable pages = new Hashtable();
     private Page firstPage, page;
     /** Button of the first page the viewer last started something from, so the menu opens on it again (kept in GPR108). */
     private int lastButton = -1;
-    private Button focus;
+    private volatile Button focus;
+    private final Vector focusFrameNames = new Vector();
+    private volatile Image[] focusFrames;
+    private Timer focusTimer;
+    private boolean focusActive;
     private int width = 1920, height = 1080;
     private boolean listening;
     private int audio = 1, sub = 0; // current choice: audio stream number, subtitle stream number (0 = off)
@@ -151,6 +171,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     }
 
     public void startXlet() throws XletStateChangeException {
+        setFocusActive(true);
         // decoding the images can take a while: keep the xlet thread free
         new Thread() {
             public void run() {
@@ -164,9 +185,11 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     }
 
     public void pauseXlet() {
+        setFocusActive(false);
     }
 
     public void destroyXlet(boolean unconditional) throws XletStateChangeException {
+        setFocusActive(false);
         stopListening();
         stopLoop();
         closePlayer();
@@ -184,6 +207,18 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         MediaTracker tracker = new MediaTracker(view);
         marker = load(markerName, tracker, 0);
         tracker.waitForAll();
+        if (focusFrameNames.size() > 1 && focusFrames == null) {
+            try {
+                Image[] frames = new Image[focusFrameNames.size()];
+                for (int i = 0; i < frames.length; i++)
+                    frames[i] = load((String) focusFrameNames.elementAt(i), tracker, i + 1);
+                tracker.waitForAll();
+                focusFrames = frames;
+                updateFocusTimer();
+            } catch (Exception e) {
+                log("animated focus unavailable: " + e);
+            }
+        }
         // the pages are decoded one at a time, when shown (see pictures): all of them at once (~8 MB each at 1920x1080) filled the player's
         // image memory, and the pages decoded last stayed empty on screen
         lastButton = readGpr(108) - 1; // the register holds index + 1, so 0 means "nothing remembered"
@@ -202,6 +237,26 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             play(title, mark);
         } else if (startFirst && titleCount > 0 && firstPlayback()) startSequence();
         else showMenu();
+    }
+
+    private synchronized void setFocusActive(boolean active) {
+        focusActive = active;
+        updateFocusTimer();
+    }
+
+    private synchronized void updateFocusTimer() {
+        if (!focusActive && focusTimer != null) {
+            focusTimer.cancel();
+            focusTimer = null;
+        }
+        if (!focusActive || focusFrames == null || focusTimer != null) return;
+        focusTimer = new Timer(true);
+        focusTimer.schedule(new TimerTask() {
+            public void run() {
+                Button b = focus;
+                if (b != null && b.motionW > 0 && scene.isVisible()) view.repaint();
+            }
+        }, 0, 100);
     }
 
     private int psr(int n) {
@@ -232,6 +287,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         if (playlist != videoTitle && menuTitle > 1 && playlist >= 1 && playlist < menuTitle) {
             writeGpr(GPR_MARK, mark + 1);
             writeGpr(GPR_END, end);
+            if (loopReturnMark >= 0) stopLoop(); // retire the old player's seek requests before selecting the film title
             if (selectTitle(playlist)) return;
         }
         nextPlaylist = end > playlist + 1 ? playlist + 1 : 0;
@@ -528,6 +584,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
         if (loopPlaylist <= 0 || loopPlayer != null) return;
         try {
             BDLocator loc = new BDLocator(null, -1, loopPlaylist);
+            nextLoopJump = 0;
             loopPlayer = Manager.createPlayer(new MediaLocator(loc.toExternalForm()));
             loopPlayer.addControllerListener(this);
             loopPlayer.start();
@@ -541,6 +598,12 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private void stopLoop() {
         Player p = loopPlayer;
         loopPlayer = null;
+        PlaybackControl control = loopControl;
+        loopControl = null;
+        if (control != null) {
+            try { control.removePlaybackControlListener(this); }
+            catch (Throwable ignored) { }
+        }
         if (p == null) return;
         try {
             p.removeControllerListener(this);
@@ -566,7 +629,17 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     public void controllerUpdate(ControllerEvent e) {
         Controller from = e.getSourceController();
         if (from != null && from == loopPlayer) {
-            if (e instanceof EndOfMediaEvent) {
+            if (e instanceof StartEvent && loopReturnMark >= 0 && loopControl == null) {
+                try {
+                    Control control = from.getControl("org.bluray.media.PlaybackControl");
+                    if (control instanceof PlaybackControl && from == loopPlayer) {
+                        loopControl = (PlaybackControl) control;
+                        loopControl.addPlaybackControlListener(this);
+                    }
+                } catch (Throwable t) {
+                    log("menu loop mark unavailable: " + t);
+                }
+            } else if (e instanceof EndOfMediaEvent) {
                 log("loop restarts");
                 stopLoop();
                 startLoop();
@@ -586,6 +659,25 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
             else finished(e instanceof EndOfMediaEvent);
         }
     }
+
+    public void markReached(PlaybackMarkEvent event) {
+        PlaybackControl control = loopControl;
+        Player loop = loopPlayer;
+        if (loop == null || control == null || event.getSource() != control || event.getMark() != loopReturnMark) return;
+        long now = System.currentTimeMillis();
+        if (now < nextLoopJump) return;
+        try {
+            // Read-ahead can report the same mark again as soon as the seek refills the buffers.
+            double seconds = loop.getDuration().getSeconds();
+            nextLoopJump = now + (seconds > 0 && seconds <= 1801 ? (long) (seconds * 400) : 1000);
+            control.skipToMark(0);
+            log("menu loop jumped to mark 0");
+        } catch (Throwable t) {
+            log("menu loop jump failed: " + t);
+        }
+    }
+
+    public void playItemReached(PlaybackPlayItemEvent event) { }
 
     /** The chapter asked for, once the playlist plays. A refusal only costs the chapter: the film plays from its start. */
     private void skipToChapter(Player p) {
@@ -663,6 +755,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
     private void parse() throws Exception {
         InputStream in = Menu.class.getResourceAsStream("/menu.txt");
         BufferedReader r = new BufferedReader(new InputStreamReader(in, "UTF-8"));
+        Button last = null;
         for (String line; (line = r.readLine()) != null;) {
             line = line.trim();
             if (line.length() == 0 || line.charAt(0) == '#') continue;
@@ -699,6 +792,16 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
                 popupKey = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("loop")) {
                 loopPlaylist = Integer.parseInt(t.nextToken());
+            } else if (cmd.equals("loop-return-mark")) {
+                loopReturnMark = Integer.parseInt(t.nextToken());
+            } else if (cmd.equals("focus-frames")) {
+                while (t.hasMoreTokens()) focusFrameNames.addElement(t.nextToken());
+            } else if (cmd.equals("focus-slot")) {
+                if (last == null) throw new Exception("menu.txt: focus-slot without a button");
+                last.motionX = Integer.parseInt(t.nextToken());
+                last.motionY = Integer.parseInt(t.nextToken());
+                last.motionW = Integer.parseInt(t.nextToken());
+                last.motionH = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("page")) {
                 Page p = new Page();
                 p.id = t.nextToken();
@@ -730,6 +833,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener {
                 }
                 if (t.hasMoreTokens()) b.n2 = Integer.parseInt(t.nextToken());
                 p.buttons.addElement(b);
+                last = b;
             } else {
                 throw new Exception("menu.txt: unknown directive " + cmd);
             }

@@ -5,7 +5,7 @@ namespace BurnSmith.Core;
 /// <summary><see cref="Index"/> counts audio streams of the source file only (ffmpeg's 0:a:N), not all streams. <see cref="SampleRate"/>, <see cref="Kbps"/> (average bit rate): 0 when the file does not say.
 /// <see cref="Lossless"/>: TrueHD, DTS-HD Master Audio, FLAC, PCM... (what "Son sans perte" keeps whole); <see cref="Bits"/>: its sample size, 0 = unknown.
 /// <see cref="File"/>: a sound kept in a file of its own (a dub found apart), its first audio stream; such a track is numbered after the video's own.</summary>
-public sealed record AudioTrack(int Index, string Codec, int Channels, string Lang, string Title, int SampleRate = 48000, int Kbps = 0, bool Lossless = false, int Bits = 0, string? File = null)
+public sealed record AudioTrack(int Index, string Codec, int Channels, string Lang, string Title, int SampleRate = 48000, int Kbps = 0, bool Lossless = false, int Bits = 0, string? File = null, bool DiscEac3 = false)
 {
     public string Name => $"{Languages.Display(Lang, Title)} {Languages.ChannelLayout(Channels)}".Trim();
 
@@ -28,7 +28,7 @@ public sealed record AudioTrack(int Index, string Codec, int Channels, string La
         var lossless = codec is "truehd" or "mlp" or "flac" or "alac" || codec.StartsWith("pcm_", StringComparison.Ordinal) || Text("profile") == "DTS-HD MA";
         var bits = int.TryParse(Text("bits_per_raw_sample"), out var raw) && raw > 0 ? raw : int.TryParse(Text("bits_per_sample"), out var held) ? held : 0;
         return new AudioTrack(0, codec, int.TryParse(Text("channels"), out var c) ? c : 0, lang, Path.GetFileNameWithoutExtension(file),
-                              int.TryParse(Text("sample_rate"), out var hz) ? hz : 0, int.TryParse(Text("bit_rate"), out var bps) ? bps / 1000 : 0, lossless, bits, file);
+                              int.TryParse(Text("sample_rate"), out var hz) ? hz : 0, int.TryParse(Text("bit_rate"), out var bps) ? bps / 1000 : 0, lossless, bits, file, DiscEac3: codec == "eac3" && DiscDolbyDigitalPlus.Probe(file, 0));
     }
 }
 

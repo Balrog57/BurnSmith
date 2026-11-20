@@ -5,12 +5,12 @@ namespace BurnSmith.Core;
 
 /// <summary>
 /// A Blu-ray playlist (.mpls) as read: its play items with the streams they offer (STN table: video, audio, PG, IG, in the order the disc's
-/// commands number them), its sub-paths and its marks. Times are the clip's 45 kHz clock. Read only; tsMuxeR writes the playlists BurnSmith makes.
+/// commands number them), its sub-paths and its marks. Times are the clip's 45 kHz clock. tsMuxeR writes the base playlists.
 /// </summary>
 public sealed record Mpls(List<Mpls.Item> Items, List<int> SubPathTypes, List<Mpls.Mark> Marks)
 {
     /// <summary>One stream of an STN table: PID, coding type (0x1B H.264, 0x86 DTS-HD MA, 0x90 PG...), language ("" for video), video rate code (0 otherwise).</summary>
-    public sealed record Stream(int Pid, int Coding, string Lang, int Rate = 0);
+    public sealed record Stream(int Pid, int Coding, string Lang, int Rate = 0, int EntryType = 1);
     public sealed record Item(string Clip, uint In, uint Out, List<Stream> Video, List<Stream> Audio, List<Stream> Pg, List<Stream> Ig)
     {
         public double Seconds => (Out - In) / 45000.0;
@@ -20,6 +20,8 @@ public sealed record Mpls(List<Mpls.Item> Items, List<int> SubPathTypes, List<Mp
 
     public double Seconds => Items.Sum(i => i.Seconds);
     public List<Mark> Chapters => [.. Marks.Where(m => m.Type == 1)];
+
+    internal const int MenuLoopReturnMark = 1;
 
     static int U16(byte[] b, int o) => BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(o));
     static uint U32(byte[] b, int o) => BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(o));
@@ -73,6 +75,57 @@ public sealed record Mpls(List<Mpls.Item> Items, List<int> SubPathTypes, List<Mp
 
     public static Mpls Read(string file) => Read(File.ReadAllBytes(file));
 
+    /// <summary>Repeats the same menu clip without restarting its playlist. Mark 1 returns to mark 0 before the last items finish.</summary>
+    internal static byte[] RepeatMenuClip(byte[] source)
+    {
+        if (StructuralProblem(source) is { } problem) throw new InvalidDataException(problem);
+        var list = (int)U32(source, 8);
+        var itemAt = list + 10;
+        var itemLength = U16(source, itemAt) + 2;
+        if (U16(source, list + 6) != 1 || U16(source, list + 8) != 0
+            || (source[itemAt + 12] & 0x10) != 0 || U32(source, itemAt + 14) >= U32(source, itemAt + 18))
+            throw new InvalidDataException("Boucle BD-J : un clip simple, sans sous-chemin, est attendu.");
+
+        var extensionAt = U32(source, 16);
+        var oldMarks = (int)U32(source, 12);
+        if (extensionAt != 0 && (extensionAt < oldMarks + 4 + U32(source, oldMarks) || extensionAt > source.Length - 24
+            || source[(int)extensionAt + 11] != 1 || U32(source, (int)extensionAt + 12) != 0x00030005))
+            throw new InvalidDataException("Boucle BD-J : extension MPLS inconnue ou invalide.");
+        // UHD static metadata describes the video stream, which all the items reuse.
+        var extension = extensionAt == 0 ? ReadOnlySpan<byte>.Empty : source.AsSpan((int)extensionAt);
+
+        const int returnItem = 3, items = 6, marks = 2;
+        var markTable = itemAt + itemLength * items;
+        var marksEnd = markTable + 6 + marks * 14;
+        var result = new byte[marksEnd + extension.Length];
+        source.AsSpan(0, itemAt).CopyTo(result);
+        BinaryPrimitives.WriteUInt32BigEndian(result.AsSpan(12), (uint)markTable);
+        BinaryPrimitives.WriteUInt32BigEndian(result.AsSpan(list), (uint)(markTable - list - 4));
+        BinaryPrimitives.WriteUInt16BigEndian(result.AsSpan(list + 6), items);
+        for (var i = 0; i < items; i++)
+        {
+            var item = result.AsSpan(itemAt + i * itemLength, itemLength);
+            source.AsSpan(itemAt, itemLength).CopyTo(item);
+            if (i > 0) item[12] = (byte)((item[12] & 0xf0) | 5);
+        }
+        BinaryPrimitives.WriteUInt32BigEndian(result.AsSpan(markTable), 2 + marks * 14);
+        BinaryPrimitives.WriteUInt16BigEndian(result.AsSpan(markTable + 4), marks);
+        for (var i = 0; i < marks; i++)
+        {
+            var mark = result.AsSpan(markTable + 6 + i * 14, 14);
+            mark[1] = 1;
+            BinaryPrimitives.WriteUInt16BigEndian(mark[2..], i == MenuLoopReturnMark ? (ushort)returnItem : (ushort)0);
+            source.AsSpan(itemAt + 14, 4).CopyTo(mark[4..]);
+            BinaryPrimitives.WriteUInt16BigEndian(mark[8..], ushort.MaxValue);
+        }
+        if (!extension.IsEmpty)
+        {
+            BinaryPrimitives.WriteUInt32BigEndian(result.AsSpan(16), (uint)marksEnd);
+            extension.CopyTo(result.AsSpan(marksEnd));
+        }
+        return result;
+    }
+
     public static Mpls Read(byte[] b)
     {
         if (b.Length < 20 || Encoding.ASCII.GetString(b, 0, 4) != "MPLS") throw new InvalidDataException("not a Blu-ray playlist (MPLS)");
@@ -118,7 +171,7 @@ public sealed record Mpls(List<Mpls.Item> Items, List<int> SubPathTypes, List<Mp
                     0x92 => Encoding.ASCII.GetString(b, a + 2, 3),
                     _ => "",
                 };
-                group.Add(new Stream(pid, coding, lang, coding is 0x1B or 0x02 or 0xEA or 0x24 ? b[a + 1] & 15 : 0));
+                group.Add(new Stream(pid, coding, lang, coding is 0x1B or 0x02 or 0xEA or 0x24 ? b[a + 1] & 15 : 0, type));
                 r += 1 + b[r];
             }
             groups.Add(group);

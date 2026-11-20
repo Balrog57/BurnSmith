@@ -17,7 +17,7 @@ namespace BurnSmith.Core;
 public static class DamageScan
 {
     /// <summary>A file of the disc: where its bytes are in <see cref="Source"/> (At -1 = a sparse extent, zeros).</summary>
-    sealed record Entry(string Name, string Source, long Size, List<(long At, long Length)> Parts, bool InImage);
+    internal sealed record Entry(string Name, string Source, long Size, List<(long At, long Length)> Parts, bool InImage, byte[]? Embedded = null);
 
     sealed class Found(Entry e)
     {
@@ -451,9 +451,10 @@ public static class DamageScan
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
-    static Stream Open(Entry e) => new Extents(new FileStream(e.Source, FileMode.Open, FileAccess.Read, FileShare.Read, 1, FileOptions.SequentialScan), e.Parts);
+    internal static Stream Open(Entry e) => e.Embedded is { } data ? new MemoryStream(data, writable: false)
+        : new Extents(new FileStream(e.Source, FileMode.Open, FileAccess.Read, FileShare.Read, 1, FileOptions.SequentialScan), e.Parts);
 
-    static byte[] ReadAll(Entry e) { using var s = Open(e); var b = new byte[e.Size]; ReadFull(s, b); return b; }
+    internal static byte[] ReadAll(Entry e) { using var s = Open(e); var b = new byte[e.Size]; ReadFull(s, b); return b; }
 
     static int ReadFull(Stream s, byte[] b)
     {
@@ -475,7 +476,7 @@ public static class DamageScan
     static uint Be32(byte[] b, int o) => BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(o));
 
     /// <summary>The files of a UDF image (ECMA-167 / OSTA UDF 1.02 to 2.60: physical, sparable and metadata partitions), with where their bytes are.</summary>
-    static List<Entry> UdfFiles(string iso)
+    internal static List<Entry> UdfFiles(string iso)
     {
         using var f = new FileStream(iso, FileMode.Open, FileAccess.Read, FileShare.Read);
         byte[] Sector(long n) { var b = new byte[S]; f.Position = n * S; f.ReadExactly(b); return b; }
@@ -536,7 +537,7 @@ public static class DamageScan
         {
             var fe = Block(part, lbn);
             var parts = Allocation(fe, part, Map, Read, out var size, out var embedded);
-            if (fe[27] is not (4 or 13)) { files.Add(new Entry(path, iso, size, parts, true)); return; }
+            if (fe[27] is not (4 or 13)) { files.Add(new Entry(path, iso, size, parts, true, embedded)); return; }
             if (depth > 16) return;
             byte[] data;
             if (embedded != null) data = embedded;

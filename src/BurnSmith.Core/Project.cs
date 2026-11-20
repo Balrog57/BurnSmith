@@ -23,7 +23,7 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
     /// goes at the slowest speed offered (<see cref="Iso.Speeds"/>). On a DVD only the sound applies.
     /// </summary>
     public static (List<DiscTitle> Titles, EncodeOptions Encode, bool Hdmv) Compatible(IEnumerable<DiscTitle> titles, EncodeOptions encode, Func<string, SourceInfo> probe) =>
-        ([.. titles.Select(t => t.Ac3First(probe(t.Video)))], encode with { Lossless = false }, true);
+        ([.. titles.Select(t => t.Ac3First(probe(t.Video)))], encode with { Lossless = false, CopyEac3 = false }, true);
 
     /// <summary>Known to fail on players, said before the job starts (null = nothing): a 100 GB disc (more than a BD-66 holds).</summary>
     public static string? Warning(string kind, double usableGb) =>

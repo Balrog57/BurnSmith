@@ -4,7 +4,7 @@ dist/
 .vs/
 *.user
 *.iso
-
+BluRay_logos/
 # xlet compiler output (assets/bdj/menu.jar is the committed build)
 bdj/build/
 

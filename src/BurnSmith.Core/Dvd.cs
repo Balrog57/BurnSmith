@@ -198,7 +198,7 @@ public static class Dvd
             var withSubs = Path.Combine(work, $"movie{number}_sub.mpg");
             try
             {
-                AddSubtitles(movie, withSubs, subs, pal, wide, work, log, job.Subtitles);
+                AddSubtitles(movie, withSubs, subs, src.Duration, pal, wide, work, log, job.Subtitles);
                 movie = withSubs;
                 carried = subs.Select(s => s.Track).ToList();
             }
@@ -220,7 +220,7 @@ public static class Dvd
     /// One ffmpeg pass that adds a subtitle stream per entry, in order (0x20, 0x21...): each track's cues drawn by <see cref="DvdSubtitles"/> into
     /// subpictures, written as VobSub, copied into the movie. Its timestamps are kept (-copyts), the cues being moved by the movie's first one.
     /// </summary>
-    static void AddSubtitles(string movie, string output, List<(SubtitleTrack Track, string File)> subs, bool pal, bool wide, string work, Action<string> log, SubtitleStyle? style = null)
+    static void AddSubtitles(string movie, string output, List<(SubtitleTrack Track, string File)> subs, double seconds, bool pal, bool wide, string work, Action<string> log, SubtitleStyle? style = null)
     {
         log("subtitles: render + mux");
         var name = Path.GetFileNameWithoutExtension(movie);
@@ -229,7 +229,14 @@ public static class Dvd
         var args = new List<string> { "-y", "-v", "warning", "-i", movie };
         for (var k = 0; k < subs.Count; k++)
         {
-            var pictures = subs[k].Track.IsPicture ? DvdSubtitles.PgsPictures(subs[k].File, 720, h, log) : DvdSubtitles.Pictures(subs[k].File, 720, h, style);
+            List<Spu.Picture> pictures = subs[k].Track.Index < 0 ? []
+                : subs[k].Track.IsPicture ? DvdSubtitles.PgsPictures(subs[k].File, 720, h, log) : DvdSubtitles.Pictures(subs[k].File, 720, h, style);
+            // Aligned tracks without a cue need one transparent SPU so the IFO does not advertise an empty stream.
+            if (pictures.Count == 0)
+            {
+                var at = Math.Min(0.5, seconds / 2);
+                pictures.Add(new Spu.Picture(at, at + 0.08, new byte[4], 2, 2));
+            }
             var idx = Path.Combine(work, $"{name}_s{k + 1}.idx");
             Spu.WriteVobSub(idx, pictures, 720, h, Languages.Iso1(subs[k].Track.Lang), DvdSubtitles.Colors(style), [0, 1, 2, 3], [0, 15, 15, 15], false, start);
             args.AddRange(["-i", idx]);

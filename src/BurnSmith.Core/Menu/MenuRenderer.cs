@@ -516,6 +516,10 @@ public static partial class MenuRenderer
     public static byte[] Marker(MenuDesign d, int size, double scale = 1) =>
         Encode(new PngBitmapEncoder(), size, size, dc => dc.DrawEllipse(new SolidColorBrush(Col(d.Accent)), null, new Point(size / 2.0, size / 2.0), size / 2.0, size / 2.0), scale);
 
+    internal static byte[] Marker(string path, Box bounds, double scale) =>
+        Encode(new PngBitmapEncoder(), bounds.W, bounds.H,
+            dc => dc.DrawImage(Load(path), new Rect(0, 0, bounds.W, bounds.H)), scale);
+
     /// <summary>A picture made here (<see cref="Focus"/>, <see cref="Marker"/>) as straight ARGB pixels, one number each: what a native Blu-ray menu's graphics are made from.</summary>
     public static (uint[] Argb, int W, int H) Pixels(byte[] png)
     {

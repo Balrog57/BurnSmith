@@ -94,7 +94,7 @@ if (a.Count >= 2 && a[0] == "dump")
     return 0;
 }
 
-// burnsmith check-disc <disc folder | .iso [folder it was made from]> : the structure of a finished disc (files present, headers, whole packets, IFO sizes), without a player; 1 when something is wrong
+// burnsmith check-disc <disc folder | .iso [source folder]> : disc structure and Blu-ray chapter/subtitle menu targets, without a player; 1 when something is wrong
 if (a.Count >= 2 && a[0] == "check-disc")
 {
     var found = Directory.Exists(a[1]) ? DiscCheck.Folder(a[1]) : DiscCheck.Image(a[1], a.Count > 2 ? a[2] : null);
@@ -325,6 +325,29 @@ if (a.Count >= 1 && a[0] == "check-highlights")
         var focus = Path.Combine(hlBdj, $"hl_root_play.png");
         Check("le menu Blu-ray reçoit l'image du style choisi, libellé compris", File.Exists(focus) && new FileInfo(focus).Length > 0
               && !File.ReadAllBytes(focus).SequenceEqual(hlShots["box"]));
+
+        var firstFrame = Path.Combine(hlBdj, "source1.png");
+        var secondFrame = Path.Combine(hlBdj, "source2.png");
+        File.WriteAllBytes(firstFrame, hlShots["box"]);
+        File.WriteAllBytes(secondFrame, hlShots["underline"]);
+        styled.FocusFrames = [firstFrame, secondFrame];
+        var animatedPage = hlPageRoot with { Buttons = [hlBtn with { FocusSlot = new Box(90, 120, 30, 60) }] };
+        var animatedDir = Path.Combine(hlBdj, "animated");
+        MenuFiles.WriteBdj(styled, [animatedPage], animatedDir, scale: 2.0 / 3);
+        var animation = File.ReadAllText(Path.Combine(animatedDir, "menu.txt"));
+        Check("le curseur BD-J embarque ses images et sa position à l'échelle de la page",
+              animation.Contains("focus-frames focus_frame_0.png focus_frame_1.png")
+              && animation.Contains("focus-slot 60 80 20 40")
+              && File.ReadAllBytes(Path.Combine(animatedDir, "focus_frame_0.png")).SequenceEqual(hlShots["box"])
+              && File.ReadAllBytes(Path.Combine(animatedDir, "focus_frame_1.png")).SequenceEqual(hlShots["underline"]));
+        File.WriteAllText(secondFrame, "PNG illisible");
+        var fallbackDir = Path.Combine(hlBdj, "fallback");
+        var warnings = new List<string>();
+        MenuFiles.WriteBdj(styled, [animatedPage], fallbackDir, log: warnings.Add);
+        var fallback = File.ReadAllText(Path.Combine(fallbackDir, "menu.txt"));
+        Check("une image animée illisible garde la surbrillance fixe et les commandes du menu",
+              !fallback.Contains("focus-frames") && !fallback.Contains("focus-slot") && fallback.Contains("button root play")
+              && File.Exists(Path.Combine(fallbackDir, "hl_root_play.png")) && warnings.Any(w => w.Contains("surbrillance fixe")));
     }
     finally { try { Directory.Delete(hlBdj, true); } catch (IOException) { } }
 
@@ -513,6 +536,16 @@ if (a.Count >= 1 && a[0] == "check-elements")
           !taken.ShowPreview && taken.Elements.Count == 5 && taken.Elements[^1].Text == "à moi" && taken.Elements.Count(e => e.OfLook && e.Page == "root" && MenuRenderer.IsSvgText(e.Image ?? "")) == 2);
     taken.TakeLook(new MenuDesign());
     Check("another look takes Métal's fades and veils away and leaves the user's text", taken.Elements is [{ Text: "à moi" }] && taken.ShowPreview);
+    var animatedTemplate = new MenuDesign { FocusFrames = ["a.png", "b.png"] };
+    taken.TakeLook(animatedTemplate);
+    var edited = taken.Clone();
+    if (edited.FocusFrames is { } frames) frames[0] = "changed.png";
+    Check("applying an animated template carries independent frames into the editor",
+          taken.FocusFrames is ["a.png", "b.png"] && !ReferenceEquals(taken.FocusFrames, animatedTemplate.FocusFrames)
+          && edited.FocusFrames is ["changed.png", "b.png"]);
+    taken.TakeLook(new MenuDesign());
+    Check("applying a static template clears the previous animation", taken.FocusFrames == null);
+
     var fadePage = MenuBuilder.Build(metal.Clone(), new MenuContent(1, null, [null, null], null, ["Français"], [])).First(p => p.Id == "root");
     var fadePx = MenuRenderer.Sta(() => new System.Windows.Media.Imaging.JpegBitmapDecoder(new MemoryStream(MenuRenderer.Background(new MenuDesign { Top = "#FFFFFF", Bottom = "#FFFFFF", Elements = metal.Elements, Name = "" }, fadePage with { Ops = fadePage.Ops.Where(o => o is Image).ToList() })),
         System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0]);
@@ -1292,16 +1325,30 @@ if (a.Count >= 1 && a[0] == "check-edit")
         Check("« Son sans perte »: a TrueHD is kept, FLAC becomes LPCM, a TrueHD made louder or cut too (it is decoded), DTS-HD is copied as ever; without the option, AC-3 as before",
               BluRay.BdAudio(hd, new DiscTitle("x"), false, true) == "truehd" && BluRay.BdAudio(flac, new DiscTitle("x"), false, true) == "lpcm"
               && BluRay.BdAudio(hd, new DiscTitle("x", Volume: 120), false, true) == "lpcm" && BluRay.BdAudio(hd, new DiscTitle("x", Start: 60), false, true) == "lpcm"
-              && BluRay.BdAudio(dtsMa, new DiscTitle("x"), false, true) == "dts" && BluRay.BdAudio(hd, new DiscTitle("x"), false) == "ac3" && BluRay.BdAudio(flac, new DiscTitle("x"), false) == "ac3"
-              && BluRay.BdAudio(new AudioTrack(3, "aac", 2, "fre", ""), new DiscTitle("x"), false, true) == "ac3");
+              && BluRay.BdAudio(dtsMa, new DiscTitle("x"), false) == "dts" && BluRay.BdAudio(dtsMa with { SampleRate = 96000 }, new DiscTitle("x"), false) == "dts"
+              && BluRay.BdAudio(hd, new DiscTitle("x"), false) == "truehd" && BluRay.BdAudio(flac, new DiscTitle("x"), false) == "lpcm"
+              && BluRay.BdAudio(hd, new DiscTitle("x"), false, lossless: false) == "ac3"
+              && BluRay.BdAudio(new AudioTrack(3, "aac", 2, "fre", ""), new DiscTitle("x"), false) == "lpcm");
         var ac3 = new AudioTrack(0, "ac3", 6, "eng", "");
         var louder = new DiscTitle("x", AudioVolume: new Dictionary<int, double> { [0] = -3, [1] = 6.5 });
         Check("a track's volume: a dB filter for that track only, and an AC-3 that was copied is made again (a TrueHD kept becomes LPCM); 0 dB changes nothing",
               louder.AudioVolumeFilter(0) == "volume=-3dB" && louder.AudioVolumeFilter(1) == "volume=6.5dB" && louder.AudioVolumeFilter(2) == ""
               && new DiscTitle("x", AudioVolume: new Dictionary<int, double> { [0] = 0 }).AudioVolumeFilter(0) == ""
               && BluRay.BdAudio(hd, louder, false, true) == "lpcm" && BluRay.BdAudio(hd, new DiscTitle("x", AudioVolume: new Dictionary<int, double> { [1] = 3 }), false, true) == "truehd"
-              && BluRay.BdAudio(new AudioTrack(0, "dts", 6, "eng", ""), louder, false) == "ac3" && BluRay.BdAudio(new AudioTrack(0, "dts", 6, "eng", ""), new DiscTitle("x"), false) == "dts");
+              && BluRay.BdAudio(new AudioTrack(0, "dts", 6, "eng", ""), louder, false) == "lpcm" && BluRay.BdAudio(new AudioTrack(0, "dts", 6, "eng", ""), new DiscTitle("x"), false) == "dts");
         var dub = new AudioTrack(0, "eac3", 6, "fre", "doublage", File: @"C:\dub.eac3");
+        var ddp = dub with { SampleRate = 48000 };
+        Check("new projects preserve audio quality and Dolby Digital Plus, including defaults read from older JSON without these fields",
+              new EncodeOptions() is { Lossless: true, CopyEac3: true }
+              && Project.Parse("{\"Titles\":[],\"Encode\":{}}").Encode is { Lossless: true, CopyEac3: true }
+              && Project.Parse("{\"Titles\":[],\"Encode\":{\"Lossless\":false,\"CopyEac3\":false}}").Encode is { Lossless: false, CopyEac3: false });
+        Check("Dolby Digital Plus is copied by default, and decoded to LPCM if copy is disabled or unavailable",
+              BluRay.BdAudio(ddp, new DiscTitle("x"), false) == "eac3"
+              && BluRay.BdAudio(ddp with { DiscEac3 = true }, new DiscTitle("x"), false) == "eac3"
+              && BluRay.BdAudio(ddp, new DiscTitle("x"), false, copyEac3: false) == "lpcm"
+              && BluRay.BdAudio(ddp, new DiscTitle("x"), false, lossless: false, copyEac3: false) == "ac3"
+              && BluRay.BdAudio(ddp, louder, false) == "lpcm"
+              && BluRay.BdAudio(ddp with { SampleRate = 44100 }, new DiscTitle("x"), false) == "lpcm");
         var withDub = new DiscTitle("x", Start: 10, End: 70, Audio: [1, 2], AudioFiles: [dub], TrackLanguage: new Dictionary<string, string> { ["a2"] = "ger" });
         var dubbed = withDub.Cut(new SourceInfo("h264", 1920, 1080, 24, "ac3", 6, 600, [ac3, ac3 with { Index = 1 }], []));
         var mapArgs = new List<string> { "-ss", "10", "-t", "60", "-i", "x" };
@@ -1384,7 +1431,10 @@ if (a.Count >= 1 && a[0] == "check-edit")
     {
         var bdmv = Path.Combine(discDir, "BDMV");
         foreach (var sub in new[] { "BACKUP", "PLAYLIST", "CLIPINF", "STREAM" }) Directory.CreateDirectory(Path.Combine(bdmv, sub));
-        File.WriteAllText(Path.Combine(bdmv, "CLIPINF/00001.clpi"), "HDMV0200");
+        var clpi = new BinaryWriterBE();
+        clpi.Str("HDMV0200", 8); clpi.Zero(4); clpi.U32(16);
+        clpi.U32(2); clpi.Zero(2); // empty ProgramInfo, this structure-only fixture declares no streams
+        File.WriteAllBytes(Path.Combine(bdmv, "CLIPINF/00001.clpi"), clpi.ToArray());
         var index = BurnSmith.Core.Disc.MovieObjectFile.Index([0], 0, ushort.MaxValue, 6, 1);
         var objects = BurnSmith.Core.Disc.MovieObjectFile.Write([[BurnSmith.Core.Disc.Nav.PlayPlaylist(1)]]);
         foreach (var folder in new[] { bdmv, Path.Combine(bdmv, "BACKUP") })
@@ -1412,13 +1462,12 @@ if (a.Count >= 1 && a[0] == "check-edit")
         File.Delete(Path.Combine(bdmv, "CLIPINF", "00001.clpi"));
         File.WriteAllBytes(Path.Combine(bdmv, "BACKUP", "MovieObject.bdmv"), [1]);
         var broken = DiscCheck.Folder(discDir);
-        var image = new byte[300 * 2048];
-        "BEA01"u8.CopyTo(image.AsSpan(16 * 2048 + 1));
-        foreach (var sector in new[] { 256, 299 }) image[sector * 2048] = 2;
         var iso = Path.Combine(discDir, "t.iso");
-        File.WriteAllBytes(iso, image);
+        var emptyDisc = Directory.CreateDirectory(Path.Combine(discDir, "empty")).FullName;
+        BurnSmith.Core.Disc.UdfImage.Write(emptyDisc, iso, "CHECK");
+        var image = File.ReadAllBytes(iso);
         var goodImage = DiscCheck.Image(iso);
-        File.WriteAllBytes(iso, image[..(299 * 2048)]);
+        File.WriteAllBytes(iso, image[..^2048]);
         var cutImage = DiscCheck.Image(iso);
         File.WriteAllBytes(iso, image[..^7]);
         var oddImage = DiscCheck.Image(iso);
@@ -1448,7 +1497,7 @@ if (a.Count >= 1 && a[0] == "check-edit")
           && BluRay.ChainEpisodes("page root bg.jpg\n"u8.ToArray()).Length == 17);
     var dts = new AudioTrack(0, "dts", 6, "", "");
     Check("audio copied only while it stays in step with the picture: a DTS track is kept when the title starts at 0, becomes AC-3 with a later start or another volume, and stays on a 4K disc",
-          BluRay.BdAudio(dts, new DiscTitle("x"), false) == "dts" && BluRay.BdAudio(dts, new DiscTitle("x", Start: 90), false) == "ac3" && BluRay.BdAudio(dts, new DiscTitle("x", Volume: 120), false) == "ac3"
+          BluRay.BdAudio(dts, new DiscTitle("x"), false) == "dts" && BluRay.BdAudio(dts, new DiscTitle("x", Start: 90), false) == "lpcm" && BluRay.BdAudio(dts, new DiscTitle("x", Volume: 120), false) == "lpcm"
           && BluRay.BdAudio(dts, new DiscTitle("x", Start: 90), true) == "dts" && BluRay.BdAudio(dts, new DiscTitle("x", End: 500), false) == "dts");
     Check("photos and songs are told from videos by their extension", MediaMaker.IsPhoto("a.JPG") && MediaMaker.IsPhoto("b.png") && !MediaMaker.IsPhoto("c.mkv") && MediaMaker.IsSong("d.FLAC") && !MediaMaker.IsSong("e.mkv") && !MediaMaker.IsSong("f.jpg"));
     // the slideshow and the song video, made for real when ffmpeg is there: one frame per 1/25 s for every photo (a png and a jpg of different sizes), the cover or black, the length of the song
@@ -1807,9 +1856,9 @@ if (a.Count >= 1 && a[0] == "check-edit")
           && Kept(new DiscTitle("x", Audio: [0, 1], DefaultAudio: 0)) == "0,1" && Kept(new DiscTitle("x", DefaultAudio: 1)) == "0");
     {
         var dtsFirst = new SourceInfo("h264", 1920, 1080, 24, "dts", 6, 600, [new(0, "dts", 6, "fre", ""), new(1, "ac3", 6, "eng", ""), new(2, "truehd", 8, "fre", "", Lossless: true)], []);
-        var (compat, enc, hdmv) = Project.Compatible([new DiscTitle("x", Audio: [0, 1, 2]), new DiscTitle("x", Audio: [0, 1])], new EncodeOptions(Lossless: true), _ => dtsFirst);
+        var (compat, enc, hdmv) = Project.Compatible([new DiscTitle("x", Audio: [0, 1, 2]), new DiscTitle("x", Audio: [0, 1])], new EncodeOptions(Lossless: true, CopyEac3: true), _ => dtsFirst);
         Check("« Compatibilité maximale »: HDMV menu, no lossless sound; a DTS first gives way to a track of its language that becomes AC-3, never to another language; the slowest burn is 2x",
-              hdmv && !enc.Lossless && string.Join(',', compat[0].KeptAudio(dtsFirst).Select(a => a.Index)) == "2,0,1" && compat[1].DefaultAudio == null
+              hdmv && !enc.Lossless && !enc.CopyEac3 && string.Join(',', compat[0].KeptAudio(dtsFirst).Select(a => a.Index)) == "2,0,1" && compat[1].DefaultAudio == null
               && new DiscTitle("x", Audio: [1, 0]).Ac3First(dtsFirst).DefaultAudio == null && Iso.Speeds[^1] == 2);
         Check("warnings before a build: a 100 GB disc (Blu-ray 4K 93 GB usable) only; not a BD-66, a BD-50, a DVD or « Sans limite »",
               Project.Warning("uhd", 93) != null && Project.Warning("bd", 93) != null && Project.Warning("uhd", 61) == null && Project.Warning("bd", 46.5) == null && Project.Warning("dvd", 93) == null && Project.Warning("uhd", 0) == null);
@@ -2135,8 +2184,12 @@ int Make(string kind, List<DiscTitle> list, string folder, MenuDesign? menu, str
     if (Project.Warning(kind, usableGb) is { } warning) Console.WriteLine("warning: " + warning);
     if (kind != "dvd") Console.WriteLine("note: " + Project.Ps5Note);
     if (trial > 0) Console.WriteLine($"trial disc: {trial} s of each video");
-    if (kind == "dvd") Dvd.Build(new DvdJob(list, folder, menu, minutes, usableGb, enc, play, look), Console.WriteLine);
-    else BluRay.Build(new BluRayJob(list, folder, menu, kind == "uhd", label, minutes, enc, usableGb, play, look, hdmv), Console.WriteLine);
+    try
+    {
+        if (kind == "dvd") Dvd.Build(new DvdJob(list, folder, menu, minutes, usableGb, enc, play, look), Console.WriteLine);
+        else BluRay.Build(new BluRayJob(list, folder, menu, kind == "uhd", label, minutes, enc, usableGb, play, look, hdmv), Console.WriteLine);
+    }
+    catch (InvalidDataException e) { Console.Error.WriteLine(e.Message); return 1; }
     var found = DiscCheck.Folder(folder, checkGb);
     Console.WriteLine(found.Count == 0 ? "disc structure checked: no problem" : "disc structure: " + string.Join(" ; ", found));
     return found.Count == 0 ? 0 : 1;
@@ -2180,7 +2233,7 @@ if (a.Count >= 2 && a[0] == "queue")
 
 if (a.Count == 0 || a[0] is not ("bd" or "dvd") || videos.Count == 0 || (Opt("--out") ?? Opt("--save-project")) is not { } outDir)
 {
-    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S --audio-volume N=DB --audio-file [LANG=]FILE] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview [--safe-area]] [--trial [SECONDS]] [--shutdown] [--save-project FILE] [--max-compat] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --lossless --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]] [--shutdown] [--max-compat]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] [--shutdown]  |  burnsmith burn IMAGE.iso F: [--speed N|--max-compat] [--no-verify] [--eject] [--erase] | burnsmith repair-top-menu FOLDER | burnsmith scan-damage IMAGE.iso|FOLDER [--decode|--no-decode]  |  burnsmith replace-film DISC|IMAGE.iso --mkv FILM.mkv --out FOLDER [--iso OUT.iso] [--label X] [--playlist N] [--cut-start S] [--map A1=mkv:N,PG2=mkv:N] [--no-align] [--measure-only]  |  burnsmith check-film-sync  |  burnsmith label-from-scan SCAN.png|jpg OUT.png [--diameter-mm 118] [--dpi 300] [--hole-mm auto|N] [--debug OVERLAY.png]");
+    Console.Error.WriteLine("usage: burnsmith bd|dvd --video <file> [--trim A-B[,C-D] --volume N --chapter-at T,T|--no-chapters|--chapter-every MIN --chapter-names 'A|B' --sub-delay N=S --audio-delay N=S --audio-volume N=DB --audio-file [LANG=]FILE] [--video <file> ...] --out <folder> [--design NAME] [--menu-aspect 16:9|4:3] [--title TEXT] [--no-menu] [--background-blur 0-40] [--music FILE --music-start S --music-volume N --music-fade S --loop-seconds S|music] [--chapters MINUTES] [--audio N,N] [--sub N,N] [--sub-file FILE|LANG=FILE] [--sub-font NAME --sub-size PERCENT --sub-color RRGGBB --sub-position 0-100] [--bonus] [--credits 'A|B'] [--preview [--safe-area]] [--trial [SECONDS]] [--shutdown] [--save-project FILE] [--max-compat] [--cpu] [--fps R] [bd: --menu-mode bdj|hdmv --no-lossless --no-copy-eac3 --popup [--popup-main TEXT --popup-resume TEXT] --uhd --profile NAME --quality Q --play-mode N --label NAME --titles 'fra=Titre|eng=Title']  |  burnsmith project FILE.burnsmith [--out <folder>] [--trial [SECONDS]] [--shutdown] [--max-compat]  |  burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] [--shutdown]  |  burnsmith burn IMAGE.iso F: [--speed N|--max-compat] [--no-verify] [--eject] [--erase] | burnsmith repair-top-menu FOLDER | burnsmith scan-damage IMAGE.iso|FOLDER [--decode|--no-decode]  |  burnsmith replace-film DISC|IMAGE.iso --mkv FILM.mkv --out FOLDER [--iso OUT.iso] [--label X] [--playlist N] [--cut-start S] [--map A1=mkv:N,PG2=mkv:N] [--no-align] [--measure-only]  |  burnsmith check-film-sync  |  burnsmith label-from-scan SCAN.png|jpg OUT.png [--diameter-mm 118] [--dpi 300] [--hole-mm auto|N] [--debug OVERLAY.png]");
     return 2;
 }
 
@@ -2337,7 +2390,7 @@ var rate = int.TryParse(quality, out var q) ? (q < 1000 ? q * 1000 : q) : 0; // 
 var encode = new EncodeOptions(a.Contains("--reencode"), int.TryParse(Opt("--crf"), out var crf) ? crf : 17, Opt("--preset") ?? "medium", int.TryParse(Opt("--dvd-kbps"), out var kbps) ? kbps : 0,
                                rate, quality == "fit", profile.Hd720, Gpu: !a.Contains("--cpu"),
                                Fps: double.TryParse(Opt("--fps"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var fps) ? fps : null,
-                               Lossless: a.Contains("--lossless")); // bd: --lossless = "Son sans perte" (TrueHD kept, FLAC and PCM as LPCM, instead of AC-3)
+                               Lossless: !a.Contains("--no-lossless"), CopyEac3: !a.Contains("--no-copy-eac3"));
 var capacity = double.TryParse(Opt("--capacity"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var gb) ? gb : profile.UsableGb;
 var playback = int.TryParse(Opt("--play-mode"), out var mode) ? PlaybackOptions.FromMode(mode, !a.Contains("--no-rewind")) : a.Contains("--no-rewind") ? new PlaybackOptions(Rewind: false) : null;
 // the text subtitles of the disc (SRT, ASS...): --sub-font NAME (a font of this PC), --sub-size PERCENT (100 = the usual size), --sub-color RRGGBB, --sub-position 0-100 (0 = bottom, 100 = top)

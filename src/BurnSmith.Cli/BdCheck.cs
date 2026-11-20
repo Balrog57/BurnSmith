@@ -142,6 +142,7 @@ static class BdCheck
             ffprobe = Tools.Find("ffprobe.exe");
             Sound();
             Video();
+            AuditStreams();
             Sync();
             FitDisc();
             Signature();
@@ -158,6 +159,77 @@ static class BdCheck
         return failed == 0 ? 0 : 1;
     }
 
+    static void AuditStreams()
+    {
+        Part("declared audio must carry packets on folder and ISO", () =>
+        {
+            var source = Clip("auditac3.mkv", "color=s=1280x720:r=24000/1001:d=1", 48000, Fine, Ac3At48);
+            var disc = Bd("auditac3", [new DiscTitle(source)]);
+            var iso = F("audit-valid.iso");
+            Iso.Build(disc, iso, "AUDIT", dvd: false);
+            Check("the valid ISO contains the audio PID", DiscCheck.Image(iso).Count == 0);
+
+            var clip = Stream(disc, 1);
+            var muxed = File.ReadAllBytes(clip);
+            var removed = 0;
+            for (var p = 4; p < muxed.Length; p += 192)
+            {
+                if (((muxed[p + 1] & 31) << 8 | muxed[p + 2]) != 0x1100) continue;
+                // Leave the PMT, CLPI, MPLS, packet sync, and file size intact.
+                muxed[p + 1] = (byte)((muxed[p + 1] & 0xE0) | 31);
+                muxed[p + 2] = 255;
+                removed++;
+            }
+            File.WriteAllBytes(clip, muxed);
+            bool Rejected(IEnumerable<string> problems) => problems.Any(p => p.Contains("00001.mpls")
+                && p.Contains("00001.m2ts") && p.Contains("PID 0x1100 déclaré sans paquet utile"));
+            Check("removing all audio packets invalidates the folder", removed > 0 && Rejected(DiscCheck.Folder(disc)));
+            iso = F("audit-empty-audio.iso");
+            Iso.Build(disc, iso, "AUDIT", dvd: false);
+            Check("the same audio gap is rejected inside the ISO alone", Rejected(DiscCheck.Image(iso)));
+        });
+
+        Part("Blu-ray DD+ copy and fallback", () =>
+        {
+            var standalone = Clip("audit-eac3.mkv", "color=s=1280x720:r=24000/1001:d=3", 48000, Fine, ["-c:a", "eac3"]);
+            var audio = BluRay.Probe(standalone).Audio.Single();
+            Check("48 kHz E-AC-3 alone is not primary Blu-ray DD+", audio is { Codec: "eac3", SampleRate: 48000, DiscEac3: false });
+            var copied = Bd("audit-eac3-copy", [new DiscTitle(standalone)], Small());
+            string Hash(string input) => Tools.Run(ffmpeg,
+                ["-v", "error", "-i", input, "-map", "0:a:0", "-c", "copy", "-f", "hash", "-"]);
+            Check("standalone Dolby Digital Plus is copied byte for byte",
+                BluRay.Probe(Stream(copied, 1)).Audio is [{ Codec: "eac3", SampleRate: 48000, Channels: > 0 }]
+                && Hash(standalone) == Hash(Stream(copied, 1)));
+            var clips = new[] { new Clip(0, 1), new Clip(2, 3) };
+            var cut = Bd("audit-eac3-passages", [new DiscTitle(standalone, End: 3, Clips: clips)], Small());
+            var expected = F("audit-eac3-passages.eac3");
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", standalone, "-map", "0:a:0", "-c", "copy",
+                "-bsf:a", "noise=drop='gte(pts*tb,1)*lt(pts*tb,2)'", "-f", "eac3", expected]);
+            Check("separated passages retain the selected DD+ frames byte for byte", Hash(expected) == Hash(Stream(cut, 1)));
+            foreach (var (lossless, codec) in new[] { (true, "pcm_bluray"), (false, "ac3") })
+            {
+                var log = new List<string>();
+                var disc = Bd($"audit-eac3-{codec}", [new DiscTitle(standalone)], Small() with { Lossless = lossless, CopyEac3 = false }, log: log.Add);
+                var output = BluRay.Probe(Stream(disc, 1)).Audio;
+                Check($"E-AC-3 fallback muxes {codec} with a 48 kHz soundtrack",
+                    output is [{ SampleRate: 48000 }] && output[0].Codec == codec && log.Any(l => l.Contains("Atmos") && l.Contains("converti")));
+            }
+        });
+
+        Part("UHD requires HEVC Main 10 even with source quality", () =>
+        {
+            var source = F("audit-main8.mkv");
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "color=s=3840x2160:r=24000/1001:d=1",
+                "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-x265-params", "pools=4:log-level=error:level-idc=5.1", source]);
+            var log = new List<string>();
+            var disc = Bd("audit-main10", [new DiscTitle(source)], new EncodeOptions(Preset: "ultrafast", Gpu: false), log: log.Add, uhd: true);
+            Check("Main 8 input is converted and the disc contains Main 10 4:2:0",
+                BluRay.Probe(source) is { Profile: "Main", PixFmt: "yuv420p" }
+                && BluRay.Probe(Stream(disc, 1)) is { Profile: "Main 10", PixFmt: "yuv420p10le" }
+                && log.Any(l => l.Contains("conversion HEVC Main 10")));
+        });
+    }
+
     static void DvdAudio()
     {
         DvdPart("DVD audio per title", () =>
@@ -166,8 +238,10 @@ static class BdCheck
             var two = F("dvdaudio2.mkv");
             Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", original, "-map", "0", "-map", "0:a", "-c", "copy",
                 "-metadata:s:a:0", "language=eng", "-metadata:s:a:1", "language=fre", two]);
+            var srt = F("dvdaudio.fra.srt");
+            File.WriteAllText(srt, "1\n00:00:00,500 --> 00:00:02,300\nBonjour\n");
             var disc = F("dvdaudio");
-            Dvd.Build(new DvdJob([new DiscTitle(two, Audio: [0, 1]),
+            Dvd.Build(new DvdJob([new DiscTitle(two, Audio: [0, 1], Subtitles: [0], External: [new ExternalSubtitle(srt, "fra")]),
                 new DiscTitle(original, Bonus: true, TrackLanguage: new Dictionary<string, string> { ["a0"] = "jpn" }),
                 new DiscTitle(two, Audio: [1, 0], Bonus: true)], disc, new MenuDesign(), Encode: new EncodeOptions(DvdPal: true)));
             var iso = F("dvdaudio.iso");
@@ -184,6 +258,11 @@ static class BdCheck
                 Read(1).SequenceEqual(["0x80:eng:True", "0x81:fre:True"])
                 && Read(2).SequenceEqual(["0x80:jpn:True"])
                 && Read(3).SequenceEqual(["0x80:fre:True", "0x81:eng:True"]));
+            using var sub = JsonDocument.Parse(Tools.Run(ffprobe, ["-v", "error", "-f", "dvdvideo", "-title", "2",
+                "-count_packets", "-select_streams", "s", "-show_entries", "stream=nb_read_packets", "-of", "json", iso]));
+            Check("DVD: an aligned subtitle slot in a bonus without cues carries a transparent SPU",
+                sub.RootElement.GetProperty("streams").EnumerateArray().Any(s => s.TryGetProperty("nb_read_packets", out var count)
+                    && int.Parse(count.GetString()!, CultureInfo.InvariantCulture) > 0));
         });
     }
 
@@ -193,20 +272,54 @@ static class BdCheck
         Part("AAC 44.1 kHz", () =>
         {
             var s = Look(Stream(Bd("aac441", [new DiscTitle(Clip("aac441.mkv", Size720, 44100, Fine, Aac))]), 1));
-            Check("AAC 44.1 kHz becomes AC-3 48 kHz", s is { Audio: "ac3", SampleRate: 48000 }, $"{s.Audio} {s.SampleRate}");
+            Check("AAC 44.1 kHz is decoded to LPCM 48 kHz by default", s is { Audio: "pcm_bluray", SampleRate: 48000 }, $"{s.Audio} {s.SampleRate}");
         });
         Part("AC-3 44.1 kHz", () =>
         {
             var s = Look(Stream(Bd("ac3441", [new DiscTitle(Clip("ac3441.mkv", Size720, 44100, Fine, ["-c:a", "ac3"]))]), 1));
-            Check("AC-3 44.1 kHz is not copied: it becomes 48 kHz", s is { Audio: "ac3", SampleRate: 48000 }, $"{s.Audio} {s.SampleRate}");
+            Check("AC-3 44.1 kHz is decoded to LPCM 48 kHz by default", s is { Audio: "pcm_bluray", SampleRate: 48000 }, $"{s.Audio} {s.SampleRate}");
+        });
+        Part("static BD-J menu loop", () =>
+        {
+            var film = Clip("silent-loop-film.mkv", Size720, 48000, Fine, Ac3At48);
+            var disc = Bd("silent-loop", [new DiscTitle(film)], menu: new MenuDesign());
+            var loop = Stream(disc, BluRay.LoopPlaylist);
+            var playlist = Path.Combine(disc, "BDMV", "PLAYLIST", $"{BluRay.LoopPlaylist:00000}.mpls");
+            using var jar = System.IO.Compression.ZipFile.OpenRead(Path.Combine(disc, "BDMV", "JAR", "00000.jar"));
+            using var config = new StreamReader(jar.GetEntry("menu.txt")!.Open());
+            Check("static BD-J menu plays a 10-second background with opaque menu images",
+                config.ReadToEnd().Split('\n').Contains($"loop {BluRay.LoopPlaylist}")
+                && jar.GetEntry("bg_root.jpg") != null && Math.Abs(Mpls.Read(playlist).Seconds - 10) < 0.1);
+            var audio = Look(loop);
+            var raw = F("silent-loop.pcm");
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", loop, "-map", "0:a:0", "-f", "s16le", raw]);
+            var samples = File.ReadAllBytes(raw);
+            Check("the static background has silent stereo AC-3 at 48 kHz",
+                audio is { Audio: "ac3", SampleRate: 48000 } &&
+                BluRay.Probe(loop).Audio is [{ Channels: 2 }] && samples.Length > 0 && samples.All(b => b == 0));
         });
         Part("moving menu's own sound", () =>
         {
             var menu = TemplateCatalog.Default().Clone();
             menu.Loop = true;
             menu.LoopSeconds = 5;
-            var s = Look(Stream(Bd("loop441", [new DiscTitle(Clip("loop441.mkv", Size720, 44100, Fine, Aac))], menu: menu), BluRay.LoopPlaylist));
+            var disc = Bd("loop441", [new DiscTitle(Clip("loop441.mkv", Size720, 44100, Fine, Aac))], menu: menu);
+            var s = Look(Stream(disc, BluRay.LoopPlaylist));
             Check("the moving menu's clip, sound taken from a 44.1 kHz film, is at 48 kHz", s.SampleRate == 48000, $"{s.Audio} {s.SampleRate}");
+            var name = $"{BluRay.LoopPlaylist:00000}.mpls";
+            var list = File.ReadAllBytes(Path.Combine(disc, "BDMV", "PLAYLIST", name));
+            var playlist = Mpls.Read(list);
+            var item = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(list.AsSpan(8)) + 10;
+            var itemLength = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(list.AsSpan(item)) + 2;
+            Check("moving menus link six plays of the same clip and jump back halfway through",
+                playlist.Items.Count == 6 && playlist.Items.All(i => i.Clip == "00099")
+                && Enumerable.Range(1, 5).All(i => (list[item + i * itemLength + 12] & 0x0f) == 5)
+                && playlist.Marks.SequenceEqual([new Mpls.Mark(1, 0, playlist.Items[0].In), new Mpls.Mark(1, 3, playlist.Items[3].In)])
+                && list.SequenceEqual(File.ReadAllBytes(Path.Combine(disc, "BDMV", "BACKUP", "PLAYLIST", name))));
+            using var jar = System.IO.Compression.ZipFile.OpenRead(Path.Combine(disc, "BDMV", "JAR", "00000.jar"));
+            using var config = new StreamReader(jar.GetEntry("menu.txt")!.Open());
+            Check("the BD-J menu reads the return mark from its configuration without a still",
+                config.ReadToEnd().Split('\n').Contains("loop-return-mark 1") && jar.GetEntry("loop-poster.jpg") == null);
         });
     }
 
@@ -448,11 +561,34 @@ static class BdCheck
             Tools.Run(Tools.Find("dovi_tool.exe"), ["inject-rpu", "-i", F("base.hevc"), "--rpu-in", F("rpu.bin"), "-o", F("dv.hevc")]);
             var dv = Timed(F("dv.hevc"));
             var info = BluRay.Probe(dv);
-            Check("a Dolby Vision 8.1 clip is seen as single-layer Dolby Vision", info is { Hdr: "Dolby Vision", DualLayer: false }, $"{info.Hdr} {info.DualLayer}");
+            Check("a Dolby Vision 8.1 clip is seen as single-layer Dolby Vision", info is { Hdr: "Dolby Vision", DualLayer: false, DolbyVisionProfile: "8.1", DolbyVisionHdr10Base: true }, $"{info.Hdr} {info.DualLayer}");
             var m2ts = Stream(Bd("uhddv", [new DiscTitle(dv)], new EncodeOptions(), uhd: true), 1);
             var pids = Tools.Run(ffprobe, ["-v", "error", "-select_streams", "v", "-show_entries", "stream=id", "-of", "csv=p=0", m2ts]).Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).Distinct().ToList();
             // tsMuxeR puts a single-layer Dolby Vision track on the enhancement-layer PID (0x1015), with no base: no UHD player reads that disc
-            Check("single-layer Dolby Vision becomes the HDR10 base on PID 0x1011, without its RPU", pids is ["0x1011"] && !FirstFrame(m2ts).Contains("Dolby Vision RPU"), string.Join(' ', pids));
+            Check("single-layer Dolby Vision becomes the HDR10 base on PID 0x1011, without its RPU", pids is ["0x1011"] && !FirstFrame(m2ts).Contains("Dolby Vision RPU") && BluRay.Probe(m2ts).Hdr == "HDR10", string.Join(' ', pids));
+
+            foreach (var (profile, transferCode) in new[] { ("5", "2"), ("8.4", "18") })
+            {
+                var baseFile = F($"audit-dv-{profile}-base.hevc");
+                var rpuFile = F($"audit-dv-{profile}.bin");
+                var injected = F($"audit-dv-{profile}.hevc");
+                Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", F("base.hevc"), "-c:v", "copy",
+                    "-bsf:v", $"hevc_metadata=transfer_characteristics={transferCode}", "-f", "hevc", baseFile]);
+                Tools.Run(Tools.Find("dovi_tool.exe"), ["generate", "-p", profile, "-j", F("rpu.json"), "-o", rpuFile]);
+                Tools.Run(Tools.Find("dovi_tool.exe"), ["inject-rpu", "-i", baseFile, "--rpu-in", rpuFile, "-o", injected]);
+                var source = Timed(injected);
+                var probed = BluRay.Probe(source);
+                Check($"Dolby Vision {profile} has no verified HDR10 base",
+                    probed.DolbyVisionProfile == profile && !probed.DolbyVisionHdr10Base, $"{probed.DolbyVisionProfile}");
+                foreach (var force in new[] { false, true })
+                {
+                    var dest = F($"reject-dv-{profile}-{force}");
+                    var refused = false;
+                    try { BluRay.Build(new BluRayJob([new DiscTitle(source)], dest, Uhd: true, Encode: new EncodeOptions(ForceReencode: force))); }
+                    catch (InvalidDataException ex) { refused = ex.Message.Contains($"profil {profile}") && ex.Message.Contains("base HDR10 non établie"); }
+                    Check($"Dolby Vision {profile} refuses unsafe {(force ? "conversion" : "copy")} before preparing output", refused && !Directory.Exists(dest));
+                }
+            }
 
             // re-encoded, it is kept as profile 7 MEL: an enhancement layer made apart, with the base's frames and structure
             var mel = Stream(Bd("uhdmel", [new DiscTitle(dv, Start: 0.5)], new EncodeOptions(ForceReencode: true, Preset: "ultrafast"), uhd: true), 1);
@@ -597,15 +733,49 @@ static class BdCheck
         {
             var film = Clip("popfilm.mkv", "testsrc2=s=1280x720:r=24000/1001:d=6", 48000, Fine, Ac3At48);
             Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", film, "-map", "0", "-map", "0:a", "-c", "copy", F("pop2audio.mkv")]); // two audio tracks: the settings page exists
-            List<DiscTitle> titles = [new DiscTitle(F("pop2audio.mkv"), Audio: [0, 1], ChapterAt: [0, 2, 4]), new DiscTitle(film, Bonus: true)];
+            File.WriteAllText(F("forced.fr.srt"), "1\n00:00:01,000 --> 00:00:02,000\nParis\n");
+            List<DiscTitle> titles =
+            [
+                new DiscTitle(F("pop2audio.mkv"), Audio: [0, 1], Subtitles: [0], ChapterAt: [0, 2, 4],
+                    External: [new ExternalSubtitle(F("forced.fr.srt"), "fra", Forced: true)],
+                    TrackLanguage: new Dictionary<string, string> { ["a0"] = "fre", ["a1"] = "eng" }),
+                new DiscTitle(film, Bonus: true)
+            ];
             Dictionary<string, byte[]> Jar(string disc)
             {
                 using var z = System.IO.Compression.ZipFile.OpenRead(Path.Combine(disc, "BDMV", "JAR", "00000.jar"));
                 return z.Entries.ToDictionary(e => e.FullName, e => { using var s = e.Open(); using var m = new MemoryStream(); s.CopyTo(m); return m.ToArray(); });
             }
-            var with = Jar(Bd("popup", titles, menu: new MenuDesign { Popup = true, MainMenuLabel = "Main" }));
+            var popupDisc = Bd("popup", titles, menu: new MenuDesign { Popup = true, MainMenuLabel = "Main" });
+            var with = Jar(popupDisc);
             var txt = System.Text.Encoding.UTF8.GetString(with["menu.txt"]).Split('\n');
             bool Has(string start) => txt.Any(l => l.StartsWith(start, StringComparison.Ordinal));
+            Check("forced external French subtitles follow the French audio", Has("forced-track 1 1 1"));
+            var navIso = F("popup.iso");
+            Iso.Build(popupDisc, navIso, "CHECK", dvd: false);
+            var cleanNavigation = DiscCheck.Image(navIso);
+            Check("disc check reads valid Blu-ray chapter and forced subtitle routes from an ISO", cleanNavigation.Count == 0, string.Join(" ; ", cleanNavigation));
+            var badDisc = F("popup-bad");
+            foreach (var file in Directory.EnumerateFiles(popupDisc, "*", SearchOption.AllDirectories))
+            {
+                var copy = Path.Combine(badDisc, Path.GetRelativePath(popupDisc, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+                File.Copy(file, copy);
+            }
+            using (var zip = System.IO.Compression.ZipFile.Open(Path.Combine(badDisc, "BDMV", "JAR", "00000.jar"), System.IO.Compression.ZipArchiveMode.Update))
+            {
+                zip.GetEntry("menu.txt")!.Delete();
+                using var writer = new StreamWriter(zip.CreateEntry("menu.txt").Open());
+                writer.Write(string.Join('\n', txt).Replace(" chapter 1 2\n", " chapter 1 99\n").Replace(" audio 2\n", " audio 99\n")
+                    .Replace("forced-track 1 1 1\n", "forced-track 1 2 1\n"));
+            }
+            var badIso = F("popup-bad.iso");
+            Iso.Build(badDisc, badIso, "CHECK", dvd: false);
+            foreach (var (place, problems) in new[] { ("folder", DiscCheck.Folder(badDisc)), ("ISO", DiscCheck.Image(badIso)) })
+                Check($"disc check finds a bad chapter, audio choice and forced subtitle language in the {place}",
+                    problems.Any(p => p.Contains("chapitre inexistant")) && problems.Any(p => p.Contains("piste audio inexistante"))
+                    && problems.Any(p => p.Contains("langue différente de la piste audio")),
+                    string.Join(" ; ", problems));
             Check("pop-up: a bar per title, the film's with resume, chapters, settings and main menu",
                 Has("page pop1 bg_pop1.png") && Has("page pop2 bg_pop2.png") && Has("button pop1 resume ") && Has("button pop1 chapters ") && Has("button pop1 settings ") && Has("button pop1 main "),
                 string.Join(" | ", txt.Where(l => l.StartsWith("page pop", StringComparison.Ordinal))));

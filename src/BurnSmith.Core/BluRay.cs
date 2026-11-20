@@ -25,7 +25,7 @@ public sealed record BluRayJob(IReadOnlyList<DiscTitle> Titles, string OutDir, M
 /// </summary>
 public sealed record EncodeOptions(bool ForceReencode = false, int Crf = 17, string Preset = "medium", int DvdKbps = 0,
                                    int BdKbps = 0, bool FitDisc = false, bool Hd720 = false, bool? DvdPal = null, bool DvdWide = true, bool Gpu = true, double? Fps = null,
-                                   bool Lossless = false); // Blu-ray, "Son sans perte": a TrueHD track is kept (with the AC-3 core a disc wants beside it), FLAC and PCM become LPCM, instead of AC-3
+                                   bool Lossless = true, bool CopyEac3 = true);
 
 /// <summary>
 /// The play mode (Blu-ray menu). <see cref="StartAtFirstTitle"/>: the disc starts on the first title instead of the menu.
@@ -65,11 +65,11 @@ public sealed record SourceInfo(string VideoCodec, int Width, int Height, double
                                 IReadOnlyList<AudioTrack> Audio, IReadOnlyList<SubtitleTrack> Subtitles, string Hdr = "SDR", double FileDuration = 0,
                                 string Encoding = "", string PixFmt = "", string Profile = "", int Level = 0, // Encoding: the video's profile / level / reorder depth / reference frames, which a stream-copy join must not mix
                                 bool DualLayer = false, // Dolby Vision with its enhancement layer in the same track (profile 7, a UHD Blu-ray's)
-                                bool DvProfile5 = false, // Dolby Vision whose base is not HDR10 (IPT): nothing of it can be kept on a disc
+                                bool DvProfile5 = false, // retained for callers of probe
                                 string Stereo = "", // 3D packed in one picture: "sbs" (side by side), "tab" (top and bottom), "" = 2D
                                 IReadOnlyList<double>? Chapters = null, // the file's own chapter starts, in seconds (an mkv's or mp4's); null = it has none
                                 IReadOnlyList<string?>? ChapterNames = null, // their titles, one for one (null = the file names none)
-                                bool Rotated = false) // shown turned (a phone's video): a disc has no such tag, so the picture is made again, turned (ffmpeg does it when decoding)
+                                bool Rotated = false, string DolbyVisionProfile = "", bool DolbyVisionHdr10Base = false) // shown turned (a phone's video): a disc has no such tag, so the picture is made again, turned (ffmpeg does it when decoding)
 {
     /// <summary>
     /// A full-size 3D picture (each view as large as a 2D one: 3840x1080 side by side) made half-size, the frame-packed 3D a 3D TV reads from a 2D disc:
@@ -117,11 +117,21 @@ public static class BluRay
 
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
+    static readonly string[] LateAudioProbe = ["-analyzeduration", "60000000", "-probesize", "350000000"];
+
     public static SourceInfo Probe(string file)
     {
-        var json = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-of", "json", "-show_streams", "-show_format", "-show_chapters", file]);
-        using var doc = JsonDocument.Parse(json);
-        var streams = doc.RootElement.GetProperty("streams").EnumerateArray().ToList();
+        var ffprobe = Tools.Find("ffprobe.exe");
+        string[] fields = ["-of", "json", "-show_streams", "-show_format", "-show_chapters", file];
+        using var initial = JsonDocument.Parse(Tools.Run(ffprobe, ["-v", "error", .. fields]));
+        var streams = initial.RootElement.GetProperty("streams").EnumerateArray().ToList();
+        // Some disc soundtracks begin after the logos. Re-probe only when the initial transport probe lacks their parameters.
+        using var extended = streams.Any(s => s.TryGetProperty("codec_name", out var codec) && codec.GetString() == "eac3"
+            && (!s.TryGetProperty("sample_rate", out var sampleRate) || sampleRate.GetString() == "0"
+                || !s.TryGetProperty("channels", out var channels) || channels.GetInt32() == 0))
+            ? JsonDocument.Parse(Tools.Run(ffprobe, ["-v", "error", .. LateAudioProbe, .. fields])) : null;
+        var doc = extended ?? initial;
+        if (extended != null) streams = doc.RootElement.GetProperty("streams").EnumerateArray().ToList();
         List<JsonElement> Of(string type) => streams.Where(s => s.GetProperty("codec_type").GetString() == type).ToList();
         static string Tag(JsonElement s, string name) => s.TryGetProperty("tags", out var t) && t.TryGetProperty(name, out var v) ? v.GetString() ?? "" : "";
         static bool Flag(JsonElement s, string name) => s.TryGetProperty("disposition", out var d) && d.TryGetProperty(name, out var v) && v.GetInt32() == 1;
@@ -142,23 +152,41 @@ public static class BluRay
             s.TryGetProperty("channels", out var c) ? c.GetInt32() : 0, Lang(s), Tag(s, "title"),
             s.TryGetProperty("sample_rate", out var rate) && int.TryParse(rate.GetString(), out var hz) ? hz : 0, Kbps(s),
             Codec(s) is "truehd" or "mlp" or "flac" or "alac" || Codec(s).StartsWith("pcm_", StringComparison.Ordinal) || s.TryGetProperty("profile", out var kind) && kind.GetString() == "DTS-HD MA",
-            s.TryGetProperty("bits_per_raw_sample", out var raw) && int.TryParse(raw.GetString(), out var bits) && bits > 0 ? bits : s.TryGetProperty("bits_per_sample", out var held) && held.TryGetInt32(out var size) ? size : 0)).ToList();
+            s.TryGetProperty("bits_per_raw_sample", out var raw) && int.TryParse(raw.GetString(), out var bits) && bits > 0 ? bits : s.TryGetProperty("bits_per_sample", out var held) && held.TryGetInt32(out var size) ? size : 0,
+            DiscEac3: Codec(s) == "eac3" && DiscDolbyDigitalPlus.Probe(file, i))).ToList();
         var subs = Of("subtitle").Select((s, i) => new SubtitleTrack(i, Codec(s), Lang(s), Tag(s, "title"), Flag(s, "forced"))).ToList();
         if (!doc.RootElement.GetProperty("format").TryGetProperty("duration", out var duration)) // a picture has a video stream but no length
             throw new InvalidDataException("no duration: not a video file");
         var r = v.GetProperty("r_frame_rate").GetString()!.Split('/');
-        var dolby = v.TryGetProperty("side_data_list", out var side) && side.EnumerateArray().Any(d => d.TryGetProperty("side_data_type", out var t) && (t.GetString() ?? "").Contains("DOVI"));
-        var hdr = dolby ? "Dolby Vision" : (v.TryGetProperty("color_transfer", out var ct) ? ct.GetString() : null) switch { "smpte2084" => "HDR10", "arib-std-b67" => "HLG", _ => "SDR" };
-        var (dual, p5) = (false, false);
+        var dovi = v.TryGetProperty("side_data_list", out var side)
+            ? side.EnumerateArray().FirstOrDefault(d => d.TryGetProperty("dv_profile", out _)) : default;
+        int DoviField(string field) => dovi.ValueKind != JsonValueKind.Undefined && dovi.TryGetProperty(field, out var value) ? value.GetInt32() : 0;
+        string VideoField(string field) => v.TryGetProperty(field, out var value) ? value.GetString() ?? "" : "";
+        var dvProfile = DoviField("dv_profile");
+        var compatibility = DoviField("dv_bl_signal_compatibility_id");
+        var hasDoviRecord = dovi.ValueKind != JsonValueKind.Undefined;
+        var hdr = VideoField("color_transfer") switch { "smpte2084" => "HDR10", "arib-std-b67" => "HLG", _ => "SDR" };
+        var pqBase = hdr == "HDR10" && VideoField("color_primaries") == "bt2020" && VideoField("color_space") == "bt2020nc";
         var packing = Tag(v, "stereo_mode") + (v.TryGetProperty("side_data_list", out var sides) ? string.Join(' ', sides.EnumerateArray().Select(d => d.TryGetProperty("type", out var t) ? t.ToString() : "")) : "");
         var stereo = Ssif(file) != null ? "mvc" : packing.Contains("left") || packing.Contains("side by side") ? "sbs" : packing.Contains("top") || packing.Contains("bottom") ? "tab" : "";
-        if (hdr is "HDR10" or "Dolby Vision" && v.GetProperty("codec_name").GetString() == "hevc")
+        var dual = false;
+        if (VideoField("codec_name") == "hevc")
         {
-            // Dolby Vision and HDR10+ ride on the frames: the first one tells (a raw stream has no Dolby Vision record in its header)
-            var frame = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-of", "json", "-select_streams", "v:0", "-read_intervals", "%+#1", "-show_frames", file]);
-            if (frame.Contains("\"Dolby Vision RPU Data\"")) (hdr, dual, p5) = ("Dolby Vision", frame.Contains("\"el_spatial_resampling_filter_flag\": 1"), frame.Contains("\"vdr_rpu_profile\": 0"));
+            // Elementary HEVC and some containers have no DOVI record; the first access units carry the RPU.
+            var frame = Tools.Run(Tools.Find("ffprobe.exe"), ["-v", "error", "-of", "json", "-select_streams", "v:0", "-read_intervals", "%+#8", "-show_frames", file]);
+            dual = frame.Contains("\"el_spatial_resampling_filter_flag\": 1");
+            if (frame.Contains("\"Dolby Vision RPU Data\"") && frame.Contains("\"vdr_rpu_profile\": 0"))
+                dvProfile = 5;
+            else if (frame.Contains("\"Dolby Vision RPU Data\"") && !hasDoviRecord)
+            {
+                dvProfile = dual ? 7 : 8;
+                compatibility = dvProfile == 8 ? hdr == "HLG" ? 4 : pqBase ? 1 : 0 : 0;
+            }
             else if (frame.Contains("SMPTE2094-40")) hdr = "HDR10+";
         }
+        if (dvProfile != 0) hdr = "Dolby Vision";
+        var dvHdr10 = pqBase && (dvProfile == 7 || dvProfile == 8 && compatibility == 1);
+        var dolbyProfile = dvProfile == 0 ? "" : dvProfile == 8 ? $"8.{compatibility}" : dvProfile.ToString(Inv);
         // the file's chapters (a single one, at the start, is none)
         var marks = doc.RootElement.TryGetProperty("chapters", out var listed)
             ? listed.EnumerateArray().Select(c => (At: c.TryGetProperty("start_time", out var at) && double.TryParse(at.GetString(), NumberStyles.Float, Inv, out var t) ? t : -1, Name: Tag(c, "title")))
@@ -169,9 +197,9 @@ public static class BluRay
             audio.FirstOrDefault()?.Codec ?? "", audio.FirstOrDefault()?.Channels ?? 0,
             double.Parse(duration.GetString()!, Inv), audio, subs, hdr,
             Encoding: string.Join('/', new[] { "profile", "level", "has_b_frames", "refs" }.Select(n => v.TryGetProperty(n, out var p) ? p.ToString() : "")),
-            PixFmt: v.TryGetProperty("pix_fmt", out var pf) ? pf.GetString() ?? "" : "",
-            Profile: v.TryGetProperty("profile", out var pr) ? pr.GetString() ?? "" : "",
-            Level: v.TryGetProperty("level", out var lv) && lv.TryGetInt32(out var level) ? level : 0, DualLayer: dual, DvProfile5: p5, Stereo: stereo,
+            PixFmt: VideoField("pix_fmt"),
+            Profile: VideoField("profile"),
+            Level: v.TryGetProperty("level", out var lv) && lv.TryGetInt32(out var level) ? level : 0, DualLayer: dvProfile == 7 && dual, DvProfile5: dvProfile == 5, Stereo: stereo, DolbyVisionProfile: dolbyProfile, DolbyVisionHdr10Base: dvHdr10,
             Chapters: marks.Any(c => c.At > 0) ? [.. marks.Select(c => c.At)] : null,
             ChapterNames: marks.Any(c => c.At > 0) && marks.Any(c => c.Name.Length > 0) ? [.. marks.Select(c => c.Name.Length > 0 ? c.Name : null)] : null,
             Rotated: v.TryGetProperty("side_data_list", out var turns) && turns.EnumerateArray().Any(d => d.TryGetProperty("rotation", out var deg) && deg.TryGetDouble(out var a) && Math.Abs(a) % 360 != 0));
@@ -333,6 +361,10 @@ public static class BluRay
         var mainCount = job.Titles.Count(t => !t.Bonus);
         var sources = job.Titles.Select(t => t.Cut(Probe(t.Video))).ToList(); // durations from here on are the parts kept
         var introSource = intro?.Cut(Probe(intro.Video));
+        for (var i = 0; i < sources.Count; i++) RequireSupportedDolbyBase(sources[i], job.Titles[i].DisplayName);
+        if (introSource != null) RequireSupportedDolbyBase(introSource, intro!.DisplayName);
+        if (job.Menu is { Loop: true } menu && menu.LoopFile is { Length: > 0 } backdrop && File.Exists(backdrop))
+            RequireSupportedDolbyBase(Probe(backdrop), Path.GetFileName(backdrop));
         var work = job.OutDir + "_work";
         Tools.FreshFolder(work); // first: a locked file there must not cost the earlier disc
         try { Tools.PrepareOutput(job.OutDir); Author(job, intro, introSource, sources, mainCount, work, log); }
@@ -434,9 +466,6 @@ public static class BluRay
                 mainCount < job.Titles.Count ? Enumerable.Range(mainCount, job.Titles.Count - mainCount).Select(i => Entry(i, $"b{i - mainCount + 1}")).ToList() : null)
                 { ChapterNames = series ? null : job.Titles[0].ChapterNames(sources[0].Duration, job.ChapterMinutes) };
             var menuDir = Path.Combine(work, "menu");
-            var loop = 0;
-            var moving = job.Menu.Loop;
-            if (!job.HdmvMenu && (moving || job.Menu.ExistingMusic() != null)) { MuxLoop(job, work, log); loop = LoopPlaylist; } // a native menu makes a clip per page
             var menuPages = MenuBuilder.Build(job.Menu, content);
             if (MenuBuilder.TracksLeftOut(menuPages, content) is { } leftOut) log(leftOut);
             foreach (var unsafeLine in SafeArea.Warnings(menuPages, job.Menu)) log(unsafeLine);
@@ -457,9 +486,12 @@ public static class BluRay
                 HdmvMenu.Add(job, menuPages, mainCount, muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, forced, intro != null, work, log);
                 return;
             }
-            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, loop, Math.Min(1, VideoSize(job).H / 1080.0), job.Playback ?? new(), mainCount,
-                overlay: moving && loop > 0, defaultSubtitle: muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, popup: popup,
-                subtitleTracks: subtitleTracks.Select((s, i) => (MoviePlaylist + i, s.Visible.Select(t => t.Number), (IReadOnlyList<(int Audio, int Sub)>)s.Forced)));
+            MuxLoop(job, work, log);
+            var moving = job.Menu.Loop;
+            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, LoopPlaylist, Math.Min(1, VideoSize(job).H / 1080.0), job.Playback ?? new(), mainCount,
+                overlay: moving, defaultSubtitle: muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, popup: popup,
+                subtitleTracks: subtitleTracks.Select((s, i) => (MoviePlaylist + i, s.Visible.Select(t => t.Number), (IReadOnlyList<(int Audio, int Sub)>)s.Forced)),
+                log: log, loopReturnMark: moving ? Mpls.MenuLoopReturnMark : -1);
             AddMenu(job, menuDir, intro != null, log);
         }
         else if (muxed[0].DefaultSubtitle > 0 || intro != null)
@@ -598,9 +630,9 @@ public static class BluRay
     internal static (int W, int H) VideoSize(BluRayJob job) => job.Uhd ? (3840, 2160) : job.Encode?.Hd720 == true ? (1280, 720) : (1920, 1080);
 
     /// <summary>Rough kb/s of what an audio track weighs on the disc (copied as it is, or re-encoded as AC-3 at 448 / 640).</summary>
-    static int AudioKbps(AudioTrack a, DiscTitle t, BluRayJob job) => AudioMode(a, t, job.Uhd, job.Encode?.Lossless == true) switch
+    static int AudioKbps(AudioTrack a, DiscTitle t, BluRayJob job) => AudioMode(a, t, job.Uhd, job.Encode?.Lossless != false, job.Encode?.CopyEac3 != false) switch
     {
-        "copy" => a.Kbps > 0 ? a.Kbps : a.Codec switch { "dts" => 1536, _ => a.Channels > 2 ? 640 : 448 }, // what the file says it weighs
+        "copy" => a.Kbps > 0 ? a.Kbps : a.Codec switch { "dts" when a.Lossless => 6000, "dts" => 1536, _ => a.Channels > 2 ? 640 : 448 },
         "thd" => (a.Kbps > 0 ? a.Kbps : 4500) + 640, // with its AC-3 core
         "lpcm" => LpcmRate(a) / 1000 * Math.Min(a.Channels + a.Channels % 2, 8) * LpcmBits(a), // a disc stores its channels in pairs
         _ => a.Channels > 2 ? 640 : 448, // re-encoded as AC-3 (volume change, later start)
@@ -609,19 +641,41 @@ public static class BluRay
     static double AudioAndMenuBytes(BluRayJob job, IReadOnlyList<SourceInfo> sources) =>
         job.Titles.Select((t, i) => t.KeptAudio(sources[i]).Sum(a => AudioKbps(a, t, job) * 125.0 * sources[i].Duration)).Sum() + MenuBytes(job);
 
+    static double AudioGrowthBytes(BluRayJob job, IReadOnlyList<SourceInfo> sources) =>
+        job.Titles.Select((t, i) => t.KeptAudio(sources[i]).Sum(a =>
+        {
+            var mode = AudioMode(a, t, job.Uhd, job.Encode?.Lossless != false, job.Encode?.CopyEac3 != false);
+            var extra = a.File != null ? AudioKbps(a, t, job) : mode switch
+            {
+                "thd" => a.Channels > 2 ? 640 : 448,
+                "lpcm" => Math.Max(0, AudioKbps(a, t, job) - a.Kbps),
+                _ => 0,
+            };
+            return extra * 125.0 * sources[i].Duration;
+        })).Sum();
+
     /// <summary>Longest moving menu: a whole song (Bright's is 3 min 57), its picture fits a BD-25 beside the film (5 min of 4K = 1.5 GB).</summary>
     internal const int MaxLoopSeconds = 300;
 
-    static double MenuBytes(BluRayJob job) =>
-        0.15e9 + (job.Menu is { } m ? LoopLength(m, MaxLoopSeconds) * (m.Loop && !job.HdmvMenu ? (job.Uhd ? 5e6 : 2.6e6) 
-                                                         // HDMV: every page is a clip as long as the music (0.3 MB/s measured); pages guessed, four titles a page
-                                                         : m.ExistingMusic() == null ? 0 : job.HdmvMenu ? 0.3e6 * (3 + job.Titles.Count / 4) : 0.1e6) : 0); // a moving clip, or a black one with music
+    const int SilentMenuLoopSeconds = 10;
+
+    static double MenuBytes(BluRayJob job)
+    {
+        const double allowance = 0.15e9;
+        if (job.Menu is not { } menu) return allowance;
+        var music = menu.ExistingMusic() != null;
+        // HDMV carries one clip per page with music (0.3 MB/s measured).
+        if (job.HdmvMenu) return allowance + (music ? LoopLength(menu, MaxLoopSeconds) * 0.3e6 * (3 + job.Titles.Count / 4) : 0);
+        if (menu.Loop) return allowance + LoopLength(menu, MaxLoopSeconds) * (job.Uhd ? 5e6 : 2.6e6);
+        return allowance + (music ? LoopLength(menu, MaxLoopSeconds) : SilentMenuLoopSeconds) * 0.1e6;
+    }
 
     /// <summary>Size in GB the disc will take: the source files when they are kept, else video at the bit rate asked for or fitted, plus audio and menu.</summary>
     public static double EstimateGB(BluRayJob job, IReadOnlyList<SourceInfo> sources)
     {
         var kbps = TargetKbps(job, sources, _ => { });
-        return kbps == 0 ? FilesBytes(job, sources) / 1e9 : (kbps * 125.0 * sources.Sum(s => s.Duration) + AudioAndMenuBytes(job, sources)) / 1e9;
+        return kbps == 0 ? (FilesBytes(job, sources) + AudioGrowthBytes(job, sources)) / 1e9
+            : (kbps * 125.0 * sources.Sum(s => s.Duration) + AudioAndMenuBytes(job, sources)) / 1e9;
     }
 
     /// <summary>
@@ -648,7 +702,7 @@ public static class BluRay
         if (!enc.FitDisc || job.CapacityGB <= 0) return 0;
         var seconds = sources.Sum(s => s.Duration);
         var room = job.CapacityGB * 1e9 - AudioAndMenuBytes(job, sources);
-        var asIs = FilesBytes(job, sources);
+        var asIs = FilesBytes(job, sources) + AudioGrowthBytes(job, sources);
         // the files' size only says something when they are copied: a re-encode at constant quality has no size bound (an HEVC source often doubles as H.264)
         var copied = job.Titles.Select((t, i) => CopiesVideo(job, t, sources[i], 0)).All(c => c);
         // copied files already hold their sound, and a copy does not overshoot like an encoder: the disc's real size (the profiles' sizes are GiB: a BD-50 is 46.5), 1 % kept for the file system
@@ -706,6 +760,10 @@ public static class BluRay
         };
         var planes = new List<int>(); // by subtitle track: the depth a 3D film shows it at, -1 = on the screen
         var shifts = new List<int>(); // by audio track: how many ms it starts before (-) or after the picture in the source
+        var copyEac3 = job.Encode?.CopyEac3 != false;
+        var lossless = job.Encode?.Lossless != false;
+        var preparedAudioStarts = !mvc && audio.Any(a => a.Codec == "eac3")
+            ? PreparedAudioStarts(prepared) : [];
         if (mvc)
         {
             // both eyes from the .ssif, so each right-eye picture pairs with its left one; the sound comes from prepared.ts. tsMuxeR starts every track with the
@@ -747,13 +805,20 @@ public static class BluRay
         }
         for (var j = 0; j < audio.Count; j++)
         {
-            // the track's own start in the source (3D) and the delay asked for it: tsMuxeR moves the sound, whatever it is made of
-            var shift = (audio[j].Index < shifts.Count ? shifts[audio[j].Index] : 0) + (int)Math.Round((title.AudioDelay?.GetValueOrDefault(audio[j].Index) ?? 0) * 1000);
-            lines.Add(AudioMode(audio[j], title, job.Uhd, job.Encode?.Lossless == true) switch
+            var mode = AudioMode(audio[j], title, job.Uhd, lossless, copyEac3);
+            var start = audio[j].Index < shifts.Count ? shifts[audio[j].Index] : 0;
+            // tsMuxeR starts each muxed soundtrack on the picture; keep the actual start of a late DD+ track after copy or conversion.
+            if (audio[j].Codec == "eac3" && j < preparedAudioStarts.Count) start = preparedAudioStarts[j];
+            var shift = start + (int)Math.Round((title.AudioDelay?.GetValueOrDefault(audio[j].Index) ?? 0) * 1000);
+            if (mode == "copy" && audio[j] is { Codec: "eac3", DiscEac3: false })
+                DiscDolbyDigitalPlus.Extract(prepared, $"0:i:0x{(mvc ? 256 : 257) + j:X}", AudioFile(prepared, j, "eac3"));
+            lines.Add(mode switch
             {
                 "thd" => $"A_AC3, \"{AudioFile(prepared, j, "hd.ac3")}\"", // tsMuxeR finds the TrueHD between the AC-3 frames
                 "lpcm" => $"A_LPCM, \"{AudioFile(prepared, j, "w64")}\"",
-                _ => $"{AudioTag(BdAudio(audio[j], title, job.Uhd))}, \"{prepared}\", track={(mvc ? 256 : 257) + j}", // without picture, ffmpeg numbers the sound from PID 256
+                "copy" when audio[j] is { Codec: "eac3", DiscEac3: false } => $"A_AC3, \"{AudioFile(prepared, j, "eac3")}\"",
+                "copy" => $"{AudioTag(audio[j].Codec)}, \"{prepared}\", track={(mvc ? 256 : 257) + j}",
+                _ => $"A_AC3, \"{prepared}\", track={(mvc ? 256 : 257) + j}", // without picture, ffmpeg numbers the sound from PID 256
             } + $", lang={Languages.Iso2(audio[j].Lang)}" + (shift != 0 ? $", timeshift={shift}ms" : ""));
         }
         foreach (var (s, file) in subs)
@@ -767,6 +832,43 @@ public static class BluRay
         log($"mux {playlist}: tsMuxeR");
         try { Tools.Run(Tools.Find("tsMuxeR.exe"), [meta, dest], log); }
         catch (InvalidOperationException) { foreach (var line in lines) log("meta: " + line); throw; } // the work folder goes with the failure: what was asked stays in the log
+        var muxedAudio = Mpls.Read(Path.Combine(dest, "BDMV", "PLAYLIST", $"{playlist:00000}.mpls")).Items[0].Audio;
+        if (muxedAudio.Count != audio.Count)
+            throw new InvalidDataException($"{title.DisplayName} : liste {playlist:00000}.mpls, {muxedAudio.Count} pistes audio multiplexées sur {audio.Count} demandées.");
+        if (job.Uhd)
+        {
+            var clip = Path.Combine(dest, "BDMV", "STREAM", $"{playlist:00000}.m2ts");
+            using var probe = JsonDocument.Parse(Tools.Run(Tools.Find("ffprobe.exe"),
+                ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,profile,pix_fmt,color_transfer,color_primaries,color_space", "-of", "json", clip]));
+            var video = probe.RootElement.GetProperty("streams").EnumerateArray().FirstOrDefault();
+            string Field(string name) => video.ValueKind == JsonValueKind.Object && video.TryGetProperty(name, out var value) ? value.GetString() ?? "" : "";
+            if (!IsUhdMain10(Field("codec_name"), Field("profile"), Field("pix_fmt")))
+                throw new InvalidDataException($"{title.DisplayName} : clip UHD {playlist:00000}.m2ts sans vidéo HEVC Main 10 4:2:0.");
+            if (src.DolbyVisionHdr10Base && (Field("color_transfer"), Field("color_primaries"), Field("color_space")) != ("smpte2084", "bt2020", "bt2020nc"))
+                throw new InvalidDataException($"{title.DisplayName} : le clip UHD {playlist:00000}.m2ts a perdu la signalisation de sa base HDR10.");
+        }
+        if (copyEac3 && audio.Any(a => a.Codec == "eac3" && CopiesAudio(a, title, job.Uhd, copyEac3)))
+        {
+            var clip = Path.Combine(dest, "BDMV", "STREAM", $"{playlist:00000}.m2ts");
+            for (var j = 0; j < audio.Count; j++)
+            {
+                if (audio[j].Codec != "eac3" || !CopiesAudio(audio[j], title, job.Uhd, copyEac3)) continue;
+                var raw = AudioFile(prepared, j, "check.eac3");
+                var problem = $"{title.DisplayName} : flux Dolby Digital Plus invérifiable après multiplexage pour {audio[j].Name}.";
+                try
+                {
+                    if (muxedAudio[j].Coding == 0x84)
+                    {
+                        DiscDolbyDigitalPlus.Extract(clip, $"0:i:0x{muxedAudio[j].Pid:X}", raw);
+                        if (audio[j].DiscEac3 ? DiscDolbyDigitalPlus.HasCoreAndExtension(raw) :
+                            DiscDolbyDigitalPlus.IsStandalone(raw, audio[j].Channels)) continue;
+                    }
+                    throw new InvalidDataException(problem);
+                }
+                catch (InvalidOperationException ex) { throw new InvalidDataException(problem, ex); }
+                finally { File.Delete(raw); }
+            }
+        }
         // a 3D title's prepared.ts holds no picture to take thumbnails from
         var carried = subs.Select(s => s.Track).ToList();
         return new Muxed(mvc ? title.Video : prepared, audio.Select(a => a.Name).ToList(), carried, chapterTimes, title.DefaultSubtitleNumber(carried),
@@ -872,13 +974,14 @@ public static class BluRay
     /// <summary>
     /// The clip the menu plays behind its pages, muxed apart as playlist <see cref="LoopPlaylist"/> and merged into the disc:
     /// a moving menu = <see cref="MenuDesign.LoopSeconds"/> seconds of video (the design's file, else the first title) re-encoded as 1080p H.264;
-    /// with only music = a black picture of that length. Its sound is the design's music (<see cref="PrepareMusic"/>), else the clip's own.
+    /// A static menu uses black video behind its opaque graphics. Its audio is the chosen music or generated silence.
     /// </summary>
     static void MuxLoop(BluRayJob job, string work, Action<string> log)
     {
         var menu = job.Menu!;
-        var seconds = LoopLength(menu, MaxLoopSeconds);
         var musicFile = menu.ExistingMusic();
+        var silent = !menu.Loop && musicFile == null;
+        var seconds = silent ? SilentMenuLoopSeconds : LoopLength(menu, MaxLoopSeconds);
         var music = musicFile == null ? null : PrepareMusic(menu, musicFile, seconds, work, log);
         var (w, h) = VideoSize(job);
         var ts = Path.Combine(work, "loop.ts");
@@ -898,25 +1001,29 @@ public static class BluRay
         }
         else
         {
-            log($"menu: music from {Path.GetFileName(musicFile)}, {seconds}s over a black picture");
+            log(silent ? $"menu BD-J : boucle de fond silencieuse ({seconds} s)" : $"menu: music from {Path.GetFileName(musicFile)}, {seconds}s over a black picture");
             args.AddRange(["-f", "lavfi", "-i", $"color=c=black:s={w}x{h}:r={fps}:d={seconds}"]);
         }
-        if (music != null) args.AddRange(["-i", music]);
+        if (silent) args.AddRange(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]);
+        else if (music != null) args.AddRange(["-i", music]);
         args.AddRange(["-map", "0:v:0"]);
-        if (music != null) args.AddRange(["-map", "1:a:0"]);
+        if (silent || music != null) args.AddRange(["-map", "1:a:0"]);
         else if (src is { Audio.Count: > 0 }) args.AddRange(["-map", "0:a:0"]);
-        var hasAudio = music != null || src is { Audio.Count: > 0 };
+        var hasAudio = silent || music != null || src is { Audio.Count: > 0 };
         args.AddRange(["-t", seconds.ToString(Inv),
             "-vf", tone + (src?.SourceView ?? "") + Fit(w, h) + (src is { } loop ? HdMatrix(loop) : ""), "-r", fps]);
         args.AddRange(MenuCodec(job.Uhd, src?.Hdr ?? "SDR", fps, h));
         if (hasAudio) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2", "-ar", "48000"]); // the first title's own sound can be anything
+        if (hasAudio && menu.Loop) args.AddRange(["-af", "apad"]);
         args.AddRange(["-sn", "-dn", ts]);
         Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
 
         var meta = Path.Combine(work, "loop.meta");
+        // Null packets keep small menu clips from reaching several play items in the player's initial read-ahead.
+        var muxRate = menu.Loop ? $"--vbr --minbitrate=8000 --maxbitrate={(job.Uhd ? 60000 : 32000)}" : "--vbr";
         var lines = new List<string>
         {
-            $"MUXOPT {(job.Uhd ? "--blu-ray-v3" : "--blu-ray")} --label={job.Label} --vbr --no-pcr-on-video-pid --new-audio-pes --mplsOffset={LoopPlaylist} --m2tsOffset={LoopPlaylist}",
+            $"MUXOPT {(job.Uhd ? "--blu-ray-v3" : "--blu-ray")} --label={job.Label} {muxRate} --no-pcr-on-video-pid --new-audio-pes --mplsOffset={LoopPlaylist} --m2tsOffset={LoopPlaylist}",
             job.Uhd ? $"V_MPEGH/ISO/HEVC, \"{ts}\", fps={declared}, track=256" : $"V_MPEG4/ISO/AVC, \"{ts}\", fps={declared}, track=256",
         };
         if (hasAudio) lines.Add($"A_AC3, \"{ts}\", track=257");
@@ -924,6 +1031,14 @@ public static class BluRay
         var dest = Path.Combine(work, "mux" + LoopPlaylist);
         if (Directory.Exists(dest)) Directory.Delete(dest, true);
         Tools.Run(Tools.Find("tsMuxeR.exe"), [meta, dest], log);
+        if (menu.Loop)
+        {
+            var name = $"{LoopPlaylist:00000}.mpls";
+            var playlist = Path.Combine(dest, "BDMV", "PLAYLIST", name);
+            var repeated = Mpls.RepeatMenuClip(File.ReadAllBytes(playlist));
+            File.WriteAllBytes(playlist, repeated);
+            File.WriteAllBytes(Path.Combine(dest, "BDMV", "BACKUP", "PLAYLIST", name), repeated);
+        }
         Merge(dest, job.OutDir);
     }
 
@@ -951,15 +1066,28 @@ public static class BluRay
         "dts" => "A_DTS", _ => "A_AC3",
     };
 
+    static List<int> PreparedAudioStarts(string prepared)
+    {
+        // Probe past the opening logos even if a soundtrack first starts during the film.
+        using var probe = JsonDocument.Parse(Tools.Run(Tools.Find("ffprobe.exe"),
+            ["-v", "error", "-analyzeduration", "60000000", "-probesize", "350000000", "-show_entries", "stream=codec_type,start_time", "-of", "json", prepared]));
+        var streams = probe.RootElement.GetProperty("streams").EnumerateArray().ToList();
+        static double? Start(JsonElement stream) =>
+            stream.TryGetProperty("start_time", out var time) && double.TryParse(time.GetString(), NumberStyles.Float, Inv, out var seconds) ? seconds : null;
+        var video = Start(streams.First(s => s.GetProperty("codec_type").GetString() == "video")) ?? 0;
+        return [.. streams.Where(s => s.GetProperty("codec_type").GetString() == "audio")
+            .Select(s => (int)Math.Round(((Start(s) ?? video) - video) * 1000))];
+    }
+
     /// <summary>The codec a source audio ends up as on the disc: copied when a Blu-ray carries it and the volume stays, AC-3 otherwise; with "Son sans perte", TrueHD or LPCM.</summary>
-    public static string BdAudio(AudioTrack a, DiscTitle t, bool uhd, bool lossless = false) => AudioMode(a, t, uhd, lossless) switch { "copy" => a.Codec, "thd" => "truehd", "lpcm" => "lpcm", _ => "ac3" };
+    public static string BdAudio(AudioTrack a, DiscTitle t, bool uhd, bool lossless = true, bool copyEac3 = true) =>
+        AudioMode(a, t, uhd, lossless, copyEac3) switch { "copy" => a.Codec, "thd" => "truehd", "lpcm" => "lpcm", _ => "ac3" };
 
     /// <summary>
-    /// How a track goes on the disc: "copy" (as it is: AC-3, DTS and DTS-HD), "ac3" (made again), and with "Son sans perte" (<paramref name="lossless"/>) for a track
-    /// without loss, "thd" (TrueHD kept as it is, an AC-3 core made beside it) or "lpcm" (decoded: FLAC, PCM, a TrueHD or DTS-HD that is cut or made louder).
+    /// Copies compatible streams, carries TrueHD with companion AC-3 and uses LPCM when audio has to be decoded in quality mode.
     /// </summary>
-    static string AudioMode(AudioTrack a, DiscTitle t, bool uhd, bool lossless) =>
-        CopiesAudio(a, t, uhd) ? "copy" : !lossless || !a.Lossless ? "ac3"
+    static string AudioMode(AudioTrack a, DiscTitle t, bool uhd, bool lossless, bool copyEac3) =>
+        CopiesAudio(a, t, uhd, copyEac3) ? "copy" : !lossless ? "ac3"
         // 48 kHz only: tsMuxeR counts a TrueHD's samples against the core's 1536 at 48 kHz
         : a.Codec == "truehd" && a.SampleRate == 48000 && t.Volume == 100 && t.AudioVolumeFilter(a.Index) == "" && t.Start == 0 && t.Gaps.Count == 0 ? "thd" : "lpcm";
 
@@ -967,7 +1095,7 @@ public static class BluRay
     static string AudioFile(string prepared, int track, string kind) => Path.ChangeExtension(prepared, $".a{track}.{kind}");
 
     /// <summary>A disc's LPCM is 48, 96 or 192 kHz, at 16 or 24 bits.</summary>
-    static int LpcmRate(AudioTrack a) => a.SampleRate is 96000 or 192000 ? a.SampleRate : 48000;
+    static int LpcmRate(AudioTrack a) => a.SampleRate > 96000 && a.Channels <= 6 ? 192000 : a.SampleRate > 48000 ? 96000 : 48000;
     static int LpcmBits(AudioTrack a) => a.Bits is > 0 and <= 16 ? 16 : 24;
 
     /// <summary>
@@ -1000,10 +1128,23 @@ public static class BluRay
     /// <summary>
     /// A copied audio track keeps everything from the keyframe before a cut's start (stream copy does not drop it), while the re-encoded video begins on the exact frame: sound
     /// a second early. So a title that starts later has its sound re-encoded too (decoded, then cut exactly); a 4K disc copies both from the same keyframe and stays in step.
-    /// Only 48 kHz is copied: a disc does not take 44.1 kHz.
+    /// The disc carries Dolby Digital at 48 kHz and DTS-HD can also use 96 or 192 kHz.
     /// </summary>
     const string OverlapDrop = "noise=drop='if(lt(pts+duration/2,ld(0)),1,0*st(0,pts+duration))'"; // ld(0): where the last frame kept ends
-    static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd) => t.Volume == 100 && t.AudioVolumeFilter(a.Index) == "" && (t.Start == 0 || uhd) && t.Gaps.Count == 0 && a.SampleRate == 48000 && a.Codec is "ac3" or "dts"; // not TrueHD: a disc wants its AC-3 core, which an mkv or ffmpeg never carries (tsMuxeR: "the disk will not play")
+    static bool CopiesAudio(AudioTrack a, DiscTitle t, bool uhd, bool copyEac3) =>
+        t.Volume == 100 && t.AudioVolumeFilter(a.Index) == "" && (t.Start == 0 || uhd)
+        && (t.Gaps.Count == 0 || t.Start == 0 && a is { Codec: "eac3", DiscEac3: false })
+        && (a.Codec == "dts" && (a.SampleRate is 48000 or 96000 || a.SampleRate == 192000 && a.Channels <= 6)
+            || a.SampleRate == 48000 && (a.Codec == "ac3" || copyEac3 && a.Codec == "eac3"));
+
+    static void RequireSupportedDolbyBase(SourceInfo source, string title)
+    {
+        if (source.Hdr == "Dolby Vision" && !source.DolbyVisionHdr10Base)
+            throw new InvalidDataException($"{title} : Dolby Vision profil {source.DolbyVisionProfile}, base HDR10 non établie. Cette source nécessite une conversion colorimétrique préalable.");
+    }
+
+    static bool IsUhdMain10(string codec, string profile, string pixelFormat) =>
+        codec == "hevc" && profile == "Main 10" && pixelFormat == "yuv420p10le";
 
     /// <summary>Whether the title's video goes on the disc as it is (stream copy) instead of being re-encoded; <see cref="TargetKbps"/> and <see cref="Prepare"/> must agree on it.</summary>
     internal static bool CopiesVideo(BluRayJob job, DiscTitle title, SourceInfo s, int kbps)
@@ -1014,8 +1155,8 @@ public static class BluRay
         var enc = job.Encode ?? new EncodeOptions();
         // a cut that starts later must be re-encoded to begin on the exact frame (a copy starts on the keyframe before it); a 4K passthrough copies it anyway
         var copyCut = title.Start == 0 || (job.Uhd && !enc.ForceReencode && kbps == 0);
-        // a 4K source is 10-bit HEVC at its own levels: only the H.264 of a Blu-ray has a player's limits to check
-        return !enc.ForceReencode && kbps == 0 && copyCut && (job.Uhd ? s.VideoCodec == "hevc" && s.PixFmt is "yuv420p10le" or "yuv420p" && s.Level <= 153 // 4:2:0 up to level 5.1, all a 4K player takes
+        // Copy a UHD picture only when the bitstream is already Main 10, 4:2:0.
+        return !enc.ForceReencode && kbps == 0 && copyCut && (job.Uhd ? IsUhdMain10(s.VideoCodec, s.Profile, s.PixFmt) && s.Level is > 0 and <= 153 // 4:2:0 up to level 5.1, all a 4K player takes
                       // a file above 48 Mb/s on average, sound included, cannot hold a video within a Blu-ray's 40
                       : (s.PlayerReadyH264 || s.PlayerReadyMpeg2) && s.Hdr == "SDR" && Tools.SizeOf(title.Video) * 8.0 / Math.Max(1, s.FileDuration > 0 ? s.FileDuration : s.Duration) <= 48e6)
                && s.Width == w && s.Height == h && fpsOk && !s.Rotated
@@ -1035,6 +1176,8 @@ public static class BluRay
         var (w, h) = VideoSize(job);
         var enc = job.Encode ?? new EncodeOptions();
         var videoOk = CopiesVideo(job, title, s, kbps);
+        if (job.Uhd && !videoOk && !IsUhdMain10(s.VideoCodec, s.Profile, s.PixFmt))
+            log($"{title.DisplayName} : copie UHD impossible ({s.VideoCodec} {s.Profile}, {s.PixFmt}), conversion HEVC Main 10 4:2:0.");
         if (job.Uhd && videoOk && title.Start > 0) log($"{title.DisplayName}: 4K is not re-encoded, so the cut starts on the keyframe before {Timecode.Format(title.Start)}");
 
         // -ss / -t before -i cut the input itself: the video, the sound and the subtitle files written below all start and stop together
@@ -1043,6 +1186,7 @@ public static class BluRay
         if (title.Start > 0) args.AddRange(["-ss", title.Start.ToString(Inv)]);
         var span = s.Duration + title.GapLength; // the part read: from the first clip's start to the last one's end
         if (title.End != null) args.AddRange(["-t", span.ToString("0.###", Inv)]);
+        if (audio.Any(a => a.Codec == "eac3" && a.File == null)) args.AddRange(LateAudioProbe);
         args.AddRange(["-i", title.Video]);
         var maps = title.AudioMaps(audio, args, span); // a sound file added to the video is one more input
         if (!noVideo) args.AddRange(["-map", "0:v:0"]);
@@ -1052,7 +1196,7 @@ public static class BluRay
         if (videoOk && job.Uhd && s.Hdr == "Dolby Vision" && !s.DualLayer)
         {
             args.AddRange(["-bsf:v", "dovi_rpu=strip=1"]);
-            log($"{title.DisplayName}: Dolby Vision without its enhancement layer (profile 5 or 8): copied, the disc keeps its HDR10 base only; 4K Conversion keeps it (profile 7 MEL)");
+            log($"{title.DisplayName}: Dolby Vision {s.DolbyVisionProfile} : copie de la base HDR10 vérifiée, métadonnées Dolby Vision retirées.");
         }
         // effects are placed in the source's pixels: with some, the picture keeps its size until they are drawn
         var tone = job.Uhd ? "" : title.Effects is null or { IsEmpty: true } ? ToSdr(s.Hdr, s.Width, s.Height, w) : ToSdr(s.Hdr);
@@ -1091,7 +1235,7 @@ public static class BluRay
             var plus = s.Hdr == "HDR10+" ? Hdr10Plus(title, s, rate, Path.ChangeExtension(output, ".hdr10plus.json"), log) : null;
             var dv = s.Hdr == "Dolby Vision" ? DolbyVisionRpu(title, s, rate, Path.ChangeExtension(output, ".rpu.bin"), log) : null;
             // dhdr10-info: a folder named L'été must not close the quote
-            args.AddRange(["-dolbyvision", "0", "-x265-params", $"log-level=error:{colors}:uhd-bd=1:repeat-headers=1:aud=1:keyint=24:vbv-maxrate={maxrate}:vbv-bufsize={maxrate}"
+            args.AddRange(["-profile:v", "main10", "-dolbyvision", "0", "-x265-params", $"log-level=error:{colors}:uhd-bd=1:repeat-headers=1:aud=1:keyint=24:vbv-maxrate={maxrate}:vbv-bufsize={maxrate}"
                            + (plus != null ? $":dhdr10-info='{plus.Replace('\\', '/').Replace("'", @"'\''")}'" : "") + (dv != null ? ":" + FixedGop : "")]);
         }
         else if (!videoOk)
@@ -1104,12 +1248,29 @@ public static class BluRay
         string Af(int track) => string.Join(",", new[] { title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "", title.AudioVolumeFilter(track) }.Where(f => f.Length > 0));
         for (var j = 0; j < audio.Count; j++)
         {
-            if (title.AudioVolumeFilter(audio[j].Index) is { Length: > 0 } louder && AudioMode(audio[j], title with { AudioVolume = null }, job.Uhd, enc.Lossless) is var kept && kept != AudioMode(audio[j], title, job.Uhd, enc.Lossless))
-                log($"{title.DisplayName}: {audio[j].Name}: {louder}, so the track is made again as {BdAudio(audio[j], title, job.Uhd, enc.Lossless)} instead of {(kept == "copy" ? "copied" : "kept as TrueHD")}");
+            if (title.AudioVolumeFilter(audio[j].Index) is { Length: > 0 } louder && AudioMode(audio[j], title with { AudioVolume = null }, job.Uhd, enc.Lossless, enc.CopyEac3) is var kept && kept != AudioMode(audio[j], title, job.Uhd, enc.Lossless, enc.CopyEac3))
+                log($"{title.DisplayName}: {audio[j].Name}: {louder}, so the track is made again as {BdAudio(audio[j], title, job.Uhd, enc.Lossless, enc.CopyEac3)} instead of {(kept == "copy" ? "copied" : "kept as TrueHD")}");
+            if (audio[j].Codec == "eac3" && !CopiesAudio(audio[j], title, job.Uhd, enc.CopyEac3))
+            {
+                var fallback = enc.Lossless ? "LPCM" : "AC-3 48 kHz";
+                log($"{title.DisplayName} : {audio[j].Name}, Dolby Digital Plus (copie désactivée ou incompatible avec les réglages) converti en {fallback}. Les éventuels objets Atmos ne sont pas conservés.");
+            }
             // a DVD rip joins its scenes with sound frames that overlap (the same time written two or three times); tsMuxeR plays every frame one after the
             // other, so the sound fell behind the picture at each join (0.55 s at the end of 13 deleted scenes): a frame that starts before the last one ends is left out
             // shortcut: overlaps under half a frame are kept and add up, and a hole in the sound is not filled; re-encode such a track (aresample=async=1) if one turns up
-            if (CopiesAudio(audio[j], title, job.Uhd)) args.AddRange([$"-c:a:{j}", "copy", $"-bsf:a:{j}", OverlapDrop]);
+            if (CopiesAudio(audio[j], title, job.Uhd, enc.CopyEac3))
+            {
+                var filter = OverlapDrop;
+                if (title.Gaps.Count > 0)
+                {
+                    // Retain whole DD+ frames across the selected passages. The elementary stream is packed end to end by tsMuxeR.
+                    var gaps = string.Join("+", title.Gaps.Select(g => $"gte(pts*tb,{g.From.ToString(Inv)})*lt(pts*tb,{g.To.ToString(Inv)})"));
+                    filter = $"noise=drop='{gaps}',{OverlapDrop}";
+                }
+                args.AddRange([$"-c:a:{j}", "copy", $"-bsf:a:{j}", filter]);
+                if (audio[j].Codec == "eac3") log($"{title.DisplayName} : {audio[j].Name}, Dolby Digital Plus copié"
+                    + (audio[j].DiscEac3 ? " avec son noyau AC-3 et son extension dépendante." : " sans conversion ; lecture sur platine à vérifier."));
+            }
             else
             {
                 args.AddRange([$"-c:a:{j}", "ac3", $"-b:a:{j}", audio[j].Channels > 2 ? "640k" : "448k", $"-ar:a:{j}", "48000"]);
@@ -1122,7 +1283,7 @@ public static class BluRay
         // shortcut: prepared.ts keeps their AC-3 too (unused, about 300 MB for a film) so that the other tracks keep their PIDs; map them out if the work folder's size matters
         for (var j = 0; j < audio.Count; j++)
         {
-            var (a, mode) = (audio[j], AudioMode(audio[j], title, job.Uhd, enc.Lossless));
+            var (a, mode) = (audio[j], AudioMode(audio[j], title, job.Uhd, enc.Lossless, enc.CopyEac3));
             if (mode == "thd")
             {
                 // setts: an mkv times its units to the millisecond, two of them often the same, and ffmpeg warns about each one (their times are not written anyway)
@@ -1137,7 +1298,7 @@ public static class BluRay
                 if (a.Channels is 7 or > 8) args.AddRange(["-ac", "8"]);
                 if (Af(a.Index) is { Length: > 0 } af) args.AddRange(["-af", af]);
                 args.Add(AudioFile(output, j, "w64"));
-                log($"{title.DisplayName}: {a.Name}: kept without loss, as LPCM {LpcmRate(a) / 1000} kHz {LpcmBits(a)} bits");
+                log($"{title.DisplayName}: {a.Name}: décodé en LPCM {LpcmRate(a) / 1000} kHz {LpcmBits(a)} bits.");
             }
         }
         if (!noVideo || audio.Count > 0) // without picture or sound there is nothing to write
@@ -1145,7 +1306,7 @@ public static class BluRay
             try { Tools.Run(Tools.Find("ffmpeg.exe"), args, log, seconds: s.Duration); }
             catch (InvalidOperationException e) { log($"conversion failed, trying once more: {e.Message.Split('\n')[0]}"); Tools.Run(Tools.Find("ffmpeg.exe"), args, log, seconds: s.Duration); }
         for (var j = 0; j < audio.Count; j++)
-            if (AudioMode(audio[j], title, job.Uhd, enc.Lossless) == "thd")
+            if (AudioMode(audio[j], title, job.Uhd, enc.Lossless, enc.CopyEac3) == "thd")
             {
                 InterleaveTrueHd(AudioFile(output, j, "thd"), AudioFile(output, j, "ac3"), audio[j].Channels > 2 ? 640 : 448, AudioFile(output, j, "hd.ac3"));
                 File.Delete(AudioFile(output, j, "thd"));
@@ -1209,7 +1370,6 @@ public static class BluRay
         try
         {
             tool = Tools.Find("dovi_tool.exe");
-            if (s.DvProfile5) { log($"{title.DisplayName}: Dolby Vision profile 5 has no HDR10 base, not kept (its colours come out wrong)"); return null; }
             // dovi_tool reads Matroska and raw HEVC; anything else (a .m2ts, an .mp4) goes through a raw copy of the video first
             var input = Path.GetExtension(title.Video).ToLowerInvariant() is ".mkv" or ".hevc" or ".h265" or ".265" ? title.Video : rpu + ".hevc";
             if (input != title.Video) Tools.Run(Tools.Find("ffmpeg.exe"), ["-y", "-v", "error", "-i", title.Video, "-map", "0:v:0", "-c", "copy", "-f", "hevc", input]);

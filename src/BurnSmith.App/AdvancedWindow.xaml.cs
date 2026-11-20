@@ -89,6 +89,7 @@ public partial class AdvancedWindow : Window
         ModeBox.SelectedIndex = encode.ForceReencode ? 1 : 0;
         GpuBox.IsChecked = encode.Gpu;
         LosslessBox.IsChecked = encode.Lossless;
+        CopyEac3Box.IsChecked = encode.CopyEac3;
         FpsBox.ItemsSource = Rates.Select(r => r == 0 ? "Comme la source" : r.ToString("0.###")).ToList();
         FpsBox.SelectedIndex = Math.Max(0, Array.IndexOf(Rates, encode.Fps ?? 0));
         SpeedBox.ItemsSource = Speeds.Select(q => q.Name).ToList();
@@ -113,7 +114,8 @@ public partial class AdvancedWindow : Window
         return new EncodeOptions(uhd ? !Passthrough : ModeBox.SelectedIndex == 1, speed.Crf, speed.Preset, dvd ? ChosenRate : Encode.DvdKbps,
             dvd ? Encode.BdKbps : Passthrough ? 0 : ChosenRate, dvd ? Encode.FitDisc : !Passthrough && QualityBox.SelectedIndex == 0, output.Hd720,
             TvPal.IsChecked == true ? true : TvNtsc.IsChecked == true ? false : null, Narrow.IsChecked != true,
-            GpuBox.IsChecked == true, dvd ? Encode.Fps : FpsBox.SelectedIndex > 0 ? Rates[FpsBox.SelectedIndex] : null, LosslessBox.IsChecked == true);
+            GpuBox.IsChecked == true, dvd ? Encode.Fps : FpsBox.SelectedIndex > 0 ? Rates[FpsBox.SelectedIndex] : null,
+            LosslessBox.IsChecked == true, CopyEac3Box.IsChecked == true);
     }
 
     void OnQuality(object s, RoutedEventArgs e)

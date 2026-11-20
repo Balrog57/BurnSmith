@@ -263,31 +263,66 @@ public static class Imapi
         // an open or empty tray: File.OpenHandle would throw "Le périphérique n'est pas prêt"
         if (!new DriveInfo(letter[..1]).IsReady) throw new IOException($"pas de disque dans {letter[..2].ToUpperInvariant()} (tiroir ouvert ou vide) : rien à vérifier");
         log?.Invoke("verify: lecture du disque…");
+        using var image = File.OpenRead(isoFile);
+        using var disc = File.OpenHandle($@"\\.\{letter[..2]}", FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        CompareImage(image, (buffer, offset) => RandomAccess.Read(disc, buffer, offset), progress, cancel);
+        log?.Invoke("verify: identique à l'image");
+    }
+
+    delegate int ReadAt(Span<byte> buffer, long offset);
+
+    static void CompareImage(Stream image, ReadAt read, IProgress<double>? progress = null, CancellationToken cancel = default)
+    {
         const int chunk = 1 << 20;
         var a = new byte[chunk];
         var b = new byte[chunk];
-        using var image = File.OpenRead(isoFile);
-        using var disc = File.OpenHandle($@"\\.\{letter[..2]}", FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         long offset = 0, total = image.Length;
+        if (total == 0) throw new IOException("Verification failed: the reference image is empty.");
         while (offset < total)
         {
             cancel.ThrowIfCancellationRequested();
             var n = (int)Math.Min(chunk, total - offset);
             image.ReadExactly(a, 0, n);
-            var got = RandomAccess.Read(disc, b.AsSpan(0, n), offset);
-            if (!a.AsSpan(0, got).SequenceEqual(b.AsSpan(0, got)))
-                throw new IOException($"Verification failed near {offset / 1048576} MiB: the disc does not match the image.");
-            if (got < n)
+            for (var compared = 0; compared < n;)
             {
-                // a mounted image (tests) ends a little before the file does; a real disc must hold everything
-                if (total - (offset + got) > 1 << 20) throw new IOException($"Verification failed: the disc ends at {(offset + got) / 1048576} MiB, the image at {total / 1048576} MiB.");
-                log?.Invoke($"verify: le lecteur s'arrête {(total - offset - got) / 1024} Ko avant la fin de l'image (octets lus identiques)");
-                return;
+                cancel.ThrowIfCancellationRequested();
+                var got = read(b.AsSpan(0, n - compared), offset + compared);
+                if (got == 0)
+                    throw new IOException($"Verification failed: the disc ends at byte {offset + compared:N0}, the image at {total:N0}.");
+                if (!a.AsSpan(compared, got).SequenceEqual(b.AsSpan(0, got)))
+                    throw new IOException($"Verification failed near {(offset + compared) / 1048576} MiB: the disc does not match the image.");
+                compared += got;
             }
             offset += n;
             progress?.Report((double)offset / total);
         }
-        log?.Invoke("verify: identique à l'image");
+    }
+
+    /// <summary>Exercises the sector comparison with a reader that returns short reads, without a drive.</summary>
+    public static bool CheckVerifyReads()
+    {
+        byte[] reference = [7, 6, 5, 4, 3];
+        byte[] actual = [.. reference];
+        var length = actual.Length;
+        int Read(Span<byte> buffer, long offset)
+        {
+            var count = Math.Min(2, Math.Min(buffer.Length, length - (int)offset));
+            actual.AsSpan((int)offset, count).CopyTo(buffer);
+            return count;
+        }
+
+        bool Passes()
+        {
+            using var image = new MemoryStream(reference);
+            try { CompareImage(image, Read); return true; }
+            catch (IOException) { return false; }
+        }
+        if (!Passes()) return false;
+        length--;
+        if (Passes()) return false;
+        length++;
+        actual[^1]++;
+        return !Passes();
     }
 
     /// <summary>Opens the tray of the drive.</summary>

@@ -2,7 +2,7 @@ using BurnSmith.Core;
 
 /// <summary>
 /// burnsmith check-recap : « À savoir avant de démarrer » (Core.Recap) on sources made up here, so no video is read: a Blu-ray copies the H.264 1080p24 episodes
-/// and converts the HEVC one, remakes its TrueHD 7.1 as Dolby Digital 5.1, says how full the disc is and what plays at the start; a DVD converts everything.
+/// and converts the HEVC one, keeps its TrueHD 7.1 by default, says how full the disc is and what plays at the start. A DVD converts everything.
 /// </summary>
 static class RecapCheck
 {
@@ -31,8 +31,8 @@ static class RecapCheck
             var bd = Recap.For(new BluRayJob(titles, "", menu, Encode: new(Gpu: false), CapacityGB: 23.3), f => sources[f]);
             foreach (var line in bd) Console.WriteLine("     " + line);
             Check("Blu-ray : 2 épisodes copiés, 1 converti, avec une durée", bd[0].StartsWith("Vidéos copiées telles quelles : 2 ; converties : 1 (environ ") && bd[0].EndsWith("min)."), bd);
-            Check("Blu-ray : le TrueHD 7.1 de l'épisode 2 refait en Dolby Digital 5.1, rien sur l'AC-3 copié", bd.Count(l => l.StartsWith("Le son ")) == 1 && bd.Contains("Le son TrueHD 7.1 de la vidéo 2 sera refait en Dolby Digital 5.1."), bd);
-            Check("Blu-ray : le disque rempli à 6 % (1,5 Go sur 23,3)", bd.Any(l => l == "Le disque sera rempli à 6 %."), bd);
+            Check("Blu-ray : aucune conversion audio quand le TrueHD 7.1 et l'AC-3 sont copiés", bd.All(l => !l.StartsWith("Le son ")), bd);
+            Check("Blu-ray : 7 % avec la piste AC-3 de secours ajoutée au TrueHD", bd.Any(l => l == "Le disque sera rempli à 7 %."), bd);
             Check("Blu-ray : français par défaut, sous-titres forcés actifs (menu BD-J)", bd[^1] == "Au démarrage : son Français 5.1, sous-titres forcés actifs.", bd);
 
             var shown = Recap.For(new BluRayJob([titles[0] with { DefaultSubtitle = 0 }], "", null, CapacityGB: 0), f => sources[f]);

@@ -183,6 +183,8 @@ public sealed class MenuDesign
 /// LoopSeconds 0 = the music's length (BluRay.LoopLength); a clip shorter than the loop is played again from its start.
     /// </summary>
     public bool Loop { get; set; }
+    /// <summary>Optional PNG frames for the BD-J focus marker on the main page.</summary>
+    public string[]? FocusFrames { get; set; }
     public string? LoopFile { get; set; }
     public int LoopStart { get; set; }
     public int LoopSeconds { get; set; } = 30;
@@ -206,6 +208,7 @@ public sealed class MenuDesign
         copy.Elements = Elements.Select(e => e.Copy()).ToList();
         copy.PageBackgrounds = new(PageBackgrounds);
         copy.TextZones = new(TextZones);
+        copy.FocusFrames = FocusFrames?.ToArray();
         return copy;
     }
 
@@ -237,6 +240,7 @@ public sealed class MenuDesign
         var itsClip = TemplateDir is { } left && LoopFile != null && InstalledTemplate.LoopClip(left) == LoopFile; // the moving background of the template being left
         Name = t.Name; Category = t.Category; Kind = t.Kind; TemplateDir = t.TemplateDir; BackgroundImage = t.BackgroundImage;
         Top = t.Top; Bottom = t.Bottom; TextColor = t.TextColor; Accent = t.Accent; HighlightStyle = t.HighlightStyle; SelectionColor = t.SelectionColor; SelectionOpacity = t.SelectionOpacity; AnimatedThumbs = t.AnimatedThumbs; Font = t.Font;
+        FocusFrames = t.FocusFrames?.ToArray();
         ButtonStyle = t.ButtonStyle; Cols = t.Cols; Rows = t.Rows; Thumbnails = t.Thumbnails; Square = t.Square;
         CardFill = t.CardFill; Glow = t.Glow; Dim = t.Dim; BackgroundBlur = t.BackgroundBlur; OwnBackdrop = t.OwnBackdrop; ShowPreview = t.ShowPreview;
         MarginX = t.MarginX; MarginY = t.MarginY; Gap = t.Gap; Header = t.Header; Footer = t.Footer;
