@@ -206,6 +206,16 @@ static class BdCheck
             Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", standalone, "-map", "0:a:0", "-c", "copy",
                 "-bsf:a", "noise=drop='gte(pts*tb,1)*lt(pts*tb,2)'", "-f", "eac3", expected]);
             Check("separated passages retain the selected DD+ frames byte for byte", Hash(expected) == Hash(Stream(cut, 1)));
+            var late = F("audit-eac3-late.mkv");
+            Tools.Run(ffmpeg, ["-y", "-v", "error", "-i", standalone, "-itsoffset", "1.5", "-i", standalone,
+                "-map", "0:v:0", "-map", "1:a:0", "-c", "copy", late]);
+            var lateDisc = Bd("audit-eac3-late-passages", [new DiscTitle(late, End: 3, Clips: clips)], Small());
+            using var timing = System.Text.Json.JsonDocument.Parse(Tools.Run(Tools.Find("ffprobe.exe"),
+                ["-v", "error", "-show_entries", "stream=codec_type,start_time", "-of", "json", Stream(lateDisc, 1)]));
+            double Start(string type) => double.Parse(timing.RootElement.GetProperty("streams").EnumerateArray()
+                .Single(s => s.GetProperty("codec_type").GetString() == type).GetProperty("start_time").GetString()!, CultureInfo.InvariantCulture);
+            var delay = Start("audio") - Start("video");
+            Check("late Dolby Digital Plus starts after the kept opening, with the removed gap subtracted", Math.Abs(delay - 1) < 0.06, delay.ToString(CultureInfo.InvariantCulture));
             foreach (var (lossless, codec) in new[] { (true, "pcm_bluray"), (false, "ac3") })
             {
                 var log = new List<string>();

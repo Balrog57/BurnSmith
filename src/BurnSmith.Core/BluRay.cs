@@ -809,6 +809,8 @@ public static class BluRay
             var start = audio[j].Index < shifts.Count ? shifts[audio[j].Index] : 0;
             // tsMuxeR starts each muxed soundtrack on the picture; keep the actual start of a late DD+ track after copy or conversion.
             if (audio[j].Codec == "eac3" && j < preparedAudioStarts.Count) start = preparedAudioStarts[j];
+            if (mode == "copy" && audio[j] is { Codec: "eac3", DiscEac3: false } && title.Gaps.Count > 0)
+                start -= (int)Math.Round(1000 * title.Gaps.Sum(g => Math.Clamp(start / 1000.0 - g.From, 0, g.To - g.From)));
             var shift = start + (int)Math.Round((title.AudioDelay?.GetValueOrDefault(audio[j].Index) ?? 0) * 1000);
             if (mode == "copy" && audio[j] is { Codec: "eac3", DiscEac3: false })
                 DiscDolbyDigitalPlus.Extract(prepared, $"0:i:0x{(mvc ? 256 : 257) + j:X}", AudioFile(prepared, j, "eac3"));
