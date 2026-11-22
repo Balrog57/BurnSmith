@@ -39,6 +39,10 @@ public partial class MenuEditorWindow : Window
     MenuPage? current;
     PageImages? currentImages;
     string? focusId;
+    int navigationRequest;
+    int trackRequest;
+    int? previewPlaying;
+    bool previewChain;
     int audioSel = 1, subSel; // what the settings page marks while previewing (audio stream number 1-based, subtitle 0 = off)
     bool stripSync;
     List<Element> backgrounds = [];
@@ -47,6 +51,8 @@ public partial class MenuEditorWindow : Window
     System.Windows.Point pressedAt;
 
     public MenuDesign Result => working;
+    internal bool IsPreviewingPopup => current?.Id.StartsWith("pop", StringComparison.Ordinal) == true;
+    internal string PreviewStatus => Status.Text;
 
     /// <summary>For the off-screen snapshot (the bottom of the properties panel on show).</summary>
     public void ScrollProps(double? to = null)
@@ -95,6 +101,9 @@ public partial class MenuEditorWindow : Window
         Loaded += (_, _) => { PlayModeBox.SelectedIndex = Playback.Mode; Rebind(); };
         Loaded += (_, _) =>
         {
+            PreviewPopupButton.Visibility = CanPreviewPopup ? Visibility.Visible : Visibility.Collapsed;
+            PreviewStartButton.Visibility = PreviewEndButton.Visibility = DvdPreview || Hdmv ? Visibility.Visible : Visibility.Collapsed;
+            if (!CanPreviewPopup) PopupBox.IsEnabled = false;
             if (!Hdmv) return;
             foreach (var box in new[] { PopupBox, LoopBox }) // kept in the design (a BD-J disc of the same menu has them), only not offered
             {
@@ -107,6 +116,12 @@ public partial class MenuEditorWindow : Window
 
     /// <summary>The disc gets a native (HDMV) menu: what it cannot do (see <see cref="BurnSmith.Core.HdmvMenu.LeftOut"/>) is greyed.</summary>
     public bool Hdmv { get; init; }
+    public bool CanPreviewPopup { get; init; }
+    public bool DvdPreview { get; init; }
+
+    MenuPage SettingsPreview(MenuDesign design, MenuContent facts, string id, int audio, int subtitle) =>
+        DvdPreview ? Dvd.PreviewSettings(design, facts, id, audio, subtitle) with { Id = id }
+            : MenuBuilder.WithElements(design, MenuBuilder.Settings(design, facts, audio, subtitle, id), facts);
 
     void Dirty() { timer.Stop(); timer.Start(); }
 
@@ -329,12 +344,20 @@ public partial class MenuEditorWindow : Window
     /// <summary>The page picture and one focus frame per button. Call it on an STA thread (see <see cref="MenuRenderer.Sta{T}"/>).</summary>
     static PageImages DrawPage(MenuDesign d, MenuPage p)
     {
+        if (p.Id.StartsWith("pop", StringComparison.Ordinal))
+        {
+            var picture = d.Poster;
+            d = MenuBuilder.PopupDesign(d);
+            d.Poster = picture;
+        }
         var focus = new Dictionary<string, BitmapImage>();
         foreach (var b in p.Buttons) focus[b.Id] = Decode(MenuRenderer.Focus(d, b, written: p.Ops.OfType<BurnSmith.Core.Menu.Label>().FirstOrDefault(l => l.Rect == b.Rect)));
         return new PageImages(Decode(MenuRenderer.Background(d, p)), focus);
     }
 
-    static string PageName(string id) => id switch
+    string PageName(string id) => PageName(working, id);
+
+    static string PageName(MenuDesign design, string id) => design.CustomPages.FirstOrDefault(page => page.Id == id)?.Title ?? (id switch
     {
         "root" => "Menu principal",
         "settings" => "Réglages",
@@ -344,7 +367,7 @@ public partial class MenuEditorWindow : Window
         _ when id.StartsWith("scenes") => "Chapitres " + id[6..],
         _ when id.StartsWith("bonus") => "Bonus " + id[5..],
         _ => id,
-    };
+    });
 
     async Task Render()
     {
@@ -352,14 +375,15 @@ public partial class MenuEditorWindow : Window
         var d = working.Clone();
         var mine = ++version;
         var wanted = current?.Id ?? "root";
-        var (audio, sub) = (audioSel, subSel);
+        var (audio, sub, facts) = (audioSel, subSel, content with { PlainFocus = DvdPreview });
         try
         {
             var (pages, page, images) = await Task.Run(() => MenuRenderer.Sta(() =>
             {
-                var built = MenuBuilder.Build(d, content);
-                foreach (var id in MenuBuilder.SettingsIds(d, content)) // une page ou deux, selon le modèle : chacune marque le choix en cours
-                    if (built.FindIndex(p => p.Id == id) is >= 0 and var at) built[at] = MenuBuilder.WithElements(d, MenuBuilder.Settings(d, content, audio, sub, id), content);
+                var built = MenuBuilder.Build(d, facts);
+                foreach (var id in MenuBuilder.SettingsIds(d, facts)) // une page ou deux, selon le modèle : chacune marque le choix en cours
+                    if (built.FindIndex(p => p.Id == id) is >= 0 and var at) built[at] = SettingsPreview(d, facts, id, audio, sub);
+                if (CanPreviewPopup && d.Popup) built.AddRange(MenuBuilder.Popup(d, facts, facts.PopupTitles, audio, sub));
                 var shown = built.FirstOrDefault(p => p.Id == wanted) ?? built[0];
                 return (built, shown, DrawPage(d, shown));
             }));
@@ -385,7 +409,8 @@ public partial class MenuEditorWindow : Window
         try
         {
             var slides = await Task.Run(() => MenuRenderer.Sta(() =>
-                s.Pages.Select(p => new Slide(p.Id, PageName(p.Id), Decode(MenuRenderer.Background(s.Design, p), 224))).ToList()));
+                s.Pages.Where(p => !p.Id.StartsWith("pop", StringComparison.Ordinal))
+                    .Select(p => new Slide(p.Id, PageName(s.Design, p.Id), Decode(MenuRenderer.Background(s.Design, p), 224))).ToList()));
             if (mine != version) return;
             stripSync = true;
             PageStrip.ItemsSource = slides;
@@ -398,11 +423,14 @@ public partial class MenuEditorWindow : Window
     void Show(MenuPage page, PageImages images)
     {
         current = page;
+        RenameSubmenu.Visibility = RemoveSubmenu.Visibility = working.CustomPages.Any(custom => custom.Id == page.Id)
+            ? Visibility.Visible : Visibility.Collapsed;
         currentImages = images;
         FillZonePanel();
         if (page.Buttons.All(b => b.Id != focusId)) focusId = page.Buttons.FirstOrDefault()?.Id;
-        var index = shot?.Pages.FindIndex(p => p.Id == page.Id) ?? 0;
-        PageText.Text = $"{PageName(page.Id)} · page {index + 1} / {shot?.Pages.Count ?? 1}";
+        var mainPages = shot?.Pages.Where(p => !p.Id.StartsWith("pop", StringComparison.Ordinal)).ToList() ?? [];
+        PageText.Text = IsPreviewingPopup ? $"Pop-up · titre {previewPlaying}" :
+            $"{PageName(page.Id)} · page {mainPages.FindIndex(p => p.Id == page.Id) + 1} / {mainPages.Count}";
         if (PageStrip.ItemsSource is List<Slide> slides)
         {
             stripSync = true;
@@ -643,7 +671,7 @@ public partial class MenuEditorWindow : Window
     async void GoTo(string id, bool first = true)
     {
         if (shot is not { } s || s.Pages.FirstOrDefault(p => p.Id == id) is not { } page) return;
-        if (first) focusId = null; // a page opens on its first button, like the disc
+        var request = ++navigationRequest;
         var mine = version;
         try
         {
@@ -652,12 +680,13 @@ public partial class MenuEditorWindow : Window
                 images = await Task.Run(() => MenuRenderer.Sta(() => DrawPage(s.Design, page)));
                 s.Cache[id] = images;
             }
-            if (mine != version || shot != s) return;
+            if (mine != version || shot != s || request != navigationRequest) return;
+            if (first) focusId = null;
             Show(page, images);
         }
         catch (Exception ex)
         {
-            Status.Text = "Aperçu impossible : " + ex.Message;
+            if (mine == version && shot == s && request == navigationRequest) Status.Text = "Aperçu impossible : " + ex.Message;
         }
     }
 
@@ -672,25 +701,54 @@ public partial class MenuEditorWindow : Window
                 Status.Text = "";
                 break;
             case "play":
+                previewPlaying = a.Playlist;
+                previewChain = Playback.PlayAll && a.Playlist <= (content.Titles?.Count ?? 1);
                 Status.Text = $"▶ Sur le disque : lecture du titre {a.Playlist}.";
                 break;
             case "chapter":
-                Status.Text = $"▶ Sur le disque : lecture du titre {a.Playlist} à partir du repère {a.Mark}.";
+                previewPlaying = a.Playlist;
+                previewChain = Playback.PlayAll && a.Playlist <= (content.Titles?.Count ?? 1);
+                if (IsPreviewingPopup && shot?.Pages.FirstOrDefault() is { } root) GoTo(root.Id);
+                Status.Text = $"▶ Sur le disque : lecture du titre {a.Playlist} à partir du chapitre {a.Mark + 1}.";
                 break;
             case "playall":
+                previewPlaying = a.Playlist;
+                previewChain = true;
                 Status.Text = $"▶ Sur le disque : lecture de {a.Mark} titre(s) à la suite.";
                 break;
+            case "resume":
+                if (shot?.Pages.FirstOrDefault() is { } origin) GoTo(origin.Id);
+                Status.Text = $"▶ Reprise du titre {previewPlaying}.";
+                break;
+            case "popup":
+                if (previewPlaying is int playing) GoTo($"pop{playing}");
+                break;
+            case "menu":
+                previewPlaying = null;
+                if (shot?.Pages.FirstOrDefault() is { } main) GoTo(main.Id);
+                break;
             case "audio" or "sub":
-                if (shot is not { } s) return;
+                if (shot is not { } s || current is not { } settingsPage) return;
                 if (a.Kind == "audio") audioSel = a.Mark; else subSel = a.Mark;
-                var at = s.Pages.FindIndex(p => p.Id == current?.Id);
+                var at = s.Pages.FindIndex(p => p.Id == settingsPage.Id);
                 if (at < 0) return;
-                var (audio, sub, design) = (audioSel, subSel, s.Design);
-                var page = await Task.Run(() => MenuRenderer.Sta(() => MenuBuilder.WithElements(design, MenuBuilder.Settings(design, content, audio, sub, current!.Id), content)));
-                if (shot != s) return;
-                s.Pages[at] = page;
-                s.Cache.Remove(page.Id);
-                GoTo(page.Id, false);
+                var (audio, sub, design, facts) = (audioSel, subSel, s.Design, content with { PlainFocus = DvdPreview });
+                var request = ++trackRequest;
+                var navigation = navigationRequest;
+                try
+                {
+                    var page = await Task.Run(() => MenuRenderer.Sta(() => settingsPage.Id.StartsWith("pop", StringComparison.Ordinal)
+                        ? MenuBuilder.Popup(design, facts, facts.PopupTitles, audio, sub).First(p => p.Id == settingsPage.Id)
+                        : SettingsPreview(design, facts, settingsPage.Id, audio, sub)));
+                    if (shot != s || request != trackRequest) return;
+                    s.Pages[at] = page;
+                    s.Cache.Remove(page.Id);
+                    if (navigation == navigationRequest && current?.Id == page.Id) GoTo(page.Id, false);
+                }
+                catch (Exception ex)
+                {
+                    if (shot == s && request == trackRequest) Status.Text = "Aperçu impossible : " + ex.Message;
+                }
                 break;
         }
     }
@@ -717,11 +775,9 @@ public partial class MenuEditorWindow : Window
 
     void InitElements()
     {
-        ElemPage.ItemsSource = PageChoices;
         ElemPage.SelectedValuePath = "Value";
         ElemPage.DisplayMemberPath = "Label";
         ElemAlign.ItemsSource = new[] { "left", "center", "right" };
-        ElemTarget.ItemsSource = new[] { "movie", "all", "root", "scenes1", "settings", "credits", "bonus1" };
         ElemLook.ItemsSource = new[] { new { Label = "(celui du thème)", Value = "" } }.Concat(ElementLibrary.ButtonStyles.Select(b => new { b.Label, b.Value })).ToList();
         RefreshElemList();
         ShowElem();
@@ -759,6 +815,11 @@ public partial class MenuEditorWindow : Window
             c.IsEnabled = on;
         if (sel is { } e)
         {
+            ElemPage.ItemsSource = PageChoices.Concat(working.CustomPages.Select(page => new PageChoice(page.Id, page.Title)))
+                .Concat(PageChoices.Any(page => page.Value == e.Page) || working.CustomPages.Any(page => page.Id == e.Page)
+                    ? [] : [new PageChoice(e.Page, e.Page)]).ToList();
+            ElemTarget.ItemsSource = new[] { "movie", "all", "root", "scenes1", "settings", "credits", "bonus1" }
+                .Concat(working.CustomPages.Select(page => page.Id)).Append(e.Target).Distinct().ToArray();
             ElemPage.SelectedValue = e.Page;
             ElemText.Text = e.Text;
             ElemImage.Text = e.Image ?? "";
@@ -826,6 +887,7 @@ public partial class MenuEditorWindow : Window
     /// <param name="settings">Its settings come up (a text to type, a picture to choose); a button taken from the library leaves the library on show, for the next one.</param>
     void AddElem(MenuElement e, bool settings = true)
     {
+        if (e.IsButton) e.NavigationId = "u-" + Guid.NewGuid().ToString("N")[..10];
         working.Elements.Add(e);
         sel = e;
         RefreshElemList();
@@ -834,13 +896,75 @@ public partial class MenuEditorWindow : Window
         Dirty();
     }
 
-    void OnAddText(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "text", Page = current?.Id == "root" ? "root" : MenuElement.AllPages, Text = "Votre texte", X = 140, Y = 140, W = 700, H = 90, Size = 48 });
+    string ElementPage => current?.Id is { } page && (page == "root" || page.StartsWith("custom-")) ? page : MenuElement.AllPages;
 
-    void OnAddBox(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "box", Page = current?.Id == "root" ? "root" : MenuElement.AllPages, X = 120, Y = 780, W = 1680, H = 200, Opacity = 45, Radius = 24, BorderWidth = 0, Behind = true });
+    void OnAddText(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "text", Page = ElementPage, Text = "Votre texte", X = 140, Y = 140, W = 700, H = 90, Size = 48 });
 
-    void OnAddButton(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "button", Page = current?.Id == "root" ? "root" : MenuElement.AllPages, Text = "Bouton", Target = "movie", X = 300, Y = 620, W = 400, H = 110, Size = 44 });
+    void OnAddBox(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "box", Page = ElementPage, X = 120, Y = 780, W = 1680, H = 200, Opacity = 45, Radius = 24, BorderWidth = 0, Behind = true });
 
-    void OnAddImage(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "image", Page = MenuElement.AllPages, X = 1500, Y = 60, W = 300, H = 300, Fit = true, BorderWidth = 0 });
+    void OnAddButton(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "button", Page = ElementPage, Text = "Bouton", Target = "movie", X = 300, Y = 620, W = 400, H = 110, Size = 44 });
+
+    void OnAddImage(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "image", Page = ElementPage, X = 1500, Y = 60, W = 300, H = 300, Fit = true, BorderWidth = 0 });
+
+    void OnAddSubmenu(object s, RoutedEventArgs e)
+    {
+        if (Prompt.Ask(this, "Nom du sous-menu", "Sous-menu")?.Trim() is not { Length: > 0 } name) return;
+        var parent = current?.Id ?? "root";
+        var id = "custom-" + Guid.NewGuid().ToString("N")[..8];
+        working.CustomPages.Add(new(id, name, parent));
+        AddElem(new MenuElement { Kind = "button", Page = parent, Text = name, Target = id, X = 300, Y = 620, W = 400, H = 110, Size = 44 });
+    }
+
+    void OnRenameSubmenu(object s, RoutedEventArgs e)
+    {
+        var index = working.CustomPages.FindIndex(page => page.Id == current?.Id);
+        if (index < 0) return;
+        var page = working.CustomPages[index];
+        if (Prompt.Ask(this, "Nom du sous-menu", page.Title)?.Trim() is not { Length: > 0 } name) return;
+        working.CustomPages[index] = page with { Title = name };
+        foreach (var button in working.Elements.Where(element => element.IsButton && element.Target == page.Id && element.Text == page.Title))
+            button.Text = name;
+        RefreshElemList();
+        ShowElem();
+        Dirty();
+    }
+
+    void OnDirectionLink(object s, RoutedEventArgs e)
+    {
+        if (current is not { } page || page.Buttons.Count == 0) return;
+        var ids = string.Join(", ", page.Buttons.Select(button => button.Id));
+        var entry = Prompt.Ask(this, $"Bouton, flèche et cible ({ids})", $"{focusId ?? page.Buttons[0].Id} droite auto");
+        if (entry == null) return;
+        var words = entry.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (words is not [var button, var direction, var target]
+            || !page.Buttons.Any(item => item.Id == button)
+            || target != "-" && target != "auto" && !page.Buttons.Any(item => item.Id == target))
+        {
+            Status.Text = "Entrez un bouton, une flèche et un bouton cible. Utilisez auto ou - pour la cible.";
+            return;
+        }
+        var key = direction switch { "gauche" => "left", "droite" => "right", "haut" => "up", "bas" => "down", _ => null };
+        if (key == null) { Status.Text = "Indiquez gauche, droite, haut ou bas."; return; }
+        working.Directions.RemoveAll(link => link.Page == page.Id && link.Button == button && link.Direction == key);
+        if (target != "auto") working.Directions.Add(new(page.Id, button, key, target));
+        Dirty();
+    }
+
+    void OnRemoveSubmenu(object s, RoutedEventArgs e)
+    {
+        if (working.CustomPages.FirstOrDefault(page => page.Id == current?.Id) is not { } selected) return;
+        if (working.CustomPages.Any(page => page.Parent == selected.Id))
+        {
+            Status.Text = "Retirez d’abord ses sous-menus enfants.";
+            return;
+        }
+        working.CustomPages.Remove(selected);
+        working.Elements.RemoveAll(element => element.Page == selected.Id || element.IsButton && element.Target == selected.Id);
+        working.Directions.RemoveAll(link => link.Page == selected.Id);
+        SelectElem(null);
+        RefreshElemList();
+        Dirty();
+    }
 
     void OnElemPick(object s, SelectionChangedEventArgs e)
     {
@@ -1249,9 +1373,10 @@ public partial class MenuEditorWindow : Window
 
     void Step(int by)
     {
-        if (shot == null) return;
-        var i = shot.Pages.FindIndex(p => p.Id == current?.Id) + by;
-        if (i >= 0 && i < shot.Pages.Count) GoTo(shot.Pages[i].Id);
+        if (shot == null || IsPreviewingPopup) return;
+        var pages = shot.Pages.Where(page => !page.Id.StartsWith("pop", StringComparison.Ordinal)).ToList();
+        var i = pages.FindIndex(p => p.Id == current?.Id) + by;
+        if (i >= 0 && i < pages.Count) GoTo(pages[i].Id);
     }
 
     void OnPrev(object s, RoutedEventArgs e) => Step(-1);
@@ -1404,7 +1529,54 @@ public partial class MenuEditorWindow : Window
     void OnRemote(object s, RoutedEventArgs e)
     {
         var key = (string)((FrameworkElement)s).Tag;
-        if (key == "Menu") { if (shot?.Pages.FirstOrDefault() is { } first) GoTo(first.Id); }
+        if (key == "Start")
+        {
+            previewPlaying = content.HasIntro ? 0 : Playback.StartAtFirstTitle ? 1 : null;
+            previewChain = Playback.StartAtFirstTitle;
+            if (shot?.Pages.FirstOrDefault() is { } first) GoTo(first.Id);
+            Status.Text = previewPlaying switch { 0 => "▶ Démarrage : introduction.", 1 => "▶ Démarrage : titre 1.", _ => "Démarrage : menu principal." };
+        }
+        else if (key == "End")
+        {
+            if (previewPlaying is not int title) { Status.Text = "Choisissez un titre à lire."; return; }
+            if (title == 0)
+            {
+                previewPlaying = Playback.StartAtFirstTitle ? 1 : null;
+                if (previewPlaying == null && shot?.Pages.FirstOrDefault() is { } first) GoTo(first.Id);
+                Status.Text = previewPlaying != null ? "▶ Fin de l’introduction : lecture du titre 1." : "Fin de l’introduction : menu principal.";
+                return;
+            }
+            var main = content.Titles?.Count ?? 1;
+            if (previewChain && title < main)
+            {
+                previewPlaying = title + 1;
+                Status.Text = $"▶ Fin du titre {title} : lecture du titre {previewPlaying}.";
+            }
+            else if (Playback.StartAtFirstTitle && Playback.Rewind && (Hdmv || previewChain && title == main))
+            {
+                previewPlaying = 1;
+                previewChain = true;
+                Status.Text = $"▶ Fin du titre {title} : reprise au premier titre.";
+            }
+            else
+            {
+                previewPlaying = null;
+                var stop = Playback.PlayAll && !Playback.Rewind && (Hdmv || previewChain && title == main);
+                if (!stop && shot?.Pages.FirstOrDefault() is { } root) GoTo(root.Id);
+                Status.Text = stop ? $"Fin du titre {title} : arrêt." : $"Fin du titre {title} : retour au menu.";
+            }
+        }
+        else if (key == "Menu")
+        {
+            previewPlaying = null;
+            if (shot?.Pages.FirstOrDefault() is { } first) GoTo(first.Id);
+        }
+        else if (key == "Popup")
+        {
+            if (current?.Id.StartsWith("pop", StringComparison.Ordinal) == true && shot?.Pages.FirstOrDefault() is { } first) GoTo(first.Id);
+            else if (previewPlaying is int title && shot?.Pages.Any(page => page.Id == $"pop{title}") == true) GoTo($"pop{title}");
+            else Status.Text = "Choisissez un titre dans l’aperçu d’un menu Blu-ray BD-J avec pop-up activé.";
+        }
         else Remote(Enum.Parse<System.Windows.Input.Key>(key));
     }
 
@@ -1534,7 +1706,8 @@ public partial class MenuEditorWindow : Window
     void OnOk(object s, RoutedEventArgs e)
     {
         if (error != null) { MessageBox.Show(this, "Corrigez d'abord l'erreur de l'aperçu :\n" + error, "BurnSmith"); return; }
-        Playback = PlaybackOptions.FromMode(Math.Max(0, PlayModeBox.SelectedIndex), Playback.Rewind);
+        Playback = PlaybackOptions.FromMode(Math.Max(0, PlayModeBox.SelectedIndex), Playback.Rewind) with
+            { AutoStartSeconds = Playback.AutoStartSeconds, RememberPosition = Playback.RememberPosition };
         if (catalog.Any(f => f.Design.Name == working.Name)) TemplatePicks.Used(working.Name); // « Récemment utilisés »: the template this menu went out with
         DialogResult = true;
     }

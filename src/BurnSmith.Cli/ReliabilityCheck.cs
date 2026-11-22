@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using BurnSmith.Core;
+using BurnSmith.Core.Menu;
 
 /// <summary>
 /// burnsmith check-reliability : Cancel stops a real encode at once, through the real builds, as a cancelled build (no tool failure, no process left, no work folder);
@@ -67,6 +68,37 @@ static class ReliabilityCheck
         if (!ended) { Alive(kill: true); Task.WaitAny([running], 30_000); } // the defect is back: the next parts must not see this encode
     }
 
+    static void ResumeEncoding(string ffmpeg)
+    {
+        var first = F("first.mkv");
+        var second = F("second.mkv");
+        Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "color=s=128x72:r=24:d=2",
+            "-f", "lavfi", "-i", "sine=f=440:d=2", "-c:v", "mpeg4", "-c:a", "aac", first]);
+        File.Copy(first, second);
+        var menu = new MenuDesign { Title = "Cache : premier montage" };
+        var job = new BluRayJob([new DiscTitle(first), new DiscTitle(second)], F("cache-bd"), menu,
+            false, "CACHE", 5, new EncodeOptions(ForceReencode: true, Gpu: false));
+        using var cancel = new CancellationTokenSource();
+        var cancelled = false;
+        try { BluRay.Build(job, line => { if (line.StartsWith("prepare 2:")) cancel.Cancel(); }, cancel.Token); }
+        catch (OperationCanceledException) { cancelled = true; }
+        Check("cache : le premier titre a été multiplexé avant l'annulation", cancelled
+            && File.Exists(Path.Combine(job.OutDir, "BDMV", "STREAM", "00001.m2ts")) && !Directory.Exists(job.OutDir + "_work"));
+
+        var lines = new List<string>();
+        BluRay.Build(job, lines.Add);
+        Check("cache : la reprise réutilise le premier titre seul", Hits().SequenceEqual(["prepared1.ts"]));
+        lines.Clear();
+        BluRay.Build(job with { Menu = new MenuDesign { Title = "Cache : nouveau menu" } }, lines.Add);
+        Check("cache : changer le menu réutilise les deux titres", Hits().SequenceEqual(["prepared1.ts", "prepared2.ts"]));
+        lines.Clear();
+        BluRay.Build(job with { Titles = [job.Titles[0], job.Titles[1] with { Volume = 80 }] }, lines.Add);
+        Check("cache : changer le volume invalide uniquement le titre concerné", Hits().SequenceEqual(["prepared1.ts"]));
+
+        IEnumerable<string> Hits() => lines.Where(line => line.StartsWith("Cache encodage : réutilisé"))
+            .Select(line => line.Split('(', ')')[1]);
+    }
+
     public static int Run(bool noDvd)
     {
         root = Path.Combine(Path.GetTempPath(), "bs_rel_" + Guid.NewGuid().ToString("N")[..8]);
@@ -75,6 +107,7 @@ static class ReliabilityCheck
         {
             Check("verification consumes partial reads and refuses a short or differing image", Imapi.CheckVerifyReads());
             var ffmpeg = Tools.Find("ffmpeg.exe");
+            Part("reprise des encodages", () => ResumeEncoding(ffmpeg));
             var clip = F("long.mkv");
             Tools.Run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "color=s=64x64:r=24:d=3000", "-f", "lavfi", "-i", "sine=f=440:d=3000", "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "ac3", clip]);
             var encode = new EncodeOptions(true, Preset: "veryslow");

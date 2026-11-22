@@ -111,6 +111,8 @@
               <TextBlock Text="Lire sur l'ordinateur"/>
             </StackPanel>
           </Button>
+          <Button x:Name="NavigationButton" Visibility="Collapsed" Click="OnDiscNavigation" Padding="10,8" Margin="0,0,8,0"
+                  Content="Navigation" ToolTip="Afficher dans le journal les parcours et les pistes du menu BD-J fabriqué."/>
           <Button x:Name="BurnButton" IsEnabled="False" Click="OnBurnIso" Padding="14,8" Margin="0,0,8,0" ToolTip="Grave une image ISO existante sur le disque du graveur choisi">
             <StackPanel Orientation="Horizontal">
               <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE958;" Margin="0,0,8,0" VerticalAlignment="Center"/>
@@ -207,6 +209,13 @@
                 <ComboBox x:Name="CapacityBox" HorizontalAlignment="Stretch" Margin="0,4,0,0" SelectionChanged="OnChanged"/>
                 <TextBlock x:Name="CapText" Margin="0,8,0,0" TextWrapping="Wrap"/>
                 <ProgressBar x:Name="CapBar" Height="8" Maximum="100" Margin="0,6,0,0"/>
+                <Border x:Name="SplitSuggestPanel" Visibility="Collapsed" Background="{StaticResource AccentTintBrush}" BorderBrush="{StaticResource OutlineBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,10,0,0">
+                  <StackPanel>
+                    <TextBlock x:Name="SplitSuggestText" FontSize="12" TextWrapping="Wrap"/>
+                    <Button Content="Répartir manuellement…" Click="OnSplitSeason" HorizontalAlignment="Stretch" Margin="0,8,0,0" Padding="10,5" FontSize="12"/>
+                  </StackPanel>
+                </Border>
                 <CheckBox x:Name="CompatCheck" Content="Compatibilité maximale" Margin="0,12,0,0"
                           ToolTip="Ce que toutes les platines lisent : le menu simple (HDMV, pages fixes, sans menu pop-up, pas encore essayé sur une vraie platine) au lieu du menu Java, le son en Dolby Digital (AC-3) avec une piste AC-3 en premier, et la gravure à 2x."/>
                 <Separator Margin="0,14"/>

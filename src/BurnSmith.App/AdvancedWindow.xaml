@@ -91,6 +91,13 @@
           <RadioButton x:Name="Mode1" GroupName="play" Content="Démarrer au premier titre et tout lire à la suite" Margin="0,10,0,0" Checked="OnMode"/>
           <CheckBox x:Name="Rewind1" Content="Rembobiner à la fin" Margin="28,4,0,0" ToolTip="À la fin, relancer le premier titre. Sinon l'écran reste noir."/>
           <RadioButton x:Name="Mode2" GroupName="play" Content="Retourner au menu si la lecture du titre sélectionné est terminée" Margin="0,10,0,0" Checked="OnMode"/>
+          <StackPanel x:Name="AutoStartPanel" Orientation="Horizontal" Margin="0,10,0,0">
+            <TextBlock Text="Démarrage automatique BD-J après (0 = désactivé)" VerticalAlignment="Center"/>
+            <TextBox x:Name="AutoStartBox" Width="46" Margin="8,0"/>
+            <TextBlock Text="secondes" VerticalAlignment="Center"/>
+          </StackPanel>
+          <CheckBox x:Name="RememberPositionBox" Content="Reprendre la lecture à la prochaine ouverture (BD-J)" Margin="0,8,0,0"
+                    ToolTip="Utilise le stockage local du lecteur. La touche Menu principal reste disponible."/>
         </StackPanel>
 
         <!-- the text subtitles kept on the disc: font, size, colour, height (SubtitleStyle) -->

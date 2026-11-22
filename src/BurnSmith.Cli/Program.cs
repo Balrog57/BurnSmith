@@ -101,6 +101,24 @@ if (a.Count >= 2 && a[0] == "check-disc")
     Console.WriteLine(found.Count == 0 ? "ok   disc structure" : string.Join(Environment.NewLine, found.Select(p => "FAIL " + p)));
     return found.Count == 0 ? 0 : 1;
 }
+// burnsmith check-navigation <disc folder | .iso> [--audio N] [--sub N] : trace des menus BD-J BurnSmith
+if (a.Count >= 2 && a[0] == "check-navigation")
+{
+    try
+    {
+        var audio = Opt("--audio") is { } audioText ? int.Parse(audioText) : 0;
+        var sub = Opt("--sub") is { } subText ? int.Parse(subText) : -1;
+        var (trace, problems) = DiscCheck.Navigation(a[1], audio, sub);
+        foreach (var line in trace) Console.WriteLine(line);
+        foreach (var problem in problems) Console.Error.WriteLine("FAIL " + problem);
+        return problems.Count == 0 ? 0 : 1;
+    }
+    catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or NotSupportedException or UnauthorizedAccessException or FormatException or OverflowException)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+}
 // burnsmith scan-damage <file.iso | disc folder> [--decode | --no-decode] : where a ripped disc is damaged (sectors filled with FF or zeros, lost sync, packets still encrypted,
 //   each placed in its file and in time), read without mounting; short clips (stills, menus) are decoded by ffmpeg too, --decode decodes every stream,
 //   --no-decode none; a picture the decoder had to conceal is damage; 1 when damage is found
@@ -2215,6 +2233,71 @@ int Finished(int code)
 // burnsmith project FILE.burnsmith --recap [--trial [SECONDS]] : only « À savoir avant de démarrer », what the build would do, nothing built (as bd / dvd --recap)
 if (a.Count >= 2 && a[0] == "project" && a.Contains("--recap")) { var recapped = Project.Load(a[1]); recapped.Recap(a.Contains("--trial") ? Trial() : recapped.Trial).ForEach(Console.WriteLine); return 0; }
 if (a.Count >= 2 && a[0] == "project") return Finished(BuildProject(a[1]));
+// burnsmith volumes FILE.burnsmith [--split N1,N2,...] [--out FOLDER] [--build] : preview or build manually split ordered volumes; without --split, reports size and split suggestion (+30 %).
+if (a.Count >= 2 && a[0] == "volumes")
+{
+    Project loaded;
+    try { loaded = Project.Load(a[1]); }
+    catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+    var splitArg = Opt("--split");
+    if (splitArg == null)
+    {
+        if (a.Contains("--build"))
+        {
+            Console.Error.WriteLine("La répartition est manuelle : indiquez le nombre de vidéos par disque avec --split N1,N2,... (ex. --split 5,5).");
+            return 2;
+        }
+        var suggest = loaded.ShouldSuggestSplit(out var estimatedGb, out var usableGb);
+        var episodes = (loaded.Titles ?? []).Where(t => !t.Intro).ToList();
+        Console.WriteLine(usableGb > 0
+            ? $"Taille estimée avant compression : {estimatedGb:0.00} Go / {usableGb:0.#} Go utilisables ({episodes.Count} vidéos)."
+            : $"Taille estimée avant compression : {estimatedGb:0.00} Go ({episodes.Count} vidéos).");
+        if (suggest)
+        {
+            var overPct = (int)Math.Round((estimatedGb / usableGb - 1) * 100);
+            var discs = Math.Clamp((int)Math.Ceiling(estimatedGb / usableGb), 2, episodes.Count);
+            Console.WriteLine($"Suggestion : la saison dépasse le disque de {overPct} %. Une répartition manuelle sur {discs} disques limiterait la perte de qualité (ex. --split …).");
+        }
+        for (var i = 0; i < episodes.Count; i++) Console.WriteLine($"  {i + 1}. {episodes[i].DisplayName}");
+        return 0;
+    }
+    var parts = splitArg.Split(',', StringSplitOptions.TrimEntries);
+    var counts = new List<int>(parts.Length);
+    foreach (var part in parts)
+    {
+        if (!int.TryParse(part, out var n) || n <= 0)
+        {
+            Console.Error.WriteLine("--split attend des entiers positifs séparés par des virgules (ex. --split 5,5).");
+            return 2;
+        }
+        counts.Add(n);
+    }
+    List<(Project Disc, double EstimatedGb)> volumes;
+    try { volumes = loaded.Volumes(Opt("--out"), counts); }
+    catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or InvalidOperationException)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+    foreach (var (volume, estimate) in volumes)
+    {
+        Console.WriteLine($"{volume.Out} ({estimate:0.00} Go estimés) :");
+        foreach (var episode in volume.Titles!) Console.WriteLine($"  {episode.DisplayName}");
+    }
+    if (!a.Contains("--build")) return 0;
+    foreach (var (volume, _) in volumes)
+    {
+        var problems = volume.Build(null, 0, Console.WriteLine);
+        if (problems.Count == 0) continue;
+        foreach (var problem in problems) Console.Error.WriteLine(problem);
+        return 1;
+    }
+    return 0;
+}
 // burnsmith queue A.burnsmith B.burnsmith ... [--trial [SECONDS]] : the app's « File d'attente »: the projects built one after the other, each in its own folder
 //   (with its ISO when the project asks for one, nothing burnt); one that fails does not stop the next; exit 1 when any failed
 if (a.Count >= 2 && a[0] == "queue")
@@ -2393,6 +2476,9 @@ var encode = new EncodeOptions(a.Contains("--reencode"), int.TryParse(Opt("--crf
                                Lossless: !a.Contains("--no-lossless"), CopyEac3: !a.Contains("--no-copy-eac3"));
 var capacity = double.TryParse(Opt("--capacity"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var gb) ? gb : profile.UsableGb;
 var playback = int.TryParse(Opt("--play-mode"), out var mode) ? PlaybackOptions.FromMode(mode, !a.Contains("--no-rewind")) : a.Contains("--no-rewind") ? new PlaybackOptions(Rewind: false) : null;
+if (int.TryParse(Opt("--auto-start"), out var autoStart))
+    playback = (playback ?? new PlaybackOptions()) with { AutoStartSeconds = Math.Clamp(autoStart, 0, 300) };
+if (a.Contains("--remember-position")) playback = (playback ?? new PlaybackOptions()) with { RememberPosition = true };
 // the text subtitles of the disc (SRT, ASS...): --sub-font NAME (a font of this PC), --sub-size PERCENT (100 = the usual size), --sub-color RRGGBB, --sub-position 0-100 (0 = bottom, 100 = top)
 var subtitleLook = Opt("--sub-font") == null && Opt("--sub-size") == null && Opt("--sub-color") == null && Opt("--sub-position") == null ? null
     : new SubtitleStyle(Opt("--sub-font"), int.TryParse(Opt("--sub-size"), out var subSize) ? subSize : 100, Opt("--sub-color")?.TrimStart('#') ?? "FFFFFF", int.TryParse(Opt("--sub-position"), out var subPosition) ? subPosition : 0);

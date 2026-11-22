@@ -97,6 +97,10 @@ public partial class AdvancedWindow : Window
 
         (Playback.Mode == 0 ? Mode0 : Playback.Mode == 1 ? Mode1 : Mode2).IsChecked = true;
         Rewind0.IsChecked = Rewind1.IsChecked = playback.Rewind;
+        AutoStartPanel.Visibility = kind == "dvd" ? Visibility.Collapsed : Visibility.Visible;
+        AutoStartBox.Text = playback.AutoStartSeconds.ToString();
+        RememberPositionBox.Visibility = kind == "dvd" ? Visibility.Collapsed : Visibility.Visible;
+        RememberPositionBox.IsChecked = playback.RememberPosition;
         ready = true;
         OnMode(null!, null!);
         OnQuality(null!, null!);
@@ -156,7 +160,8 @@ public partial class AdvancedWindow : Window
                                      SubColorBox.SelectedIndex is var c and >= 0 && c < SubColors.Length ? SubColors[c].Rgb : ((string)SubColorBox.SelectedItem).TrimStart('#'), (int)SubPosSlider.Value);
         Subtitles = look == new SubtitleStyle() ? null : look;
         var mode = Mode0.IsChecked == true ? 0 : Mode1.IsChecked == true ? 1 : 2;
-        Playback = PlaybackOptions.FromMode(mode, mode == 0 ? Rewind0.IsChecked == true : mode == 1 ? Rewind1.IsChecked == true : true);
+        Playback = PlaybackOptions.FromMode(mode, mode == 0 ? Rewind0.IsChecked == true : mode == 1 ? Rewind1.IsChecked == true : true)
+            with { AutoStartSeconds = int.TryParse(AutoStartBox.Text, out var seconds) ? Math.Clamp(seconds, 0, 300) : 0, RememberPosition = RememberPositionBox.IsChecked == true };
         HdmvMenu = MenuHdmv.IsChecked == true;
         if ((LanguageBox.SelectedIndex == 1 ? "en" : "fr") is var language && language != Loc.Saved())
         {

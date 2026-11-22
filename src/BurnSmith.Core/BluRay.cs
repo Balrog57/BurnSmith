@@ -33,7 +33,7 @@ public sealed record EncodeOptions(bool ForceReencode = false, int Crf = 17, str
 /// first title) instead of stopping. Without <see cref="PlayAll"/> the disc returns to the menu after the title that was picked.
 /// The default is the studios' series discs (Warner): the menu, a picked episode followed by the next ones, the menu after the last; bonuses never chain.
 /// </summary>
-public sealed record PlaybackOptions(bool StartAtFirstTitle = false, bool PlayAll = true, bool Rewind = true)
+public sealed record PlaybackOptions(bool StartAtFirstTitle = false, bool PlayAll = true, bool Rewind = true, int AutoStartSeconds = 0, bool RememberPosition = false)
 {
     /// <summary>The 3 radio buttons: 0 = menu then all titles, 1 = first title then all, 2 = back to the menu after the picked title.</summary>
     public int Mode => PlayAll ? (StartAtFirstTitle ? 1 : 0) : 2;
@@ -483,7 +483,9 @@ public static class BluRay
             // the BD-J graphics plane is 1920x1080 on a 4K disc too (the player scales it up): 3840x2160 pages ran the xlet out of heap
             if (job.HdmvMenu)
             {
-                HdmvMenu.Add(job, menuPages, mainCount, muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, forced, intro != null, work, log);
+                HdmvMenu.Add(job, menuPages, mainCount, muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0,
+                    subtitleTracks.Select((s, i) => (muxed[i].Audio.Count, (IReadOnlyList<int>)s.Visible.Select(t => t.Number).ToList(),
+                        (IReadOnlyList<(int Audio, int Sub)>)s.Forced)).ToList(), intro != null, work, log);
                 return;
             }
             MuxLoop(job, work, log);
@@ -491,7 +493,8 @@ public static class BluRay
             MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, LoopPlaylist, Math.Min(1, VideoSize(job).H / 1080.0), job.Playback ?? new(), mainCount,
                 overlay: moving, defaultSubtitle: muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, popup: popup,
                 subtitleTracks: subtitleTracks.Select((s, i) => (MoviePlaylist + i, s.Visible.Select(t => t.Number), (IReadOnlyList<(int Audio, int Sub)>)s.Forced)),
-                log: log, loopReturnMark: moving ? Mpls.MenuLoopReturnMark : -1);
+                log: log, loopReturnMark: moving ? Mpls.MenuLoopReturnMark : -1,
+                titleEnds: job.Titles.Select((title, index) => (MoviePlaylist + index, title.EndAction)));
             AddMenu(job, menuDir, intro != null, log);
         }
         else if (muxed[0].DefaultSubtitle > 0 || intro != null)
@@ -735,7 +738,19 @@ public static class BluRay
         var ssif = src.Stereo == "mvc" ? Ssif(title.Video) : null;
         var mvc = ssif != null && !job.Uhd && title.End == null && CopiesVideo(job, title, src, kbps);
         if (ssif != null && !mvc) log($"{title.DisplayName}: 3D lost, the disc gets the left eye: a 3D Blu-ray film stays 3D only copied whole as it is (no cut, effect or re-encode, not on a 4K disc)");
-        Prepare(job, title, src, audio, [.. subs.Where(x => x.Track.Index >= 0)], prepared, kbps, log, noVideo: mvc);
+        if (!mvc || audio.Count > 0)
+        {
+            var settings = new
+            {
+                job.Uhd, job.Encode, kbps, mvc, src, Audio = audio,
+                title.Start, title.End, title.Gaps, title.Effects, title.Volume, title.AudioVolume
+            };
+            var inputs = EncodeCache.Inputs(title, audio).Append(Tools.Find("ffmpeg.exe")).Append(Tools.Find("ffprobe.exe"));
+            if (job.Uhd && src.Hdr == "Dolby Vision") inputs = inputs.Append(EncodeCache.OptionalTool("dovi_tool.exe"));
+            if (job.Uhd && src.Hdr == "HDR10+") inputs = inputs.Append(EncodeCache.OptionalTool("hdr10plus_tool.exe"));
+            EncodeCache.Prepare(prepared, settings, inputs, () => Prepare(job, title, src, audio, prepared, kbps, log, noVideo: mvc), log);
+        }
+        PrepareSubtitles(job, title, src, [.. subs.Where(x => x.Track.Index >= 0)], log);
         // a subtitle with nothing to show in the part kept is an empty file, which tsMuxeR cannot take
         Blanks(subs, lined != null, file => new FileInfo(file).Length == 0, job.Uhd ? (1920, 1080) : VideoSize(job), log);
         foreach (var (s, file) in subs.Where(x => x.Track.IsPgs && x.Track.File != null))
@@ -797,7 +812,8 @@ public static class BluRay
             lines.Add($"{(job.Uhd ? "V_MPEGH/ISO/HEVC" : mpeg2 ? "V_MPEG-2" : "V_MPEG4/ISO/AVC")}, \"{prepared}\", {(job.Uhd || mpeg2 ? "" : "insertSEI, contSPS, ")}fps={fps}, track=256");
             if (mpeg2) log($"{title.DisplayName}: MPEG-2 copied as it is");
             // a re-encoded Dolby Vision title: its metadata on an enhancement layer made to match the new base (profile 7 MEL)
-            if (job.Uhd && File.Exists(Path.ChangeExtension(prepared, ".rpu.bin")) && DolbyLayer(prepared, Path.ChangeExtension(prepared, ".rpu.bin"), DiscRate(Fps(job, src), h).Ffmpeg, log) is { } el)
+            var el = Path.ChangeExtension(prepared, ".rpu.el.hevc");
+            if (job.Uhd && File.Exists(el))
             {
                 lines.Add($"V_MPEGH/ISO/HEVC, \"{el}\", fps={fps}");
                 log($"{title.DisplayName}: Dolby Vision kept (re-encoded, profile 7 MEL)");
@@ -1172,7 +1188,7 @@ public static class BluRay
     /// Remuxes to prepared.ts (ffmpeg numbers the streams from PID 256: video = 256, kept audio = 257..), re-encoding only what a Blu-ray cannot carry,
     /// and writes the subtitle files in the same pass over the source.
     /// </summary>
-    static void Prepare(BluRayJob job, DiscTitle title, SourceInfo s, IReadOnlyList<AudioTrack> audio, List<(SubtitleTrack Track, string File)> subs, string output, int kbps, Action<string> log,
+    static void Prepare(BluRayJob job, DiscTitle title, SourceInfo s, IReadOnlyList<AudioTrack> audio, string output, int kbps, Action<string> log,
                         bool noVideo = false) // noVideo: the sound and subtitles only (a 3D film's picture is muxed from the source itself)
     {
         var (w, h) = VideoSize(job);
@@ -1314,6 +1330,13 @@ public static class BluRay
                 File.Delete(AudioFile(output, j, "thd"));
                 File.Delete(AudioFile(output, j, "ac3"));
             }
+        var rpu = Path.ChangeExtension(output, ".rpu.bin");
+        if (job.Uhd && File.Exists(rpu)) DolbyLayer(output, rpu, rate, log);
+    }
+
+    static void PrepareSubtitles(BluRayJob job, DiscTitle title, SourceInfo s, List<(SubtitleTrack Track, string File)> subs, Action<string> log)
+    {
+        var span = s.Duration + title.GapLength;
         WriteOwnSubtitles(title, subs.Where(x => x.Track.File == null && !x.Track.IsVobSub).ToList(), span, log); // a VobSub is made apart, the subtitle files too
         foreach (var (t, file) in subs.Where(x => x.Track.File != null)) WriteExternalSubtitle(title, t, span, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);
         foreach (var (t, file) in subs.Where(x => x.Track.File == null && x.Track.IsVobSub)) WriteEmbeddedVobSub(title, t, span, file, job.Uhd ? (1920, 1080) : VideoSize(job), log);

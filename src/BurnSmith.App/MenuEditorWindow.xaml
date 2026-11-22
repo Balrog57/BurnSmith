@@ -188,6 +188,11 @@
             <CheckBox Content="Pas de menu principal : les chapitres d'abord" IsChecked="{Binding ScenesOnly}" Margin="0,4,0,0" ToolTip="La première page de chapitres ou d'épisodes sert de menu"/>
             <CheckBox Content="Série : pas de case pour la première vidéo" IsChecked="{Binding SkipFirstScene}" Margin="0,4,0,0" ToolTip="« Tout lire » la joue"/>
             <CheckBox Content="Page Bonus en texte, sans vignettes" IsChecked="{Binding BonusText}" Margin="0,4,0,0"/>
+            <TextBlock Text="Fond sombre du pop-up BD-J" Style="{StaticResource Caption}"/>
+            <Slider Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding PopupShade}"
+                    ToolTip="Augmente l’opacité du fond du pop-up pour améliorer la lisibilité du texte sur le film."/>
+            <TextBlock Text="Fondu entre les pages BD-J (ms, 0 = aucun)" Style="{StaticResource Caption}"/>
+            <Slider Minimum="0" Maximum="500" TickFrequency="50" IsSnapToTickEnabled="True" Value="{Binding PageFadeMs}"/>
             <TextBlock Text="La page Langues (audio et sous-titres) et la page Bonus se créent d'elles-mêmes quand le disque a plusieurs pistes ou des bonus." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
 
             <TextBlock Text="Page Crédits" Style="{StaticResource Head}"/>
@@ -232,6 +237,10 @@
             <Button Content="+ Image" Click="OnAddImage" Margin="0,0,6,6"/>
             <Button Content="+ Cadre" Click="OnAddBox" Margin="0,0,6,6"/>
             <Button Content="+ Bouton" Click="OnAddButton" Margin="0,0,0,6"/>
+            <Button Content="+ Sous-menu" Click="OnAddSubmenu" Margin="0,0,0,6"/>
+            <Button Content="Liens des flèches…" Click="OnDirectionLink" Margin="6,0,0,6"/>
+            <Button x:Name="RenameSubmenu" Content="Renommer le sous-menu" Click="OnRenameSubmenu" Visibility="Collapsed" Margin="6,0,0,6"/>
+            <Button x:Name="RemoveSubmenu" Content="Retirer le sous-menu" Click="OnRemoveSubmenu" Visibility="Collapsed" Margin="6,0,0,6"/>
           </WrapPanel>
           <TabControl x:Name="PageTabs">
             <TabItem Header="Boutons">
@@ -551,6 +560,10 @@
             <Border/>
           </UniformGrid>
           <Button Content="Menu principal" Tag="Menu" Click="OnRemote" HorizontalAlignment="Center" Padding="16,6" Margin="0,10,0,0" ToolTip="Revient à la première page, comme la touche Menu"/>
+          <Button x:Name="PreviewPopupButton" Content="Pop-up" Tag="Popup" Click="OnRemote" HorizontalAlignment="Center" Padding="16,6" Margin="0,6,0,0"
+                  ToolTip="Après avoir choisi un titre ou un chapitre, affiche son menu de lecture BD-J sur une image fixe."/>
+          <Button x:Name="PreviewStartButton" Content="Démarrage du disque" Tag="Start" Click="OnRemote" HorizontalAlignment="Center" Padding="16,6" Margin="0,6,0,0"/>
+          <Button x:Name="PreviewEndButton" Content="Fin du titre" Tag="End" Click="OnRemote" HorizontalAlignment="Center" Padding="16,6" Margin="0,6,0,0"/>
           <TextBlock Text="Sur un vrai lecteur" Style="{StaticResource Head}" Margin="0,24,0,6"/>
           <TextBlock TextWrapping="Wrap" Opacity="0.65"
                      Text="Pour voir le menu tourner pour de bon avant le vrai disque : validez avec OK, puis dans la fenêtre principale cochez « Essai » et « ISO » et cliquez Démarrer. Le disque d'essai est prêt en quelques minutes et s'ouvre dans VLC ou se grave sur un disque réinscriptible."/>

@@ -122,6 +122,7 @@ public static class Tools
     public static long SizeOf(string file) => new FileInfo(file) is { Exists: true } f ? f.Length : 0;
 
     static readonly AsyncLocal<CancellationToken> ambient = new();
+    internal static CancellationToken Cancellation => ambient.Value;
     static readonly HashSet<Process> running = [];
     static bool killedAll;
 

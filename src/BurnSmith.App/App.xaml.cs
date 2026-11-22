@@ -54,6 +54,7 @@ public partial class App : Application
             window = win;
             OffScreen(window);
             window.Show();
+            if (e.Args.Contains("popup")) win.Result.Popup = true;
             int? Number(string name) => e.Args.FirstOrDefault(a => a.StartsWith(name + "=")) is { } a && int.TryParse(a[(name.Length + 1)..], out var n) ? n : null;
             if (e.Args.Contains("english")) win.PickLanguage("en");
             win.ShowTabs(Number("step"), Number("tab"), e.Args.Contains("button"));
@@ -78,7 +79,14 @@ public partial class App : Application
             if (window.FindName("CapacityBox") is System.Windows.Controls.ComboBox box) box.IsDropDownOpen = true; // builds the drop-down items with the theme's item style
         }
         await Task.Delay(2500); // lets async previews finish
-        if (e.Args.FirstOrDefault(a => a.StartsWith("remote=")) is { } remote && window is MenuEditorWindow piloted) await piloted.TryRemote(remote[7..]); // remote=Right,Enter: the Aperçu step's remote
+        if (e.Args.FirstOrDefault(a => a.StartsWith("remote=")) is { } remote && window is MenuEditorWindow piloted)
+        {
+            await piloted.TryRemote(remote[7..]);
+            if (e.Args.Contains("popup") && !piloted.IsPreviewingPopup) throw new InvalidOperationException("Le pop-up attendu n’est pas affiché.");
+            if (e.Args.FirstOrDefault(arg => arg.StartsWith("expect-status=")) is { } expected
+                && !piloted.PreviewStatus.Contains(expected[14..], StringComparison.Ordinal))
+                throw new InvalidOperationException($"État de l’aperçu inattendu : {piloted.PreviewStatus}");
+        }
         if (e.Args.Contains("zones") && window is MenuEditorWindow zoned) { zoned.TryZones(); await Task.Delay(2500); }
         if (e.Args.Contains("undo") && window is MenuEditorWindow undone) { await undone.TryUndo(); await Task.Delay(1000); }
         if (e.Args.Contains("journal") && window == main) { main.LogExpander.IsExpanded = true; await Task.Delay(500); } // the log open, with « Copier le rapport »

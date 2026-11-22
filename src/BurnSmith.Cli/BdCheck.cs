@@ -749,22 +749,45 @@ static class BdCheck
                 new DiscTitle(F("pop2audio.mkv"), Audio: [0, 1], Subtitles: [0], ChapterAt: [0, 2, 4],
                     External: [new ExternalSubtitle(F("forced.fr.srt"), "fra", Forced: true)],
                     TrackLanguage: new Dictionary<string, string> { ["a0"] = "fre", ["a1"] = "eng" }),
-                new DiscTitle(film, Bonus: true)
+                new DiscTitle(film, Bonus: true, EndAction: "stop")
             ];
             Dictionary<string, byte[]> Jar(string disc)
             {
                 using var z = System.IO.Compression.ZipFile.OpenRead(Path.Combine(disc, "BDMV", "JAR", "00000.jar"));
                 return z.Entries.ToDictionary(e => e.FullName, e => { using var s = e.Open(); using var m = new MemoryStream(); s.CopyTo(m); return m.ToArray(); });
             }
-            var popupDisc = Bd("popup", titles, menu: new MenuDesign { Popup = true, MainMenuLabel = "Main" });
+            var popupDisc = Bd("popup", titles, menu: new MenuDesign
+            {
+                Popup = true, MainMenuLabel = "Main", PageFadeMs = 200,
+                CustomPages = [new("custom-extra", "Suppléments"), new("custom-more", "Autres", "custom-extra")],
+                Directions = [new("custom-extra", "back", "right", "u1")],
+                Elements =
+                [
+                    new() { Kind = "button", Page = "root", Target = "custom-extra", Text = "Suppléments", X = 20, Y = 410, W = 300 },
+                    new() { Kind = "button", Page = "custom-extra", Target = "custom-more", Text = "Autres", X = 810, Y = 410, W = 300 }
+                ]
+            });
             var with = Jar(popupDisc);
             var txt = System.Text.Encoding.UTF8.GetString(with["menu.txt"]).Split('\n');
             bool Has(string start) => txt.Any(l => l.StartsWith(start, StringComparison.Ordinal));
+            Check("BD-J : durée du fondu de page enregistrée", Has("page-fade 200"));
             Check("forced external French subtitles follow the French audio", Has("forced-track 1 1 1"));
             var navIso = F("popup.iso");
             Iso.Build(popupDisc, navIso, "CHECK", dvd: false);
             var cleanNavigation = DiscCheck.Image(navIso);
             Check("disc check reads valid Blu-ray chapter and forced subtitle routes from an ISO", cleanNavigation.Count == 0, string.Join(" ; ", cleanNavigation));
+            var graph = DiscCheck.Navigation(navIso, audio: 2);
+            var folderGraph = DiscCheck.Navigation(popupDisc, audio: 2);
+            Check("navigation : même trace de parcours dans le dossier et l’ISO", graph.Problems.Count == 0
+                && graph.Trace.SequenceEqual(folderGraph.Trace)
+                && graph.Trace.Contains("Top Menu → root")
+                && graph.Trace.Any(line => line.Contains("→ touche Pop-up → pop2"))
+                && graph.Trace.Contains("custom-extra/u1 → OK → page custom-more")
+                && graph.Trace.Contains("custom-more/back → OK → page custom-extra")
+                && graph.Trace.Contains("custom-extra/back → droite → custom-extra/u1")
+                && graph.Trace.Contains("Liste 00002 → fin configurée → arrêt")
+                && graph.Trace.Any(line => line.StartsWith("Liste 00002, clip ") && line.Contains("| audio 1 ")),
+                string.Join(" ; ", graph.Problems));
             var badDisc = F("popup-bad");
             foreach (var file in Directory.EnumerateFiles(popupDisc, "*", SearchOption.AllDirectories))
             {
@@ -777,13 +800,16 @@ static class BdCheck
                 zip.GetEntry("menu.txt")!.Delete();
                 using var writer = new StreamWriter(zip.CreateEntry("menu.txt").Open());
                 writer.Write(string.Join('\n', txt).Replace(" chapter 1 2\n", " chapter 1 99\n").Replace(" audio 2\n", " audio 99\n")
-                    .Replace("forced-track 1 1 1\n", "forced-track 1 2 1\n"));
+                    .Replace("forced-track 1 1 1\n", "forced-track 1 2 1\n") + "\npage unreachable bg_root.jpg\n");
             }
             var badIso = F("popup-bad.iso");
             Iso.Build(badDisc, badIso, "CHECK", dvd: false);
+            Check("navigation : une page sans chemin d’entrée est signalée",
+                DiscCheck.Navigation(badIso).Problems.Any(problem => problem.Contains("page unreachable inaccessible")));
             foreach (var (place, problems) in new[] { ("folder", DiscCheck.Folder(badDisc)), ("ISO", DiscCheck.Image(badIso)) })
                 Check($"disc check finds a bad chapter, audio choice and forced subtitle language in the {place}",
                     problems.Any(p => p.Contains("chapitre inexistant")) && problems.Any(p => p.Contains("piste audio inexistante"))
+                    && problems.Any(p => p.Contains("bouton popset/a2, titre 00001 : piste audio inexistante"))
                     && problems.Any(p => p.Contains("langue différente de la piste audio")),
                     string.Join(" ; ", problems));
             Check("pop-up: a bar per title, the film's with resume, chapters, settings and main menu",
@@ -890,6 +916,11 @@ static class BdCheck
             Check("HDMV title: from the start or from the chapter asked for, then the next title, else the menu",
                 plays > 0 && At(Nav.GoTo(plays)) == plays - 3 && At(Nav.GoTo(plays + 1)) == plays - 1 && At(Nav.JumpTitle(2)) == plays + 3 && At(Nav.JumpTitle(0)) == title.Count - 1);
             Check("HDMV title: subtitles off shows the forced track of the audio's language", At(Nav.SelectStreams(1, 3)) > 0 && At(Nav.SelectStreams(1, 3)) < plays);
+            var bonus = HdmvMenu.TitleObject(3, 2, [(1, 2)], new PlaybackOptions(), audioCount: 1, subtitles: [1]);
+            bool HasCommand(byte[] command) => bonus.Any(actual => actual.AsSpan().SequenceEqual(command));
+            Check("HDMV bonus: defaults to its first audio and its own forced subtitle while retaining the menu choices",
+                HasCommand(Nav.Set(17, 1)) && !HasCommand(Nav.Set(12, 1)) && HasCommand(Nav.SelectStreams(1, 2))
+                && HasCommand(Nav.IfEqual(13, 1)) && !HasCommand(Nav.IfEqual(13, 2)));
 
             // two highlights that share 20 lines, and a dot on the first one's left edge
             var zones = new List<(uint[] Argb, int X, int Y, int W, int H)> { (new uint[600 * 100], 100, 200, 600, 100), (new uint[600 * 100], 100, 280, 600, 100), (new uint[24 * 24], 110, 238, 24, 24) };

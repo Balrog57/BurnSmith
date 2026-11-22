@@ -78,6 +78,92 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
         return (usable, list, Menu || list.Count(t => !t.Intro) > 1 ? Design ?? TemplateCatalog.DefaultFor([.. list.Where(t => !t.Bonus && !t.Intro).Select(t => t.Video)]).Clone() : null);
     }
 
+    /// <summary>Threshold above usable disc capacity (+30 %) where a manual multi-disc split is suggested to limit quality loss.</summary>
+    public const double SplitSuggestionRatio = 1.30;
+
+    /// <summary>Estimated size in GB at the project quality before fit-to-disc reduces the bit rate.</summary>
+    public double EstimateUnfittedGB(IReadOnlyList<(DiscTitle Title, SourceInfo Src)> items, MenuDesign? menu = null)
+    {
+        if (items.Count == 0) return 0;
+        var enc = Encode ?? new EncodeOptions(FitDisc: true);
+        if (Kind == "dvd") return Dvd.EstimateGB(items.Select(t => (t.Src, t.Title)).ToList(), 0, enc.DvdKbps) * 1.05
+            + (menu != null ? 0.2 : 0);
+        return BluRay.EstimateGB(new BluRayJob(items.Select(t => t.Title).ToList(), "", menu,
+            Kind == "uhd", Encode: enc with { FitDisc = false }, HdmvMenu: HdmvMenu), items.Select(t => t.Src).ToList());
+    }
+
+    /// <summary>True when a multi-video project exceeds the disc's usable capacity by at least 30 % before fit-to-disc compression.</summary>
+    public bool ShouldSuggestSplit(out double estimatedGb, out double usableGb, IReadOnlyList<(DiscTitle Title, SourceInfo Src)>? probed = null)
+    {
+        usableGb = CapacityGB > 0 ? CapacityGB : CapacityGB < 0 ? 0 : Kind == "dvd" ? 4.2 : Kind == "uhd" ? 93 : 23.3;
+        var clips = probed ?? (Titles ?? []).Select(t => (Title: t, Src: t.Cut(BluRay.Probe(t.Video)))).ToList();
+        var menu = Menu || clips.Count(t => !t.Title.Intro) > 1 ? Design : null;
+        estimatedGb = EstimateUnfittedGB(clips, menu);
+        return clips.Count(t => !t.Title.Intro) > 1 && usableGb > 0 && estimatedGb >= usableGb * SplitSuggestionRatio;
+    }
+
+    /// <summary>Manual volume plan from ordered counts per disc (e.g. [5, 5] for two discs of 5 episodes).</summary>
+    public List<(Project Disc, double EstimatedGb)> Volumes(string? folder, IReadOnlyList<int> counts)
+    {
+        if (counts.Count == 0 || counts.Any(c => c <= 0))
+            throw new ArgumentException("Indiquez le nombre de vidéos par disque (entiers positifs, ex. 5,5).");
+        var groups = new List<IReadOnlyList<int>>(counts.Count);
+        var offset = 0;
+        foreach (var count in counts)
+        {
+            groups.Add(Enumerable.Range(offset, count).ToList());
+            offset += count;
+        }
+        return Volumes(folder, groups);
+    }
+
+    /// <summary>Manual volume plan from explicit 0-based indices into the non-intro titles for each disc.</summary>
+    public List<(Project Disc, double EstimatedGb)> Volumes(string? folder, IReadOnlyList<IReadOnlyList<int>> discIndices,
+        IReadOnlyList<(DiscTitle Title, SourceInfo Src)>? probed = null)
+    {
+        var (_, titles, menu) = probed != null
+            ? (0.0, probed.Select(p => p.Title).ToList(), Menu || probed.Count(t => !t.Title.Intro) > 1 ? Design : null)
+            : Disc(0);
+        if (titles.Count(t => t.Intro) > 1 || !titles.Any(t => !t.Intro && !t.Bonus))
+            throw new ArgumentException("Le projet doit contenir des épisodes et au plus une introduction.");
+        menu ??= Design ?? TemplateCatalog.DefaultFor([.. titles.Where(t => !t.Intro && !t.Bonus).Select(t => t.Video)]).Clone();
+        var output = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder ?? Out
+            ?? throw new ArgumentException("Indiquez un dossier de sortie avec --out.")));
+        var clips = probed ?? titles.Select(t => (Title: t, Src: t.Cut(BluRay.Probe(t.Video)))).ToList();
+        var intro = clips.Where(t => t.Title.Intro).ToList();
+        var episodes = clips.Where(t => !t.Title.Intro).ToList();
+        if (discIndices.Count == 0 || discIndices.Any(g => g.Count == 0))
+            throw new ArgumentException("Chaque disque doit contenir au moins une vidéo.");
+        var seen = new HashSet<int>();
+        foreach (var group in discIndices)
+            foreach (var index in group)
+                if (index < 0 || index >= episodes.Count || !seen.Add(index))
+                    throw new ArgumentException($"La répartition manuelle ne correspond pas aux {episodes.Count} vidéos du projet.");
+        if (seen.Count != episodes.Count)
+            throw new ArgumentException($"La répartition manuelle doit couvrir exactement les {episodes.Count} vidéos du projet (actuellement {seen.Count}).");
+
+        var result = new List<(Project Disc, double EstimatedGb)>(discIndices.Count);
+        for (var i = 0; i < discIndices.Count; i++)
+        {
+            var n = i + 1;
+            var group = discIndices[i].Select(idx => episodes[idx]).ToList();
+            var items = intro.Concat(group).ToList();
+            var design = menu.Clone();
+            design.Title = $"{design.Title} · Disque {n}";
+            result.Add((this with
+            {
+                Titles = items.Select(t => t.Title).ToList(),
+                Design = design,
+                Menu = true,
+                Label = $"{Label ?? "BURNSMITH"}_{n:00}",
+                Out = $"{output}_disque_{n:00}",
+                Iso = true,
+                Trial = 0
+            }, EstimateUnfittedGB(items, design)));
+        }
+        return result;
+    }
+
     /// <summary>« À savoir avant de démarrer » for this project (see Core.Recap): what <see cref="Build"/> would do, nothing built. `burnsmith project FILE --recap`.</summary>
     public List<string> Recap(int trial)
     {
@@ -110,7 +196,7 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
         else BluRay.Build(new BluRayJob(list, dir, menu, Kind == "uhd", label, ChapterMinutes, Encode ?? new(FitDisc: true), usable, Playback, Subtitles, HdmvMenu), log, cancel, progress);
         File.Delete(IsoFile(dir)); // an image of an earlier build must never be burnt by mistake
         var found = DiscCheck.Folder(dir, usable / 0.89);
-        if (!Iso) return found;
+        if (!Iso || found.Count > 0) return found;
         cancel.ThrowIfCancellationRequested();
         global::BurnSmith.Core.Iso.Build(dir, IsoFile(dir), label, Kind == "dvd", log, progress, cancel);
         found.AddRange(DiscCheck.Image(IsoFile(dir), dir, usable / 0.89));

@@ -8,6 +8,7 @@ namespace BurnSmith.Core.Menu;
 /// </summary>
 public sealed class MenuElement
 {
+    public string? NavigationId { get; set; }
     /// <summary>"text", "image", "box" or "button".</summary>
     public string Kind { get; set; } = "text";
     /// <summary>"all" (every page), "root", "scenes", "bonus", "settings" or "credits".</summary>

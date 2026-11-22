@@ -226,7 +226,8 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
                                IReadOnlyDictionary<int, double>? AudioDelay = null, // by audio track number (as Audio counts them): seconds its sound is heard later (earlier when negative)
                                IReadOnlyList<string?>? ChapterTitles = null, // the names of the chapters of ChapterAt, in its order (null or empty = "Chapitre N" on the menu); a chapter at 0 names the first
                                IReadOnlyList<AudioTrack>? AudioFiles = null, // sound files added to the video (AudioTrack.File), numbered after its own audio tracks in this order
-                               IReadOnlyDictionary<int, double>? AudioVolume = null) // by audio track number (as Audio counts them): dB louder (quieter when negative); a copied track is then made again
+                               IReadOnlyDictionary<int, double>? AudioVolume = null,
+                               string? EndAction = null) // BD-J: "menu", "stop", "repeat", "next", or the disc's normal playback rules
 {
     [System.Text.Json.Serialization.JsonIgnore] public string DisplayName => Name ?? Readable(Video).Name;
 

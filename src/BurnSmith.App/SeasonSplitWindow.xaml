@@ -1,0 +1,87 @@
+<Window x:Class="BurnSmith.App.SeasonSplitWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Répartir la saison sur plusieurs disques" Width="700" Height="620" MinWidth="560" MinHeight="460"
+        Background="{StaticResource BgBrush}" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <Grid Margin="24,18,24,20">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <StackPanel>
+      <TextBlock x:Name="SummaryText" FontSize="14" TextWrapping="Wrap"/>
+      <TextBlock x:Name="IntroNote" Visibility="Collapsed" Opacity="0.65" Margin="0,4,0,0"
+                 Text="La vidéo de début est reprise automatiquement sur chaque disque."/>
+    </StackPanel>
+
+    <DockPanel Grid.Row="1" Margin="0,14,0,0">
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <TextBlock Text="Nombre de disques :" VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <Button x:Name="LessButton" Content="−" Width="32" Padding="0,4" Click="OnLessDiscs"/>
+        <TextBlock x:Name="DiscCountText" MinWidth="28" TextAlignment="Center" VerticalAlignment="Center" FontWeight="SemiBold" Margin="6,0"/>
+        <Button x:Name="MoreButton" Content="+" Width="32" Padding="0,4" Click="OnMoreDiscs"/>
+      </StackPanel>
+      <Button DockPanel.Dock="Right" HorizontalAlignment="Right" Content="Répartir également" Click="OnEvenSplit"
+              ToolTip="Répartit le même nombre de vidéos sur chaque disque (modifiable ensuite vidéo par vidéo)"/>
+    </DockPanel>
+
+    <Border Grid.Row="2" Background="{StaticResource InsetBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+            CornerRadius="10" Padding="14,10" Margin="0,12,0,0">
+      <ItemsControl x:Name="DiscSummaryList">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Grid Margin="0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="90"/>
+                <ColumnDefinition Width="90"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="{Binding Label}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="1" Text="{Binding CountText}" Opacity="0.7" VerticalAlignment="Center"/>
+              <ProgressBar Grid.Column="2" Height="7" Maximum="100" Value="{Binding FillPercent}" VerticalAlignment="Center" Margin="8,0,12,0"/>
+              <TextBlock Grid.Column="3" Text="{Binding SizeText}" VerticalAlignment="Center" Opacity="0.85"/>
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Border>
+
+    <Border Grid.Row="3" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+            CornerRadius="10" Padding="12,8" Margin="0,12,0,0">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <ItemsControl x:Name="EpisodeList">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="0,4">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="34"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="68"/>
+                  <ColumnDefinition Width="130"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Number}" Opacity="0.55" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Grid.Column="2" Text="{Binding DurationText}" Opacity="0.65" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="3" ItemsSource="{Binding DiscChoices}" SelectedIndex="{Binding DiscIndex, Mode=TwoWay}"
+                          SelectionChanged="OnEpisodeDiscChanged"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Border>
+
+    <DockPanel Grid.Row="4" Margin="0,16,0,0">
+      <TextBlock x:Name="ValidationText" VerticalAlignment="Center" Foreground="{StaticResource AccentTextFillColorPrimaryBrush}"/>
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button Content="Annuler" IsCancel="True" MinWidth="96" Margin="0,0,10,0"/>
+        <Button x:Name="ConfirmButton" Content="Ajouter à la file" Style="{StaticResource Primary}" IsDefault="True" MinWidth="140" Click="OnConfirm"/>
+      </StackPanel>
+    </DockPanel>
+  </Grid>
+</Window>

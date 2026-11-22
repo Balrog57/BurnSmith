@@ -6,7 +6,7 @@
 
 Glissez vos vidéos, choisissez un menu parmi **145 modèles** (ou dessinez le vôtre), cliquez sur *Démarrer* : vous obtenez un dossier de disque, une image ISO, ou le disque gravé.
 
-> Projet jeune. Les dossiers BDMV générés se lisent dans VLC et les ISO se montent sous Windows ; un **DVD gravé** (DVD-R, série de trois épisodes avec bonus, deux langues, quatre sous-titres, menu animé) **marche sur une platine de salon** : menus, touches Menu / Titre / Pop-up, audio, sous-titres. La gravure et la lecture d'un **Blu-ray** sur lecteur de salon n'ont **pas encore été testées**.
+> La lecture sur platine a été vérifiée avec un DVD-R, ainsi qu’avec plusieurs BD-RE sur Panasonic. La [matrice de compatibilité](docs/COMPATIBILITE.md) détaille les formats, menus et pistes effectivement essayés.
 
 ![La fenêtre principale de BurnSmith : trois épisodes, le disque BD25, le menu choisi](docs/images/fenetre-principale.png)
 

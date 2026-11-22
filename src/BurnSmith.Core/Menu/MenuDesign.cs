@@ -78,6 +78,13 @@ public sealed class MenuDesign
     /// picture like the rest of the layout, so a DVD and a Blu-ray menu show them without any player-side code.
     /// </summary>
     public List<MenuElement> Elements { get; set; } = [];
+    public List<CustomMenuPage> CustomPages { get; set; } = [];
+    public List<MenuDirection> Directions { get; set; } = [];
+    public int PopupShade { get; set; } = 65;
+    public int PageFadeMs { get; set; }
+
+    public sealed record CustomMenuPage(string Id, string Title, string Parent = "root");
+    public sealed record MenuDirection(string Page, string Button, string Direction, string Target);
     /// <summary>What the user wrote in the text zones the template declares ("info", "overview1"...; see <see cref="MenuZone"/>). A template without such zones ignores them.</summary>
     public Dictionary<string, string> TextZones { get; set; } = [];
     /// <summary>A picture of the user's for the template's picture slot (the poster), instead of a frame of the film; null = the frame.</summary>
@@ -206,6 +213,8 @@ public sealed class MenuDesign
     {
         var copy = (MenuDesign)MemberwiseClone();
         copy.Elements = Elements.Select(e => e.Copy()).ToList();
+        copy.CustomPages = [.. CustomPages];
+        copy.Directions = [.. Directions];
         copy.PageBackgrounds = new(PageBackgrounds);
         copy.TextZones = new(TextZones);
         copy.FocusFrames = FocusFrames?.ToArray();

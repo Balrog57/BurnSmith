@@ -92,6 +92,8 @@ public sealed record MenuContent(int Playlist, string? PreviewPicture, IReadOnly
     IReadOnlyList<TitleEntry>? Titles = null, IReadOnlyList<string>? Audio = null, IReadOnlyList<string>? Subtitles = null,
     IReadOnlyList<TitleEntry>? Bonus = null)
 {
+    public IReadOnlyList<(int Playlist, int Chapters, IReadOnlyList<string> Audio, IReadOnlyList<(string Name, int Number)> Subtitles)> PopupTitles { get; init; } = [];
+    public bool HasIntro { get; init; }
     public bool Series => Titles is { Count: > 1 };
     public bool HasBonus => Bonus is { Count: > 0 };
     public IReadOnlyList<string> AudioNames => (Audio ?? []).Take(MenuBuilder.MaxAudio).ToList();
@@ -153,7 +155,17 @@ public static class MenuBuilder
     public static List<MenuPage> Build(MenuDesign d, MenuContent c)
     {
         var pages = BuildCore(d, c);
-        if (d.Elements.Count == 0) return pages;
+        var pageIds = pages.Select(page => page.Id).ToHashSet();
+        foreach (var custom in d.CustomPages)
+        {
+            if (!custom.Id.StartsWith("custom-") || !custom.Id.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '-')
+                || !pageIds.Add(custom.Id)) continue;
+            var back = new Box((W - 300) / 2, 950, 300, 90);
+            var ops = new List<Op> { new Label(custom.Title, new Box(0, 60, W, 120), 80, true) };
+            ops.AddRange(Button(d, back, d.BackLabel, 46));
+            pages.Add(new MenuPage(custom.Id, ops, [new MenuButton("back", back, new MenuAction("page", custom.Parent))]));
+        }
+        if (d.Elements.Count == 0 && d.CustomPages.Count == 0 && d.Directions.Count == 0) return pages;
         pages = pages.Select(p => WithElements(d, p, c)).ToList();
         // a hand-placed button to a page this disc does not have (Scènes on a one-page menu, Bonus without extras, a mistyped name) leads to the
         // root page: left as it is, the button does nothing, or the name breaks the menu file the player reads
@@ -168,9 +180,8 @@ public static class MenuBuilder
     /// </summary>
     public static MenuPage WithElements(MenuDesign d, MenuPage page, MenuContent c)
     {
-        if (d.Elements.Count == 0) return page;
         var mine = d.Elements.Where(e => e.AppliesTo(page.Id)).ToList();
-        if (mine.Count == 0) return page;
+        if (mine.Count == 0) return ApplyDirections(d, page);
         var behind = mine.Where(e => e.Behind && !e.IsButton).SelectMany(e => e.Ops(d)).ToList();
         var front = mine.Where(e => !e.Behind || e.IsButton).SelectMany(e => e.Ops(d)).ToList();
         var ops = page.Ops.ToList();
@@ -183,7 +194,7 @@ public static class MenuBuilder
         var buttons = page.Buttons.ToList();
         foreach (var e in mine.Where(x => x.IsButton))
         {
-            var id = "u" + d.Elements.IndexOf(e); // stable across pages: the same element is the same button wherever it is drawn
+            var id = e.NavigationId ?? ("u" + d.Elements.IndexOf(e));
             if (buttons.All(b => b.Id != id))
             {
                 // a picture button is selected with its own "sub" picture: on a Blu-ray menu it is the focus image, on a DVD the highlight a subpicture is made from
@@ -192,7 +203,27 @@ public static class MenuBuilder
             }
         }
         var result = page with { Ops = ops, Buttons = buttons };
-        return mine.Any(x => x.IsButton) ? Relink(result) : result;
+        return ApplyDirections(d, mine.Any(x => x.IsButton) ? Relink(result) : result);
+    }
+
+    static MenuPage ApplyDirections(MenuDesign design, MenuPage page)
+    {
+        var links = design.Directions.Where(link => link.Page == page.Id).ToList();
+        if (links.Count == 0) return page;
+        return page with { Buttons = page.Buttons.Select(button =>
+        {
+            foreach (var link in links.Where(link => link.Button == button.Id))
+            {
+                if (link.Target != "-" && !page.Buttons.Any(target => target.Id == link.Target)) continue;
+                var target = link.Target == "-" ? null : link.Target;
+                button = link.Direction switch
+                {
+                    "left" => button with { Left = target }, "right" => button with { Right = target },
+                    "up" => button with { Up = target }, "down" => button with { Down = target }, _ => button
+                };
+            }
+            return button;
+        }).ToList() };
     }
 
     /// <summary>What a hand-placed button does: the film, every title in turn, a page, or a chapter of the film.</summary>
@@ -501,10 +532,12 @@ public static class MenuBuilder
     /// The xlet opens "pop" + the playlist that plays; the action "popup" goes back to that bar.
     /// </summary>
     public static List<MenuPage> Popup(MenuDesign d, MenuContent c,
-        IEnumerable<(int Playlist, int Chapters, IReadOnlyList<string> Audio, IReadOnlyList<(string Name, int Number)> Subtitles)> titles)
+        IEnumerable<(int Playlist, int Chapters, IReadOnlyList<string> Audio, IReadOnlyList<(string Name, int Number)> Subtitles)> titles,
+        int? activeAudio = null, int? activeSubtitle = null)
     {
         var g = PopupDesign(d);
-        var veil = new Fill(new Box(0, 0, W, H), "#000000", 0.6, 0);
+        var shade = Math.Clamp(d.PopupShade, 0, 100) / 100.0;
+        var veil = new Fill(new Box(0, 0, W, H), "#000000", shade * (60.0 / 65), 0);
         // the pages the pop-up reuses lead back to the bar, not to the disc's root page
         MenuPage Popped(MenuPage p, string id) => p with
         {
@@ -527,7 +560,7 @@ public static class MenuBuilder
                 if (page == null)
                 {
                     var id = settings.Count == 0 ? "popset" : $"popset{playlist}";
-                    page = Popped(Settings(g, setup, null, null, subtitleNumbers: [0, .. subChoices.Select(s => s.Number)]), id);
+                    page = Popped(Settings(g, setup, activeAudio, activeSubtitle, subtitleNumbers: [0, .. subChoices.Select(s => s.Number)]), id);
                     settings.Add((choices, subChoices, page));
                 }
                 entries.Add(("settings", d.SettingsLabel, new MenuAction("page", page.Id)));
@@ -536,7 +569,7 @@ public static class MenuBuilder
             const int bw = 380, gap = 50;
             var n = entries.Count;
             var x0 = (W - (n * bw + (n - 1) * gap)) / 2;
-            var ops = new List<Op> { new Fill(new Box(0, 820, W, H - 820), "#000000", 0.65, 0) };
+            var ops = new List<Op> { new Fill(new Box(0, 820, W, H - 820), "#000000", shade, 0) };
             var buttons = new List<MenuButton>();
             for (var k = 0; k < n; k++)
             {
@@ -604,7 +637,7 @@ public static class MenuBuilder
 
         var back = pack?.SetupBack ?? new Box((W - 300) / 2, 950, 300, 90);
         ops.AddRange(Button(d, back, d.BackLabel, 46));
-        var last = (left.Count > 0 ? left : right)[^1];
+        var last = (left.Count > 0 ? left : right).LastOrDefault();
         buttons.Add(new MenuButton("back", back, new MenuAction("page", "root")) { Up = last });
 
         // neighbours: up/down inside a column, left/right to the same row of the other column, the last row leads to Back

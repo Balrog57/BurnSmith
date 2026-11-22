@@ -23,7 +23,7 @@ public static class HdmvMenu
     // registers: the playlist of the page to show, the button to select on it (0 = its first), the audio and subtitle streams chosen (subtitle 0 = off),
     // the chapter mark to start the title at, whether the next title follows this one, and a scratch one
     public const int Page = 10, Selected = 11; // GPRs: the page shown, the button selected there (index + 1)
-    const int Audio = 12, Subtitle = 13, Chapter = 14, Chain = 15, Scratch = 16;
+    const int Audio = 12, Subtitle = 13, Chapter = 14, Chain = 15, Scratch = 16, CurrentAudio = 17, CurrentSubtitle = 18;
 
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
@@ -36,7 +36,8 @@ public static class HdmvMenu
         return list;
     }
 
-    internal static void Add(BluRayJob job, IReadOnlyList<MenuPage> pages, int mainCount, int defaultSubtitle, IReadOnlyList<(int Audio, int Sub)> forced,
+    internal static void Add(BluRayJob job, IReadOnlyList<MenuPage> pages, int mainCount, int defaultSubtitle,
+                             IReadOnlyList<(int AudioCount, IReadOnlyList<int> Visible, IReadOnlyList<(int Audio, int Sub)> Forced)> tracks,
                              bool intro, string work, Action<string> log)
     {
         var menu = job.Menu!;
@@ -106,7 +107,11 @@ public static class HdmvMenu
         // Top Menu: the page of the register, again when its music ends, on the button that was selected
         List<byte[]> topMenu = [Nav.PlayPlaylistIn(Page), Nav.CopyPlayer(Selected, 10), Nav.GoTo(0)];
         var objects = new List<IReadOnlyList<byte[]>> { firstPlay, topMenu };
-        for (var t = 1; t <= job.Titles.Count; t++) objects.Add(TitleObject(t, mainCount, forced, play));
+        for (var t = 1; t <= job.Titles.Count; t++)
+        {
+            var streams = tracks[t - 1];
+            objects.Add(TitleObject(t, mainCount, streams.Forced, play, streams.AudioCount, streams.Visible));
+        }
         // the remote's Top Menu key, and the end of a title that goes back to the menu: always the main page, as the BD-J menu and the DVD do (the page
         // register still named the chapters page a chapter was started from); the button remembered there only if it was one of the main page's
         objects.Add(TopMenuKey());
@@ -130,15 +135,40 @@ public static class HdmvMenu
     /// subtitles are off), the film from the chapter asked for, then what the play mode says, as the BD-J menu does: the next main title when they follow
     /// each other, and after the last one the first again, the menu, or nothing (the disc stops).
     /// </summary>
-    public static List<byte[]> TitleObject(int title, int mainCount, IReadOnlyList<(int Audio, int Sub)> forced, PlaybackOptions play)
+    public static List<byte[]> TitleObject(int title, int mainCount, IReadOnlyList<(int Audio, int Sub)> forced, PlaybackOptions play,
+                                           int audioCount = -1, IReadOnlyList<int>? subtitles = null)
     {
         var playlist = BluRay.MoviePlaylist + title - 1;
         // subtitles off: the audio alone, never "subtitle number 0"
-        var c = new List<byte[]> { Nav.SelectStreamsIn(Audio), Nav.IfEqual(Subtitle, 0), Nav.GoTo(4), Nav.SelectStreamsIn(Audio, Subtitle) };
+        var c = new List<byte[]>();
+        var audio = Audio;
+        var subtitle = Subtitle;
+        if (audioCount >= 0 && subtitles != null)
+        {
+            audio = CurrentAudio;
+            subtitle = CurrentSubtitle;
+            c.Add(Nav.Set(audio, audioCount > 0 ? 1 : 0));
+            for (var i = 2; i <= audioCount; i++)
+                c.AddRange([Nav.IfEqual(Audio, i), Nav.Set(audio, i)]);
+            c.Add(Nav.Set(subtitle, 0));
+            foreach (var index in subtitles)
+                c.AddRange([Nav.IfEqual(Subtitle, index), Nav.Set(subtitle, index)]);
+        }
+        if (audioCount == 0)
+        {
+            c.Add(Nav.SelectStreams());
+            foreach (var index in subtitles ?? [])
+                c.AddRange([Nav.IfEqual(subtitle, index), Nav.SelectStreams(subtitle: index)]);
+        }
+        else
+        {
+            var after = c.Count + 4;
+            c.AddRange([Nav.SelectStreamsIn(audio), Nav.IfEqual(subtitle, 0), Nav.GoTo(after), Nav.SelectStreamsIn(audio, subtitle)]);
+        }
         if (forced.Count > 0)
         {
-            c.AddRange([Nav.Set(Scratch, 0), Nav.IfEqual(Subtitle, 0), Nav.Copy(Scratch, Audio)]); // the audio stream when subtitles are off, else 0
-            foreach (var (audio, sub) in forced) c.AddRange([Nav.IfEqual(Scratch, audio), Nav.SelectStreams(audio, sub)]);
+            c.AddRange([Nav.Set(Scratch, 0), Nav.IfEqual(subtitle, 0), Nav.Copy(Scratch, audio)]); // the audio stream when subtitles are off, else 0
+            foreach (var (track, sub) in forced) c.AddRange([Nav.IfEqual(Scratch, track), Nav.SelectStreams(track, sub)]);
         }
         var at = c.Count;
         c.AddRange([Nav.IfEqual(Chapter, 0), Nav.GoTo(at + 4), Nav.PlayPlaylistAtMarkIn(playlist, Chapter), Nav.GoTo(at + 5), Nav.PlayPlaylist(playlist), Nav.Set(Chapter, 0)]);

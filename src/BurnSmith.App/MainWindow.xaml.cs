@@ -82,7 +82,8 @@ public partial class MainWindow : Window
         public Dictionary<int, double> AudioVolume { get; set; } = [];
         /// <summary>The names of the chapters of <see cref="ChapterAt"/>, one for one (null = "Chapitre N" on the menu).</summary>
         public IReadOnlyList<string?>? ChapterTitles { get; set; }
-        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects, Clips, ThumbAt, ThumbImage, Overview, SubDelay, AudioDelay, ChapterTitles, AudioFiles, AudioVolume);
+        public string? EndAction { get; set; }
+        public DiscTitle ToDisc() => new(Path, Name, Audio, Subs, Start, End, Volume, ChapterAt, Extra, Bonus, DefaultAudio, DefaultSub, ChapterMinutes, Intro, TrackLanguage, Effects, Clips, ThumbAt, ThumbImage, Overview, SubDelay, AudioDelay, ChapterTitles, AudioFiles, AudioVolume, EndAction);
 
         /// <summary>The row of a title read from a project or an undo step.</summary>
         public static Entry From(DiscTitle d, SourceInfo info) => new(d.Video, info)
@@ -91,6 +92,7 @@ public partial class MainWindow : Window
             ChapterMinutes = d.ChapterMinutes, Bonus = d.Bonus, Intro = d.Intro, DefaultAudio = d.DefaultAudio, DefaultSub = d.DefaultSubtitle, TrackLanguage = new(d.TrackLanguage ?? new Dictionary<string, string>()),
             Effects = d.Effects, Clips = d.Clips, ThumbAt = d.ThumbAt, ThumbImage = d.ThumbImage, Overview = d.Overview, SubDelay = new(d.SubtitleDelay ?? new Dictionary<int, double>()),
             AudioDelay = new(d.AudioDelay ?? new Dictionary<int, double>()), ChapterTitles = d.ChapterTitles, AudioFiles = [.. d.AudioFiles ?? []], AudioVolume = new(d.AudioVolume ?? new Dictionary<int, double>()),
+            EndAction = d.EndAction,
         };
 
         /// <summary>Another row for the same video with the same settings (a title cut in two).</summary>
@@ -99,6 +101,7 @@ public partial class MainWindow : Window
             Name = Name, Audio = [.. Audio], Subs = [.. Subs], Extra = [.. Extra], Start = Start, End = End, Volume = Volume, ChapterAt = ChapterAt,
             ChapterMinutes = ChapterMinutes, Bonus = Bonus, Intro = Intro, DefaultAudio = DefaultAudio, DefaultSub = DefaultSub, TrackLanguage = new(TrackLanguage), Effects = Effects, Clips = Clips,
             ThumbAt = ThumbAt, ThumbImage = ThumbImage, Overview = Overview, SubDelay = new(SubDelay), AudioDelay = new(AudioDelay), ChapterTitles = ChapterTitles, AudioFiles = [.. AudioFiles], AudioVolume = new(AudioVolume),
+            EndAction = EndAction,
         };
     }
 
@@ -256,7 +259,9 @@ public partial class MainWindow : Window
             "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
     }
 
-    public MenuEditorWindow CreateEditor(MenuDesign? start = null) => openEditor = new(start ?? design, previewFrame, EditorContent()) { Playback = playback, Hdmv = hdmvMenu && kind != "dvd" };
+    public MenuEditorWindow CreateEditor(MenuDesign? start = null) => openEditor = new(start ?? design, previewFrame, EditorContent())
+        { Playback = playback, DvdPreview = kind == "dvd", Hdmv = kind != "dvd" && (hdmvMenu || CompatCheck.IsChecked == true),
+          CanPreviewPopup = kind != "dvd" && !hdmvMenu && CompatCheck.IsChecked != true };
 
     /// <summary>The video the menu's picture, the disc's name and the audio / subtitle pages come from: the first that is not a bonus.</summary>
     Entry? MainEntry => titles.FirstOrDefault(t => !t.Bonus && !t.Intro) ?? titles.FirstOrDefault();
@@ -266,9 +271,25 @@ public partial class MainWindow : Window
     MenuContent EditorContent()
     {
         if (MainEntry is not { } first)
-            return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, 12).ToList(), null, ["Français 5.1", "English 5.1"], ["Français", "English"]);
+            return new MenuContent(1, previewFrame, Enumerable.Repeat<string?>(null, 12).ToList(), null, ["Français 5.1", "English 5.1"], ["Français", "English"])
+                { PopupTitles = [(1, 12, ["Français 5.1", "English 5.1"], [("Français", 1), ("English", 2)])] };
         var disc = first.ToDisc();
         var (main, extras) = DiscOrder(first);
+        var order = main.Concat(extras).ToList();
+        var discTitles = order.Select(t => t.ToDisc()).ToList();
+        var sources = order.Select(t => t.Tracks).ToList();
+        var lined = order.Count > 1 ? DiscTitle.LineUpSubtitles(discTitles, sources) : null;
+        var popup = order.Select((entry, index) =>
+        {
+            var title = discTitles[index];
+            var audio = title.KeptAudio(sources[index]);
+            var subs = lined?[index] ?? title.KeptSubtitles(sources[index]).Where(track => track.Supported).ToList();
+            var (listed, _) = BluRay.ForcedTracks(audio.Select(track => track.Lang).ToList(), subs.Select(track => (track.Lang, track.Forced)).ToList());
+            return (Playlist: index + 1, Chapters: title.ChapterList(entry.OnDisc.Duration, chapterMinutes).Count,
+                Audio: (IReadOnlyList<string>)audio.Select(track => track.Name).ToList(),
+                Subtitles: (IReadOnlyList<(string Name, int Number)>)subs.Take(listed).Select((track, n) => (track, n + 1))
+                    .Where(pair => pair.track.Index >= 0).Select(pair => (pair.track.Name, pair.Item2)).ToList());
+        }).ToList();
         var series = main.Count > 1;
         // the same moments as the disc's pictures: BluRay.Build and Dvd.Build take them there
         string? TenPercent(Entry t) => Frame(t, t.Start + t.OnDisc.Duration * 0.1);
@@ -276,7 +297,7 @@ public partial class MainWindow : Window
             series ? main.Select((t, i) => new TitleEntry(t.Name, i + 1, TenPercent(t), t.Overview)).ToList() : null,
             disc.KeptAudio(first.Tracks).Select(a => a.Name).ToList(), disc.KeptSubtitles(first.Tracks).Where(s => s.Supported).Select(s => s.Name).ToList(),
             extras.Count > 0 ? extras.Select((t, i) => new TitleEntry(t.Name, main.Count + i + 1, TenPercent(t))).ToList() : null)
-            { ChapterNames = series ? null : disc.ChapterNames(first.OnDisc.Duration, chapterMinutes) };
+            { ChapterNames = series ? null : disc.ChapterNames(first.OnDisc.Duration, chapterMinutes), PopupTitles = popup, HasIntro = titles.Any(t => t.Intro) };
     }
 
     /// <summary>As on the disc: the feature first, then the extras (the start video is on neither). Numbered from 1 in this order, they are the playlists of <see cref="EditorContent"/>.</summary>
@@ -440,6 +461,18 @@ public partial class MainWindow : Window
         }
         CapBar.Value = cap.Unlimited ? 0 : Math.Min(100, est / cap.Gb * 100);
         CapText.Text = cap.Unlimited ? $"{est:0.00} Go, sans limite de taille{note}" : $"{est:0.00} Go / {cap.Usable:0.#} Go utilisables{note}";
+        if (SplitSuggestPanel != null)
+        {
+            var probedItems = titles.Select(t => (t.ToDisc(), t.OnDisc)).ToList();
+            if (!cap.Unlimited && titles.Count(t => !t.Intro) > 1
+                && Snapshot().ShouldSuggestSplit(out var rawEst, out var usableGb, probedItems))
+            {
+                var overPct = (int)Math.Round((rawEst / usableGb - 1) * 100);
+                SplitSuggestText.Text = $"La saison dépasse ce disque de {overPct} % ({rawEst:0.0} Go) : répartir sur plusieurs disques limite la perte de qualité.";
+                SplitSuggestPanel.Visibility = Visibility.Visible;
+            }
+            else SplitSuggestPanel.Visibility = Visibility.Collapsed;
+        }
         ProjectInfo.Text = titles.Count == 0 ? "" : $"{titles.Count} vidéo{(titles.Count > 1 ? "s" : "")}{(titles.Any(t => t.Bonus) ? $" (dont {titles.Count(t => t.Bonus)} bonus)" : "")}{(titles.Any(t => t.Intro) ? " (dont une vidéo de début)" : "")}  ·  {titles.Sum(t => Tools.SizeOf(t.Path)) / 1e9:0.0} Go";
     }
 
@@ -918,6 +951,21 @@ public partial class MainWindow : Window
         };
         intro.Click += (_, _) => SetIntro(entry, intro.IsChecked);
         menu.Items.Add(intro);
+        if (kind != "dvd" && !hdmvMenu && CompatCheck.IsChecked != true && !entry.Intro)
+        {
+            var ending = new MenuItem { Header = "À la fin du titre (BD-J)" };
+            foreach (var (action, label) in new (string? Action, string Label)[]
+            {
+                (null, "Réglage du disque"), ("menu", "Retour au menu"), ("next", "Titre suivant"),
+                ("repeat", "Relire ce titre"), ("stop", "Arrêter la lecture")
+            })
+            {
+                var choice = new MenuItem { Header = label, IsCheckable = true, IsChecked = entry.EndAction == action, IsEnabled = action != "next" || !entry.Bonus };
+                choice.Click += (_, _) => { entry.EndAction = action; Remember(); };
+                ending.Items.Add(choice);
+            }
+            menu.Items.Add(ending);
+        }
         // the picture of this video in the menu: a moment of it, or an image file
         var thumbAt = new MenuItem { Header = entry.ThumbAt is { } at ? $"Vignette du menu : à {Timecode.Format(at)}…" : "Vignette du menu : choisir le moment…" };
         thumbAt.Click += (_, _) =>
@@ -1547,6 +1595,7 @@ public partial class MainWindow : Window
                 MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK) return;
         Log.Clear();
         PlayDiscButton.Visibility = Visibility.Collapsed; // the disc it opened may be the one this build replaces
+        NavigationButton.Visibility = Visibility.Collapsed;
         if (recap.Count > 0) foreach (var line in (string[])["À savoir avant de démarrer :", .. recap, ""]) Append(line);
         if (!dvd) Append(Project.Ps5Note);
 
@@ -1559,15 +1608,15 @@ public partial class MainWindow : Window
             var iso = IsoFile(outDir);
             File.Delete(iso); // an image of an earlier build must never be burnt by mistake
             var problems = DiscCheck.Folder(outDir, cap.Gb);
-            log(problems.Count == 0 ? "Vérification de la structure du disque : aucune anomalie." : "Vérification de la structure du disque : " + string.Join(" ; ", problems));
-            if (burn && problems.Count > 0) throw new InvalidOperationException("Le disque n'est pas gravé, sa structure a des anomalies : " + string.Join(" ; ", problems));
+            if (problems.Count > 0) throw new InvalidOperationException("Vérification de la structure du disque : " + string.Join(" ; ", problems));
+            log("Vérification de la structure du disque : aucune anomalie.");
             if (!withIso && !burn) return;
             token.ThrowIfCancellationRequested();
             log("Création de l'image ISO…");
             Iso.Build(outDir, iso, label, dvd, log, progress, token);
             var imageProblems = DiscCheck.Image(iso, outDir, cap.Gb);
-            log(imageProblems.Count == 0 ? "Vérification de l'image ISO : aucune anomalie." : "Vérification de l'image ISO : " + string.Join(" ; ", imageProblems));
-            if (burn && imageProblems.Count > 0) throw new InvalidOperationException("Le disque n'est pas gravé, l'image ISO a des anomalies : " + string.Join(" ; ", imageProblems));
+            if (imageProblems.Count > 0) throw new InvalidOperationException("Vérification de l'image ISO : " + string.Join(" ; ", imageProblems));
+            log("Vérification de l'image ISO : aucune anomalie.");
             if (burn)
             {
                 writing = true;
@@ -1578,7 +1627,11 @@ public partial class MainWindow : Window
         });
         if (ok && !verified) Warn(NotVerified);
         else if (ok) Append(trial == 0 ? "Terminé." : $"Disque d'essai terminé. Ouvrez {(withIso ? IsoFile(outDir) : outDir)} dans VLC (Média > Ouvrir un disque) pour vérifier le menu, puis décochez « Essai » pour le vrai disque.");
-        if (ok) ShowPlayDisc(withIso || !verified ? IsoFile(outDir) : outDir);
+        if (ok)
+        {
+            ShowPlayDisc(withIso || !verified ? IsoFile(outDir) : outDir);
+            NavigationButton.Visibility = Directory.Exists(Path.Combine(outDir, "BDMV", "JAR")) ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     // ---- « Lire sur l'ordinateur » ----
@@ -1593,6 +1646,20 @@ public partial class MainWindow : Window
 
     /// <summary>For the snapshot run (<c>playdisc</c>): the button as it shows after a disc was made.</summary>
     internal void TryPlayDisc() => ShowPlayDisc(OutBox.Text);
+
+    async void OnDiscNavigation(object s, RoutedEventArgs e)
+    {
+        if (madeDisc is not { } disc) return;
+        NavigationButton.IsEnabled = false;
+        try
+        {
+            var (trace, problems) = await Task.Run(() => DiscCheck.Navigation(disc));
+            foreach (var line in trace) Append(line);
+            foreach (var problem in problems) Append(problem);
+        }
+        catch (Exception ex) { Warn("Impossible de lire la navigation : " + ex.Message); }
+        finally { NavigationButton.IsEnabled = true; }
+    }
 
     void OnPlayDisc(object s, RoutedEventArgs e)
     {
@@ -1635,6 +1702,9 @@ public partial class MainWindow : Window
         var current = new MenuItem { Header = "Ajouter ce disque à la file", IsEnabled = titles.Count > 0 };
         current.Click += (_, _) => QueueCurrent();
         menu.Items.Add(current);
+        var season = new MenuItem { Header = "Répartir la saison sur plusieurs disques…", IsEnabled = !busy && titles.Count(t => !t.Intro) > 1 };
+        season.Click += (_, _) => QueueVolumes();
+        menu.Items.Add(season);
         var saved = new MenuItem { Header = "Ajouter des projets enregistrés…" };
         saved.Click += (_, _) => QueueFiles();
         menu.Items.Add(saved);
@@ -1663,6 +1733,39 @@ public partial class MainWindow : Window
         if (outDir.Length == 0) { MessageBox.Show(this, "Choisissez un dossier de sortie.", "BurnSmith"); return; }
         var cap = (Output)CapacityBox.SelectedItem;
         Queue(volume.Length > 0 ? volume : titles[0].Name, Project.Parse(Snapshot().ToJson()) with { Out = outDir, Label = volume, Encode = encode with { Hd720 = cap.Hd720 && kind == "bd" } });
+    }
+
+    void OnSplitSeason(object s, RoutedEventArgs e)
+    {
+        if (!busy && titles.Count(t => !t.Intro) > 1) QueueVolumes();
+    }
+
+    void QueueVolumes()
+    {
+        if (StillLoadingDesign() || OutBox.Text.Trim().Length == 0)
+        {
+            if (OutBox.Text.Trim().Length == 0) Warn("Choisissez un dossier de sortie.");
+            return;
+        }
+        if (titles.Count(t => !t.Intro) < 2) return;
+        var cap = CapacityBox.SelectedItem as Output;
+        var project = Project.Parse(Snapshot().ToJson()) with
+        {
+            Out = OutBox.Text.Trim(),
+            Label = volume,
+            Encode = encode with { Hd720 = (cap?.Hd720 ?? false) && kind == "bd" }
+        };
+        var probedItems = titles.Select(t => (t.ToDisc(), t.OnDisc)).ToList();
+        var usableGb = cap is { Unlimited: false } ? cap.Usable : 0;
+        var dlg = new SeasonSplitWindow(project, probedItems, usableGb) { Owner = this };
+        if (dlg.ShowDialog() != true || dlg.DiscGroups is not { } groups) return;
+        try
+        {
+            foreach (var (disc, _) in project.Volumes(null, groups, probedItems))
+                Queue(Path.GetFileName(disc.Out!), disc);
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or InvalidOperationException or UnauthorizedAccessException)
+        { Warn(ex.Message); }
     }
 
     void QueueFiles()

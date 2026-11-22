@@ -12,7 +12,8 @@ public static class MenuFiles
     /// <paramref name="overlay"/> (a moving menu), else opaque JPEGs as usual (the playlist only carries the menu music).
     /// </summary>
     public static void WriteBdj(MenuDesign design, IReadOnlyList<MenuPage> pages, string dir, int loopPlaylist = 0, double scale = 1, PlaybackOptions? playback = null, int titles = 0, bool overlay = false, int defaultSubtitle = 0, IReadOnlyList<MenuPage>? popup = null,
-        IEnumerable<(int Playlist, IEnumerable<int> Visible, IReadOnlyList<(int Audio, int Sub)> Forced)>? subtitleTracks = null, Action<string>? log = null, int loopReturnMark = -1)
+        IEnumerable<(int Playlist, IEnumerable<int> Visible, IReadOnlyList<(int Audio, int Sub)> Forced)>? subtitleTracks = null, Action<string>? log = null, int loopReturnMark = -1,
+        IEnumerable<(int Playlist, string? Action)>? titleEnds = null)
     {
         Directory.CreateDirectory(dir);
         var ext = overlay ? "png" : "jpg";
@@ -25,6 +26,13 @@ public static class MenuFiles
         if (loopPlaylist > 0 && loopReturnMark >= 0) txt.Append($"loop-return-mark {loopReturnMark}\n");
         if (playback != null && titles > 0)
             txt.Append($"playback {(playback.StartAtFirstTitle ? "first" : "menu")} {(playback.PlayAll ? 1 : 0)} {(playback.Rewind ? 1 : 0)} {BluRay.MoviePlaylist} {titles}\n");
+        if (playback is { StartAtFirstTitle: false, AutoStartSeconds: > 0 } && titles > 0)
+            txt.Append($"auto-start {Math.Min(300, playback.AutoStartSeconds)}\n");
+        if (playback?.RememberPosition == true && titles > 0)
+            txt.Append($"resume-key {Guid.NewGuid():N}\n");
+        if (design.PageFadeMs > 0) txt.Append($"page-fade {Math.Min(500, design.PageFadeMs)}\n");
+        foreach (var (playlist, action) in titleEnds ?? [])
+            if (action is "menu" or "stop" or "repeat" or "next") txt.Append($"title-end {playlist} {action}\n");
         if (defaultSubtitle > 0) txt.Append($"defaults 1 {defaultSubtitle}\n"); // the audio is always the first (the default one goes first), the subtitle starts as chosen
         foreach (var (playlist, visible, forced) in subtitleTracks ?? [])
         {

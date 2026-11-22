@@ -1,6 +1,7 @@
 package org.burnsmith.menu;
 
 import java.awt.Container;
+import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.Image;
 import java.awt.MediaTracker;
@@ -26,6 +27,7 @@ import javax.media.Manager;
 import javax.media.MediaLocator;
 import javax.media.Player;
 import javax.media.StartEvent;
+import javax.media.Time;
 import javax.tv.service.SIManager;
 import javax.tv.service.selection.ServiceContextFactory;
 import javax.tv.xlet.Xlet;
@@ -111,12 +113,23 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
                 int frame = (int) ((System.currentTimeMillis() / 100) % frames.length);
                 g.drawImage(frames[frame], b.motionX, b.motionY, b.motionW, b.motionH, this);
             } else if (hl != null) g.drawImage(hl, b.x, b.y, this);
-            if (marker == null) return;
-            for (int i = 0; i < p.buttons.size(); i++) {
+            for (int i = 0; marker != null && i < p.buttons.size(); i++) {
                 Button m = (Button) p.buttons.elementAt(i);
                 boolean on = (m.action.equals("audio") && m.n1 == audio)
                     || (m.action.equals("sub") && m.n1 == (popupOpen ? subtitleChoice() : sub));
                 if (on) g.drawImage(marker, m.x + (p.markerDx != Integer.MIN_VALUE ? p.markerDx : markerDx), m.y + (m.h - markerH) / 2, this);
+            }
+            long remaining = fadeEnd - System.currentTimeMillis();
+            if (!popupOpen && remaining > 0 && pageFadeMs > 0 && g instanceof DVBGraphics) {
+                DVBGraphics layer = (DVBGraphics) g;
+                try {
+                    layer.setDVBComposite(DVBAlphaComposite.getInstance(DVBAlphaComposite.SRC_OVER, Math.min(1.0f, (float) remaining / pageFadeMs)));
+                    g.setColor(Color.black);
+                    g.fillRect(0, 0, width, height);
+                } catch (Throwable ignored) {
+                } finally {
+                    try { layer.setDVBComposite(DVBAlphaComposite.SrcOver); } catch (Throwable ignored) { }
+                }
             }
         }
     }
@@ -124,7 +137,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
     private XletContext ctx;
     private HScene scene;
     private View view;
-    private Player player;
+    private volatile Player player;
     private volatile Player loopPlayer;
     private volatile PlaybackControl loopControl;
     private int pendingMark = -1; // chapter to skip to once the player starts (-1: none)
@@ -147,17 +160,27 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
     /** "forced" lines: audio stream number -> the forced subtitle stream shown while subtitles are off (the lines the film's language needs). */
     private final Hashtable forced = new Hashtable();
     private final Hashtable subtitleTracks = new Hashtable(), forcedTracks = new Hashtable();
+    private final Hashtable titleEnds = new Hashtable();
     private Image marker;
     private String markerName;
     private int markerW, markerH, markerDx;
     private int nextPlaylist, endPlaylist; // "play all": playlists still to come, [next, end)
     // "playback" line: where the disc starts and what happens when a title ends (see finished())
     private boolean startFirst, chain, rewind = true; // start on the first title / titles follow each other / back to the start afterwards
+    private int autoStartSeconds;
+    private Timer autoStartTimer;
+    private int pageFadeMs;
+    private volatile long fadeEnd;
+    private String resumeKey;
+    private ResumeStore resumeStore;
+    private Timer resumeTimer;
+    private int resumeAt;
+    private long lastResume;
     private int titleFirst, titleCount; // the titles of the disc: playlists [first, first + count)
     private boolean hasPopup, popupOpen; // the disc has "pop" pages / one of them is shown over the film
     private int playing; // playlist of the running player
     private int popupKey = org.bluray.ui.event.HRcEvent.VK_POPUP_MENU;
-    private static final int GPR_AUDIO = 110, GPR_SUB = 111, GPR_MARK = 112, GPR_END = 113, GPR_MENU_TITLE = 114;
+    private static final int GPR_AUDIO = 110, GPR_SUB = 111, GPR_MARK = 112, GPR_END = 113, GPR_MENU_TITLE = 114, GPR_RESUME = 115;
     private int menuTitle; // the title that holds the menu again (GPR114), 0: no title per video, everything plays here
     private int videoTitle; // the title this xlet plays (title N = playlist N), 0 in the menu
 
@@ -185,10 +208,14 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
     }
 
     public void pauseXlet() {
+        stopCheckpoint(true);
+        cancelAutoStart();
         setFocusActive(false);
     }
 
     public void destroyXlet(boolean unconditional) throws XletStateChangeException {
+        stopCheckpoint(true);
+        cancelAutoStart();
         setFocusActive(false);
         stopListening();
         stopLoop();
@@ -225,18 +252,105 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
         if (readGpr(GPR_AUDIO) > 0) audio = readGpr(GPR_AUDIO); // the choice made in another title
         if (readGpr(GPR_SUB) > 0) sub = readGpr(GPR_SUB) - 1;
         menuTitle = readGpr(GPR_MENU_TITLE);
+        if (resumeKey != null) {
+            try { resumeStore = new ResumeStore(resumeKey); }
+            catch (Exception e) { log("resume unavailable: " + e); }
+        }
         int title = psr(4);
         if (menuTitle > 1 && title >= 1 && title < menuTitle) {
             videoTitle = title;
             int mark = readGpr(GPR_MARK) - 1, end = readGpr(GPR_END);
+            resumeAt = Math.max(0, readGpr(GPR_RESUME));
+            writeGpr(GPR_RESUME, 0);
             writeGpr(GPR_MARK, 0); // a later jump to this title by its number starts it from the beginning, alone
             writeGpr(GPR_END, 0);
             log("title " + title + ": video");
             nextPlaylist = end > title + 1 ? title + 1 : 0;
             endPlaylist = nextPlaylist > 0 ? end : 0;
             play(title, mark);
-        } else if (startFirst && titleCount > 0 && firstPlayback()) startSequence();
-        else showMenu();
+        } else {
+            boolean initial = (startFirst || autoStartSeconds > 0 || resumeStore != null) && titleCount > 0 && firstPlayback();
+            if (initial && restoreCheckpoint()) return;
+            if (initial && startFirst) startSequence();
+            else {
+                showMenu();
+                if (initial) scheduleAutoStart();
+            }
+        }
+    }
+
+    private boolean restoreCheckpoint() {
+        if (resumeStore == null || menuTitle <= 1) return false;
+        try {
+            long mark = resumeStore.read();
+            int title = (int) (mark >>> 32), position = (int) mark;
+            if (title < 1 || title >= menuTitle || position < 1000) return false;
+            writeGpr(GPR_MARK, 0);
+            writeGpr(GPR_END, follow(title));
+            writeGpr(GPR_RESUME, position);
+            if (selectTitle(title)) return true;
+            writeGpr(GPR_RESUME, 0);
+        } catch (Exception e) { log("resume read unavailable: " + e); }
+        return false;
+    }
+
+    private synchronized void startCheckpoint() {
+        if (resumeStore == null || resumeTimer != null) return;
+        final Timer timer = new Timer(true);
+        resumeTimer = timer;
+        timer.schedule(new TimerTask() {
+            public void run() {
+                synchronized (Menu.this) {
+                    if (resumeTimer == timer) checkpoint();
+                }
+            }
+        }, 1000L, 2000L);
+    }
+
+    private synchronized void stopCheckpoint(boolean save) {
+        if (resumeTimer == null) return;
+        resumeTimer.cancel();
+        resumeTimer = null;
+        if (save) checkpoint();
+    }
+
+    private synchronized void checkpoint() {
+        Player current = player;
+        if (resumeStore == null || current == null || playing < 1 || playing >= menuTitle) return;
+        try {
+            double ms = current.getMediaTime().getSeconds() * 1000.0;
+            if (ms < 1000 || ms > Integer.MAX_VALUE) return;
+            long value = ((long) playing << 32) | (int) ms;
+            if (value != lastResume) resumeStore.write(value);
+            lastResume = value;
+        } catch (Exception e) {
+            log("resume write unavailable: " + e);
+            stopCheckpoint(false);
+            resumeStore = null;
+        }
+    }
+
+    private synchronized void cancelAutoStart() {
+        if (autoStartTimer == null) return;
+        autoStartTimer.cancel();
+        autoStartTimer = null;
+    }
+
+    private synchronized void scheduleAutoStart() {
+        if (!focusActive) return;
+        cancelAutoStart();
+        autoStartTimer = new Timer(true);
+        autoStartTimer.schedule(new TimerTask() {
+            public void run() { autoStart(); }
+        }, autoStartSeconds * 1000L);
+    }
+
+    private synchronized void autoStart() {
+        if (autoStartTimer == null) return;
+        cancelAutoStart();
+        if (!focusActive || player != null) return;
+        log("auto-start: " + autoStartSeconds + " s");
+        start(titleFirst, -1, follow(titleFirst));
     }
 
     private synchronized void setFocusActive(boolean active) {
@@ -249,14 +363,16 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
             focusTimer.cancel();
             focusTimer = null;
         }
-        if (!focusActive || focusFrames == null || focusTimer != null) return;
+        if (!focusActive || (focusFrames == null && pageFadeMs == 0) || focusTimer != null) return;
         focusTimer = new Timer(true);
         focusTimer.schedule(new TimerTask() {
             public void run() {
                 Button b = focus;
-                if (b != null && b.motionW > 0 && scene.isVisible()) view.repaint();
+                long end = fadeEnd;
+                if (end > 0 && System.currentTimeMillis() >= end) fadeEnd = 0;
+                if ((end > 0 || focusFrames != null && b != null && b.motionW > 0) && scene.isVisible()) view.repaint();
             }
-        }, 0, 100);
+        }, 0, pageFadeMs > 0 ? 33 : 100);
     }
 
     private int psr(int n) {
@@ -353,6 +469,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
         Page old = page;
         pictures(p, true);
         page = p;
+        fadeEnd = !popupOpen && old != null && old != p && pageFadeMs > 0 ? System.currentTimeMillis() + pageFadeMs : 0;
         focus = p.buttons.isEmpty() ? null : (Button) p.buttons.elementAt(0);
         // back from a title: the button that started it is focused again, from GPR108
         if (p == firstPage && lastButton >= 0 && lastButton < p.buttons.size()) {
@@ -401,6 +518,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
 
     public void userEventReceived(UserEvent e) {
         if (e.getType() != KeyEvent.KEY_PRESSED) return;
+        cancelAutoStart();
         int code = e.getCode();
         if (code == popupKey) {
             if (popupOpen) closePopup();
@@ -466,6 +584,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
         } else if (b.action.equals("menu")) {
             log("pop-up: main menu");
             nextPlaylist = endPlaylist = 0;
+            stopCheckpoint(true);
             closePlayer();
             toMenu();
         }
@@ -649,13 +768,44 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
             }
             return;
         }
+        if (from == null || from != player) return;
         if (e instanceof StartEvent) {
             applyTracks(player);
             skipToChapter(player);
+            if (resumeAt > 0) {
+                int position = resumeAt;
+                resumeAt = 0;
+                try {
+                    if (position / 1000.0 < player.getDuration().getSeconds()) {
+                        player.setMediaTime(new Time(position * 1000000L));
+                        log("resume title " + playing + " at " + position + " ms");
+                    }
+                } catch (Exception ex) { log("resume seek unavailable: " + ex); }
+            }
+            startCheckpoint();
         } else if (e instanceof EndOfMediaEvent || e instanceof ControllerErrorEvent) {
+            stopCheckpoint(false);
+            if (e instanceof EndOfMediaEvent && resumeStore != null) {
+                try { resumeStore.write(0); lastResume = 0; }
+                catch (Exception ex) { log("resume clear unavailable: " + ex); }
+            }
             log("playback ended: " + e.getClass().getName());
             closePlayer();
-            if (e instanceof EndOfMediaEvent && nextPlaylist > 0 && nextPlaylist < endPlaylist) start(nextPlaylist, -1, endPlaylist);
+            String action = e instanceof EndOfMediaEvent ? (String) titleEnds.get(new Integer(playing)) : null;
+            if (action != null) {
+                log("title end " + playing + ": " + action);
+                if (action.equals("menu")) {
+                    nextPlaylist = endPlaylist = 0;
+                    toMenu();
+                } else if (action.equals("repeat")) start(playing, -1, 0);
+                else if (action.equals("next") && playing >= titleFirst && playing + 1 < titleFirst + titleCount)
+                    start(playing + 1, -1, endPlaylist);
+                else if (action.equals("next")) toMenu();
+                else {
+                    nextPlaylist = endPlaylist = 0;
+                    if (popupOpen) closePopup();
+                }
+            } else if (e instanceof EndOfMediaEvent && nextPlaylist > 0 && nextPlaylist < endPlaylist) start(nextPlaylist, -1, endPlaylist);
             else finished(e instanceof EndOfMediaEvent);
         }
     }
@@ -775,6 +925,15 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
                 rewind = t.nextToken().equals("1");
                 titleFirst = Integer.parseInt(t.nextToken());
                 titleCount = Integer.parseInt(t.nextToken());
+            } else if (cmd.equals("auto-start")) {
+                autoStartSeconds = Math.max(0, Math.min(300, Integer.parseInt(t.nextToken())));
+            } else if (cmd.equals("resume-key")) {
+                resumeKey = t.nextToken();
+            } else if (cmd.equals("page-fade")) {
+                pageFadeMs = Math.max(0, Math.min(500, Integer.parseInt(t.nextToken())));
+            } else if (cmd.equals("title-end")) {
+                Integer playlist = new Integer(Integer.parseInt(t.nextToken()));
+                titleEnds.put(playlist, t.nextToken());
             } else if (cmd.equals("defaults")) {
                 audio = Integer.parseInt(t.nextToken());
                 sub = Integer.parseInt(t.nextToken());

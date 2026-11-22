@@ -179,7 +179,10 @@ public static class Dvd
         var subs = BluRay.Subtitles(title, src, lined, n => Path.Combine(work, $"sub{number}_{n}"), log);
         var real = subs.Where(x => x.Track.Index >= 0).ToList();
         log($"encode {number}: {title.DisplayName} (audio {audio.Count}, subtitles {subs.Count})");
-        Tools.Run(Tools.Find("ffmpeg.exe"), args, log, seconds: src.Duration);
+        var ffmpeg = Tools.Find("ffmpeg.exe");
+        EncodeCache.Prepare(movie, args.Take(args.Count - 1).ToArray(),
+            EncodeCache.Inputs(title, audio).Append(ffmpeg),
+            () => Tools.Run(ffmpeg, args, log, seconds: src.Duration), log);
         BluRay.WriteOwnSubtitles(title, real.Where(x => x.Track.File == null && !x.Track.IsVobSub).ToList(), span, log); // a VobSub or a subtitle file is converted apart, below
         foreach (var (s, file) in real.Where(x => x.Track.File == null && x.Track.IsVobSub)) BluRay.WriteEmbeddedVobSub(title, s, span, file, (720, 480), log);
         foreach (var (s, file) in real.Where(x => x.Track.File != null)) BluRay.WriteExternalSubtitle(title, s, span, file, (720, 480), log); // a VobSub becomes PGS on a 720x480 plane, which PgsStream maps onto the frame whatever its height
@@ -265,6 +268,17 @@ public static class Dvd
     /// </summary>
     static string SettingsId(int audio, int sub) => $"settings_{audio}_{sub}";
 
+    public static MenuPage PreviewSettings(MenuDesign design, MenuContent content, string page, int audio, int subtitle)
+    {
+        var state = page switch
+        {
+            "settings_audio" => ($"settings_audio_{audio}", (int?)audio, (int?)null),
+            "settings_sub" => ($"settings_sub_{subtitle}", (int?)null, (int?)subtitle),
+            _ => (SettingsId(audio, subtitle), (int?)audio, (int?)subtitle)
+        };
+        return MenuBuilder.WithElements(design, MenuBuilder.Settings(design, content, state.Item2, state.Item3, state.Item1), content);
+    }
+
     /// <summary>
     /// The chapter buttons of a scene page with the excerpt that should play in each: the movie's MPEG, the chapter's time on the disc, and the
     /// button's rectangle. Empty when the page has no chapter button (a menu page, a settings page) or the chapter is unknown.
@@ -340,13 +354,13 @@ public static class Dvd
             if (settingsPages.Contains("settings"))
                 for (var a = 1; a <= audioStates; a++)
                     for (var s = 0; s < subStates; s++)
-                        pages.Add(MenuBuilder.WithElements(job.Menu!, MenuBuilder.Settings(job.Menu!, content, a, s, SettingsId(a, s)), content));
+                        pages.Add(PreviewSettings(job.Menu!, content, "settings", a, s));
             if (settingsPages.Contains("settings_audio"))
                 for (var a = 1; a <= audioStates; a++)
-                    pages.Add(MenuBuilder.WithElements(job.Menu!, MenuBuilder.Settings(job.Menu!, content, a, null, $"settings_audio_{a}"), content));
+                    pages.Add(PreviewSettings(job.Menu!, content, "settings_audio", a, 0));
             if (settingsPages.Contains("settings_sub"))
                 for (var s = 0; s < subStates; s++)
-                    pages.Add(MenuBuilder.WithElements(job.Menu!, MenuBuilder.Settings(job.Menu!, content, null, s, $"settings_sub_{s}"), content));
+                    pages.Add(PreviewSettings(job.Menu!, content, "settings_sub", 1, s));
         }
         var loop = job.Menu!.Loop;
         // a moving menu: the pages are transparent overlays burned onto a clip of the film (or the design's own video) that plays and repeats
@@ -509,7 +523,6 @@ public static class Dvd
     /// <param name="play">Start on the menu or on the first title; after a title, the next main one (play all) or the menu; at the very end, start again or stop.</param>
     static DvdDisc DiscOf(bool pal, List<Movie> movies, int mainCount, List<MenuOut> menus, bool loop, Movie? intro, bool wide, PlaybackOptions play, SubtitleStyle? subtitles, Action<string> log)
     {
-        var series = movies.Count > 1;
         // menu PGCs are numbered in order: 1 = root, then the scene/episode pages, then the settings pages
         int MenuNumber(string pageId) => menus.FindIndex(m => m.Page.Id == pageId) + 1;
         var settings = menus.Where(m => m.Page.Id.StartsWith("settings_")).Select(m => m.Page.Id).ToList();
@@ -545,8 +558,8 @@ public static class Dvd
             var here = Regex.Match(page.Id, @"settings_(\d+)_(\d+)");
             switch (a.Kind)
             {
-                case "play": return series ? [Vm.Set(1, play.PlayAll ? 1 : 0), Vm.JumpVtsTitle(a.Playlist)] : [Vm.JumpVtsTitle(a.Playlist)]; // play all: any picked title goes on to the next ones
-                case "chapter": return [Vm.JumpVtsChapter(a.Playlist, a.Mark + 1)];
+                case "play": return [Vm.Set(1, play.PlayAll && a.Playlist <= mainCount ? 1 : 0), Vm.JumpVtsTitle(a.Playlist)];
+                case "chapter": return [Vm.Set(1, play.PlayAll && a.Playlist <= mainCount ? 1 : 0), Vm.JumpVtsChapter(a.Playlist, a.Mark + 1)];
                 case "playall": return [Vm.Set(1, 1), Vm.JumpVtsTitle(a.Playlist)];
                 case "audio": // stream numbers are 0-based on a DVD
                     var audioPage = here.Success ? SettingsId(a.Mark, int.Parse(here.Groups[2].Value)) : $"settings_audio_{a.Mark}";

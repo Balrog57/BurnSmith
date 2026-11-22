@@ -259,7 +259,39 @@ public static class DiscCheck
             foreach (var pid in unlisted.Order()) problems.Add($"{shown} : PID 0x{pid:X4} déclaré absent de la PMT");
     }
 
-    static void CheckMenuNavigation(string jar, Func<string, Stream?> open, List<string> problems)
+    public static (List<string> Trace, List<string> Problems) Navigation(string path, int audio = 0, int subtitle = -1)
+    {
+        var trace = new List<string>();
+        var problems = new List<string>();
+        if (Directory.Exists(path))
+        {
+            var bdmv = Path.Combine(path, "BDMV");
+            var jars = Path.Combine(bdmv, "JAR");
+            if (Directory.Exists(jars))
+                foreach (var jar in Directory.EnumerateFiles(jars, "*.jar"))
+                    CheckMenuNavigation(Path.Combine("JAR", Path.GetFileName(jar)), name =>
+                        File.Exists(Path.Combine(bdmv, name)) ? File.OpenRead(Path.Combine(bdmv, name)) : null,
+                        problems, trace, audio, subtitle);
+        }
+        else
+        {
+            var entries = DamageScan.UdfFiles(path).ToDictionary(entry => entry.Name, StringComparer.OrdinalIgnoreCase);
+            Stream? Open(string name)
+            {
+                if (!entries.TryGetValue("BDMV\\" + name, out var entry)) return null;
+                if (entry.Size > 128 << 20) throw new InvalidDataException($"{name} : fichier trop volumineux");
+                return new MemoryStream(DamageScan.ReadAll(entry), writable: false);
+            }
+            foreach (var name in entries.Keys.Where(name => name.StartsWith("BDMV\\JAR\\", StringComparison.OrdinalIgnoreCase)
+                         && Path.GetExtension(name).Equals(".jar", StringComparison.OrdinalIgnoreCase)))
+                CheckMenuNavigation(name[5..], Open, problems, trace, audio, subtitle);
+        }
+        if (trace.Count == 0 && problems.Count == 0) problems.Add("aucun menu BD-J BurnSmith pris en charge dans ce disque");
+        return (trace, problems);
+    }
+
+    static void CheckMenuNavigation(string jar, Func<string, Stream?> open, List<string> problems,
+                                    List<string>? trace = null, int audioChoice = 0, int subtitleChoice = -1)
     {
         try
         {
@@ -288,6 +320,10 @@ public static class DiscCheck
                 return playlists[number] = Mpls.Read(data);
             }
             void Problem(string text) => problems.Add($"{jar} : {text}");
+            if (trace != null) BdjNavigation.Trace(rows, Playlist, trace, Problem, audioChoice, subtitleChoice);
+            var popupSettings = rows.Where(row => row.Length >= 14 && row is ["button", _, "settings", ..] && row[12] == "page")
+                .Where(row => row[1].StartsWith("pop", StringComparison.Ordinal) && int.TryParse(row[1][3..], out _))
+                .ToLookup(row => row[13], row => int.Parse(row[1][3..]));
             foreach (var row in rows)
             {
                 if (row is ["button", var page, var id, ..] && row.Length >= 13 && row[12] == "chapter")
@@ -302,12 +338,14 @@ public static class DiscCheck
                         || row.Skip(2).Any(s => !int.TryParse(s, out var n) || n <= 0 || list.Items.Any(i => n > i.Pg.Count)))
                         Problem($"pistes de sous-titres inexistantes dans la liste {titleText}");
                 }
-                else if (row is ["button", "settings", var choice, ..] && row.Length >= 13 && row[12] is "audio" or "sub")
+                else if (row is ["button", var setup, var choice, ..] && row.Length >= 13 && row[12] is "audio" or "sub")
                 {
                     var audio = row[12] == "audio";
-                    if (row.Length < 14 || !int.TryParse(row[13], out var number) || number < (audio ? 1 : 0)
-                        || Playlist(first) is not { } list || list.Items.Any(i => number > (audio ? i.Audio.Count : i.Pg.Count)))
-                        Problem($"bouton settings/{choice} : piste {(audio ? "audio" : "de sous-titres")} inexistante");
+                    IEnumerable<int> targets = popupSettings.Contains(setup) ? popupSettings[setup] : [first];
+                    foreach (var target in targets)
+                        if (row.Length < 14 || !int.TryParse(row[13], out var number) || number < (audio ? 1 : 0)
+                            || Playlist(target) is not { } list || list.Items.Any(i => number > (audio ? i.Audio.Count : i.Pg.Count)))
+                            Problem($"bouton {setup}/{choice}, titre {target:00000} : piste {(audio ? "audio" : "de sous-titres")} inexistante");
                 }
                 else if (row[0] is "forced" or "forced-track")
                 {
