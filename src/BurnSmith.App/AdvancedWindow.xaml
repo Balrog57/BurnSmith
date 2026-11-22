@@ -35,7 +35,7 @@
           </Grid>
         </Grid>
         <TextBlock x:Name="TreatNote" TextWrapping="Wrap" Opacity="0.65" Margin="0,12,0,0"
-                   Text="REMARQUE : Passthrough copie la vidéo telle quelle (sources HEVC 2160p seulement, HDR10 et Dolby Vision gardés). Conversion la refait en HEVC 10 bits 2160p : le HDR10 est gardé, d'un Dolby Vision il ne reste que la couche HDR10."/>
+                   Text="REMARQUE : Passthrough copie la vidéo telle quelle (sources HEVC 2160p, HDR10, HDR10+ et Dolby Vision profil 7 gardés). Conversion la refait en HEVC 10 bits 2160p en conservant HDR10, HDR10+ et Dolby Vision (profil 7 MEL)."/>
 
         <!-- DVD only: the TV standard and the picture shape of the titles -->
         <StackPanel x:Name="DvdPanel">
@@ -72,10 +72,10 @@
           </Grid>
           <RadioButton x:Name="MenuBdj" GroupName="menukind" Content="BD-J : toutes les fonctions du menu" Margin="0,8,0,0"
                        ToolTip="Le menu est un petit programme Java que la platine exécute : fond animé, menu pop-up, langue changée pendant le film."/>
-          <RadioButton x:Name="MenuHdmv" GroupName="menukind" Content="HDMV : menu natif, fonctions limitées" Margin="0,10,0,0"
-                       ToolTip="Le menu est fait des commandes de base du Blu-ray, sans Java : toutes les platines les lisent."/>
+          <RadioButton x:Name="MenuHdmv" GroupName="menukind" Content="HDMV : menu natif sans Java (compatibilité maximale)" Margin="0,10,0,0"
+                       ToolTip="Le menu utilise les commandes natives du Blu-ray, sans Java : lu par toutes les platines."/>
           <TextBlock TextWrapping="Wrap" Opacity="0.65" Margin="28,4,0,0"
-                     Text="En HDMV : pages fixes (pas de fond animé), pas de menu pop-up ; la langue et les sous-titres choisis au menu s'appliquent au lancement d'un titre. L'éditeur de menu grise ce qui n'est pas pris en charge."/>
+                     Text="En HDMV : navigation native sans Java, avec fond animé et menu pop-up natif pris en charge. Le choix audio et sous-titres du menu principal s'applique au lancement du titre."/>
         </StackPanel>
 
         <!-- Mode de lecture: what the menu does when a title ends -->
@@ -93,22 +93,22 @@
           <RadioButton x:Name="Mode2" GroupName="play" Content="Retourner au menu si la lecture du titre sélectionné est terminée" Margin="0,10,0,0" Checked="OnMode"/>
           <StackPanel x:Name="AutoStartPanel" Orientation="Horizontal" Margin="0,10,0,0">
             <TextBlock Text="Démarrage automatique BD-J après (0 = désactivé)" VerticalAlignment="Center"/>
-            <TextBox x:Name="AutoStartBox" Width="46" Margin="8,0"/>
+            <TextBox x:Name="AutoStartBox" Width="64" TextAlignment="Center" Margin="8,0"/>
             <TextBlock Text="secondes" VerticalAlignment="Center"/>
           </StackPanel>
           <CheckBox x:Name="RememberPositionBox" Content="Reprendre la lecture à la prochaine ouverture (BD-J)" Margin="0,8,0,0"
                     ToolTip="Utilise le stockage local du lecteur. La touche Menu principal reste disponible."/>
         </StackPanel>
 
-        <!-- the text subtitles kept on the disc: font, size, colour, height (SubtitleStyle) -->
+        <!-- the subtitles kept on the disc: font, size, colour, height, HDR luminance (SubtitleStyle) -->
         <Grid Margin="0,22,0,0">
           <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
           <Separator VerticalAlignment="Center"/>
-          <TextBlock Grid.Column="1" Text="Sous-titres en texte" FontSize="16" Margin="16,0"/>
+          <TextBlock Grid.Column="1" Text="Sous-titres" FontSize="16" Margin="16,0"/>
           <Separator Grid.Column="2" VerticalAlignment="Center"/>
         </Grid>
         <TextBlock TextWrapping="Wrap" Opacity="0.65" Margin="0,8,0,0"
-                   Text="Pour les sous-titres en texte (SRT, ASS…) gardés sur le disque. Ceux en images (PGS, VobSub) gardent leur aspect ; sur un DVD, la couleur vaut pour tous les sous-titres. Le décalage d'un sous-titre se règle dans la liste des vidéos, colonne Sous-titres."/>
+                   Text="Police et couleur s'appliquent aux sous-titres texte (SRT, ASS…). Taille, hauteur et luminosité HDR s'appliquent aussi aux sous-titres en images (PGS, VobSub) sur Blu-ray. Le décalage se règle dans la liste des vidéos."/>
         <TextBlock Text="Police" Style="{StaticResource Label}"/>
         <ComboBox x:Name="SubFontBox" HorizontalAlignment="Stretch"/>
         <TextBlock Text="Taille" Style="{StaticResource Label}"/>
@@ -117,6 +117,8 @@
         <ComboBox x:Name="SubColorBox" HorizontalAlignment="Stretch"/>
         <TextBlock Text="Hauteur dans l'image (à gauche : en bas, à droite : en haut)" Style="{StaticResource Label}"/>
         <Slider x:Name="SubPosSlider" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" AutoToolTipPlacement="TopLeft" AutomationProperties.Name="Hauteur des sous-titres"/>
+        <TextBlock Text="Luminosité des sous-titres en HDR (nits, 203 = standard, 400 = sans atténuation)" Style="{StaticResource Label}"/>
+        <Slider x:Name="SubHdrNitsSlider" Minimum="80" Maximum="400" TickFrequency="10" IsSnapToTickEnabled="True" AutoToolTipPlacement="TopLeft" AutomationProperties.Name="Luminosité HDR des sous-titres"/>
 
         <Grid Margin="0,22,0,0">
           <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
@@ -128,8 +130,8 @@
         <ComboBox x:Name="LanguageBox" HorizontalAlignment="Stretch" ToolTip="La langue des fenêtres de BurnSmith. Celle du menu du disque se règle dans l'éditeur de menu."/>
         <TextBlock Text="Un chapitre toutes les" Style="{StaticResource Label}"/>
         <ComboBox x:Name="ChapterBox" HorizontalAlignment="Stretch" ItemStringFormat="{}{0} min"/>
-        <CheckBox x:Name="GpuBox" Content="Convertir avec la carte graphique NVIDIA" Margin="0,12,0,0"
-                  ToolTip="Plusieurs fois plus rapide. Le processeur reste utilisé quand la carte ne peut pas : pas de carte NVIDIA, 1080i, 4K HDR10+ ou Dolby Vision, MPEG-2 du DVD (la carte lit alors la vidéo)."/>
+        <CheckBox x:Name="GpuBox" Content="Convertir avec la carte graphique (GPU)" Margin="0,12,0,0"
+                  ToolTip="Détection automatique NVIDIA NVENC, Intel QuickSync ou AMD AMF. Le processeur reste utilisé si aucun GPU compatible n'est disponible, ou pour le 1080i, 4K HDR10+/Dolby Vision et MPEG-2 DVD."/>
         <StackPanel x:Name="EncodePanel">
           <TextBlock x:Name="ModeLabel" Text="Mode vidéo" Style="{StaticResource Label}"/>
           <ComboBox x:Name="ModeBox" HorizontalAlignment="Stretch"/>
@@ -142,9 +144,16 @@
                     ToolTip="Garde les pistes Blu-ray compatibles, dont le DTS-HD et le TrueHD complet avec sa piste AC-3 de secours. Quand le son doit être décodé, BurnSmith utilise le LPCM. Cela peut prendre plus de place."/>
           <CheckBox x:Name="CopyEac3Box" Content="Conserver le Dolby Digital Plus (E-AC-3)" Margin="0,8,0,0" Click="OnRefresh"
                     ToolTip="Copie le Dolby Digital Plus à 48 kHz quand les réglages le permettent. La lecture du Dolby Digital Plus autonome sur platine reste à vérifier. Une conversion en LPCM ou AC-3 ne conserve pas les objets Atmos."/>
+          <CheckBox x:Name="NormalizeAudioBox" Content="Normaliser le volume audio (Loudness EBU R128)" Margin="0,8,0,0" Click="OnRefresh"
+                    ToolTip="Applique le filtre loudnorm (-16 LUFS) lors de la conversion audio pour équilibrer le volume entre vidéos."/>
           <TextBlock TextWrapping="Wrap" Opacity="0.65" Margin="0,12,0,0"
                      Text="« Adapter au disque » garde la vidéo telle quelle tant qu'elle tient sur le support, sinon la refait au débit qui remplit le disque. « Identique à la source » copie la vidéo si elle est déjà en H.264 1080p à 23,976 / 24 / 25 i/s, sinon la refait à qualité constante."/>
         </StackPanel>
+        <DockPanel Margin="0,16,0,0">
+          <Button x:Name="ClearCacheButton" DockPanel.Dock="Right" Content="Vider le cache" Click="OnClearCache" Margin="12,0,0,0"
+                  ToolTip="Supprime les encodages réutilisables stockés localement (éviction automatique au-delà de 100 Go)"/>
+          <TextBlock x:Name="CacheInfoText" VerticalAlignment="Center" Opacity="0.75" TextWrapping="Wrap"/>
+        </DockPanel>
       </StackPanel>
     </ScrollViewer>
     <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">

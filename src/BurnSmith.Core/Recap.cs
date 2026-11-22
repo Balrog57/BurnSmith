@@ -13,20 +13,35 @@ public static class Recap
         var sources = job.Titles.Select(t => t.Cut((probe ?? BluRay.Probe)(t.Video))).ToList();
         var kbps = BluRay.TargetKbps(job, sources, _ => { });
         var copied = job.Titles.Select((t, i) => BluRay.CopiesVideo(job, t, sources[i], kbps)).ToList();
-        // shortcut: speeds estimated from test builds on an NVIDIA GPU and a CPU; measure them if the minutes are far off
-        double Speed() => job.Encode?.Gpu != false && BluRay.Nvenc.Value ? (job.Uhd ? 1.5 : 4) : job.Uhd ? 0.25 : 1;
+        var useGpu = job.Encode?.Gpu != false && (job.Uhd ? BluRay.HardwareGpuHevc.Value != BluRay.GpuVendor.None : BluRay.HasGpu);
+        double Speed() => useGpu ? (job.Uhd ? 1.5 : 4) : job.Uhd ? 0.25 : 1;
         var lossless = job.Encode?.Lossless != false;
-        return Lines(job.Titles, sources, copied, (a, t) => BluRay.BdAudio(a, t, job.Uhd, lossless, job.Encode?.CopyEac3 != false), Speed, BluRay.EstimateGB(job, sources), job.CapacityGB,
-                     job.Menu != null); // forced subtitles follow the sound through the BD-J menu's player
+        var normalize = job.Encode?.NormalizeAudio == true;
+        var lines = Lines(job.Titles, sources, copied, (a, t) => BluRay.BdAudio(a, t, job.Uhd, lossless, job.Encode?.CopyEac3 != false, normalize), Speed, BluRay.EstimateGB(job, sources), job.CapacityGB,
+                     job.Menu != null); // forced subtitles follow the sound through the menu
+        if (copied.Any(c => !c) && useGpu) lines.Add($"Encodage matériel actif : {BluRay.GpuLabel}.");
+        if (normalize) lines.Add("Normalisation du volume audio (Loudness EBU R128) activée.");
+        if (job.Avchd) lines.Add("Format de sortie : AVCHD (dossier AVCHD/BDMV pour clé USB ou carte SD).");
+        if (job.HdmvMenu && job.Menu != null) lines.Add("Menu natif HDMV (sans Java, compatibilité maximale).");
+        return lines;
     }
 
     public static List<string> For(DvdJob job, Func<string, SourceInfo>? probe = null)
     {
         var sources = job.Titles.Select(t => t.Cut((probe ?? BluRay.Probe)(t.Video))).ToList();
         // a DVD makes every picture again as MPEG-2 and every sound as AC-3 (Dvd.EncodeTitle)
-        return Lines(job.Titles, sources, [.. job.Titles.Select(_ => false)], (_, _) => "ac3", () => 6,
+        var lines = Lines(job.Titles, sources, [.. job.Titles.Select(_ => false)], (_, _) => "ac3", () => 6,
                      Dvd.EstimateGB([.. sources.Zip(job.Titles, (s, t) => (s, t))], job.CapacityGB, job.Encode?.DvdKbps ?? 0), job.CapacityGB, false);
+        if (job.Encode?.NormalizeAudio == true) lines.Add("Normalisation du volume audio (Loudness EBU R128) activée.");
+        return lines;
     }
+
+    /// <summary>Short practical advice on blank optical discs before burning (HTL vs LTH, speed, BD-100 compatibility).</summary>
+    public static string MediaAdvice(bool dvd, double capacityGb) => dvd
+        ? "Conseil gravure DVD : privilégiez des DVD-R / DVD+R de marque (Verbatim AZO / Taiyo Yuden) gravés à 4× ou 8×."
+        : capacityGb >= 90
+            ? "Conseil gravure BD-100 : peu de platines lisent les BD-R XL 100 Go ; privilégiez des BD-R 25/50 Go HTL (jamais LTH) gravés à 2×–4×."
+            : "Conseil gravure Blu-ray : privilégiez des BD-R HTL (inorganiques, ex. Verbatim DataLifePlus) plutôt que LTH, gravés à 2×–4×.";
 
     static List<string> Lines(IReadOnlyList<DiscTitle> titles, List<SourceInfo> sources, List<bool> copied, Func<AudioTrack, DiscTitle, string> soundTo,
                               Func<double> speed, double gb, double capacityGB, bool forcedFollowSound)

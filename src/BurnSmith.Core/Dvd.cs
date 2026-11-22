@@ -18,13 +18,14 @@ public static class Dvd
 
     static int AudioBps(AudioTrack a) => a.Channels > 2 ? 448_000 : 192_000;
 
-    /// <summary>Video bit rate that fills <paramref name="capacityGB"/> (usable GB) with all titles and their kept audio, capped at 8 Mb/s.</summary>
-    public static int VideoBitrate(IReadOnlyList<(SourceInfo Src, DiscTitle Title)> items, double capacityGB)
+    /// <summary>Video bit rate that fills <paramref name="capacityGB"/> (usable GB) with all titles, their kept audio and optional menu overhead, capped at 8 Mb/s.</summary>
+    public static int VideoBitrate(IReadOnlyList<(SourceInfo Src, DiscTitle Title)> items, double capacityGB, MenuDesign? menu = null)
     {
         var seconds = items.Sum(i => i.Src.Duration);
         var audioBits = items.Sum(i => i.Src.Duration * i.Title.KeptAudio(i.Src).Sum(AudioBps));
+        var menuBits = menu == null ? 0.0 : (menu.Loop || menu.ExistingMusic() != null ? BluRay.LoopLength(menu, 120) * 6_000_000.0 * Math.Clamp(2 + items.Count / 4, 2, 6) : 30_000_000.0 * 8);
         // no size limit (capacity 0 or less): the best a DVD takes
-        return (int)Math.Clamp(capacityGB > 0 ? (capacityGB * 1e9 * 8 * 0.96 - audioBits) / seconds : double.MaxValue, 1_000_000, Math.Min(8_000_000, VideoCeiling(items)));
+        return (int)Math.Clamp(capacityGB > 0 ? (capacityGB * 1e9 * 8 * 0.96 - audioBits - menuBits) / Math.Max(1, seconds) : double.MaxValue, 1_000_000, Math.Min(8_000_000, VideoCeiling(items)));
     }
 
     /// <summary>
@@ -65,7 +66,7 @@ public static class Dvd
         if (introSource != null) items.Add((introSource, intro!)); // it takes room on the disc too
         var pal = job.Encode?.DvdPal ?? (Math.Abs(sources[0].Fps - 25) < 0.5 || Math.Abs(sources[0].Fps - 50) < 0.5); // chosen, else the disc follows its first video
         var work = job.OutDir + "_work";
-        var videoBps = job.Encode is { DvdKbps: > 0 } manual ? Math.Min(Math.Clamp(manual.DvdKbps, 1500, 9000) * 1000, VideoCeiling(items)) : VideoBitrate(items, job.CapacityGB); // by hand, else what fills the disc
+        var videoBps = job.Encode is { DvdKbps: > 0 } manual ? Math.Min(Math.Clamp(manual.DvdKbps, 1500, 9000) * 1000, VideoCeiling(items)) : VideoBitrate(items, job.CapacityGB, job.Menu); // by hand, else what fills the disc
         // the fitted rate stops at 1 Mb/s: past that (a season with three languages on a DVD-5) the disc is too small, as the Blu-ray build says too
         if (job.CapacityGB > 0 && EstimateGB(items, job.CapacityGB, job.Encode?.DvdKbps ?? 0) is var gb && gb > job.CapacityGB)
             log($"warning: about {gb:0.0} GB, more than the {job.CapacityGB:0.#} GB of the disc: keep fewer audio tracks or take a bigger disc");
@@ -108,18 +109,19 @@ public static class Dvd
         log($"movie: {(pal ? "PAL" : "NTSC")} {videoBps / 1000} kb/s");
         var movies = new List<Movie>();
         var lined = job.Titles.Count > 1 ? DiscTitle.LineUpSubtitles(job.Titles, sources) : null;
+        var linedAudio = job.Titles.Count > 1 ? DiscTitle.LineUpAudio(job.Titles, sources) : null;
         var total = Math.Max(1, sources.Sum(s => s.Duration) + (introSource?.Duration ?? 0));
         var before = 0.0;
         for (var i = 0; i < job.Titles.Count; i++)
         {
             Tools.Converting(before / total, sources[i].Duration / total);
             before += sources[i].Duration;
-            movies.Add(EncodeTitle(job, i + 1, sources[i], job.Titles[i], lined?[i], pal, videoBps, work, log));
+            movies.Add(EncodeTitle(job, i + 1, sources[i], job.Titles[i], lined?[i], linedAudio?[i], pal, videoBps, work, log));
         }
         Movie? introMovie = null;
         if (intro != null) Tools.Converting(before / total, introSource!.Duration / total);
         if (intro != null) // one audio track and no subtitles: nothing to choose while it plays, and no subtitle pass
-            introMovie = EncodeTitle(job, movies.Count + 1, introSource!, intro with { Audio = [.. intro.KeptAudio(introSource!).Take(1).Select(a => a.Index)], Subtitles = null, External = null, DefaultAudio = null, DefaultSubtitle = null }, null, pal, videoBps, work, log);
+            introMovie = EncodeTitle(job, movies.Count + 1, introSource!, intro with { Audio = [.. intro.KeptAudio(introSource!).Take(1).Select(a => a.Index)], Subtitles = null, External = null, DefaultAudio = null, DefaultSubtitle = null }, null, null, pal, videoBps, work, log);
 
         var menuPages = new List<MenuOut>();
         // a menu that plays on its own (moving clip or music) starts again when it ends: each page is its own PGC, so the sound restarts when another page opens
@@ -139,12 +141,12 @@ public static class Dvd
     }
 
     /// <summary><paramref name="lined"/>: this title's subtitles lined up with the other titles' (<see cref="DiscTitle.LineUpSubtitles"/>), null when it is alone.</summary>
-    static Movie EncodeTitle(DvdJob job, int number, SourceInfo src, DiscTitle title, IReadOnlyList<SubtitleTrack>? lined, bool pal, int videoBps, string work, Action<string> log)
+    static Movie EncodeTitle(DvdJob job, int number, SourceInfo src, DiscTitle title, IReadOnlyList<SubtitleTrack>? lined, IReadOnlyList<AudioTrack>? linedAudio, bool pal, int videoBps, string work, Action<string> log)
     {
         var (w, h) = pal ? (720, 576) : (720, 480);
         var wide = job.Encode?.DvdWide ?? true;
         var sar = wide ? (pal ? "64/45" : "32/27") : pal ? "16/15" : "8/9";
-        var audio = title.KeptAudio(src).Take(8).ToList(); // a DVD title carries at most 8 audio streams
+        var audio = (linedAudio ?? title.KeptAudio(src)).Take(8).ToList(); // a DVD title carries at most 8 audio streams
         var movie = Path.Combine(work, $"movie{number}.mpg");
         // movie: square pixels -> 16:9 (or 4:3) box with bars -> DVD frame size and aspect
         var ntscFilm = !pal && src.Fps < 25;
@@ -160,9 +162,12 @@ public static class Dvd
         foreach (var map in maps) args.AddRange(["-map", map]);
         var fit = $"{src.HalfStereo}scale=trunc(iw*sar/2)*2:ih,setsar=1,scale={(wide ? 1024 : 768)}:576:force_original_aspect_ratio=decrease,pad={(wide ? 1024 : 768)}:576:(ow-iw)/2:(oh-ih)/2,scale={w}:{h}:in_color_matrix={(src.Height >= 720 || src.Hdr != "SDR" ? "bt709" : "bt601")}:out_color_matrix=bt601,setsar={sar},{rate}"; // a player decodes a DVD as BT.601
         var plain = title.Effects is null or { IsEmpty: true }; // effects are placed in the source's pixels: with some, the picture keeps its size until they are drawn
-        var vf = (title.Effects ?? new()).Vf(src.Width, src.Height, title.Start, fit, plain ? BluRay.ToSdr(src.Hdr, src.Width, src.Height, wide ? 1024 : 768) : BluRay.ToSdr(src.Hdr)); // a DVD has no HDR
+        var autoDeint = src.Interlaced && (title.Effects?.Deinterlace ?? "auto") == "auto" ? "bwdif=mode=0:parity=auto:deint=1" : "";
+        var sdr = plain ? BluRay.ToSdr(src.Hdr, src.Width, src.Height, wide ? 1024 : 768) : BluRay.ToSdr(src.Hdr);
+        var first = string.Join(",", new[] { autoDeint, sdr }.Where(f => f.Length > 0));
+        var vf = (title.Effects ?? new()).Vf(src.Width, src.Height, title.Start, fit, first); // a DVD has no HDR
         if (title.GapFilter(false) is { Length: > 0 } dropV) vf += "," + dropV;
-        string Af(int track) => string.Join(",", new[] { title.AudioDelayFilter(track), title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "", title.AudioVolumeFilter(track) }.Where(f => f.Length > 0));
+        string Af(int track) => string.Join(",", new[] { title.AudioDelayFilter(track), title.GapFilter(true), title.Volume != 100 ? $"volume={(title.Volume / 100.0).ToString("0.###", Inv)}" : "", title.AudioVolumeFilter(track), job.Encode?.NormalizeAudio == true ? "loudnorm=I=-16:TP=-1.5:LRA=11" : "" }.Where(f => f.Length > 0));
         args.AddRange(["-vf", vf,
             "-target", pal ? "pal-dvd" : "ntsc-dvd", "-aspect", wide ? "16:9" : "4:3", "-b:v", $"{videoBps / 1000}k"]);
         if (audio.Count == 0) args.Add("-an");
@@ -552,15 +557,35 @@ public static class Dvd
         // a choice jumps to another page, where a fresh entry would select the first button: it leaves its row's number for that page's pre (a button's number on a DVD is 1024 times its rank)
         List<ulong> KeepRow(string target, MenuButton b) => [Vm.Set(4, 1024 * (menus.First(m => m.Page.Id == target).Page.Buttons.FindIndex(x => x.Id == b.Id) + 1)), Vm.Set(5, 1)];
 
+        var allMovies = intro == null ? movies : [.. movies, intro];
+        var vtsGroups = GroupTitleSets(allMovies, log);
+        var multiVts = vtsGroups.Count > 1;
+        // allMovies[idx] -> (Vts 1-based, VtsTitle 1-based, GlobalTitle 1-based matching TT_SRPT order)
+        var route = new (int Vts, int VtsTitle, int GlobalTitle)[allMovies.Count];
+        var globalNum = 0;
+        for (var g = 0; g < vtsGroups.Count; g++)
+            for (var k = 0; k < vtsGroups[g].Indices.Count; k++)
+                route[vtsGroups[g].Indices[k]] = (g + 1, k + 1, ++globalNum);
+
+        List<ulong> JumpToMovie(int fromVts, int movieIndex, bool fromMenu) =>
+            route[movieIndex].Vts == fromVts
+                ? [Vm.JumpVtsTitle(route[movieIndex].VtsTitle)]
+                : [Vm.Set(8, route[movieIndex].GlobalTitle), fromMenu ? Vm.JumpTitleMenu() : Vm.CallTitleMenu()];
+
+        List<ulong> ReturnToMenu(int fromVts) =>
+            fromVts == 1 ? [Vm.CallRootMenu()] : [Vm.Set(8, 0), Vm.CallTitleMenu()];
+
         List<ulong> Command(MenuPage page, MenuButton b)
         {
             var a = b.Action;
             var here = Regex.Match(page.Id, @"settings_(\d+)_(\d+)");
             switch (a.Kind)
             {
-                case "play": return [Vm.Set(1, play.PlayAll && a.Playlist <= mainCount ? 1 : 0), Vm.JumpVtsTitle(a.Playlist)];
-                case "chapter": return [Vm.Set(1, play.PlayAll && a.Playlist <= mainCount ? 1 : 0), Vm.JumpVtsChapter(a.Playlist, a.Mark + 1)];
-                case "playall": return [Vm.Set(1, 1), Vm.JumpVtsTitle(a.Playlist)];
+                case "play": return [Vm.Set(1, play.PlayAll && a.Playlist <= mainCount ? 1 : 0), .. JumpToMovie(1, a.Playlist - 1, fromMenu: true)];
+                case "chapter": return route[a.Playlist - 1].Vts == 1
+                    ? [Vm.Set(1, play.PlayAll && a.Playlist <= mainCount ? 1 : 0), Vm.JumpVtsChapter(route[a.Playlist - 1].VtsTitle, a.Mark + 1)]
+                    : [Vm.Set(1, play.PlayAll && a.Playlist <= mainCount ? 1 : 0), .. JumpToMovie(1, a.Playlist - 1, fromMenu: true)];
+                case "playall": return [Vm.Set(1, 1), .. JumpToMovie(1, a.Playlist - 1, fromMenu: true)];
                 case "audio": // stream numbers are 0-based on a DVD
                     var audioPage = here.Success ? SettingsId(a.Mark, int.Parse(here.Groups[2].Value)) : $"settings_audio_{a.Mark}";
                     return [.. KeepRow(audioPage, b), Vm.Set(2, a.Mark), Vm.Audio(a.Mark - 1, MenuNumber(audioPage))];
@@ -599,80 +624,137 @@ public static class Dvd
         }).ToList();
 
         var first = movies[0];
-        var (audio, audioSlots) = AudioLayout(intro == null ? movies : [.. movies, intro], log);
-        var mixedAudio = audioSlots.Any(slots => !slots.SequenceEqual(audioSlots[0]));
-        List<ulong> ChooseAudio(int i)
-        {
-            var slots = audioSlots[i];
-            if (slots.Length == 0) return [];
-            if (i >= movies.Count || menus.Count == 0) return slots[0] == 0 ? [] : [Vm.Audio(slots[0])];
-            if (!mixedAudio) return [];
-            // g2 keeps the disc menu's choice; g7 carries this title's playable stream to SetSTN.
-            List<ulong> commands = [Vm.Set(7, slots[0])];
-            foreach (var requested in audioSlots[0])
-            {
-                var available = slots.Contains(requested) ? requested :
-                    slots.FirstOrDefault(s => audio[requested].Lang != "xx" && audio[requested].Lang == audio[s].Lang, slots[0]);
-                commands.Add(Vm.Goto(commands.Count + 3, 2, Vm.Ne, requested + 1));
-                commands.Add(Vm.Set(7, available));
-            }
-            commands.Add(Vm.AudioReg(7));
-            return commands;
-        }
+        var vts0Audio = vtsGroups[0].Audio;
+        var vts0Slots = vtsGroups[0].Slots[0];
         int[] subColors = DvdSubtitles.Colors(subtitles);
-        var titles = new List<Chain>();
-        // after the last main title of "play all": the start again, or stop
-        var atEnd = !play.Rewind ? Vm.Exit() : play.StartAtFirstTitle ? Vm.JumpVtsTitle(1) : Vm.CallRootMenu();
-        for (var i = 0; i < movies.Count; i++)
-        {
-            var pre = ChooseAudio(i);
-            if (menus.Count == 0 && i == 0 && first.DefaultSubtitle > 0) pre.Add(Vm.Subtitle(63 + first.DefaultSubtitle)); // stream numbers are 0-based, 64 = shown
-            if (menus.Count == 0) { titles.Add(new Chain(movies[i].Mpg, movies[i].ChapterTimes, pre, [Vm.Exit()], Still: true, Colors: subColors, AudioSlots: audioSlots[i])); continue; }
-            // after an episode of "play all" (g1 = 1): the next one, never a bonus; a picked title alone goes back to the menu
-            List<ulong> post = i < mainCount - 1 ? [Vm.Goto(3, 1, Vm.Ne, 1), Vm.JumpVtsTitle(i + 2), Vm.CallRootMenu()]
-                : i == mainCount - 1 && play.PlayAll ? [Vm.Goto(3, 1, Vm.Ne, 1), atEnd, Vm.CallRootMenu()]
-                : [Vm.CallRootMenu()];
-            titles.Add(new Chain(movies[i].Mpg, movies[i].ChapterTimes, pre, post, Colors: subColors, AudioSlots: audioSlots[i]));
-        }
         List<ulong> setSubtitle = first.DefaultSubtitle > 0 ? [Vm.Subtitle(63 + first.DefaultSubtitle)] : [];
-        if (intro != null) // after the last title; the film's default subtitle is chosen when it is over, not while it plays
-            titles.Add(new Chain(intro.Mpg, [], ChooseAudio(movies.Count), [.. setSubtitle, menus.Count > 0 && !play.StartAtFirstTitle ? Vm.CallRootMenu() : Vm.JumpVtsTitle(1)], Colors: subColors, AudioSlots: audioSlots[^1]));
 
-        var toIntro = Vm.JumpTitle(movies.Count + 1);
-        // "first title then all": g1 = 1 makes it go on
-        List<ulong> start = intro != null ? [toIntro] : [.. setSubtitle, play.StartAtFirstTitle ? Vm.JumpTitle(1) : Vm.JumpRootMenu()];
-        List<ulong> fp = menus.Count > 0 ? [Vm.Set(1, play.StartAtFirstTitle ? 1 : 0), Vm.Set(2, 1), Vm.Set(3, first.DefaultSubtitle), Vm.Set(4, 1024), Vm.Set(5, 0), .. start]
-            : [intro != null ? toIntro : Vm.JumpTitle(1)];
-        return new DvdDisc(pal, menuChains, titles, fp, audio,
-            [.. first.Subtitles.Select(s => Languages.Iso1(s.Lang))], wide);
+        var builtSets = new List<TitleSet>(vtsGroups.Count);
+        for (var g = 0; g < vtsGroups.Count; g++)
+        {
+            var group = vtsGroups[g];
+            var vtsNum = g + 1;
+            var mixedAudio = multiVts || group.Slots.Any(slots => !slots.SequenceEqual(vts0Slots));
+            var setTitles = new List<Chain>(group.Indices.Count);
+            for (var k = 0; k < group.Indices.Count; k++)
+            {
+                var i = group.Indices[k];
+                var movie = allMovies[i];
+                var slots = group.Slots[k];
+                List<ulong> pre = [];
+                if (slots.Length > 0)
+                {
+                    if (i >= movies.Count || menus.Count == 0)
+                    {
+                        if (slots[0] != 0) pre.Add(Vm.Audio(slots[0]));
+                    }
+                    else if (mixedAudio)
+                    {
+                        pre.Add(Vm.Set(7, slots[0]));
+                        foreach (var requested in vts0Slots)
+                        {
+                            var lang = vts0Audio[requested].Lang;
+                            var available = slots.FirstOrDefault(s => group.Audio[s] == vts0Audio[requested],
+                                slots.FirstOrDefault(s => lang != "xx" && group.Audio[s].Lang == lang, slots[0]));
+                            pre.Add(Vm.Goto(pre.Count + 3, 2, Vm.Ne, requested + 1));
+                            pre.Add(Vm.Set(7, available));
+                        }
+                        pre.Add(Vm.AudioReg(7));
+                    }
+                }
+                if (menus.Count == 0 && i == 0 && first.DefaultSubtitle > 0) pre.Add(Vm.Subtitle(63 + first.DefaultSubtitle));
+
+                if (i >= movies.Count) // intro title
+                {
+                    List<ulong> introPost = [.. setSubtitle, .. (menus.Count > 0 && !play.StartAtFirstTitle ? ReturnToMenu(vtsNum) : JumpToMovie(vtsNum, 0, fromMenu: false))];
+                    setTitles.Add(new Chain(movie.Mpg, [], pre, introPost, Colors: subColors, AudioSlots: slots));
+                    continue;
+                }
+                if (menus.Count == 0)
+                {
+                    setTitles.Add(new Chain(movie.Mpg, movie.ChapterTimes, pre, [Vm.Exit()], Still: true, Colors: subColors, AudioSlots: slots));
+                    continue;
+                }
+                List<ulong> onChainEnd = !play.Rewind ? [Vm.Exit()] : play.StartAtFirstTitle ? JumpToMovie(vtsNum, 0, fromMenu: false) : ReturnToMenu(vtsNum);
+                List<ulong> post;
+                if (i < mainCount - 1)
+                {
+                    var nextCmds = JumpToMovie(vtsNum, i + 1, fromMenu: false);
+                    post = [Vm.Goto(2 + nextCmds.Count, 1, Vm.Ne, 1), .. nextCmds, .. ReturnToMenu(vtsNum)];
+                }
+                else if (i == mainCount - 1 && play.PlayAll)
+                {
+                    post = [Vm.Goto(2 + onChainEnd.Count, 1, Vm.Ne, 1), .. onChainEnd, .. ReturnToMenu(vtsNum)];
+                }
+                else
+                {
+                    post = ReturnToMenu(vtsNum);
+                }
+                setTitles.Add(new Chain(movie.Mpg, movie.ChapterTimes, pre, post, Colors: subColors, AudioSlots: slots));
+            }
+            builtSets.Add(new TitleSet(setTitles, group.Audio, [.. first.Subtitles.Select(s => Languages.Iso1(s.Lang))], wide));
+        }
+
+        var toIntro = intro != null ? Vm.JumpTitle(route[movies.Count].GlobalTitle) : 0UL;
+        List<ulong> start = intro != null ? [toIntro] : [.. setSubtitle, play.StartAtFirstTitle ? Vm.JumpTitle(route[0].GlobalTitle) : Vm.JumpRootMenu()];
+        List<ulong> fp = menus.Count > 0 ? [Vm.Set(1, play.StartAtFirstTitle ? 1 : 0), Vm.Set(2, 1), Vm.Set(3, first.DefaultSubtitle), Vm.Set(4, 1024), Vm.Set(5, 0), Vm.Set(8, 0), .. start]
+            : [intro != null ? toIntro : Vm.JumpTitle(route[0].GlobalTitle)];
+        return new DvdDisc(pal, menuChains, builtSets[0].Titles, fp, builtSets[0].Audio, builtSets[0].Subtitles, wide,
+            builtSets.Count > 1 ? builtSets.Skip(1).ToList() : null);
     }
 
-    static (List<AudioStream> Audio, List<int[]> Slots) AudioLayout(List<Movie> movies, Action<string> log)
+    sealed record VtsGroup(List<int> Indices, List<AudioStream> Audio, List<int[]> Slots);
+
+    /// <summary>
+    /// Groups titles into one or more Video Title Sets (DVDFab/Yuhan multi-VTS model) so each VTS holds at most 8 distinct audio descriptors
+    /// with accurate language and channel attributes. Homogeneous discs always stay in a single VTS_01.
+    /// </summary>
+    static List<VtsGroup> GroupTitleSets(List<Movie> movies, Action<string> log)
     {
         var streams = movies.Select(m => m.Audio.Select(a => new AudioStream(Math.Clamp(a.Channels, 1, 6), Languages.Iso1(a.Lang))).ToArray()).ToList();
-        var audio = new List<AudioStream>();
-        var slots = new List<int[]>();
-        foreach (var title in streams)
+        var groups = new List<VtsGroup>();
+        for (var i = 0; i < movies.Count; i++)
         {
-            var map = new List<int>();
-            foreach (var track in title)
+            var title = streams[i];
+            VtsGroup? target = null;
+            int[]? mapped = null;
+            foreach (var g in groups)
             {
-                // A title can carry multiple tracks with identical attributes.
-                var index = Enumerable.Range(0, audio.Count).FirstOrDefault(i => audio[i] == track && !map.Contains(i), -1);
-                if (index < 0) { index = audio.Count; audio.Add(track); }
-                map.Add(index);
+                var candidate = new List<AudioStream>(g.Audio);
+                var map = new List<int>(title.Length);
+                foreach (var track in title)
+                {
+                    var index = Enumerable.Range(0, candidate.Count).FirstOrDefault(k => candidate[k] == track && !map.Contains(k), -1);
+                    if (index < 0) { index = candidate.Count; candidate.Add(track); }
+                    map.Add(index);
+                }
+                if (candidate.Count <= 8)
+                {
+                    g.Audio.Clear();
+                    g.Audio.AddRange(candidate);
+                    target = g;
+                    mapped = [.. map];
+                    break;
+                }
             }
-            slots.Add([.. map]);
+            if (target == null)
+            {
+                var freshAudio = new List<AudioStream>();
+                var map = new List<int>(title.Length);
+                foreach (var track in title.Take(8))
+                {
+                    var index = Enumerable.Range(0, freshAudio.Count).FirstOrDefault(k => freshAudio[k] == track && !map.Contains(k), -1);
+                    if (index < 0) { index = freshAudio.Count; freshAudio.Add(track); }
+                    map.Add(index);
+                }
+                target = new VtsGroup([], freshAudio, []);
+                mapped = [.. map];
+                groups.Add(target);
+            }
+            target.Indices.Add(i);
+            target.Slots.Add(mapped!);
         }
-        if (audio.Count <= 8) return (audio, slots);
-
-        // shortcut: one title set has eight audio descriptors; use neutral labels for conflicting slots until multiple title sets are supported.
-        log("warning: more than eight DVD audio layouts across the titles; conflicting audio slots have no language label");
-        audio = [.. Enumerable.Range(0, streams.Max(s => s.Length)).Select(i =>
-        {
-            var used = streams.Where(s => i < s.Length).Select(s => s[i]).ToList();
-            return new AudioStream(used.Max(a => a.Channels), used.All(a => a.Lang == used[0].Lang) ? used[0].Lang : "xx");
-        })];
-        return (audio, streams.Select(s => Enumerable.Range(0, s.Length).ToArray()).ToList());
+        if (groups.Count > 1) log($"DVD multi-VTS : {groups.Count} groupes de titres (VTS_01..VTS_{groups.Count:00}) pour conserver les attributs audio exacts.");
+        return groups;
     }
 }

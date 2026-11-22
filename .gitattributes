@@ -1,0 +1,17 @@
+# Normalize text files to CRLF on Windows (matching existing BurnSmith sources)
+* text=auto eol=crlf
+
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.jar binary
+*.zip binary
+*.exe binary
+*.dll binary
+*.pdf binary
+*.iso binary

@@ -55,7 +55,7 @@
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="2*" MinWidth="90"/>
           <ColumnDefinition Width="64"/>
-          <ColumnDefinition Width="84"/>
+          <ColumnDefinition Width="{Binding HdrColWidth}"/>
           <ColumnDefinition Width="1.2*" MinWidth="100"/>
           <ColumnDefinition Width="1.2*" MinWidth="100"/>
           <ColumnDefinition Width="154"/>
@@ -146,8 +146,22 @@
         </StackPanel>
       </DockPanel>
 
-      <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,18,0,0">
+      <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,14,0,0">
         <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <!-- 3-step guided indicator -->
+          <UniformGrid Columns="3" Margin="0,0,0,14">
+            <Button x:Name="Step1Btn" Content="1 · Vidéos" Click="OnOpen" Margin="0,0,8,0" Padding="10,6"
+                    ToolTip="Ajoutez une ou plusieurs vidéos (film, épisodes d'une série, bonus)"/>
+            <Button x:Name="Step2Btn" Content="2 · Menu" Click="OnEditMenu" Margin="0,0,8,0" Padding="10,6"
+                    ToolTip="Choisissez le modèle, le titre, le fond et testez la télécommande"/>
+            <Button x:Name="Step3Btn" Content="3 · Sortie" Click="OnStep3Click" Padding="10,6"
+                    ToolTip="Choisissez le format de sortie (dossier, ISO ou gravure) puis cliquez Démarrer"/>
+          </UniformGrid>
+        <Grid Grid.Row="1">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="*"/>
@@ -155,13 +169,23 @@
             <ColumnDefinition Width="240"/>
           </Grid.ColumnDefinitions>
 
-          <!-- the project: poster, title, size -->
-          <StackPanel Width="170" Margin="0,0,16,0">
-            <Border Width="170" Height="96" Background="{StaticResource BgBrush}" CornerRadius="8" ClipToBounds="True" HorizontalAlignment="Left">
+          <!-- the project: poster, title, size, everyday settings -->
+          <StackPanel Width="180" Margin="0,0,16,0">
+            <Border Width="180" Height="101" Background="{StaticResource BgBrush}" CornerRadius="8" ClipToBounds="True" HorizontalAlignment="Left">
               <Image x:Name="Poster" Stretch="UniformToFill"/>
             </Border>
             <TextBlock x:Name="ProjectTitle" FontSize="15" FontWeight="SemiBold" Margin="0,10,0,0" TextWrapping="Wrap"/>
-            <TextBlock x:Name="ProjectInfo" Opacity="0.6" Margin="0,2,0,0"/>
+            <TextBlock x:Name="ProjectInfo" Opacity="0.6" Margin="0,2,0,0" TextWrapping="Wrap"/>
+            <TextBlock Text="Mode de lecture" Style="{StaticResource Head}" Margin="0,14,0,4"/>
+            <ComboBox x:Name="QuickPlayModeBox" SelectionChanged="OnQuickPlayMode" HorizontalAlignment="Stretch" FontSize="12"
+                      ToolTip="Comportement à l'insertion du disque et à la fin d'un titre">
+              <ComboBoxItem Content="Menu puis tout lire"/>
+              <ComboBoxItem Content="Lire dès l'insertion"/>
+              <ComboBoxItem Content="Retour au menu"/>
+            </ComboBox>
+            <TextBlock Text="Chapitres auto" Style="{StaticResource Head}" Margin="0,10,0,4"/>
+            <ComboBox x:Name="QuickChapterBox" SelectionChanged="OnQuickChapter" HorizontalAlignment="Stretch" FontSize="12" ItemStringFormat="{}{0} min"
+                      ToolTip="Intervalle des chapitres automatiques (si la vidéo n'en a pas)"/>
           </StackPanel>
 
           <!-- the videos: fits the width of the window, no side scrolling (a long list scrolls down) -->
@@ -172,14 +196,14 @@
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2*" MinWidth="90"/>
                 <ColumnDefinition Width="64"/>
-                <ColumnDefinition Width="84"/>
+                <ColumnDefinition x:Name="HdrHeaderCol" Width="84"/>
                 <ColumnDefinition Width="1.2*" MinWidth="100"/>
                 <ColumnDefinition Width="1.2*" MinWidth="100"/>
                 <ColumnDefinition Width="154"/>
               </Grid.ColumnDefinitions>
               <TextBlock Text="Nom" Style="{StaticResource Head}"/>
               <Border Grid.Column="1" Style="{StaticResource Col}"><TextBlock Text="Durée" Style="{StaticResource Head}"/></Border>
-              <Border Grid.Column="2" Style="{StaticResource Col}"><TextBlock Text="HDR" Style="{StaticResource Head}"/></Border>
+              <Border x:Name="HdrHeaderBorder" Grid.Column="2" Style="{StaticResource Col}"><TextBlock Text="HDR" Style="{StaticResource Head}"/></Border>
               <Border Grid.Column="3" Style="{StaticResource Col}"><TextBlock Text="Audio" Style="{StaticResource Head}"/></Border>
               <Border Grid.Column="4" Style="{StaticResource Col}"><TextBlock Text="Sous-titres" Style="{StaticResource Head}"/></Border>
             </Grid>
@@ -239,6 +263,7 @@
             </Grid>
           </Border>
         </Grid>
+        </Grid>
       </Border>
 
       <Grid x:Name="ProgressPanel" Grid.Row="2" Margin="0,14,0,0" Visibility="Collapsed">
@@ -274,12 +299,19 @@
         <TextBlock x:Name="FreeText" Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.6"/>
         <Button Grid.Column="3" Style="{StaticResource IconBtn}" Content="&#xE8B7;" Margin="6,0,0,0" Width="38" Height="34" Click="OnBrowseOut" ToolTip="Choisir le dossier"/>
         <StackPanel Grid.Column="4" Orientation="Horizontal" Margin="10,0,0,0">
-          <ToggleButton x:Name="TrialCheck" Content="Essai" Padding="16,8" Margin="0,0,10,0"
+          <ToggleButton x:Name="TrialCheck" Content="Essai" Padding="14,8" Margin="0,0,8,0"
                         ToolTip="Disque d'essai : cinq minutes de chaque vidéo, un passage à chaque chapitre. Le menu est complet et le disque est prêt en quelques minutes, dans un dossier à part (son nom finit par _essai), pour le vérifier dans VLC avant la vraie fabrication."/>
-          <ToggleButton x:Name="IsoCheck" Content="ISO" Padding="16,8" ToolTip="Créer aussi une image ISO (UDF) à côté du dossier"/>
+          <ComboBox x:Name="OutputModeBox" MinWidth="168" VerticalAlignment="Center" SelectionChanged="OnOutputModeChanged"
+                    AutomationProperties.Name="Que voulez-vous obtenir ?" ToolTip="Que voulez-vous obtenir à la fin : un dossier BDMV/VIDEO_TS, une image ISO ou un disque gravé ?">
+            <ComboBoxItem Content="Obtenir : Dossier"/>
+            <ComboBoxItem Content="Obtenir : Image ISO"/>
+            <ComboBoxItem Content="Obtenir : Disque gravé"/>
+            <ComboBoxItem Content="Obtenir : Gravé + ISO"/>
+          </ComboBox>
+          <ToggleButton x:Name="IsoCheck" Visibility="Collapsed"/>
         </StackPanel>
-        <StackPanel Grid.Column="5" Orientation="Horizontal" Margin="10,0,0,0">
-          <ToggleButton x:Name="BurnCheck" Content="Graver" Padding="16,8" IsEnabled="False" ToolTip="Grave le disque sur le graveur choisi après la création (une ISO temporaire est utilisée)"/>
+        <StackPanel Grid.Column="5" Orientation="Horizontal" Margin="6,0,0,0">
+          <ToggleButton x:Name="BurnCheck" Visibility="Collapsed" IsEnabled="False"/>
           <ComboBox x:Name="DriveBox" MinWidth="120" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Graveur" DropDownOpened="OnDrivesOpened">
             <ComboBox.ItemTemplate>
               <DataTemplate>

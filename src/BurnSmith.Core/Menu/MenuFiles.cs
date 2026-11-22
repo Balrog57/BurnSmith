@@ -13,7 +13,7 @@ public static class MenuFiles
     /// </summary>
     public static void WriteBdj(MenuDesign design, IReadOnlyList<MenuPage> pages, string dir, int loopPlaylist = 0, double scale = 1, PlaybackOptions? playback = null, int titles = 0, bool overlay = false, int defaultSubtitle = 0, IReadOnlyList<MenuPage>? popup = null,
         IEnumerable<(int Playlist, IEnumerable<int> Visible, IReadOnlyList<(int Audio, int Sub)> Forced)>? subtitleTracks = null, Action<string>? log = null, int loopReturnMark = -1,
-        IEnumerable<(int Playlist, string? Action)>? titleEnds = null)
+        IEnumerable<(int Playlist, string? Action)>? titleEnds = null, int hdrGraphicsNits = 0)
     {
         Directory.CreateDirectory(dir);
         var ext = overlay ? "png" : "jpg";
@@ -41,20 +41,21 @@ public static class MenuFiles
         }
         var images = MenuRenderer.Sta(() =>
         {
+            byte[] Calibrate(byte[] data, bool jpeg) => hdrGraphicsNits is > 0 and < 400 ? MenuRenderer.ScaleImageForHdr(data, hdrGraphicsNits, jpeg) : data;
             var list = new List<(string Name, byte[] Data)>();
             foreach (var p in pages)
             {
-                list.Add(($"bg_{p.Id}.{ext}", overlay ? MenuRenderer.Overlay(design, p, scale) : MenuRenderer.Background(design, p, scale)));
-                foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", MenuRenderer.Focus(design, p, b, scale)));
+                list.Add(($"bg_{p.Id}.{ext}", Calibrate(overlay ? MenuRenderer.Overlay(design, p, scale) : MenuRenderer.Background(design, p, scale), !overlay)));
+                foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", Calibrate(MenuRenderer.Focus(design, p, b, scale), false)));
             }
             // the pop-up pages go over the film: always transparent overlays, in BurnSmith's own layout
             foreach (var p in popup ?? [])
             {
-                list.Add(($"bg_{p.Id}.png", MenuRenderer.Overlay(look, p, scale)));
-                foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", MenuRenderer.Focus(look, p, b, scale)));
+                list.Add(($"bg_{p.Id}.png", Calibrate(MenuRenderer.Overlay(look, p, scale), false)));
+                foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", Calibrate(MenuRenderer.Focus(look, p, b, scale), false)));
             }
-            list.Add(("mark.png", trackMarker is { } art ? MenuRenderer.Marker(art.Path, art.Bounds, scale)
-                : MenuRenderer.Marker(design, MenuBuilder.MarkerSize, scale)));
+            list.Add(("mark.png", Calibrate(trackMarker is { } art ? MenuRenderer.Marker(art.Path, art.Bounds, scale)
+                : MenuRenderer.Marker(design, MenuBuilder.MarkerSize, scale), false)));
             return list;
         });
         foreach (var (name, data) in images) File.WriteAllBytes(Path.Combine(dir, name), data);

@@ -54,8 +54,12 @@ public static class Vm
     public static ulong JumpVtsChapter(int title, int chapter) => Bytes(0x30, 0x05, chapter >> 8 & 3, chapter, 0, title);
     /// <summary>From the first-play PGC: the root menu of title set 1.</summary>
     public static ulong JumpRootMenu() => Bytes(0x30, 0x06, 0, 1, 1, 0x80 | RootMenu);
+    /// <summary>From a VTS menu: jump to the Video Manager Title Menu (used to route across title sets).</summary>
+    public static ulong JumpTitleMenu() => Bytes(0x30, 0x06, 0, 0, 0, 0x42);
     /// <summary>From a title: its title set's root menu (resuming would go back to cell 1).</summary>
     public static ulong CallRootMenu() => Bytes(0x30, 0x08, 0, 0, 1, 0x80 | RootMenu);
+    /// <summary>From a title in any VTS: call the Video Manager Title Menu (resuming cell 1), used to bridge across title sets.</summary>
+    public static ulong CallTitleMenu() => Bytes(0x30, 0x08, 0, 0, 1, 0x42);
 
     public static void Write(byte[] to, int at, ulong cmd)
     {

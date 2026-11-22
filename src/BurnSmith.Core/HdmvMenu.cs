@@ -27,13 +27,84 @@ public static class HdmvMenu
 
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-    /// <summary>What the BD-J menu would do with this design and a native menu does not: said in the log, and shown by the app before the build.</summary>
-    public static List<string> LeftOut(MenuDesign menu)
+    /// <summary>What the BD-J menu would do with this design and a native menu does not: HDMV now supports animated backgrounds and pop-up menus.</summary>
+    public static List<string> LeftOut(MenuDesign menu) => [];
+
+    /// <summary>Scales straight ARGB graphics luminance for SDR-in-HDR display (ITU-R BT.2408: 203 nits reference white out of 400 nits max).</summary>
+    public static uint[] ScaleArgbForHdr(uint[] argb, int nits)
     {
-        var list = new List<string>();
-        if (menu.Loop) list.Add("fond animé (les pages sont des images fixes)");
-        if (menu.Popup) list.Add("menu pop-up pendant le film");
-        return list;
+        if (nits is <= 0 or >= 400) return argb;
+        var factor = Math.Clamp(nits, 80, 400) / 400.0;
+        var scaled = new uint[argb.Length];
+        for (var i = 0; i < argb.Length; i++)
+        {
+            var c = argb[i];
+            var a = c & 0xFF000000u;
+            var r = (uint)Math.Clamp((int)Math.Round(((c >> 16) & 255) * factor), 0, 255);
+            var g = (uint)Math.Clamp((int)Math.Round(((c >> 8) & 255) * factor), 0, 255);
+            var b = (uint)Math.Clamp((int)Math.Round((c & 255) * factor), 0, 255);
+            scaled[i] = a | (r << 16) | (g << 8) | b;
+        }
+        return scaled;
+    }
+
+    /// <summary>Builds a native HDMV in-mux Interactive Graphics pop-up bar for a movie playlist (Resume, Main Menu, quick audio/subtitle toggles).</summary>
+    internal static string BuildPopupIgs(BluRayJob job, int playlist, int audioCount, int subCount, string tsMuxerFps, string work)
+    {
+        var menu = job.Menu!;
+        var (_, videoH) = BluRay.VideoSize(job);
+        var scale = Math.Min(1, videoH / 1080.0);
+        int Px(int v) => MenuRenderer.Px(v, scale);
+        var (planeW, planeH) = (Px(MenuBuilder.W), Px(MenuBuilder.H));
+
+        var labels = new List<(string Text, List<byte[]> Commands)>
+        {
+            (string.IsNullOrWhiteSpace(menu.ResumeLabel) ? "Reprendre" : menu.ResumeLabel, [Nav.PopupOff()]),
+            (string.IsNullOrWhiteSpace(menu.MainMenuLabel) ? "Menu principal" : menu.MainMenuLabel, [Nav.PopupOff(), Nav.JumpTitle(0)]),
+        };
+        for (var a = 1; a <= Math.Min(audioCount, 3); a++)
+            labels.Add(($"Audio {a}", [Nav.Set(Audio, a), Nav.SelectStreams(audio: a), Nav.PopupOff()]));
+        if (subCount > 0)
+        {
+            labels.Add(("Sous-titres : Non", [Nav.Set(Subtitle, 0), Nav.SelectStreams(subtitle: 0), Nav.PopupOff()]));
+            for (var s = 1; s <= Math.Min(subCount, 2); s++)
+                labels.Add(($"Sous-titre {s}", [Nav.Set(Subtitle, s), Nav.SelectStreams(subtitle: s), Nav.PopupOff()]));
+        }
+
+        var btnW = Math.Clamp((planeW - Px(160)) / Math.Max(1, labels.Count) - Px(16), Px(140), Px(320));
+        var btnH = Px(72);
+        var gap = Px(14);
+        var totalW = labels.Count * btnW + (labels.Count - 1) * gap;
+        var startX = Math.Max(Px(40), (planeW - totalW) / 2);
+        var y = planeH - btnH - Px(56);
+        var shade = (byte)Math.Clamp((int)Math.Round(menu.PopupShade * 2.55), 80, 235);
+        var nits = job.Uhd ? menu.HdrGraphicsNits : 0;
+
+        var buttons = MenuRenderer.Sta(() =>
+        {
+            var list = new List<IgButton>(labels.Count);
+            for (var i = 0; i < labels.Count; i++)
+            {
+                var id = i + 1;
+                var x = startX + i * (btnW + gap);
+                var normal = MakePopupButton(labels[i].Text, btnW, btnH, shade, false, menu.Font, menu.Accent, nits);
+                var selected = MakePopupButton(labels[i].Text, btnW, btnH, Math.Min((byte)245, (byte)(shade + 35)), true, menu.Font, menu.Accent, nits);
+                var left = i > 0 ? id - 1 : labels.Count;
+                var right = i < labels.Count - 1 ? id + 1 : 1;
+                list.Add(new IgButton(id, x, y, btnW, btnH, selected, normal, id, id, left, right, labels[i].Commands));
+            }
+            return list;
+        });
+
+        var igsPath = Path.Combine(work, $"hdmv_popup_{playlist}.igs");
+        File.WriteAllBytes(igsPath, IgStream.Write(planeW, planeH, IgStream.RateCode(tsMuxerFps), buttons, 1, inMuxPopup: true));
+        return igsPath;
+    }
+
+    static uint[] MakePopupButton(string text, int w, int h, byte alpha, bool focused, string font, string accent, int hdrNits)
+    {
+        var argb = MenuRenderer.PopupButtonPixels(text, w, h, alpha, focused, font, accent);
+        return hdrNits > 0 ? ScaleArgbForHdr(argb, hdrNits) : argb;
     }
 
     internal static void Add(BluRayJob job, IReadOnlyList<MenuPage> pages, int mainCount, int defaultSubtitle,
@@ -49,13 +120,19 @@ public static class HdmvMenu
         var (planeW, planeH) = (Px(MenuBuilder.W), Px(MenuBuilder.H));
         var (fps, declared) = BluRay.DiscRate(0);
         var musicFile = menu.ExistingMusic();
-        var seconds = musicFile == null ? StillSeconds : BluRay.LoopLength(menu, BluRay.MaxLoopSeconds);
+        var animated = menu.Loop && job.Titles.Count > 0;
+        var seconds = musicFile == null && !animated ? StillSeconds : BluRay.LoopLength(menu, BluRay.MaxLoopSeconds);
         var music = musicFile == null ? null : BluRay.PrepareMusic(menu, musicFile, seconds, work, log);
         if (music != null) log($"menu: music from {Path.GetFileName(musicFile)}, {seconds}s on every page");
+        if (animated) log($"menu: animated HDMV background ({seconds}s)");
 
         var art = MenuRenderer.Sta(() => (
-            Backgrounds: pages.Select(p => MenuRenderer.Background(menu, p, scale)).ToList(),
-            Focus: pages.Select(p => p.Buttons.Select(b => MenuRenderer.Pixels(MenuRenderer.Focus(menu, p, b, scale))).ToList()).ToList(),
+            Backgrounds: pages.Select(p => animated ? MenuRenderer.Overlay(menu, p, scale) : MenuRenderer.Background(menu, p, scale)).ToList(),
+            Focus: pages.Select(p => p.Buttons.Select(b =>
+            {
+                var px = MenuRenderer.Pixels(MenuRenderer.Focus(menu, p, b, scale));
+                return job.Uhd && menu.HdrGraphicsNits is > 0 and < 400 ? (ScaleArgbForHdr(px.Argb, menu.HdrGraphicsNits), px.W, px.H) : px;
+            }).ToList()).ToList(),
             Marker: MenuRenderer.Pixels(MenuRenderer.Marker(menu, MenuBuilder.MarkerSize, scale))));
         var playlists = pages.Select((p, k) => (p.Id, Playlist: FirstPlaylist + k)).ToDictionary(x => x.Id, x => x.Playlist);
         var play = job.Playback ?? new PlaybackOptions();
@@ -63,15 +140,37 @@ public static class HdmvMenu
         for (var k = 0; k < pages.Count; k++)
         {
             var page = pages[k];
-            var picture = Path.Combine(work, $"hdmv_{page.Id}.jpg");
+            var picture = Path.Combine(work, $"hdmv_{page.Id}.{(animated ? "png" : "jpg")}");
             File.WriteAllBytes(picture, art.Backgrounds[k]);
             var ts = Path.Combine(work, $"hdmv_{page.Id}.ts");
-            var args = new List<string> { "-y", "-v", "warning", "-loop", "1", "-framerate", fps, "-i", picture };
-            if (music != null) args.AddRange(["-i", music, "-map", "0:v:0", "-map", "1:a:0"]);
-            // a JPEG is full-range RGB: BT.709 like every HD picture, or the page's colours shift
-            args.AddRange(["-t", seconds.ToString(Inv), "-vf", $"scale={videoW}:{videoH}:out_color_matrix=bt709", "-r", fps, "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]);
-            args.AddRange(BluRay.MenuCodec(job.Uhd, "SDR", fps, videoH));
-            if (music != null) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2", "-ar", "48000"]);
+            var args = new List<string> { "-y", "-v", "warning" };
+            var hasAudio = music != null;
+            if (animated)
+            {
+                var (_, loopSrc, _, loopInput) = BluRay.LoopSource(menu, job.Titles[0], seconds);
+                (fps, declared) = BluRay.DiscRate(BluRay.Fps(job, loopSrc), videoH);
+                var tone = !job.Uhd && BluRay.ToSdr(loopSrc.Hdr, loopSrc.Width, loopSrc.Height, videoW) is { Length: > 0 } sdr ? sdr + "," : "";
+                args.AddRange(loopInput);
+                args.AddRange(["-loop", "1", "-framerate", fps, "-i", picture]);
+                if (music != null) args.AddRange(["-i", music]);
+                else hasAudio = loopSrc.Audio.Count > 0;
+                args.AddRange(["-filter_complex", $"[0:v]{tone}scale={videoW}:{videoH}:force_original_aspect_ratio=increase,crop={videoW}:{videoH},setsar=1[bg];[1:v]scale={videoW}:{videoH}[ov];[bg][ov]overlay=0:0:shortest=1[v]",
+                    "-map", "[v]"]);
+                if (music != null) args.AddRange(["-map", "2:a:0"]);
+                else if (hasAudio) args.AddRange(["-map", "0:a:0"]);
+                args.AddRange(["-t", seconds.ToString(Inv), "-r", fps]);
+                args.AddRange(BluRay.MenuCodec(job.Uhd, loopSrc.Hdr, fps, videoH));
+                if (hasAudio) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2", "-ar", "48000", "-af", "apad"]);
+            }
+            else
+            {
+                args.AddRange(["-loop", "1", "-framerate", fps, "-i", picture]);
+                if (music != null) args.AddRange(["-i", music, "-map", "0:v:0", "-map", "1:a:0"]);
+                // a JPEG is full-range RGB: BT.709 like every HD picture, or the page's colours shift
+                args.AddRange(["-t", seconds.ToString(Inv), "-vf", $"scale={videoW}:{videoH}:out_color_matrix=bt709", "-r", fps, "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]);
+                args.AddRange(BluRay.MenuCodec(job.Uhd, "SDR", fps, videoH));
+                if (music != null) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2", "-ar", "48000"]);
+            }
             args.AddRange(["-sn", "-dn", ts]);
             Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
 
@@ -79,14 +178,15 @@ public static class HdmvMenu
             File.WriteAllBytes(graphics, Graphics(page, art.Focus[k], art.Marker, MenuBuilder.MarkerOffset(menu), scale, planeW, planeH, IgStream.RateCode(declared),
                                                   playlists, play.PlayAll, mainCount, log));
             var meta = Path.Combine(work, $"hdmv_{page.Id}.meta");
+            var still = !animated && music == null;
             File.WriteAllLines(meta,
             [
                 // the options a native menu is known to play with in libbluray: a floor on the bit rate, or a still page of a few hundred KB is read whole at
-                // once and a pressed button waits for the clip's end; without music the last picture is held (--final-still) and nothing restarts
+                // once and a pressed button waits for the clip's end; without music/loop the last picture is held (--final-still) and nothing restarts
                 $"MUXOPT {(job.Uhd ? "--blu-ray-v3" : "--blu-ray")} --label={job.Label} --new-audio-pes --no-pcr-on-video-pid --start-time=27000000 --maxbitrate={(job.Uhd ? 86000 : 48000)} --vbv-len=950"
-                    + $"{(music == null ? " --minbitrate=4000" : "")} --mplsOffset={FirstPlaylist + k} --m2tsOffset={FirstClip + 2 * k}{(music == null ? " --final-still" : "")}",
+                    + $"{(still ? " --minbitrate=4000" : "")} --mplsOffset={FirstPlaylist + k} --m2tsOffset={FirstClip + 2 * k}{(still ? " --final-still" : "")}",
                 job.Uhd ? $"V_MPEGH/ISO/HEVC, \"{ts}\", fps={declared}, track=256" : $"V_MPEG4/ISO/AVC, \"{ts}\", fps={declared}, track=256",
-                .. music != null ? new[] { $"A_AC3, \"{ts}\", track=257" } : [],
+                .. hasAudio ? new[] { $"A_AC3, \"{ts}\", track=257" } : [],
                 // subClip: the graphics in a clip of their own, loaded before the page shows, so they stay while the page's video starts again
                 $"S_HDMV/IGS, \"{graphics}\", lang=eng, fps={declared}, video-width={planeW}, video-height={planeH}, subClip",
             ]);

@@ -82,6 +82,8 @@ public sealed class MenuDesign
     public List<MenuDirection> Directions { get; set; } = [];
     public int PopupShade { get; set; } = 65;
     public int PageFadeMs { get; set; }
+    /// <summary>Target luminance in nits for menu/pop-up graphics on UHD HDR discs (ITU-R BT.2408 reference white = 203 nits; 0 = unscaled).</summary>
+    public int HdrGraphicsNits { get; set; } = 203;
 
     public sealed record CustomMenuPage(string Id, string Title, string Parent = "root");
     public sealed record MenuDirection(string Page, string Button, string Direction, string Target);

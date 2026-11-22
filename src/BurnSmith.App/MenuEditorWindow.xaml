@@ -8,7 +8,7 @@
     <local:ThumbConverter x:Key="Thumb"/>
     <Style x:Key="Caption" TargetType="TextBlock">
       <Setter Property="Opacity" Value="0.65"/>
-      <Setter Property="Margin" Value="0,12,0,3"/>
+      <Setter Property="Margin" Value="0,10,0,3"/>
     </Style>
     <Style x:Key="Swatch" TargetType="Border">
       <Setter Property="Width" Value="26"/>
@@ -18,6 +18,9 @@
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="Margin" Value="0,0,8,0"/>
       <Setter Property="DockPanel.Dock" Value="Left"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="ToolTip" Value="Cliquer pour choisir une couleur dans la palette"/>
+      <EventSetter Event="MouseLeftButtonDown" Handler="OnSwatchClick"/>
     </Style>
     <!-- a step of the bar, a family of templates: one of several, shown as a button that stays down -->
     <Style x:Key="Step" TargetType="RadioButton" BasedOn="{StaticResource {x:Type ToggleButton}}">
@@ -30,10 +33,14 @@
       <Setter Property="Foreground" Value="{StaticResource AccentHoverBrush}"/>
       <Setter Property="Margin" Value="0,14,0,6"/>
     </Style>
+    <Style x:Key="AdvExpander" TargetType="Expander">
+      <Setter Property="Margin" Value="0,10,0,0"/>
+      <Setter Property="Padding" Value="0,4,0,0"/>
+      <Setter Property="IsExpanded" Value="False"/>
+    </Style>
   </Window.Resources>
 
-  <!-- as Yuhan's window: the page always at the same place, its pages under it; as TMPGEnc's stages: the work in its order along the top,
-       the panel on the right showing what that step needs and nothing else -->
+  <!-- Direct 3-step workflow (Modèle · Personnaliser · Aperçu), contextual element inspector on click, library drawer on demand -->
   <Grid Margin="20">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
@@ -42,33 +49,49 @@
     </Grid.RowDefinitions>
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="*"/>
-      <ColumnDefinition Width="410"/>
+      <ColumnDefinition Width="420"/>
     </Grid.ColumnDefinitions>
 
-    <UniformGrid x:Name="StepBar" Grid.ColumnSpan="2" Columns="5" Margin="0,0,-8,14">
+    <UniformGrid x:Name="StepBar" Grid.ColumnSpan="2" Columns="3" Margin="0,0,-8,14">
       <RadioButton Style="{StaticResource Step}" GroupName="step" Tag="0" Content="1 · Modèle" IsChecked="True" Checked="OnStep" ToolTip="Choisir l'habillage du menu parmi les modèles"/>
-      <RadioButton Style="{StaticResource Step}" GroupName="step" Tag="1" Content="2 · Structure" Checked="OnStep" ToolTip="Les pages du menu et ce que fait le disque"/>
-      <RadioButton Style="{StaticResource Step}" GroupName="step" Tag="2" Content="3 · Pages" Checked="OnStep" ToolTip="Boutons, textes et couleurs de chaque page"/>
-      <RadioButton Style="{StaticResource Step}" GroupName="step" Tag="3" Content="4 · Fond et musique" Checked="OnStep" ToolTip="L'image ou la vidéo derrière le menu, et sa musique"/>
-      <RadioButton Style="{StaticResource Step}" GroupName="step" Tag="4" Content="5 · Aperçu" Checked="OnStep" ToolTip="Parcourir le menu comme avec la télécommande"/>
+      <RadioButton Style="{StaticResource Step}" GroupName="step" Tag="1" Content="2 · Personnaliser" Checked="OnStep" ToolTip="Titre, fond, musique, présentation et éléments de chaque page"/>
+      <RadioButton Style="{StaticResource Step}" GroupName="step" Tag="2" Content="3 · Aperçu" Checked="OnStep" ToolTip="Parcourir le menu comme avec la télécommande"/>
     </UniformGrid>
 
     <DockPanel Grid.Row="1" Margin="0,0,16,0">
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DockPanel.Dock="Bottom" Margin="0,10,0,0">
         <Button x:Name="UndoButton" Content="↶ Annuler" Click="OnUndo" Padding="10,4" Margin="0,0,8,0" IsEnabled="False" ToolTip="Annuler la dernière modification (Ctrl+Z)"/>
-        <Button x:Name="RedoButton" Content="↷ Rétablir" Click="OnRedo" Padding="10,4" Margin="0,0,24,0" IsEnabled="False" ToolTip="Rétablir ce qui a été annulé (Ctrl+Y)"/>
+        <Button x:Name="RedoButton" Content="↷ Rétablir" Click="OnRedo" Padding="10,4" Margin="0,0,20,0" IsEnabled="False" ToolTip="Rétablir ce qui a été annulé (Ctrl+Y)"/>
         <Button Content="◀" Width="40" Click="OnPrev" AutomationProperties.Name="Page précédente"/>
-        <TextBlock x:Name="PageText" Margin="16,0" VerticalAlignment="Center"/>
+        <TextBlock x:Name="PageText" Margin="14,0" VerticalAlignment="Center"/>
         <Button Content="▶" Width="40" Click="OnNext" AutomationProperties.Name="Page suivante"/>
-        <ToggleButton x:Name="SafeToggle" Content="Zone sûre" Padding="10,4" Margin="24,0,0,0" Checked="OnSafeToggle" Unchecked="OnSafeToggle"
+        <ToggleButton x:Name="SafeToggle" Content="Zone sûre" Padding="10,4" Margin="20,0,8,0" Checked="OnSafeToggle" Unchecked="OnSafeToggle"
                       ToolTip="Ce qu'un téléviseur peut couper : cadre plein = zone des titres (90 %), pointillés = zone d'action (93 %). En orange, un bouton ou un texte qui dépasse de la zone des titres"/>
+        <Button x:Name="AddMenuButton" Content="+ Ajouter ▾" Padding="12,4" Click="OnAddMenuClick"
+                ToolTip="Ajouter un texte, une image, un cadre, un bouton ou un sous-menu sur la page">
+          <Button.ContextMenu>
+            <ContextMenu Placement="Top">
+              <MenuItem Header="+ Texte" Click="OnAddText"/>
+              <MenuItem Header="+ Image" Click="OnAddImage"/>
+              <MenuItem Header="+ Cadre" Click="OnAddBox"/>
+              <MenuItem Header="+ Bouton" Click="OnAddButton"/>
+              <MenuItem Header="Galerie de boutons…" Click="OnOpenBtnDrawer"/>
+              <Separator/>
+              <MenuItem Header="+ Sous-menu" Click="OnAddSubmenu"/>
+              <MenuItem x:Name="RenameSubmenu" Header="Renommer le sous-menu" Click="OnRenameSubmenu" Visibility="Collapsed"/>
+              <MenuItem x:Name="RemoveSubmenu" Header="Retirer le sous-menu" Click="OnRemoveSubmenu" Visibility="Collapsed"/>
+              <Separator/>
+              <MenuItem Header="Liens des flèches…" Click="OnDirectionLink"/>
+            </ContextMenu>
+          </Button.ContextMenu>
+        </Button>
       </StackPanel>
       <TextBlock x:Name="Status" DockPanel.Dock="Bottom" Foreground="{StaticResource AccentHoverBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/>
-      <TextBlock x:Name="Hint" DockPanel.Dock="Bottom" TextWrapping="Wrap" Opacity="0.65" Margin="0,8,0,0"/>
-      <ListBox x:Name="PageStrip" DockPanel.Dock="Bottom" Margin="0,10,0,0" MaxHeight="96" SelectionChanged="OnStripPick"
-               ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+      <TextBlock x:Name="Hint" DockPanel.Dock="Bottom" TextWrapping="Wrap" Opacity="0.65" Margin="0,6,0,0"/>
+      <ListBox x:Name="PageStrip" DockPanel.Dock="Bottom" Margin="0,10,0,0" Height="96" SelectionChanged="OnStripPick"
+               ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled">
         <ListBox.ItemsPanel>
-          <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+          <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
         </ListBox.ItemsPanel>
         <ListBox.ItemTemplate>
           <DataTemplate>
@@ -99,26 +122,26 @@
       <!-- 1 · Modèle -->
       <TabItem>
         <DockPanel>
-          <!-- every template makes a DVD, a Blu-ray and a 4K menu: the gallery groups them by use, the shape picks the version of those that have two -->
-          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8"
-                      ToolTip="La galerie ne montre que les modèles dessinés pour cet écran ; un modèle livré dans les deux formes passe à l'autre version">
-            <TextBlock Text="Écran :" VerticalAlignment="Center" Margin="0,0,8,0"/>
-            <RadioButton x:Name="Shape169" Content="16:9" GroupName="shape" Style="{StaticResource Step}" Padding="10,4" Checked="OnShape"/>
-            <RadioButton x:Name="Shape43" Content="4:3" GroupName="shape" Style="{StaticResource Step}" Padding="10,4" Checked="OnShape"/>
-          </StackPanel>
           <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <TextBlock Text="Chercher :" VerticalAlignment="Center" Margin="0,0,8,0"/>
             <TextBox x:Name="SearchBox" TextChanged="OnSearch" AutomationProperties.Name="Chercher un modèle"
                      ToolTip="Un mot du nom ou de l'usage (mariage, série, voyage…) : la recherche porte sur tous les modèles"/>
           </DockPanel>
-          <WrapPanel x:Name="Families" DockPanel.Dock="Top"/>
-          <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-            <Button Content="Ajouter un dossier de modèles…" HorizontalAlignment="Stretch" Click="OnAddFolder"
-                    ToolTip="Un dossier de modèles DVDFab, Leawo, Yuhan ou DVDStyler : ils sont convertis et rangés avec les autres"/>
-            <TextBlock x:Name="ConvertNote" Margin="0,4,0,0" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
-          </StackPanel>
+          <WrapPanel x:Name="Families" DockPanel.Dock="Top" Margin="0,0,0,4"/>
+          <Expander DockPanel.Dock="Bottom" Header="Options et import de modèles" Margin="0,8,0,0" IsExpanded="False">
+            <StackPanel Margin="0,8,0,0">
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,8"
+                          ToolTip="La galerie ne montre que les modèles dessinés pour cet écran ; un modèle livré dans les deux formes passe à l'autre version">
+                <TextBlock Text="Écran :" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <RadioButton x:Name="Shape169" Content="16:9" GroupName="shape" Style="{StaticResource Step}" Padding="10,4" Checked="OnShape"/>
+                <RadioButton x:Name="Shape43" Content="4:3" GroupName="shape" Style="{StaticResource Step}" Padding="10,4" Checked="OnShape"/>
+              </StackPanel>
+              <Button Content="Ajouter un dossier de modèles…" HorizontalAlignment="Stretch" Click="OnAddFolder"
+                      ToolTip="Un dossier de modèles DVDFab, Leawo, Yuhan ou DVDStyler : ils sont convertis et rangés avec les autres"/>
+              <TextBlock x:Name="ConvertNote" Margin="0,4,0,0" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Expander>
           <Grid>
-            <!-- two per row, the family's only: what the chips above leave is small enough to do without virtualizing -->
             <ListBox x:Name="BuiltInList" SelectionChanged="OnPick" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
               <ListBox.ItemsPanel>
                 <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top"/></ItemsPanelTemplate>
@@ -132,7 +155,6 @@
                           <Image Source="{Binding Thumbnail, Converter={StaticResource Thumb}}" Stretch="Uniform"/>
                         </Border>
                       </Viewbox>
-                      <!-- the star: a favourite stays at the top of every group -->
                       <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="3" Click="OnStar" Cursor="Hand"
                               ToolTip="Favori : le modèle reste en tête de la galerie" AutomationProperties.Name="Favori">
                         <Button.Template>
@@ -165,385 +187,408 @@
         </DockPanel>
       </TabItem>
 
-      <!-- 2 · Structure -->
+      <!-- 2 · Personnaliser (réglages du menu · inspecteur contextuel · tiroir bibliothèque) -->
       <TabItem>
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="0,0,8,0">
-            <TextBlock Text="Pages du menu" Style="{StaticResource Head}" Margin="0,0,0,6"/>
-            <CheckBox Content="Aperçu du film sur le menu principal" IsChecked="{Binding ShowPreview}" Margin="0,0,0,4"/>
-            <StackPanel x:Name="GridLook">
-              <DockPanel Margin="0,4,0,0">
-                <TextBlock Text="Chapitres ou épisodes par page" VerticalAlignment="Center" DockPanel.Dock="Left" Margin="0,0,10,0"/>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                  <ComboBox x:Name="ColsBox" SelectedItem="{Binding Cols}" Width="66" AutomationProperties.Name="Colonnes"/>
-                  <TextBlock Text="×" Margin="8,0" VerticalAlignment="Center"/>
-                  <ComboBox x:Name="RowsBox" SelectedItem="{Binding Rows}" Width="66" AutomationProperties.Name="Lignes"/>
-                </StackPanel>
+        <Grid>
+          <!-- Vue A : réglages du menu (essentiel visible + accordéons avancés) -->
+          <ScrollViewer x:Name="MenuSettingsPanel" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="0,0,8,12">
+              <TextBlock Text="Titre et langue" Style="{StaticResource Head}" Margin="0,0,0,6"/>
+              <TextBlock Text="Titre du menu" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
+              <TextBox x:Name="TitleBox" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"/>
+              <StackPanel x:Name="ZonePanel"/>
+              <TextBlock Text="Langue du menu" Style="{StaticResource Caption}"/>
+              <ComboBox x:Name="LanguageBox" SelectionChanged="OnPickLanguage" DisplayMemberPath="Label" SelectedValuePath="Value" HorizontalAlignment="Stretch" AutomationProperties.Name="Langue du menu"
+                        ToolTip="Tous les mots du menu en français ou en anglais. Un mot que vous avez écrit vous-même est gardé."/>
+
+              <TextBlock Text="Fond et musique" Style="{StaticResource Head}"/>
+              <WrapPanel Margin="0,0,0,4">
+                <Button Content="Galerie de fonds…" Click="OnOpenBgDrawer" Margin="0,0,6,6"
+                        ToolTip="Ouvre le tiroir des fonds fournis et de vos images importées"/>
+                <Button Content="Importer…" Click="OnBg" Margin="0,0,6,6"/>
+                <Button Content="Cette page…" Click="OnPageBg" Margin="0,0,6,6"
+                        ToolTip="Une image de fond pour ce genre de page ; les autres gardent le fond du modèle"/>
+                <Button x:Name="PageBgClear" Content="Fond commun" Click="OnPageBgClear" Margin="0,0,6,6"/>
+                <Button Content="Aucun" Click="OnBgClear" Margin="0,0,0,6" ToolTip="Revient au dégradé de couleurs"/>
+              </WrapPanel>
+              <CheckBox x:Name="LoopBox" Content="Menu animé : vidéo en boucle derrière les boutons" IsChecked="{Binding Loop}" Margin="0,4,0,0"/>
+              <DockPanel Margin="0,6,0,0">
+                <TextBlock Text="Vidéo" Width="62" VerticalAlignment="Center" Opacity="0.7" DockPanel.Dock="Left"/>
+                <Button Content="…" Width="36" Padding="0,4" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnLoopFile" AutomationProperties.Name="Choisir la vidéo du menu"/>
+                <TextBox Text="{Binding LoopFile, UpdateSourceTrigger=PropertyChanged}" ToolTip="Vide = le premier film"/>
               </DockPanel>
-              <CheckBox Content="Une image dans chaque case" IsChecked="{Binding Thumbnails}" Margin="0,8,0,0"/>
-            </StackPanel>
-            <TextBlock x:Name="GridNote" Text="Ce modèle fixe lui-même le nombre de cases par page." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="Collapsed"/>
-            <CheckBox Content="Chapitres en liste, sans vignettes (selon le modèle)" IsChecked="{Binding SceneList}" Margin="0,8,0,0" ToolTip="Pour les modèles qui prévoient une page de chapitres en liste"/>
-            <CheckBox Content="Vignettes animées (DVD)" IsChecked="{Binding AnimatedThumbs}" Margin="0,4,0,0" ToolTip="Un extrait du chapitre tourne dans chaque case"/>
-            <CheckBox Content="Pas de menu principal : les chapitres d'abord" IsChecked="{Binding ScenesOnly}" Margin="0,4,0,0" ToolTip="La première page de chapitres ou d'épisodes sert de menu"/>
-            <CheckBox Content="Série : pas de case pour la première vidéo" IsChecked="{Binding SkipFirstScene}" Margin="0,4,0,0" ToolTip="« Tout lire » la joue"/>
-            <CheckBox Content="Page Bonus en texte, sans vignettes" IsChecked="{Binding BonusText}" Margin="0,4,0,0"/>
-            <TextBlock Text="Fond sombre du pop-up BD-J" Style="{StaticResource Caption}"/>
-            <Slider Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding PopupShade}"
-                    ToolTip="Augmente l’opacité du fond du pop-up pour améliorer la lisibilité du texte sur le film."/>
-            <TextBlock Text="Fondu entre les pages BD-J (ms, 0 = aucun)" Style="{StaticResource Caption}"/>
-            <Slider Minimum="0" Maximum="500" TickFrequency="50" IsSnapToTickEnabled="True" Value="{Binding PageFadeMs}"/>
-            <TextBlock Text="La page Langues (audio et sous-titres) et la page Bonus se créent d'elles-mêmes quand le disque a plusieurs pistes ou des bonus." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+              <DockPanel Margin="0,6,0,0">
+                <TextBlock Text="Musique" Width="62" VerticalAlignment="Center" Opacity="0.7" DockPanel.Dock="Left"/>
+                <Button Content="…" Width="36" Padding="0,4" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnMusic" AutomationProperties.Name="Choisir la musique"/>
+                <TextBox Text="{Binding Music, UpdateSourceTrigger=PropertyChanged}" ToolTip="Vide = aucune musique"/>
+              </DockPanel>
+              <DockPanel Margin="0,6,0,0">
+                <TextBlock Text="Volume" Width="62" VerticalAlignment="Center" Opacity="0.7" DockPanel.Dock="Left"/>
+                <TextBlock Text="{Binding Value, ElementName=MusicVolumeSlider, StringFormat={}{0:0} %}" Width="46" DockPanel.Dock="Right" TextAlignment="Right" VerticalAlignment="Center"/>
+                <Slider x:Name="MusicVolumeSlider" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding MusicVolume}" AutomationProperties.Name="Volume de la musique"/>
+              </DockPanel>
 
-            <TextBlock Text="Page Crédits" Style="{StaticResource Head}"/>
-            <TextBox Text="{Binding Credits, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70" VerticalScrollBarVisibility="Auto"
-                     ToolTip="Une ligne par rangée ; vide = pas de page Crédits" AutomationProperties.Name="Texte des crédits"/>
-            <TextBlock Text="Une ligne par rangée. Vide : pas de page Crédits." Opacity="0.65" FontSize="11" Margin="0,3,0,0"/>
+              <TextBlock Text="Présentation" Style="{StaticResource Head}"/>
+              <TextBlock Text="Affichage des scènes" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
+              <ComboBox x:Name="SceneModeBox" SelectionChanged="OnPickSceneMode" HorizontalAlignment="Stretch" AutomationProperties.Name="Affichage des scènes"
+                        ToolTip="Choisit la mise en page des chapitres ou épisodes (grille avec vignettes, texte seul, liste ou accès direct).">
+                <ComboBoxItem Content="Grille avec vignettes"/>
+                <ComboBoxItem Content="Grille texte seul"/>
+                <ComboBoxItem Content="Liste sans vignettes (selon le modèle)"/>
+                <ComboBoxItem Content="Chapitres directement en menu principal"/>
+              </ComboBox>
+              <StackPanel x:Name="GridLook" Margin="0,6,0,0">
+                <DockPanel Margin="0,2,0,0">
+                  <TextBlock Text="Chapitres / épisodes par page" VerticalAlignment="Center" DockPanel.Dock="Left" Margin="0,0,10,0"/>
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <ComboBox x:Name="ColsBox" SelectedItem="{Binding Cols}" Width="62" AutomationProperties.Name="Colonnes"/>
+                    <TextBlock Text="×" Margin="6,0" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="RowsBox" SelectedItem="{Binding Rows}" Width="62" AutomationProperties.Name="Lignes"/>
+                  </StackPanel>
+                </DockPanel>
+              </StackPanel>
+              <TextBlock x:Name="GridNote" Text="Ce modèle fixe lui-même le nombre de cases par page." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="Collapsed"/>
+              <CheckBox x:Name="PopupBox" Content="Menu pop-up par-dessus le film (Blu-ray)" IsChecked="{Binding Popup}" Margin="0,8,0,0"
+                        ToolTip="La touche Pop-up de la télécommande ouvre un petit menu sans arrêter le film"/>
+              <TextBlock Text="Lecture du disque" Style="{StaticResource Caption}"/>
+              <ComboBox x:Name="PlayModeBox" HorizontalAlignment="Stretch" AutomationProperties.Name="Lecture du disque">
+                <ComboBoxItem Content="Afficher le menu, puis lire toutes les vidéos à la suite"/>
+                <ComboBoxItem Content="Lire la première vidéo dès l'insertion, puis les suivantes"/>
+                <ComboBoxItem Content="Afficher le menu, y revenir à la fin de chaque vidéo"/>
+              </ComboBox>
 
-            <TextBlock Text="Pendant le film (Blu-ray)" Style="{StaticResource Head}"/>
-            <CheckBox x:Name="PopupBox" Content="Menu pop-up par-dessus le film" IsChecked="{Binding Popup}" ToolTip="La touche Pop-up de la télécommande ouvre un petit menu sans arrêter le film"/>
-            <DockPanel Margin="0,6,0,0" IsEnabled="{Binding IsChecked, ElementName=PopupBox}">
-              <TextBlock Text="Bouton reprendre" Width="150" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-              <TextBox Text="{Binding ResumeLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            </DockPanel>
-            <DockPanel Margin="0,4,0,0" IsEnabled="{Binding IsChecked, ElementName=PopupBox}">
-              <TextBlock Text="Bouton menu principal" Width="150" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-              <TextBox Text="{Binding MainMenuLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            </DockPanel>
-
-            <TextBlock Text="Lecture du disque" Style="{StaticResource Head}"/>
-            <ComboBox x:Name="PlayModeBox" HorizontalAlignment="Stretch" AutomationProperties.Name="Lecture du disque"
-                      ToolTip="Ce que fait le disque quand on l'insère et quand une vidéo se termine (aussi dans Paramètres avancés)">
-              <ComboBoxItem Content="Afficher le menu, puis lire toutes les vidéos à la suite"/>
-              <ComboBoxItem Content="Lire la première vidéo dès l'insertion, puis les suivantes"/>
-              <ComboBoxItem Content="Afficher le menu, y revenir à la fin de chaque vidéo"/>
-            </ComboBox>
-
-            <TextBlock Text="Langue" Style="{StaticResource Head}"/>
-            <ComboBox x:Name="LanguageBox" SelectionChanged="OnPickLanguage" DisplayMemberPath="Label" SelectedValuePath="Value" HorizontalAlignment="Stretch" AutomationProperties.Name="Langue du menu"
-                      ToolTip="Tous les mots du menu en français ou en anglais : ceux de l'étape Pages (Lecture, Chapitres, Réglages, Reprendre…) et ceux dessinés dans les boutons d'un modèle (Play, Scenes, Set Up, Main Menu). Un mot que vous avez écrit vous-même est gardé."/>
-            <TextBlock Text="Titre du disque par langue, Blu-ray (une ligne par langue, ex. fra: Mon disque)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
-            <TextBox Text="{Binding TitlesByLanguage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" VerticalScrollBarVisibility="Auto" Margin="0,0,0,12"/>
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-
-      <!-- 3 · Pages -->
-      <TabItem>
-        <DockPanel>
-          <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-            <TextBlock Text="Ajouter :" VerticalAlignment="Center" Opacity="0.65" Margin="0,0,8,6"/>
-            <Button Content="+ Texte" Click="OnAddText" Margin="0,0,6,6"/>
-            <Button Content="+ Image" Click="OnAddImage" Margin="0,0,6,6"/>
-            <Button Content="+ Cadre" Click="OnAddBox" Margin="0,0,6,6"/>
-            <Button Content="+ Bouton" Click="OnAddButton" Margin="0,0,0,6"/>
-            <Button Content="+ Sous-menu" Click="OnAddSubmenu" Margin="0,0,0,6"/>
-            <Button Content="Liens des flèches…" Click="OnDirectionLink" Margin="6,0,0,6"/>
-            <Button x:Name="RenameSubmenu" Content="Renommer le sous-menu" Click="OnRenameSubmenu" Visibility="Collapsed" Margin="6,0,0,6"/>
-            <Button x:Name="RemoveSubmenu" Content="Retirer le sous-menu" Click="OnRemoveSubmenu" Visibility="Collapsed" Margin="6,0,0,6"/>
-          </WrapPanel>
-          <TabControl x:Name="PageTabs">
-            <TabItem Header="Boutons">
-        <DockPanel>
-          <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-            <Button x:Name="BtnRemove" DockPanel.Dock="Right" Content="Retirer" Margin="8,0,0,0" IsEnabled="False" Click="OnBtnRemove"/>
-            <Button Content="Importer…" Click="OnBtnImport" ToolTip="Une image de bouton, puis (au choix) celle qu'il montre quand il est sélectionné"/>
-          </DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="Glissez un bouton sur la page, ou double-cliquez." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
-          <ListBox x:Name="BtnList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" SelectionChanged="OnBtnPick"
-                   PreviewMouseLeftButtonDown="OnLibraryDown" PreviewMouseMove="OnLibraryMove" MouseDoubleClick="OnBtnDouble">
-            <ListBox.GroupStyle>
-              <GroupStyle>
-                <GroupStyle.HeaderTemplate>
-                  <DataTemplate>
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{StaticResource AccentHoverBrush}" Margin="2,10,0,4"/>
-                  </DataTemplate>
-                </GroupStyle.HeaderTemplate>
-              </GroupStyle>
-            </ListBox.GroupStyle>
-            <ListBox.ItemsPanel>
-              <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top"/></ItemsPanelTemplate>
-            </ListBox.ItemsPanel>
-            <ListBox.ItemTemplate>
-              <DataTemplate>
-                <Viewbox Stretch="Uniform" ToolTip="{Binding Name}">
-                  <Border Width="108" Height="61" Background="#22000000" CornerRadius="4">
-                    <Image Source="{Binding Sample}" Stretch="Uniform" Margin="3"/>
-                  </Border>
-                </Viewbox>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </DockPanel>
-            </TabItem>
-      <TabItem Header="Élément">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="0,8,8,0">
-            <ListBox x:Name="ElemList" Height="88" SelectionChanged="OnElemPick"/>
-            <DockPanel Margin="0,4,0,0">
-              <TextBlock Text="Page" Width="76" VerticalAlignment="Center"/>
-              <ComboBox x:Name="ElemPage" SelectionChanged="OnElemPickEvent"/>
-            </DockPanel>
-            <DockPanel Margin="0,4,0,0">
-              <TextBlock Text="Mène à" Width="76" VerticalAlignment="Center"/>
-              <ComboBox x:Name="ElemTarget" SelectionChanged="OnElemPickEvent"/>
-            </DockPanel>
-            <DockPanel Margin="0,4,0,0">
-              <TextBlock Text="Look" Width="76" VerticalAlignment="Center"/>
-              <ComboBox x:Name="ElemLook" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="OnElemPickEvent"
-                        ToolTip="L'apparence d'un bouton sans image (vide = celle du thème)"/>
-            </DockPanel>
-            <DockPanel Margin="0,4,0,0">
-              <TextBlock Text="Texte" Width="76" VerticalAlignment="Center"/>
-              <TextBox x:Name="ElemText" TextChanged="OnElemText"/>
-            </DockPanel>
-            <DockPanel Margin="0,4,0,0">
-              <Button Content="Image…" Width="76" DockPanel.Dock="Left" Click="OnElemImage"/>
-              <TextBox x:Name="ElemImage" TextChanged="OnElemText" Margin="6,0,0,0"/>
-            </DockPanel>
-            <DockPanel Margin="0,4,0,0">
-              <Button Content="Sélection…" Width="76" DockPanel.Dock="Left" Click="OnElemFocus" ToolTip="L'image que montre un bouton image quand il est sélectionné (vide = le cadre du thème)"/>
-              <TextBox x:Name="ElemFocus" TextChanged="OnElemText" Margin="6,0,0,0"/>
-            </DockPanel>
-            <TextBlock Text="Horizontal" Style="{StaticResource Caption}"/>
-            <Slider x:Name="ElemX" Minimum="0" Maximum="1800" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
-            <TextBlock Text="Vertical" Style="{StaticResource Caption}"/>
-            <Slider x:Name="ElemY" Minimum="0" Maximum="980" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
-            <TextBlock Text="Largeur" Style="{StaticResource Caption}"/>
-            <Slider x:Name="ElemW" Minimum="40" Maximum="1920" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
-            <TextBlock Text="Hauteur" Style="{StaticResource Caption}"/>
-            <Slider x:Name="ElemH" Minimum="20" Maximum="1080" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
-            <TextBlock Text="Taille du texte" Style="{StaticResource Caption}"/>
-            <Slider x:Name="ElemSize" Minimum="12" Maximum="160" TickFrequency="2" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
-            <DockPanel Margin="0,2">
-              <Border Style="{StaticResource Swatch}" Background="{Binding ElementName=ElemColor, Path=Text}"/>
-              <TextBlock Text="Couleur" Width="76" VerticalAlignment="Center"/>
-              <TextBox x:Name="ElemColor" TextChanged="OnElemText"/>
-            </DockPanel>
-            <DockPanel Margin="0,2">
-              <Border Style="{StaticResource Swatch}" Background="{Binding ElementName=ElemFill, Path=Text}"/>
-              <TextBlock Text="Remplissage" Width="76" VerticalAlignment="Center"/>
-              <TextBox x:Name="ElemFill" TextChanged="OnElemText"/>
-            </DockPanel>
-            <DockPanel Margin="0,2">
-              <Border Style="{StaticResource Swatch}" Background="{Binding ElementName=ElemBorder, Path=Text}"/>
-              <TextBlock Text="Bordure" Width="76" VerticalAlignment="Center"/>
-              <TextBox x:Name="ElemBorder" TextChanged="OnElemText"/>
-            </DockPanel>
-            <TextBlock Text="Épaisseur de bordure" Style="{StaticResource Caption}"/>
-            <Slider x:Name="ElemBorderW" Minimum="0" Maximum="16" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
-            <TextBlock Text="Opacité du cadre (%)" Style="{StaticResource Caption}"/>
-            <Slider x:Name="ElemOpacity" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
-            <DockPanel Margin="0,4,0,0">
-              <TextBlock Text="Alignement" Width="76" VerticalAlignment="Center"/>
-              <ComboBox x:Name="ElemAlign" SelectionChanged="OnElemPickEvent"/>
-            </DockPanel>
-            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-              <CheckBox x:Name="ElemBold" Content="Gras" Margin="0,0,12,0" Checked="OnElemToggle" Unchecked="OnElemToggle"/>
-              <CheckBox x:Name="ElemItalic" Content="Italique" Checked="OnElemToggle" Unchecked="OnElemToggle"/>
-            </StackPanel>
-            <CheckBox x:Name="ElemBehind" Content="Derrière les boutons (panneau, cadre)" Margin="0,4,0,0" Checked="OnElemToggle" Unchecked="OnElemToggle"/>
-            <StackPanel Orientation="Horizontal" Margin="0,8,0,12">
-              <Button x:Name="ElemCopy" Content="Dupliquer" Click="OnElemDuplicate" Margin="0,0,8,0"/>
-              <Button Content="Supprimer l'élément" Click="OnElemDelete"/>
-            </StackPanel>
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-            <TabItem Header="Textes">
-              <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,8,8,12">
-                  <TextBlock Text="Titre" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
-                  <TextBox x:Name="TitleBox" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"/>
-                  <StackPanel x:Name="ZonePanel"/>
-            <TextBlock Text="Bouton lecture" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding PlayLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Bouton chapitres" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding ScenesLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Bouton accueil" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding HomeLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Mot « chapitre »" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding ChapterLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Bouton « tout lire » (séries)" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding PlayAllLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Liste des épisodes (séries)" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding EpisodesLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Mot devant le résumé d'un épisode" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding OverviewLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Bouton et page des bonus" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding BonusLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Bouton réglages (audio / sous-titres)" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding SettingsLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Colonne audio" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding AudioLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Colonne sous-titres" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding SubtitlesLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Sous-titres désactivés" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding OffLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Bouton retour" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding BackLabel, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Bouton crédits" Style="{StaticResource Caption}"/>
-            <TextBox Text="{Binding CreditsLabel, UpdateSourceTrigger=PropertyChanged}"/>
-                </StackPanel>
-              </ScrollViewer>
-            </TabItem>
-            <TabItem Header="Style">
-              <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,8,8,12">
+              <!-- Accordéons : tous les réglages avancés accessibles en un clic -->
+              <Expander Header="Style et couleurs avancés" Style="{StaticResource AdvExpander}">
+                <StackPanel Margin="0,6,0,4">
                   <TextBlock x:Name="LookNote" Text="Ce modèle fixe l'apparence : police, couleurs, fond et libellés des boutons viennent de ses images." TextWrapping="Wrap" Opacity="0.65" Visibility="Collapsed"/>
                   <Button x:Name="Detach" Content="Composer à partir de ce fond" Margin="0,8,0,0" HorizontalAlignment="Stretch" Visibility="Collapsed" Click="OnDetach"
                           ToolTip="Garde le fond de ce modèle (sans le copier) et ouvre la police, les boutons, la grille et les couleurs."/>
                   <StackPanel x:Name="Look">
-              <TextBlock Text="Police" Style="{StaticResource Caption}"/>
-              <ComboBox x:Name="FontBox" IsEditable="True" Text="{Binding Font, UpdateSourceTrigger=PropertyChanged}"/>
-              <TextBlock Text="Style des boutons" Style="{StaticResource Caption}"/>
-              <ComboBox x:Name="StyleBox" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ButtonStyle}" HorizontalAlignment="Stretch"/>
-              <CheckBox Content="Coins carrés" IsChecked="{Binding Square}" Margin="0,4,0,0"/>
-
-              <TextBlock Text="Couleurs (#RRGGBB)" Style="{StaticResource Caption}"/>
-              <DockPanel Margin="0,2">
-                <Border Style="{StaticResource Swatch}" Background="{Binding Top}"/>
-                <TextBlock Text="Fond haut" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-                <TextBox Text="{Binding Top, UpdateSourceTrigger=PropertyChanged}"/>
-              </DockPanel>
-              <DockPanel Margin="0,2">
-                <Border Style="{StaticResource Swatch}" Background="{Binding Bottom}"/>
-                <TextBlock Text="Fond bas" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-                <TextBox Text="{Binding Bottom, UpdateSourceTrigger=PropertyChanged}"/>
-              </DockPanel>
-              <DockPanel Margin="0,2">
-                <Border Style="{StaticResource Swatch}" Background="{Binding TextColor}"/>
-                <TextBlock Text="Texte" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-                <TextBox Text="{Binding TextColor, UpdateSourceTrigger=PropertyChanged}"/>
-              </DockPanel>
-              <DockPanel Margin="0,2">
-                <Border Style="{StaticResource Swatch}" Background="{Binding Accent}"/>
-                <TextBlock Text="Sélection" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-                <TextBox Text="{Binding Accent, UpdateSourceTrigger=PropertyChanged}"/>
-              </DockPanel>
-              <DockPanel Margin="0,2">
-                <Border Style="{StaticResource Swatch}" Background="{Binding SelectionColor}"/>
-                <TextBlock Text="Sélection (2e)" Width="90" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-                <TextBox Text="{Binding SelectionColor, UpdateSourceTrigger=PropertyChanged}"/>
-              </DockPanel>
-              <TextBlock Text="Transparence de la sélection (%)" Style="{StaticResource Caption}"/>
-              <Slider Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding SelectionOpacity}"/>
-              <TextBlock Text="Surbrillance du bouton choisi" Style="{StaticResource Caption}"/>
-              <ComboBox x:Name="HlBox" SelectionChanged="OnPickHighlight" DisplayMemberPath="Label" SelectedValuePath="Value"/>
-              <DockPanel Margin="0,2">
-                <Border Style="{StaticResource Swatch}" Background="{Binding CardFill}"/>
-                <TextBlock Text="Cartes" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-                <TextBox Text="{Binding CardFill, UpdateSourceTrigger=PropertyChanged}"/>
-              </DockPanel>
-              <DockPanel Margin="0,2">
-                <Border Style="{StaticResource Swatch}" Background="{Binding Glow}"/>
-                <TextBlock Text="Halo" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-                <TextBox Text="{Binding Glow, UpdateSourceTrigger=PropertyChanged}"/>
-              </DockPanel>
-
-              <TextBlock Text="Assombrir le fond (%)" Style="{StaticResource Caption}"/>
-              <Slider Minimum="0" Maximum="80" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding Dim}"/>
+                    <TextBlock Text="Police" Style="{StaticResource Caption}" Margin="0,2,0,3"/>
+                    <ComboBox x:Name="FontBox" IsEditable="True" Text="{Binding Font, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Text="Style des boutons" Style="{StaticResource Caption}"/>
+                    <ComboBox x:Name="StyleBox" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ButtonStyle}" HorizontalAlignment="Stretch"/>
+                    <CheckBox Content="Coins carrés" IsChecked="{Binding Square}" Margin="0,4,0,0"/>
+                    <TextBlock Text="Surbrillance du bouton choisi" Style="{StaticResource Caption}"/>
+                    <ComboBox x:Name="HlBox" SelectionChanged="OnPickHighlight" DisplayMemberPath="Label" SelectedValuePath="Value"/>
+                    <TextBlock Text="Couleurs (#RRGGBB)" Style="{StaticResource Caption}"/>
+                    <DockPanel Margin="0,2">
+                      <Border Style="{StaticResource Swatch}" Background="{Binding Top}"/>
+                      <TextBlock Text="Fond haut" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                      <TextBox Text="{Binding Top, UpdateSourceTrigger=PropertyChanged}"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,2">
+                      <Border Style="{StaticResource Swatch}" Background="{Binding Bottom}"/>
+                      <TextBlock Text="Fond bas" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                      <TextBox Text="{Binding Bottom, UpdateSourceTrigger=PropertyChanged}"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,2">
+                      <Border Style="{StaticResource Swatch}" Background="{Binding TextColor}"/>
+                      <TextBlock Text="Texte" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                      <TextBox Text="{Binding TextColor, UpdateSourceTrigger=PropertyChanged}"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,2">
+                      <Border Style="{StaticResource Swatch}" Background="{Binding Accent}"/>
+                      <TextBlock Text="Sélection" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                      <TextBox Text="{Binding Accent, UpdateSourceTrigger=PropertyChanged}"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,2">
+                      <Border Style="{StaticResource Swatch}" Background="{Binding SelectionColor}"/>
+                      <TextBlock Text="Sélection (2e)" Width="90" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                      <TextBox Text="{Binding SelectionColor, UpdateSourceTrigger=PropertyChanged}"/>
+                    </DockPanel>
+                    <TextBlock Text="Transparence de la sélection (%)" Style="{StaticResource Caption}"/>
+                    <Slider Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding SelectionOpacity}"/>
+                    <DockPanel Margin="0,2">
+                      <Border Style="{StaticResource Swatch}" Background="{Binding CardFill}"/>
+                      <TextBlock Text="Cartes" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                      <TextBox Text="{Binding CardFill, UpdateSourceTrigger=PropertyChanged}"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,2">
+                      <Border Style="{StaticResource Swatch}" Background="{Binding Glow}"/>
+                      <TextBlock Text="Halo" Width="80" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                      <TextBox Text="{Binding Glow, UpdateSourceTrigger=PropertyChanged}"/>
+                    </DockPanel>
+                    <TextBlock Text="Assombrir le fond (%)" Style="{StaticResource Caption}"/>
+                    <Slider Minimum="0" Maximum="80" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding Dim}"/>
                   </StackPanel>
+                  <TextBlock Text="Flouter l'image de fond" Style="{StaticResource Caption}"/>
+                  <Slider Minimum="0" Maximum="40" TickFrequency="2" IsSnapToTickEnabled="True" Value="{Binding BackgroundBlur}" AutomationProperties.Name="Flouter l'image de fond"/>
                 </StackPanel>
-              </ScrollViewer>
-            </TabItem>
-          </TabControl>
-        </DockPanel>
-      </TabItem>
+              </Expander>
 
-      <!-- 4 · Fond et musique -->
-      <TabItem>
-        <TabControl x:Name="SoundTabs">
-          <TabItem Header="Image de fond">
+              <Expander Header="Structure, pop-up et BD-J" Style="{StaticResource AdvExpander}">
+                <StackPanel Margin="0,6,0,4">
+                  <CheckBox Content="Aperçu du film sur le menu principal" IsChecked="{Binding ShowPreview}" Margin="0,0,0,4"/>
+                  <CheckBox Content="Vignettes animées (DVD)" IsChecked="{Binding AnimatedThumbs}" Margin="0,4,0,0" ToolTip="Un extrait du chapitre tourne dans chaque case"/>
+                  <CheckBox Content="Pas de menu principal : les chapitres d'abord" IsChecked="{Binding ScenesOnly}" Margin="0,4,0,0" ToolTip="La première page de chapitres ou d'épisodes sert de menu"/>
+                  <CheckBox Content="Série : pas de case pour la première vidéo" IsChecked="{Binding SkipFirstScene}" Margin="0,4,0,0" ToolTip="« Tout lire » la joue"/>
+                  <CheckBox Content="Page Bonus en texte, sans vignettes" IsChecked="{Binding BonusText}" Margin="0,4,0,0"/>
+                  <TextBlock Text="Fond sombre du pop-up BD-J" Style="{StaticResource Caption}"/>
+                  <Slider Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding PopupShade}"
+                          ToolTip="Augmente l’opacité du fond du pop-up pour améliorer la lisibilité du texte sur le film."/>
+                  <TextBlock Text="Fondu entre les pages BD-J (ms, 0 = aucun)" Style="{StaticResource Caption}"/>
+                  <Slider Minimum="0" Maximum="500" TickFrequency="50" IsSnapToTickEnabled="True" Value="{Binding PageFadeMs}"/>
+                  <TextBlock Text="Luminosité des graphismes en HDR (nits, 203 = standard)" Style="{StaticResource Caption}"/>
+                  <Slider Minimum="80" Maximum="400" TickFrequency="10" IsSnapToTickEnabled="True" Value="{Binding HdrGraphicsNits}"
+                          ToolTip="Calibre la luminance des menus et du pop-up sur les téléviseurs HDR (203 nits = référence SDR-dans-HDR ITU-R BT.2408)."/>
+                  <DockPanel Margin="0,8,0,0" IsEnabled="{Binding IsChecked, ElementName=PopupBox}">
+                    <TextBlock Text="Bouton reprendre" Width="150" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                    <TextBox Text="{Binding ResumeLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  </DockPanel>
+                  <DockPanel Margin="0,4,0,0" IsEnabled="{Binding IsChecked, ElementName=PopupBox}">
+                    <TextBlock Text="Bouton menu principal" Width="150" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                    <TextBox Text="{Binding MainMenuLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  </DockPanel>
+                  <TextBlock Text="Page Crédits (une ligne par rangée, vide = aucune)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+                  <TextBox Text="{Binding Credits, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Texte des crédits"/>
+                  <TextBlock Text="Titre du disque par langue, Blu-ray (ex. fra: Mon disque)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+                  <TextBox Text="{Binding TitlesByLanguage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48" VerticalScrollBarVisibility="Auto"/>
+                  <TextBlock Text="La page Langues (audio et sous-titres) et la page Bonus se créent d'elles-mêmes quand le disque a plusieurs pistes ou des bonus." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                </StackPanel>
+              </Expander>
+
+              <Expander Header="Réglages fins vidéo et musique" Style="{StaticResource AdvExpander}">
+                <StackPanel Margin="0,6,0,4">
+                  <DockPanel Margin="0,2">
+                    <TextBlock Text="Début de la vidéo (s)" Width="170" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                    <TextBox Text="{Binding LoopStart, UpdateSourceTrigger=PropertyChanged}"/>
+                  </DockPanel>
+                  <DockPanel Margin="0,4">
+                    <TextBlock Text="Début de la musique (s)" Width="170" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                    <TextBox Text="{Binding MusicStart, UpdateSourceTrigger=PropertyChanged}"/>
+                  </DockPanel>
+                  <DockPanel Margin="0,4">
+                    <TextBlock Text="Fondu audio (s)" Width="170" VerticalAlignment="Center" DockPanel.Dock="Left" ToolTip="Entrée au début de la boucle, sortie à sa fin (0 = aucun)"/>
+                    <TextBox Text="{Binding MusicFade, UpdateSourceTrigger=PropertyChanged}"/>
+                  </DockPanel>
+                  <DockPanel Margin="0,4">
+                    <TextBlock Text="Durée de la boucle (s)" Width="170" VerticalAlignment="Center" DockPanel.Dock="Left" ToolTip="5 à 300 s sur Blu-ray, 5 à 120 s sur DVD. 0 = la chanson entière."/>
+                    <TextBox Text="{Binding LoopSeconds, UpdateSourceTrigger=PropertyChanged}"/>
+                  </DockPanel>
+                  <TextBlock Text="0 pour la durée : la chanson entière. Sans menu animé, la musique joue sur le menu fixe. Sur DVD elle repart quand on change de page ; sur Blu-ray elle continue." TextWrapping="Wrap" Opacity="0.65" FontSize="11" Margin="0,4,0,0"/>
+                </StackPanel>
+              </Expander>
+
+              <Expander Header="Libellés des boutons et pages" Style="{StaticResource AdvExpander}">
+                <StackPanel Margin="0,6,0,4">
+                  <TextBlock Text="Bouton lecture" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
+                  <TextBox Text="{Binding PlayLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Bouton chapitres" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding ScenesLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Bouton accueil" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding HomeLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Mot « chapitre »" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding ChapterLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Bouton « tout lire » (séries)" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding PlayAllLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Liste des épisodes (séries)" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding EpisodesLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Mot devant le résumé d'un épisode" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding OverviewLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Bouton et page des bonus" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding BonusLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Bouton réglages (audio / sous-titres)" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding SettingsLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Colonne audio" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding AudioLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Colonne sous-titres" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding SubtitlesLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Sous-titres désactivés" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding OffLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Bouton retour" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding BackLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                  <TextBlock Text="Bouton crédits" Style="{StaticResource Caption}"/>
+                  <TextBox Text="{Binding CreditsLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                </StackPanel>
+              </Expander>
+
+              <Expander Header="Éléments et navigation personnalisés" Style="{StaticResource AdvExpander}">
+                <StackPanel Margin="0,6,0,4">
+                  <TextBlock Text="Cliquez un élément ci-dessous ou directement sur la page pour le modifier." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                  <ListBox x:Name="ElemList" Height="96" SelectionChanged="OnElemPick"/>
+                  <WrapPanel Margin="0,8,0,0">
+                    <Button Content="Galerie de boutons…" Click="OnOpenBtnDrawer" Margin="0,0,6,6"/>
+                    <Button Content="Liens des flèches…" Click="OnDirectionLink" Margin="0,0,0,6"/>
+                  </WrapPanel>
+                </StackPanel>
+              </Expander>
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- Vue B : inspecteur contextuel (affiché automatiquement quand un élément est sélectionné sur la scène) -->
+          <ScrollViewer x:Name="ElementInspectorPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="0,0,8,12">
+              <DockPanel Margin="0,0,0,10">
+                <Button Content="← Retour au menu" Click="OnBackToMenu" Padding="10,4" DockPanel.Dock="Left"/>
+                <TextBlock Text="Élément sélectionné" Style="{StaticResource Head}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+              </DockPanel>
+              <DockPanel Margin="0,4,0,0">
+                <TextBlock Text="Texte" Width="80" VerticalAlignment="Center"/>
+                <TextBox x:Name="ElemText" TextChanged="OnElemText"/>
+              </DockPanel>
+              <DockPanel Margin="0,4,0,0">
+                <TextBlock Text="Mène à" Width="80" VerticalAlignment="Center"/>
+                <ComboBox x:Name="ElemTarget" SelectionChanged="OnElemPickEvent"/>
+              </DockPanel>
+              <DockPanel Margin="0,4,0,0">
+                <TextBlock Text="Page" Width="80" VerticalAlignment="Center"/>
+                <ComboBox x:Name="ElemPage" SelectionChanged="OnElemPickEvent"/>
+              </DockPanel>
+              <TextBlock Text="Taille du texte" Style="{StaticResource Caption}"/>
+              <Slider x:Name="ElemSize" Minimum="12" Maximum="160" TickFrequency="2" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+              <DockPanel Margin="0,4">
+                <Border Style="{StaticResource Swatch}" Background="{Binding ElementName=ElemColor, Path=Text}"/>
+                <TextBlock Text="Couleur" Width="76" VerticalAlignment="Center"/>
+                <TextBox x:Name="ElemColor" TextChanged="OnElemText"/>
+              </DockPanel>
+              <DockPanel Margin="0,4,0,0">
+                <Button Content="Image…" Width="80" DockPanel.Dock="Left" Click="OnElemImage"/>
+                <TextBox x:Name="ElemImage" TextChanged="OnElemText" Margin="6,0,0,0"/>
+              </DockPanel>
+              <DockPanel Margin="0,4,0,0">
+                <Button Content="Sélection…" Width="80" DockPanel.Dock="Left" Click="OnElemFocus" ToolTip="L'image que montre un bouton image quand il est sélectionné (vide = le cadre du thème)"/>
+                <TextBox x:Name="ElemFocus" TextChanged="OnElemText" Margin="6,0,0,0"/>
+              </DockPanel>
+              <TextBlock Text="Aligner sur l'écran (zone sûre TV / centre)" Style="{StaticResource Caption}"/>
+              <UniformGrid Columns="6" Margin="0,2,0,6">
+                <Button Content="⟸" Tag="left" Click="OnElemAlignCanvas" Padding="0,4" Margin="0,0,4,0" ToolTip="Aligner à gauche (marge sûre TV)"/>
+                <Button Content="↔" Tag="center-h" Click="OnElemAlignCanvas" Padding="0,4" Margin="0,0,4,0" ToolTip="Centrer horizontalement"/>
+                <Button Content="⟹" Tag="right" Click="OnElemAlignCanvas" Padding="0,4" Margin="0,0,4,0" ToolTip="Aligner à droite (marge sûre TV)"/>
+                <Button Content="⟰" Tag="top" Click="OnElemAlignCanvas" Padding="0,4" Margin="0,0,4,0" ToolTip="Aligner en haut (marge sûre TV)"/>
+                <Button Content="↕" Tag="center-v" Click="OnElemAlignCanvas" Padding="0,4" Margin="0,0,4,0" ToolTip="Centrer verticalement"/>
+                <Button Content="⟱" Tag="bottom" Click="OnElemAlignCanvas" Padding="0,4" ToolTip="Aligner en bas (marge sûre TV)"/>
+              </UniformGrid>
+              <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
+                <Button x:Name="ElemCopy" Content="Dupliquer" Click="OnElemDuplicate" Margin="0,0,8,0"/>
+                <Button Content="Supprimer" Click="OnElemDelete"/>
+              </StackPanel>
+
+              <Expander Header="Placement et style avancés" Style="{StaticResource AdvExpander}">
+                <StackPanel Margin="0,6,0,4">
+                  <DockPanel Margin="0,4,0,0">
+                    <TextBlock Text="Style" Width="80" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="ElemLook" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="OnElemPickEvent"
+                              ToolTip="L'apparence d'un bouton sans image (vide = celle du thème)"/>
+                  </DockPanel>
+                  <DockPanel Margin="0,4,0,0">
+                    <TextBlock Text="Alignement" Width="80" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="ElemAlign" SelectionChanged="OnElemPickEvent"/>
+                  </DockPanel>
+                  <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <CheckBox x:Name="ElemBold" Content="Gras" Margin="0,0,12,0" Checked="OnElemToggle" Unchecked="OnElemToggle"/>
+                    <CheckBox x:Name="ElemItalic" Content="Italique" Checked="OnElemToggle" Unchecked="OnElemToggle"/>
+                  </StackPanel>
+                  <CheckBox x:Name="ElemBehind" Content="Derrière les boutons (panneau, cadre)" Margin="0,4,0,0" Checked="OnElemToggle" Unchecked="OnElemToggle"/>
+                  <TextBlock Text="Horizontal" Style="{StaticResource Caption}"/>
+                  <Slider x:Name="ElemX" Minimum="0" Maximum="1800" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+                  <TextBlock Text="Vertical" Style="{StaticResource Caption}"/>
+                  <Slider x:Name="ElemY" Minimum="0" Maximum="980" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+                  <TextBlock Text="Largeur" Style="{StaticResource Caption}"/>
+                  <Slider x:Name="ElemW" Minimum="40" Maximum="1920" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+                  <TextBlock Text="Hauteur" Style="{StaticResource Caption}"/>
+                  <Slider x:Name="ElemH" Minimum="20" Maximum="1080" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+                  <DockPanel Margin="0,4">
+                    <Border Style="{StaticResource Swatch}" Background="{Binding ElementName=ElemFill, Path=Text}"/>
+                    <TextBlock Text="Remplissage" Width="76" VerticalAlignment="Center"/>
+                    <TextBox x:Name="ElemFill" TextChanged="OnElemText"/>
+                  </DockPanel>
+                  <DockPanel Margin="0,4">
+                    <Border Style="{StaticResource Swatch}" Background="{Binding ElementName=ElemBorder, Path=Text}"/>
+                    <TextBlock Text="Bordure" Width="76" VerticalAlignment="Center"/>
+                    <TextBox x:Name="ElemBorder" TextChanged="OnElemText"/>
+                  </DockPanel>
+                  <TextBlock Text="Épaisseur de bordure" Style="{StaticResource Caption}"/>
+                  <Slider x:Name="ElemBorderW" Minimum="0" Maximum="16" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+                  <TextBlock Text="Opacité du cadre (%)" Style="{StaticResource Caption}"/>
+                  <Slider x:Name="ElemOpacity" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+                  <Button Content="Liens des flèches…" Click="OnDirectionLink" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+                </StackPanel>
+              </Expander>
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- Vue C : tiroir bibliothèque (fonds ou boutons, ouvert à la demande) -->
+          <Border x:Name="LibraryDrawer" Visibility="Collapsed" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource OutlineBrush}"
+                  BorderThickness="1" CornerRadius="10" Padding="12">
             <DockPanel>
-              <StackPanel DockPanel.Dock="Bottom" Margin="0,10,8,8">
-                <StackPanel Orientation="Horizontal">
-                  <Button Content="Fond de cette page…" Click="OnPageBg" Padding="12,4"
-                          ToolTip="Une image de fond pour ce genre de page (menu, chapitres, réglages, bonus, crédits) ; les autres gardent le fond du modèle"/>
-                  <Button x:Name="PageBgClear" Content="Fond commun" Click="OnPageBgClear" Padding="12,4" Margin="8,0,0,0"
-                          ToolTip="Rend à ce genre de page le fond du modèle"/>
-                </StackPanel>
-                <TextBlock Text="Flouter l'image de fond" Style="{StaticResource Caption}"/>
-                <Slider Minimum="0" Maximum="40" TickFrequency="2" IsSnapToTickEnabled="True" Value="{Binding BackgroundBlur}" AutomationProperties.Name="Flouter l'image de fond"/>
-              </StackPanel>
-        <DockPanel>
-          <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-            <Button x:Name="BgRemove" DockPanel.Dock="Right" Content="Retirer" Margin="4,0,0,0" IsEnabled="False" Click="OnBgRemove"/>
-            <Button DockPanel.Dock="Right" Content="Aucun" Margin="8,0,0,0" Click="OnBgClear" ToolTip="Revient au dégradé de couleurs"/>
-            <Button Content="Importer…" Click="OnBg"/>
-          </DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="Glissez un fond sur la page, ou double-cliquez." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
-          <ListBox x:Name="BgList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" SelectionChanged="OnBgPick"
-                   PreviewMouseLeftButtonDown="OnLibraryDown" PreviewMouseMove="OnLibraryMove" MouseDoubleClick="OnBgDouble">
-            <ListBox.GroupStyle>
-              <GroupStyle>
-                <GroupStyle.HeaderTemplate>
-                  <DataTemplate>
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{StaticResource AccentHoverBrush}" Margin="2,10,0,4"/>
-                  </DataTemplate>
-                </GroupStyle.HeaderTemplate>
-              </GroupStyle>
-            </ListBox.GroupStyle>
-            <ListBox.ItemsPanel>
-              <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top"/></ItemsPanelTemplate>
-            </ListBox.ItemsPanel>
-            <ListBox.ItemTemplate>
-              <DataTemplate>
-                <!-- always 2 per row: the Viewbox grows the 16:9 tile with the column -->
-                <Viewbox Stretch="Uniform" ToolTip="{Binding Name}">
-                  <Image Source="{Binding Path, Converter={StaticResource Thumb}}" Width="108" Height="61" Stretch="UniformToFill"/>
-                </Viewbox>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </DockPanel>
+              <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                <Button Content="← Fermer" Click="OnCloseDrawer" Padding="10,4" DockPanel.Dock="Right"/>
+                <TextBlock x:Name="DrawerTitle" Style="{StaticResource Head}" Margin="0" VerticalAlignment="Center"/>
+              </DockPanel>
+
+              <Grid>
+                <!-- Tiroir fonds -->
+                <DockPanel x:Name="BgDrawerPanel" Visibility="Collapsed">
+                  <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                    <Button x:Name="BgRemove" DockPanel.Dock="Right" Content="Retirer" Margin="4,0,0,0" IsEnabled="False" Click="OnBgRemove"/>
+                    <Button DockPanel.Dock="Right" Content="Aucun" Margin="8,0,0,0" Click="OnBgClear" ToolTip="Revient au dégradé de couleurs"/>
+                    <Button Content="Importer…" Click="OnBg"/>
+                  </DockPanel>
+                  <TextBlock DockPanel.Dock="Top" Text="Glissez un fond sur la page, ou double-cliquez." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                  <ListBox x:Name="BgList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" SelectionChanged="OnBgPick"
+                           PreviewMouseLeftButtonDown="OnLibraryDown" PreviewMouseMove="OnLibraryMove" MouseDoubleClick="OnBgDouble">
+                    <ListBox.GroupStyle>
+                      <GroupStyle>
+                        <GroupStyle.HeaderTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{StaticResource AccentHoverBrush}" Margin="2,10,0,4"/>
+                          </DataTemplate>
+                        </GroupStyle.HeaderTemplate>
+                      </GroupStyle>
+                    </ListBox.GroupStyle>
+                    <ListBox.ItemsPanel>
+                      <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top"/></ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <Viewbox Stretch="Uniform" ToolTip="{Binding Name}">
+                          <Image Source="{Binding Path, Converter={StaticResource Thumb}}" Width="108" Height="61" Stretch="UniformToFill"/>
+                        </Viewbox>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </DockPanel>
+
+                <!-- Tiroir boutons -->
+                <DockPanel x:Name="BtnDrawerPanel" Visibility="Collapsed">
+                  <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                    <Button x:Name="BtnRemove" DockPanel.Dock="Right" Content="Retirer" Margin="8,0,0,0" IsEnabled="False" Click="OnBtnRemove"/>
+                    <Button Content="Importer…" Click="OnBtnImport" ToolTip="Une image de bouton, puis (au choix) celle qu'il montre quand il est sélectionné"/>
+                  </DockPanel>
+                  <TextBlock DockPanel.Dock="Top" Text="Glissez un bouton sur la page, ou double-cliquez." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                  <ListBox x:Name="BtnList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" SelectionChanged="OnBtnPick"
+                           PreviewMouseLeftButtonDown="OnLibraryDown" PreviewMouseMove="OnLibraryMove" MouseDoubleClick="OnBtnDouble">
+                    <ListBox.GroupStyle>
+                      <GroupStyle>
+                        <GroupStyle.HeaderTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{StaticResource AccentHoverBrush}" Margin="2,10,0,4"/>
+                          </DataTemplate>
+                        </GroupStyle.HeaderTemplate>
+                      </GroupStyle>
+                    </ListBox.GroupStyle>
+                    <ListBox.ItemsPanel>
+                      <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top"/></ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <Viewbox Stretch="Uniform" ToolTip="{Binding Name}">
+                          <Border Width="108" Height="61" Background="#22000000" CornerRadius="4">
+                            <Image Source="{Binding Sample}" Stretch="Uniform" Margin="3"/>
+                          </Border>
+                        </Viewbox>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </DockPanel>
+              </Grid>
             </DockPanel>
-          </TabItem>
-          <TabItem Header="Vidéo et musique">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-              <StackPanel Margin="0,8,8,12">
-                <TextBlock Text="Vidéo du menu" Style="{StaticResource Head}" Margin="0,0,0,6"/>
-                <CheckBox x:Name="LoopBox" Content="Menu animé : une vidéo en boucle derrière les boutons" IsChecked="{Binding Loop}"/>
-                <TextBlock Text="Fichier vidéo (vide = le premier film)" Style="{StaticResource Caption}" Margin="0,6,0,3"/>
-                <DockPanel>
-                  <Button Content="…" Width="36" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnLoopFile" AutomationProperties.Name="Choisir la vidéo du menu"/>
-                  <TextBox Text="{Binding LoopFile, UpdateSourceTrigger=PropertyChanged}"/>
-                </DockPanel>
-                <DockPanel Margin="0,4,0,0">
-                  <TextBlock Text="Début de la vidéo (s)" Width="170" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-                  <TextBox Text="{Binding LoopStart, UpdateSourceTrigger=PropertyChanged}"/>
-                </DockPanel>
-                <TextBlock Text="Musique du menu" Style="{StaticResource Head}"/>
-                <TextBlock Text="Fichier audio (vide = aucune ; avec un menu animé, remplace le son de la vidéo)" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,0,0,4"/>
-                <DockPanel>
-                  <Button Content="…" Width="36" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnMusic" AutomationProperties.Name="Choisir la musique"/>
-                  <TextBox Text="{Binding Music, UpdateSourceTrigger=PropertyChanged}"/>
-                </DockPanel>
-                <DockPanel Margin="0,4">
-                  <TextBlock Text="Début de la musique (s)" Width="170" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-                  <TextBox Text="{Binding MusicStart, UpdateSourceTrigger=PropertyChanged}"/>
-                </DockPanel>
-                <TextBlock Text="Volume (%)" Style="{StaticResource Caption}"/>
-                <DockPanel>
-                  <TextBlock Text="{Binding Value, ElementName=MusicVolumeSlider, StringFormat={}{0:0} %}" Width="50" DockPanel.Dock="Right" TextAlignment="Right" VerticalAlignment="Center"/>
-                  <Slider x:Name="MusicVolumeSlider" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding MusicVolume}" AutomationProperties.Name="Volume de la musique"/>
-                </DockPanel>
-                <DockPanel Margin="0,8,0,4">
-                  <TextBlock Text="Fondu (s)" Width="170" VerticalAlignment="Center" DockPanel.Dock="Left" ToolTip="Entrée au début de la boucle, sortie à sa fin (0 = aucun)"/>
-                  <TextBox Text="{Binding MusicFade, UpdateSourceTrigger=PropertyChanged}"/>
-                </DockPanel>
-                <DockPanel Margin="0,4">
-                  <TextBlock Text="Durée de la boucle (s)" Width="170" VerticalAlignment="Center" DockPanel.Dock="Left" ToolTip="Durée de la vidéo animée et de la musique avant qu'elles recommencent : 5 à 300 s sur Blu-ray, 5 à 120 s sur DVD. 0 = la durée de la musique (la chanson entière). Une vidéo plus courte est rejouée depuis son début."/>
-                  <TextBox Text="{Binding LoopSeconds, UpdateSourceTrigger=PropertyChanged}"/>
-                </DockPanel>
-                <TextBlock Text="0 pour la durée : la chanson entière. Sans menu animé, la musique joue sur le menu fixe. Sur DVD elle repart quand on change de page ; sur Blu-ray elle continue." TextWrapping="Wrap" Opacity="0.65" Margin="0,6,0,0"/>
-              </StackPanel>
-            </ScrollViewer>
-          </TabItem>
-        </TabControl>
+          </Border>
+        </Grid>
       </TabItem>
 
-      <!-- 5 · Aperçu -->
+      <!-- 3 · Aperçu -->
       <TabItem>
         <StackPanel Margin="0,0,8,0">
           <TextBlock Text="Télécommande" Style="{StaticResource Head}" Margin="0,0,0,6"/>
@@ -564,7 +609,12 @@
                   ToolTip="Après avoir choisi un titre ou un chapitre, affiche son menu de lecture BD-J sur une image fixe."/>
           <Button x:Name="PreviewStartButton" Content="Démarrage du disque" Tag="Start" Click="OnRemote" HorizontalAlignment="Center" Padding="16,6" Margin="0,6,0,0"/>
           <Button x:Name="PreviewEndButton" Content="Fin du titre" Tag="End" Click="OnRemote" HorizontalAlignment="Center" Padding="16,6" Margin="0,6,0,0"/>
-          <TextBlock Text="Sur un vrai lecteur" Style="{StaticResource Head}" Margin="0,24,0,6"/>
+          <Button Content="Carte de navigation…" Click="OnNavigationMap" HorizontalAlignment="Center" Padding="16,6" Margin="0,10,0,0"
+                  ToolTip="Affiche le graphe des pages, boutons, cibles et détecte les pages inaccessibles ou sans issue (BD-J, HDMV et DVD)."/>
+          <TextBlock Text="Journal du simulateur" Style="{StaticResource Head}" Margin="0,14,0,4"/>
+          <TextBox x:Name="SimLogBox" Height="110" IsReadOnly="True" FontFamily="Consolas" FontSize="11"
+                   VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/>
+          <TextBlock Text="Sur un vrai lecteur" Style="{StaticResource Head}" Margin="0,14,0,6"/>
           <TextBlock TextWrapping="Wrap" Opacity="0.65"
                      Text="Pour voir le menu tourner pour de bon avant le vrai disque : validez avec OK, puis dans la fenêtre principale cochez « Essai » et « ISO » et cliquez Démarrer. Le disque d'essai est prêt en quelques minutes et s'ouvre dans VLC ou se grave sur un disque réinscriptible."/>
         </StackPanel>

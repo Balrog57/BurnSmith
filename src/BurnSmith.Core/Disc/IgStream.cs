@@ -27,7 +27,7 @@ public static class IgStream
     public static int RateCode(string tsMuxerFps) => tsMuxerFps switch { "24" => 2, "25" => 3, "29.97" => 4, "50" => 6, "59.94" => 7, _ => 1 };
 
     /// <summary>The whole stream of one page <paramref name="width"/> x <paramref name="height"/>; <paramref name="selected"/> is the button the page opens on.</summary>
-    public static byte[] Write(int width, int height, int rateCode, IReadOnlyList<IgButton> buttons, int selected)
+    public static byte[] Write(int width, int height, int rateCode, IReadOnlyList<IgButton> buttons, int selected, bool inMuxPopup = false)
     {
         if (buttons.Count is 0 or > 255) throw new ArgumentException($"a menu page takes 1 to 255 buttons, not {buttons.Count}");
         var pictures = buttons.SelectMany(b => new[] { b.Normal, b.Selected }).Where(p => p != null).Select(p => p!).Distinct().ToList();
@@ -35,7 +35,7 @@ public static class IgStream
         int Object(uint[]? picture) => picture == null ? 0xFFFF : pictures.IndexOf(picture);
 
         var page = new BinaryWriterBE();
-        page.U8(0x80);                                // stream model 1 (loaded before it shows), always on screen
+        page.U8((byte)(inMuxPopup ? 0x00 : 0x80));    // 0x80 = out-of-mux subClip; 0x00 = in-mux pop-up menu over playing video
         page.U8(0); page.U16(0);                      // the user never times out
         page.U8(1);                                   // one page
         page.U8(0); page.U8(0);                       // page 0, version 0

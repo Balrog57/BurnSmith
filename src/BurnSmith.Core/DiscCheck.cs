@@ -12,11 +12,12 @@ namespace BurnSmith.Core;
 /// </summary>
 public static class DiscCheck
 {
-    /// <summary>The problems of a disc folder (a BDMV or a VIDEO_TS folder inside it); with <paramref name="mediaGb"/> (the nominal size of the disc: 25 for a BD25) files that do not fit it.</summary>
+    /// <summary>The problems of a disc folder (BDMV, AVCHD\BDMV, or VIDEO_TS inside it); with <paramref name="mediaGb"/> (the nominal size of the disc: 25 for a BD25) files that do not fit it.</summary>
     public static List<string> Folder(string dir, double mediaGb = 0)
     {
         var problems = new List<string>();
         if (Directory.Exists(Path.Combine(dir, "BDMV"))) CheckBluRay(Path.Combine(dir, "BDMV"), problems);
+        else if (Directory.Exists(Path.Combine(dir, "AVCHD", "BDMV"))) CheckBluRay(Path.Combine(dir, "AVCHD", "BDMV"), problems);
         else if (Directory.Exists(Path.Combine(dir, "VIDEO_TS"))) CheckDvd(Path.Combine(dir, "VIDEO_TS"), problems);
         else problems.Add("ni BDMV ni VIDEO_TS dans le dossier");
         if (mediaGb > 0 && Directory.Exists(dir)) Fits(new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(x => x.Length), "les fichiers du disque", mediaGb, problems);
@@ -538,6 +539,12 @@ public static class DiscCheck
             if (!Starts(ifo, "DVDVIDEO-VTS", $"VTS_{n}_0.IFO", problems)) continue;
             Same(ifo, Path.Combine(video, $"VTS_{n}_0.BUP"), $"VTS_{n}_0.BUP", problems);
             if (LastSector(ifo) != Sectors($@"^VTS_{n}_\d\.(IFO|BUP|VOB)$")) problems.Add($"VTS_{n}_0.IFO ne donne pas la taille des fichiers du titre {n}");
+            var vtsBytes = File.ReadAllBytes(ifo);
+            if (vtsBytes.Length >= 0x256)
+            {
+                if (vtsBytes[0x203] > 8) problems.Add($"VTS_{n}_0.IFO : {vtsBytes[0x203]} pistes audio déclarées (maximum DVD : 8)");
+                if (vtsBytes[0x255] > 32) problems.Add($"VTS_{n}_0.IFO : {vtsBytes[0x255]} pistes de sous-titres déclarées (maximum DVD : 32)");
+            }
             if (!File.Exists(Path.Combine(video, $"VTS_{n}_1.VOB"))) problems.Add($"VTS_{n}_1.VOB manque");
             foreach (var vob in all.Where(f => Regex.IsMatch(Path.GetFileName(f), $@"^VTS_{n}_\d\.VOB$", RegexOptions.IgnoreCase)))
             {

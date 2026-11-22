@@ -31,21 +31,33 @@ public static class Iso
         }
     }
 
+    static readonly string[] VirtualDriveMarkers =
+        ["MSFT VIRTUAL", "VIRTUAL DVD", "VIRTUAL CD", "CLONEDRIVE", "DAEMON", "DTSOFT", "ALCOHOL", "MAGICISO", "POWERISO", "ULTRAISO", "VBOX CD", "QEMU DVD", "VMWARE"];
+
+    /// <summary>True when a drive model/name identifies a virtual mounted optical drive that cannot physically burn media.</summary>
+    public static bool IsVirtualDriveName(string? name) =>
+        !string.IsNullOrWhiteSpace(name) && VirtualDriveMarkers.Any(m => name.Contains(m, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>
     /// The burners IMAPI2 sees, each with the disc in it (<see cref="Imapi.Drive.State"/>), plus, when ImgBurn can burn them, the other optical drives Windows lists.
-    /// A drive IMAPI2 knows as a reader only (« Msft Virtual DVD-ROM », a mounted image) is left out.
+    /// Any drive IMAPI2 knows as read-only or matching a virtual optical device is excluded.
     /// </summary>
     public static List<Imapi.Drive> Drives()
     {
         List<Imapi.Drive> seen;
         try { seen = Imapi.Drives().Where(d => d.Letter.Length > 0).ToList(); }
         catch (Exception) { seen = []; } // IMAPI2 unavailable
-        var drives = seen.Where(d => d.Writes).Select(d => d with { State = DiscState(Disc(d.Letter), new DriveInfo(d.Letter).IsReady) }).ToList();
+        var drives = seen.Where(d => d.Writes && !IsVirtualDriveName(d.Name))
+            .Select(d => d with { State = DiscState(Disc(d.Letter), new DriveInfo(d.Letter).IsReady) }).ToList();
         if (ImgBurn() == null) return drives;
         foreach (var d in DriveInfo.GetDrives().Where(d => d.DriveType == DriveType.CDRom))
         {
             var letter = d.Name.TrimEnd('\\');
-            if (!seen.Any(x => x.Letter.Equals(letter, StringComparison.OrdinalIgnoreCase))) drives.Add(new Imapi.Drive(letter, "Lecteur optique", letter));
+            if (seen.Any(x => x.Letter.Equals(letter, StringComparison.OrdinalIgnoreCase))) continue;
+            var label = "";
+            try { if (d.IsReady) label = d.VolumeLabel; } catch (IOException) { }
+            if (IsVirtualDriveName(label)) continue;
+            drives.Add(new Imapi.Drive(letter, "Lecteur optique", letter));
         }
         return drives;
     }
@@ -123,8 +135,7 @@ public static class Iso
         log?.Invoke($"burn: ImgBurn {Path.GetFileName(iso)} -> {drive[..2]} ({new FileInfo(iso).Length / 1e9:0.00} GB, {(speed > 0 ? $"{speed}x" : "vitesse max")})");
         var imgLog = ImgBurnLog();
         try { File.Delete(imgLog); } catch (IOException) { } // an older burn's log must not pass for this one's
-        // shortcut: untested on real media, and no progress reaches the app (ImgBurn's window shows it)
-        try { Tools.WithCancel(cancel, () => Tools.Run(exe, ImgBurnArgs(iso, drive, speed, imgLog, verify, eject), outlivesApp: true)); } // a crash of the app must not spoil the disc being written
+        try { RunImgBurn(exe, ImgBurnArgs(iso, drive, speed, imgLog, verify, eject), verify, log, progress, cancel); }
         catch (InvalidOperationException e) when (File.Exists(imgLog))
         {
             // ImgBurn prints nothing: the reason is in its log (exit 1 = could not start, 2 = write failed, 3 = verify failed)
@@ -136,5 +147,43 @@ public static class Iso
         { log?.Invoke($"attention : disque écrit mais pas contrôlé, ImgBurn n'a pas relu le disque (tiroir resté ouvert ?) - burnsmith verify IMAGE {drive[..2]} le contrôle"); return false; }
         log?.Invoke("done: disc written and verified");
         return true;
+    }
+
+    static void RunImgBurn(string exe, List<string> args, bool verify, Action<string>? log, IProgress<double>? progress, CancellationToken cancel)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = false };
+        foreach (var arg in args) psi.ArgumentList.Add(arg);
+        using var proc = System.Diagnostics.Process.Start(psi) ?? throw new InvalidOperationException("ImgBurn n'a pas pu démarrer.");
+        var phase = 0; // 0 = writing, 1 = verifying
+        var lastPct = -1;
+        while (!proc.WaitForExit(500))
+        {
+            if (cancel.IsCancellationRequested)
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { }
+                throw new OperationCanceledException("Gravure annulée.", cancel);
+            }
+            try
+            {
+                proc.Refresh();
+                var title = proc.MainWindowTitle ?? "";
+                if (title.Contains("Verify", StringComparison.OrdinalIgnoreCase) && phase == 0)
+                {
+                    phase = 1;
+                    lastPct = -1;
+                    log?.Invoke("burn: vérification du disque en cours (ImgBurn)…");
+                }
+                var m = System.Text.RegularExpressions.Regex.Match(title, @"(\d{1,3})%");
+                if (m.Success && int.TryParse(m.Groups[1].Value, out var pct) && pct is >= 0 and <= 100 && pct != lastPct)
+                {
+                    lastPct = pct;
+                    var frac = verify ? (phase == 0 ? pct * 0.005 : 0.5 + pct * 0.005) : pct * 0.01;
+                    progress?.Report(Math.Clamp(frac, 0, 1));
+                }
+            }
+            catch { }
+        }
+        if (proc.ExitCode != 0) throw new InvalidOperationException($"ImgBurn.exe failed (exit {proc.ExitCode})");
+        progress?.Report(1);
     }
 }

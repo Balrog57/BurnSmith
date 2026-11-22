@@ -18,7 +18,8 @@ public sealed record VideoEffects(
     bool WatermarkBold = false, bool WatermarkItalic = false, bool WatermarkUnderline = false, string WatermarkColor = "FFFFFF",
     double WatermarkWidth = 0, int WatermarkOpacity = 100, string WatermarkPlace = "br",
     string? BurnSubtitle = null, string BurnFont = "Arial", int BurnSize = 22, bool BurnBold = false, bool BurnItalic = false,
-    string BurnColor = "FFFFFF", int BurnOpacity = 100, int BurnPosition = 0, double BurnDelay = 0)
+    string BurnColor = "FFFFFF", int BurnOpacity = 100, int BurnPosition = 0, double BurnDelay = 0,
+    string Deinterlace = "auto", int Denoise = 0)
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
@@ -39,7 +40,7 @@ public sealed record VideoEffects(
 
     public bool IsEmpty => Rotate % 360 == 0 && !FlipH && !FlipV && CropTop + CropBottom + CropLeft + CropRight == 0
                            && Brightness == 0 && Contrast == 0 && Saturation == 0 && WhiteBalance == 0 && Look is "" or "Aucun"
-                           && Watermark == null && BurnSubtitle == null;
+                           && Watermark == null && BurnSubtitle == null && Deinterlace is "" or "auto" or "off" && Denoise == 0;
 
     /// <summary>The picture's size once turned and cropped, from the source's <paramref name="width"/> x <paramref name="height"/>.</summary>
     public (int Width, int Height) Size(int width, int height)
@@ -57,6 +58,7 @@ public sealed record VideoEffects(
     {
         var f = new List<string>();
         if (first.Length > 0) f.Add(first);
+        if (Deinterlace == "on") f.Add("bwdif=mode=0:parity=auto:deint=1");
         if (Rotate % 360 == 90) f.Add("transpose=1");
         else if (Rotate % 360 == 180) f.Add("hflip,vflip");
         else if (Rotate % 360 == 270) f.Add("transpose=2");
@@ -76,6 +78,15 @@ public sealed record VideoEffects(
             f.Add($"colorbalance=rm={k}:rh={k}:bm={m}:bh={m}");
         }
         if (Looks.FirstOrDefault(l => l.Name == Look).Filter is { Length: > 0 } look) f.Add(look);
+        if (Denoise > 0)
+        {
+            var s = Math.Clamp(Denoise, 1, 100) / 100.0;
+            var luma = N(1.2 + s * 6.8);
+            var chroma = N(0.9 + s * 5.1);
+            var lt = N(1.8 + s * 7.2);
+            var ct = N(1.4 + s * 5.4);
+            f.Add($"hqdn3d={luma}:{chroma}:{lt}:{ct}");
+        }
         if (BurnSubtitle != null)
         {
             // the subtitles filter reads cue times off the frame's own time, which -ss reset to 0: shift it to the source's time for the filter, then back
@@ -110,7 +121,7 @@ public sealed record VideoEffects(
     public VideoEffects Take(VideoEffects o, string part) => part switch
     {
         "crop" => this with { Rotate = o.Rotate, FlipH = o.FlipH, FlipV = o.FlipV, CropTop = o.CropTop, CropBottom = o.CropBottom, CropLeft = o.CropLeft, CropRight = o.CropRight },
-        "effect" => this with { Brightness = o.Brightness, Contrast = o.Contrast, Saturation = o.Saturation, WhiteBalance = o.WhiteBalance, Look = o.Look },
+        "effect" => this with { Brightness = o.Brightness, Contrast = o.Contrast, Saturation = o.Saturation, WhiteBalance = o.WhiteBalance, Look = o.Look, Deinterlace = o.Deinterlace, Denoise = o.Denoise },
         "watermark" => this with
         {
             Watermark = o.Watermark, WatermarkIsText = o.WatermarkIsText, WatermarkText = o.WatermarkText, WatermarkFont = o.WatermarkFont, WatermarkSize = o.WatermarkSize,

@@ -124,6 +124,25 @@ public static class PgsSubtitles
         return writer.Finish();
     }
 
+    /// <summary>True when the last display set of <paramref name="sup"/> still leaves an object on screen (no trailing clear set).</summary>
+    public static bool EndsVisible(byte[] sup) => sup.Length > 0 && Read(sup) is { Count: > 0 } sets && sets[^1].Objects > 0;
+
+    /// <summary>A minimal PGS display set that clears any subtitle currently on screen at <paramref name="atSeconds"/>.</summary>
+    public static byte[] ClearSet(int planeWidth, int planeHeight, double atSeconds)
+    {
+        var pts = (uint)Math.Max(0, Math.Round(atSeconds * Clock));
+        var pcs = new byte[11];
+        BinaryPrimitives.WriteUInt16BigEndian(pcs.AsSpan(0), (ushort)planeWidth);
+        BinaryPrimitives.WriteUInt16BigEndian(pcs.AsSpan(2), (ushort)planeHeight);
+        pcs[4] = 0x10;
+        pcs[7] = 0x80; // epoch start with 0 objects clears the screen cleanly
+        using var ms = new MemoryStream();
+        ms.Write(PgsStream.Segment(CompositionKind, pts, pts, pcs));
+        ms.Write(PgsStream.Segment(0x17, pts, pts, [0]));
+        ms.Write(PgsStream.Segment(EndKind, pts, pts, []));
+        return ms.ToArray();
+    }
+
     static List<Set> Read(byte[] sup)
     {
         var sets = new List<Set>();

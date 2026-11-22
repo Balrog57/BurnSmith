@@ -32,4 +32,11 @@ Le build de travail du 22 novembre a également produit deux ISO BD-J numéroté
 
 La reprise de lecture BD-J a été essayée sur un dossier Blu-ray avec deux processus VLC distincts et un dossier de stockage propre à l’essai. À la deuxième ouverture, le journal libbluray a confirmé le saut à 9,002 secondes. La reprise sur platine reste à vérifier.
 
-Restent à qualifier sur matériel le rendu HDR10+, le Dolby Vision profil 7 natif copié, le Dolby Digital Plus autonome, les lectures longues et d’autres appareils que les Panasonic documentés. Les essais détaillés et les variantes écartées figurent dans le [plan de production](PLAN-PRODUCTION.md#historique-des-essais-matériels).
+Restent à qualifier sur matériel (BD-RE / platine de salon) :
+- la reprise de lecture BD-J entre sessions (stockage persistant du lecteur) ;
+- le rendu du fondu de page BD-J ;
+- le pop-up HDMV natif et le fond animé HDMV ;
+- la calibration HDR des graphismes/sous-titres (203 nits ITU-R BT.2408) sur téléviseur HDR ;
+- le rendu HDR10+, le Dolby Vision profil 7 natif copié, le Dolby Digital Plus autonome, les lectures longues, la sortie AVCHD sur clé USB/carte SD, et d'autres appareils que les Panasonic documentés.
+
+Les essais détaillés et les variantes écartées figurent dans le [plan de production](PLAN-PRODUCTION.md#historique-des-essais-matériels).

@@ -753,4 +753,75 @@ public static partial class MenuRenderer
         }, 90);
         dc.DrawGeometry(steel, null, shape);
     }
+
+    /// <summary>Renders a native HDMV pop-up button with crisp centered text and returns straight ARGB pixels.</summary>
+    public static uint[] PopupButtonPixels(string label, int w, int h, byte alpha, bool focused, string fontName, string accentHex)
+    {
+        var visual = new DrawingVisual();
+        var radius = Math.Max(4, h / 6.0);
+        var bw = Math.Max(2.0, h / 20.0);
+        var accent = Col(accentHex);
+        var bg = focused
+            ? Color.FromArgb(alpha, (byte)Math.Min(255, accent.R / 2 + 24), (byte)Math.Min(255, accent.G / 2 + 12), (byte)Math.Min(255, accent.B / 2 + 18))
+            : Color.FromArgb(alpha, 18, 20, 24);
+        var border = focused ? Color.FromArgb(255, accent.R, accent.G, accent.B) : Color.FromArgb(204, 128, 134, 144);
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawRoundedRectangle(new SolidColorBrush(bg), new Pen(new SolidColorBrush(border), bw),
+                new Rect(bw / 2, bw / 2, w - bw, h - bw), radius, radius);
+            var face = new Typeface(new FontFamily(string.IsNullOrWhiteSpace(fontName) ? "Segoe UI" : fontName),
+                FontStyles.Normal, focused ? FontWeights.Bold : FontWeights.SemiBold, FontStretches.Normal);
+            var fontSize = Math.Clamp(h * 0.36, 14, 28);
+            var maxW = Math.Max(16, w - 20);
+            var text = new FormattedText(label, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, face, fontSize, Brushes.White, 1.0)
+            { MaxTextWidth = maxW, MaxLineCount = 1, Trimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center };
+            var y = (h - text.Height) / 2;
+            var shadow = new FormattedText(label, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, face, fontSize, new SolidColorBrush(Color.FromArgb(180, 0, 0, 0)), 1.0)
+            { MaxTextWidth = maxW, MaxLineCount = 1, Trimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center };
+            dc.DrawText(shadow, new Point(10 + 1, y + 1));
+            dc.DrawText(text, new Point(10, y));
+        }
+        var bmp = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+        bmp.Render(visual);
+        var raw = new byte[w * h * 4];
+        bmp.CopyPixels(raw, w * 4, 0);
+        var argb = new uint[w * h];
+        for (var i = 0; i < argb.Length; i++)
+        {
+            byte b = raw[i * 4], g = raw[i * 4 + 1], r = raw[i * 4 + 2], a = raw[i * 4 + 3];
+            if (a > 0 && a < 255)
+            {
+                r = (byte)Math.Min(255, r * 255 / a);
+                g = (byte)Math.Min(255, g * 255 / a);
+                b = (byte)Math.Min(255, b * 255 / a);
+            }
+            argb[i] = ((uint)a << 24) | ((uint)r << 16) | ((uint)g << 8) | b;
+        }
+        return argb;
+    }
+
+    /// <summary>Scales an encoded PNG or JPEG image's RGB luminance for HDR graphics calibration (ITU-R BT.2408: nits / 400).</summary>
+    public static byte[] ScaleImageForHdr(byte[] encoded, int nits, bool jpeg)
+    {
+        if (nits is <= 0 or >= 400) return encoded;
+        var factor = Math.Clamp(nits, 80, 400) / 400.0;
+        using var src = new MemoryStream(encoded);
+        var decoder = BitmapDecoder.Create(src, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        var formatted = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
+        int w = formatted.PixelWidth, h = formatted.PixelHeight;
+        var px = new byte[w * h * 4];
+        formatted.CopyPixels(px, w * 4, 0);
+        for (var i = 0; i < px.Length; i += 4)
+        {
+            px[i] = (byte)Math.Clamp((int)Math.Round(px[i] * factor), 0, 255);
+            px[i + 1] = (byte)Math.Clamp((int)Math.Round(px[i + 1] * factor), 0, 255);
+            px[i + 2] = (byte)Math.Clamp((int)Math.Round(px[i + 2] * factor), 0, 255);
+        }
+        var wb = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, px, w * 4);
+        BitmapEncoder encoder = jpeg ? new JpegBitmapEncoder { QualityLevel = 92 } : new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(wb));
+        using var dst = new MemoryStream();
+        encoder.Save(dst);
+        return dst.ToArray();
+    }
 }

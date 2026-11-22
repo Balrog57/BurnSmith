@@ -17,12 +17,16 @@ public sealed record Chain(string? Vob, IReadOnlyList<double> Chapters, IReadOnl
 /// <summary>An audio stream of the titles: AC-3, its channels, its two-letter language ("" unknown).</summary>
 public sealed record AudioStream(int Channels, string Lang);
 
+/// <summary>One Video Title Set (VTS_nn): its titles, its own audio descriptors (max 8) and subtitle languages.</summary>
+public sealed record TitleSet(IReadOnlyList<Chain> Titles, IReadOnlyList<AudioStream> Audio, IReadOnlyList<string> Subtitles, bool Wide = true);
+
 /// <summary>
-/// A DVD-Video disc with one title set: <see cref="Menus"/> (the first is the root menu), <see cref="Titles"/>, the first-play commands.
-/// <see cref="Highlight"/>: for codes 0..3 of the menu subpictures, the CLUT entry and opacity when a button is selected, then when it is activated.
+/// A DVD-Video disc: <see cref="Menus"/> (hosted in VTS_01; first is root menu), VTS_01 <see cref="Titles"/>, <see cref="FirstPlay"/> commands,
+/// and optional <see cref="ExtraSets"/> (VTS_02..VTS_nn) when heterogeneous titles exceed the 8-audio-descriptor limit of one VTS (DVDFab/Yuhan multi-VTS model).
 /// </summary>
 public sealed record DvdDisc(bool Pal, IReadOnlyList<Chain> Menus, IReadOnlyList<Chain> Titles, IReadOnlyList<ulong> FirstPlay,
-                          IReadOnlyList<AudioStream> Audio, IReadOnlyList<string> Subtitles, bool Wide = true);
+                          IReadOnlyList<AudioStream> Audio, IReadOnlyList<string> Subtitles, bool Wide = true,
+                          IReadOnlyList<TitleSet>? ExtraSets = null);
 
 /// <summary>Writes the VIDEO_TS folder of a <see cref="DvdDisc"/>: the program streams copied into VOB files with their navigation packs filled, and the IFO files.</summary>
 public static class Authoring
@@ -48,36 +52,57 @@ public static class Authoring
     public static void Write(DvdDisc disc, string outDir, Action<string>? log = null)
     {
         log ??= _ => { };
-        if (disc.Titles.Count is 0 or > 99) throw new ArgumentException("a DVD has 1 to 99 titles");
+        var allSets = new List<TitleSet> { new(disc.Titles, disc.Audio, disc.Subtitles, disc.Wide) };
+        if (disc.ExtraSets is { Count: > 0 } extra) allSets.AddRange(extra);
+        var totalTitles = allSets.Sum(s => s.Titles.Count);
+        if (totalTitles is 0 or > 99) throw new ArgumentException("a DVD has 1 to 99 titles");
+        if (allSets.Count > 99) throw new ArgumentException("a DVD has at most 99 title sets");
         if (disc.Menus.Count > 0 && disc.Menus[0].Vob == null) throw new ArgumentException("the root menu needs a picture");
         var frame = disc.Pal ? 3600 : 3003;
         var dir = Path.Combine(outDir, "VIDEO_TS");
         Directory.CreateDirectory(dir);
 
-        // the VOBs in order: menus then titles, each program stream one VOB id of its VOBS
+        // the VOBs in order: menus (VTS_01) then each title set's titles
         log("author: menus");
         var menus = Place(disc.Menus, frame);
-        log("author: titles");
-        var titles = Place(disc.Titles, frame);
         var menuSectors = menus.SelectMany(m => m.Cells).Select(c => c.LastEnd + 1).DefaultIfEmpty(0).Max();
-        var titleSectors = titles.SelectMany(m => m.Cells).Select(c => c.LastEnd + 1).Max();
         if (menuSectors > MaxVobSectors) throw new InvalidOperationException("the menus take more than 1 GB, the size of one VOB file");
-        if (titleSectors > MaxVobSectors * 9) throw new InvalidOperationException("the titles take more than 9 VOB files of 1 GB");
 
-        var vts = VtsIfo(disc, menus, titles, frame, menuSectors, titleSectors);
-        var vtsSectors = vts.Length / Sector;
-        var vmg = VmgIfo(disc, titles, vts);
+        log("author: titles");
+        var placedSets = new List<(TitleSet Set, List<Placed> Titles, byte[] Ifo, long TotalSectors)>(allSets.Count);
+        for (var s = 0; s < allSets.Count; s++)
+        {
+            var set = allSets[s];
+            var placedTitles = Place(set.Titles, frame);
+            var titleSectors = placedTitles.SelectMany(t => t.Cells).Select(c => c.LastEnd + 1).Max();
+            if (titleSectors > MaxVobSectors * 9) throw new InvalidOperationException("the titles take more than 9 VOB files of 1 GB");
+            var setMenus = s == 0 ? menus : [];
+            var setMenuSectors = s == 0 ? menuSectors : 0;
+            var vts = VtsIfo(disc.Pal, set, setMenus, placedTitles, frame, setMenuSectors, titleSectors);
+            var totalSectors = 2L * (vts.Length / Sector) + setMenuSectors + titleSectors;
+            placedSets.Add((set, placedTitles, vts, totalSectors));
+        }
+
+        var vmg = VmgIfo(disc, placedSets);
         var vmgSectors = vmg.Length / Sector;
         BinaryPrimitives.WriteUInt32BigEndian(vmg.AsSpan(0x0C), (uint)(2 * vmgSectors - 1));
 
         File.WriteAllBytes(Path.Combine(dir, "VIDEO_TS.IFO"), vmg);
         File.WriteAllBytes(Path.Combine(dir, "VIDEO_TS.BUP"), vmg);
-        File.WriteAllBytes(Path.Combine(dir, "VTS_01_0.IFO"), vts);
-        File.WriteAllBytes(Path.Combine(dir, "VTS_01_0.BUP"), vts);
-        log("author: menu VOB");
-        if (menus.Count > 0) CopyVobs(menus, 1, disc.Pal, [Path.Combine(dir, "VTS_01_0.VOB")], long.MaxValue, true);
-        log("author: title VOBs");
-        CopyVobs(titles, disc.Subtitles.Count, disc.Pal, Enumerable.Range(1, 9).Select(i => Path.Combine(dir, $"VTS_01_{i}.VOB")).ToList(), MaxVobSectors, false);
+        for (var s = 0; s < placedSets.Count; s++)
+        {
+            var n = s + 1;
+            var (set, placedTitles, vts, _) = placedSets[s];
+            File.WriteAllBytes(Path.Combine(dir, $"VTS_{n:00}_0.IFO"), vts);
+            File.WriteAllBytes(Path.Combine(dir, $"VTS_{n:00}_0.BUP"), vts);
+            if (s == 0 && menus.Count > 0)
+            {
+                log("author: menu VOB");
+                CopyVobs(menus, 1, disc.Pal, [Path.Combine(dir, "VTS_01_0.VOB")], long.MaxValue, true);
+            }
+            log(placedSets.Count > 1 ? $"author: title VOBs (VTS_{n:00})" : "author: title VOBs");
+            CopyVobs(placedTitles, set.Subtitles.Count, disc.Pal, Enumerable.Range(1, 9).Select(i => Path.Combine(dir, $"VTS_{n:00}_{i}.VOB")).ToList(), MaxVobSectors, false);
+        }
     }
 
     /// <summary>Reads the units of each chain's stream and cuts it into cells at its chapters: a cell starts on the first unit at or after its time.</summary>
@@ -385,9 +410,8 @@ public static class Authoring
         return [(byte)(known ? 0x01 : 0), 0, (byte)(known ? lang[0] : 0), (byte)(known ? lang[1] : 0), 0, 0];
     }
 
-    static byte[] VtsIfo(DvdDisc disc, List<Placed> menus, List<Placed> titles, int frame, long menuSectors, long titleSectors)
+    static byte[] VtsIfo(bool pal, TitleSet set, List<Placed> menus, List<Placed> titles, int frame, long menuSectors, long titleSectors)
     {
-        var pal = disc.Pal;
         var tables = new List<(int Pointer, byte[] Data)>();
 
         // chapters: each title's programs
@@ -410,7 +434,7 @@ public static class Authoring
             }
             tables.Add((0xC8, b));
         }
-        tables.Add((0xCC, PgcTable(titles.Select(t => Pgc(t.Chain, t.Cells, pal, disc.Audio.Count, disc.Subtitles.Count, false, disc.Wide)).ToList(), i => 0x80000000u | (uint)(i + 1) << 24)));
+        tables.Add((0xCC, PgcTable(titles.Select(t => Pgc(t.Chain, t.Cells, pal, set.Audio.Count, set.Subtitles.Count, false, set.Wide)).ToList(), i => 0x80000000u | (uint)(i + 1) << 24)));
         if (menus.Count > 0)
         {
             var lu = PgcTable(menus.Select(m => Pgc(m.Chain, m.Cells, pal, 1, m.Chain.Buttons is { Count: > 0 } ? 1 : 0, true)).ToList(), i => i == 0 ? 0x83000000u : 0);
@@ -429,7 +453,7 @@ public static class Authoring
                 var units = t.Cells.SelectMany(c => c.Units.Select(u => (u, c))).ToList();
                 var start = units[0].u.StartPts;
                 var length = units[^1].u.EndPts - start;
-                var second = (long)frame * (disc.Pal ? 25 : 30); // a DVD second is 25 or 30 frames, as in its BCD times: 1.001 s in NTSC
+                var second = (long)frame * (pal ? 25 : 30); // a DVD second is 25 or 30 frames, as in its BCD times: 1.001 s in NTSC
                 var unit = 1;
                 while (length / second / unit > 2047) unit++;
                 var entries = new List<uint>();
@@ -482,11 +506,11 @@ public static class Authoring
             ifo[0x155] = 1;
             SubAttributes("en").CopyTo(ifo, 0x156);
         }
-        VideoAttributes(pal, disc.Wide).CopyTo(ifo, 0x200);
-        ifo[0x203] = (byte)disc.Audio.Count;
-        for (var a = 0; a < disc.Audio.Count; a++) AudioAttributes(disc.Audio[a]).CopyTo(ifo, 0x204 + 8 * a);
-        ifo[0x255] = (byte)disc.Subtitles.Count;
-        for (var s = 0; s < disc.Subtitles.Count; s++) SubAttributes(disc.Subtitles[s]).CopyTo(ifo, 0x256 + 6 * s);
+        VideoAttributes(pal, set.Wide).CopyTo(ifo, 0x200);
+        ifo[0x203] = (byte)set.Audio.Count;
+        for (var a = 0; a < set.Audio.Count; a++) AudioAttributes(set.Audio[a]).CopyTo(ifo, 0x204 + 8 * a);
+        ifo[0x255] = (byte)set.Subtitles.Count;
+        for (var s = 0; s < set.Subtitles.Count; s++) SubAttributes(set.Subtitles[s]).CopyTo(ifo, 0x256 + 6 * s);
         return ifo;
     }
 
@@ -518,19 +542,55 @@ public static class Authoring
 
     // ---- the video manager's IFO
 
-    static byte[] VmgIfo(DvdDisc disc, List<Placed> titles, byte[] vts)
+    static byte[] VmgIfo(DvdDisc disc, List<(TitleSet Set, List<Placed> Titles, byte[] Ifo, long TotalSectors)> sets)
     {
         var fp = Pgc(new Chain(null, [], disc.FirstPlay, []), [], disc.Pal, 0, 0, false);
         if (0x400 + fp.Length > Sector) throw new InvalidOperationException("too many first-play commands");
-        var srpt = new byte[8 + 12 * titles.Count];
-        BinaryPrimitives.WriteUInt16BigEndian(srpt, (ushort)titles.Count);
+        var totalTitles = sets.Sum(s => s.Titles.Count);
+        var srpt = new byte[8 + 12 * totalTitles];
+        BinaryPrimitives.WriteUInt16BigEndian(srpt, (ushort)totalTitles);
         BinaryPrimitives.WriteUInt32BigEndian(srpt.AsSpan(4), (uint)(srpt.Length - 1));
-        // the Title key (and Pop-up, which a DVD player sends as Title) calls the manager's title menu: without one it does nothing. One with no picture
-        // that jumps to the root menu of the title set, as the Menu key shows it
+
+        // VMGM Title Menu: for single-VTS, jumps straight to VTS_01 root menu; for multi-VTS, routes g8 == 1..N to JumpTT(g8) and g8 == 0 to VTS_01 root menu.
         byte[]? titleMenu = null;
-        if (disc.Menus.Count > 0)
+        if (disc.Menus.Count > 0 || sets.Count > 1)
         {
-            var lu = PgcTable([Pgc(new Chain(null, [], [Vm.JumpRootMenu()], []), [], disc.Pal, 0, 0, true)], _ => 0x82000000u);
+            var pgcs = new List<byte[]>();
+            if (sets.Count == 1)
+            {
+                pgcs.Add(Pgc(new Chain(null, [], [Vm.JumpRootMenu()], []), [], disc.Pal, 0, 0, true));
+            }
+            else
+            {
+                const int perPgc = 35; // 35 * 3 + 2 = 107 <= 128 commands per PGC
+                var chunks = (totalTitles + perPgc - 1) / perPgc;
+                var fallback = disc.Menus.Count > 0 ? Vm.JumpRootMenu() : Vm.Exit();
+                for (var c = 0; c < chunks; c++)
+                {
+                    var from = c * perPgc + 1;
+                    var to = Math.Min(totalTitles, (c + 1) * perPgc);
+                    var cmds = new List<ulong>();
+                    if (c == 0) cmds.Add(Vm.Goto((chunks > 1 ? 3 : 2) + (to - from + 1) * 3, 8, Vm.Eq, 0));
+                    for (var t = from; t <= to; t++)
+                    {
+                        var nextLine = cmds.Count + 4; // 1-based line after Set + JumpTitle
+                        cmds.Add(Vm.Goto(nextLine, 8, Vm.Ne, t));
+                        cmds.Add(Vm.Set(8, 0));
+                        cmds.Add(Vm.JumpTitle(t));
+                    }
+                    if (c == 0 && chunks > 1)
+                    {
+                        cmds.Add(Vm.LinkPgc(2));
+                        cmds.Add(fallback); // line reached by g8 == 0 fast-path
+                    }
+                    else
+                    {
+                        cmds.Add(c + 1 < chunks ? Vm.LinkPgc(c + 2) : fallback);
+                    }
+                    pgcs.Add(Pgc(new Chain(null, [], cmds, []), [], disc.Pal, 0, 0, true));
+                }
+            }
+            var lu = PgcTable(pgcs, i => i == 0 ? 0x82000000u : 0u);
             titleMenu = new byte[16 + lu.Length];
             BinaryPrimitives.WriteUInt16BigEndian(titleMenu, 1);
             BinaryPrimitives.WriteUInt32BigEndian(titleMenu.AsSpan(4), (uint)(titleMenu.Length - 1));
@@ -538,47 +598,68 @@ public static class Authoring
             BinaryPrimitives.WriteUInt32BigEndian(titleMenu.AsSpan(12), 16);
             lu.CopyTo(titleMenu, 16);
         }
-        var ifoSectors = titleMenu == null ? 3 : 4;
-        for (var t = 0; t < titles.Count; t++)
-        {
-            var e = srpt.AsSpan(8 + 12 * t);
-            e[0] = 0x3C; // one sequential chain; jumps and calls anywhere
-            e[1] = 1;
-            BinaryPrimitives.WriteUInt16BigEndian(e[2..], (ushort)titles[t].Cells.Count);
-            e[6] = 1;
-            e[7] = (byte)(t + 1);
-            BinaryPrimitives.WriteUInt32BigEndian(e[8..], (uint)(2 * ifoSectors)); // the title set starts after this IFO and its backup
-        }
-        var atrt = new byte[12 + 8 + 0x300];
-        BinaryPrimitives.WriteUInt16BigEndian(atrt, 1);
+
+        // VTS_ATRT: table of VTS attribute copies (0x300 bytes per VTS)
+        var atrtHead = 8 + 4 * sets.Count;
+        var atrt = new byte[atrtHead + sets.Count * (8 + 0x300)];
+        BinaryPrimitives.WriteUInt16BigEndian(atrt, (ushort)sets.Count);
         BinaryPrimitives.WriteUInt32BigEndian(atrt.AsSpan(4), (uint)(atrt.Length - 1));
-        BinaryPrimitives.WriteUInt32BigEndian(atrt.AsSpan(8), 12);
-        BinaryPrimitives.WriteUInt32BigEndian(atrt.AsSpan(12), 8 + 0x300 - 1);
-        Array.Copy(vts, 0x100, atrt, 20, 0x300);
+        for (var s = 0; s < sets.Count; s++)
+        {
+            var entryAt = atrtHead + s * (8 + 0x300);
+            BinaryPrimitives.WriteUInt32BigEndian(atrt.AsSpan(8 + 4 * s), (uint)entryAt);
+            BinaryPrimitives.WriteUInt32BigEndian(atrt.AsSpan(entryAt), 8 + 0x300 - 1);
+            Array.Copy(sets[s].Ifo, 0x100, atrt, entryAt + 8, 0x300);
+        }
+
+        static int SectorsOf(byte[] b) => (b.Length + Sector - 1) / Sector;
+        var srptAt = 1;
+        var atrtAt = srptAt + SectorsOf(srpt);
+        var titleMenuAt = atrtAt + SectorsOf(atrt);
+        var ifoSectors = titleMenu == null ? titleMenuAt : titleMenuAt + SectorsOf(titleMenu);
+
+        // Fill TT_SRPT now that VMG sector size is known
+        var globalIndex = 0;
+        long vtsStart = 2L * ifoSectors;
+        for (var s = 0; s < sets.Count; s++)
+        {
+            var placedTitles = sets[s].Titles;
+            for (var t = 0; t < placedTitles.Count; t++)
+            {
+                var e = srpt.AsSpan(8 + 12 * globalIndex++);
+                e[0] = 0x3C; // one sequential chain; jumps and calls anywhere
+                e[1] = 1;
+                BinaryPrimitives.WriteUInt16BigEndian(e[2..], (ushort)placedTitles[t].Cells.Count);
+                e[6] = (byte)(s + 1);
+                e[7] = (byte)(t + 1);
+                BinaryPrimitives.WriteUInt32BigEndian(e[8..], (uint)vtsStart);
+            }
+            vtsStart += sets[s].TotalSectors;
+        }
 
         var ifo = new byte[ifoSectors * Sector];
         var span = ifo.AsSpan();
         Encoding.ASCII.GetBytes("DVDVIDEO-VMG").CopyTo(ifo, 0);
-        BinaryPrimitives.WriteUInt32BigEndian(span[0x0C..], (uint)(2 * ifoSectors - 1)); // the manager: its IFO and the backup, no menu picture
+        BinaryPrimitives.WriteUInt32BigEndian(span[0x0C..], (uint)(2 * ifoSectors - 1));
         BinaryPrimitives.WriteUInt32BigEndian(span[0x1C..], (uint)(ifoSectors - 1));
         BinaryPrimitives.WriteUInt16BigEndian(span[0x20..], 0x0011);
         BinaryPrimitives.WriteUInt16BigEndian(span[0x26..], 1);
         BinaryPrimitives.WriteUInt16BigEndian(span[0x28..], 1);
         ifo[0x2A] = 1;
-        BinaryPrimitives.WriteUInt16BigEndian(span[0x3E..], 1);
+        BinaryPrimitives.WriteUInt16BigEndian(span[0x3E..], (ushort)sets.Count);
         Encoding.ASCII.GetBytes("BurnSmith").CopyTo(ifo, 0x40);
         BinaryPrimitives.WriteUInt32BigEndian(span[0x80..], (uint)(0x400 + fp.Length - 1));
         BinaryPrimitives.WriteUInt32BigEndian(span[0x84..], 0x400);
-        BinaryPrimitives.WriteUInt32BigEndian(span[0xC4..], 1);
-        BinaryPrimitives.WriteUInt32BigEndian(span[0xD0..], 2);
+        BinaryPrimitives.WriteUInt32BigEndian(span[0xC4..], (uint)srptAt);
+        BinaryPrimitives.WriteUInt32BigEndian(span[0xD0..], (uint)atrtAt);
         fp.CopyTo(ifo, 0x400);
-        srpt.CopyTo(ifo, Sector);
-        atrt.CopyTo(ifo, 2 * Sector);
+        srpt.CopyTo(ifo, srptAt * Sector);
+        atrt.CopyTo(ifo, atrtAt * Sector);
         if (titleMenu != null)
         {
-            BinaryPrimitives.WriteUInt32BigEndian(span[0xC8..], 3);
-            titleMenu.CopyTo(ifo, 3 * Sector);
-            Array.Copy(vts, 0x100, ifo, 0x100, 0x5C); // its attributes: those of the title set's menus
+            BinaryPrimitives.WriteUInt32BigEndian(span[0xC8..], (uint)titleMenuAt);
+            titleMenu.CopyTo(ifo, titleMenuAt * Sector);
+            Array.Copy(sets[0].Ifo, 0x100, ifo, 0x100, 0x5C); // its attributes: those of VTS_01's menus
         }
         return ifo;
     }

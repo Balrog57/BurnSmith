@@ -91,4 +91,10 @@ public static class Nav
 
     /// <summary>Show (and let the remote reach) button <paramref name="button"/>, or hide it.</summary>
     public static byte[] EnableButton(int button, bool enabled = true) => Command(0x31, 0x80, button, set: (byte)(enabled ? 0x04 : 0x05));
+
+    /// <summary>Close the HDMV pop-up menu and return control to the playing title (INSN_POPUP_OFF).</summary>
+    public static byte[] PopupOff() => Command(0x11, 0x00, set: 0x0B);
+
+    /// <summary>Jump to chapter mark <paramref name="mark"/> (0-based) within the currently playing playlist (INSN_LINK_MK).</summary>
+    public static byte[] LinkMark(int mark) => Command(0x22, 0x85, mark);
 }

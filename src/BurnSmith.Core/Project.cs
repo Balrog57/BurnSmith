@@ -13,7 +13,8 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
                              int ChapterMinutes = 5, EncodeOptions? Encode = null, PlaybackOptions? Playback = null, SubtitleStyle? Subtitles = null,
                              string? Output = null, double CapacityGB = 0, string? Out = null, bool Iso = false, int Trial = 0,
                              bool HdmvMenu = false, // Blu-ray: the menu as native HDMV navigation instead of the BD-J program (see Core.HdmvMenu)
-                             bool MaxCompat = false) // « Compatibilité maximale »: see Compatible
+                             bool MaxCompat = false, // « Compatibilité maximale »: see Compatible
+                             bool Avchd = false) // dedicated AVCHD (USB / SD) folder layout
 {
     public const string Extension = ".burnsmith";
 
@@ -53,7 +54,40 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
 
     public void Save(string file) => File.WriteAllText(file, ToJson());
 
-    public static Project Load(string file) => Parse(File.ReadAllText(file));
+    public static Project Load(string file)
+    {
+        var project = Parse(File.ReadAllText(file));
+        var dir = Path.GetDirectoryName(Path.GetFullPath(file));
+        return string.IsNullOrEmpty(dir) ? project : project.ResolvePaths(dir);
+    }
+
+    /// <summary>Resolves relative paths or moved files against <paramref name="projectDir"/> when their original full path no longer exists.</summary>
+    public Project ResolvePaths(string projectDir)
+    {
+        if (Titles is not { Count: > 0 }) return this;
+        string Resolve(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || File.Exists(path)) return path;
+            var combined = Path.GetFullPath(Path.Combine(projectDir, path));
+            if (File.Exists(combined)) return combined;
+            var beside = Path.Combine(projectDir, Path.GetFileName(path));
+            return File.Exists(beside) ? beside : path;
+        }
+        string? ResolveOpt(string? path) => path == null ? null : Resolve(path);
+        var resolved = Titles.Select(t => t with
+        {
+            Video = Resolve(t.Video),
+            External = t.External?.Select(e => e with { File = Resolve(e.File) }).ToList(),
+            AudioFiles = t.AudioFiles?.Select(a => a with { File = ResolveOpt(a.File) }).ToList(),
+            ThumbImage = ResolveOpt(t.ThumbImage),
+            Effects = t.Effects == null ? null : t.Effects with
+            {
+                Watermark = ResolveOpt(t.Effects.Watermark),
+                BurnSubtitle = ResolveOpt(t.Effects.BurnSubtitle)
+            }
+        }).ToList();
+        return this with { Titles = resolved };
+    }
 
     /// <summary>Where the window keeps the project it holds, rewritten after each change and reopened at its next start; never a file the user saved.</summary>
     public static string AutosaveFile() => Path.Combine(AppFiles.Root(), "autosave" + Extension);
@@ -193,9 +227,10 @@ public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Title
         var label = Label is { Length: > 0 } ? Label : "BURNSMITH";
         if (trial > 0) log($"trial disc: {trial} s of each video, in {dir}");
         if (Kind == "dvd") Dvd.Build(new DvdJob(list, dir, menu, ChapterMinutes, usable, Encode ?? new(FitDisc: true), Playback, Subtitles), log, cancel, progress);
-        else BluRay.Build(new BluRayJob(list, dir, menu, Kind == "uhd", label, ChapterMinutes, Encode ?? new(FitDisc: true), usable, Playback, Subtitles, HdmvMenu), log, cancel, progress);
+        else BluRay.Build(new BluRayJob(list, dir, menu, Kind == "uhd", label, ChapterMinutes, Encode ?? new(FitDisc: true), usable, Playback, Subtitles, HdmvMenu, Avchd), log, cancel, progress);
         File.Delete(IsoFile(dir)); // an image of an earlier build must never be burnt by mistake
-        var found = DiscCheck.Folder(dir, usable / 0.89);
+        var checkDir = Avchd && Kind != "dvd" ? Path.Combine(dir, "AVCHD") : dir;
+        var found = DiscCheck.Folder(checkDir, usable / 0.89);
         if (!Iso || found.Count > 0) return found;
         cancel.ThrowIfCancellationRequested();
         global::BurnSmith.Core.Iso.Build(dir, IsoFile(dir), label, Kind == "dvd", log, progress, cancel);

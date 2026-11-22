@@ -5,4 +5,7 @@
     <Project Path="src/BurnSmith.Core/BurnSmith.Core.csproj" />
     <Project Path="src/BurnSmith.Payload/BurnSmith.Payload.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BurnSmith.Tests/BurnSmith.Tests.csproj" />
+  </Folder>
 </Solution>

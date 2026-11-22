@@ -143,6 +143,8 @@ public partial class VideoEditWindow : Window
         SaturationSlider.Value = fx.Saturation;
         WhiteSlider.Value = fx.WhiteBalance;
         LookList.SelectedItem = LookList.Items.Cast<ListBoxItem>().FirstOrDefault(i => (string)i.Tag == fx.Look) ?? LookList.Items[0];
+        Pick(DeintBox, string.IsNullOrEmpty(fx.Deinterlace) ? "auto" : fx.Deinterlace);
+        DenoiseSlider.Value = Math.Clamp(fx.Denoise, 0, 100);
         (fx.WatermarkIsText ? WmTextRadio : WmPicRadio).IsChecked = true;
         WmTextBox.Text = fx.WatermarkText;
         WmFontBox.SelectedItem = fx.WatermarkFont;
@@ -194,7 +196,8 @@ public partial class VideoEditWindow : Window
             WatermarkWidth: text ? 0 : WmWidthSlider.Value / 100, WatermarkOpacity: 100 - (int)WmTransSlider.Value, WatermarkPlace: TagOf(WmPlaceBox),
             BurnSubtitle: burnFile, BurnFont: BurnFontBox.SelectedItem as string ?? "Arial", BurnSize: Math.Clamp(Int(BurnSizeBox.Text, 22), 6, 200),
             BurnBold: BurnBold.IsChecked == true, BurnItalic: BurnItalic.IsChecked == true, BurnColor: TagOf(BurnColorBox), BurnOpacity: 100 - (int)BurnTransSlider.Value,
-            BurnPosition: (int)BurnPosSlider.Value, BurnDelay: Math.Round(BurnDelaySlider.Value, 1));
+            BurnPosition: (int)BurnPosSlider.Value, BurnDelay: Math.Round(BurnDelaySlider.Value, 1),
+            Deinterlace: TagOf(DeintBox) is { Length: > 0 } deint ? deint : "auto", Denoise: (int)DenoiseSlider.Value);
         return fx with { Watermark = text ? TextPicture(fx) : wmPicture };
     }
 
@@ -849,6 +852,32 @@ public partial class VideoEditWindow : Window
         if (ready) ShowMarks();
     }
 
+    async void OnDetectScenes(object s, RoutedEventArgs e)
+    {
+        DetectScenesButton.IsEnabled = false;
+        DetectScenesButton.Content = "Analyse…";
+        try
+        {
+            var minGap = duration < 180 ? 10 : 60;
+            var detected = await Task.Run(() => DiscTitle.DetectSceneChapters(video, 0.35, minGap));
+            if (detected.Count == 0)
+            {
+                MessageBox.Show(this, "Aucun changement de scène marqué n'a été détecté dans cette vidéo.", "Chapitres", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            times.Clear();
+            times.AddRange(detected);
+            ChapCustom.IsChecked = true;
+            ShowTimes();
+        }
+        catch (Exception ex) { MessageBox.Show(this, "Détection des scènes impossible : " + ex.Message, "Chapitres", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally
+        {
+            DetectScenesButton.Content = "Détecter les scènes";
+            DetectScenesButton.IsEnabled = true;
+        }
+    }
+
     void OnInsert(object s, RoutedEventArgs e)
     {
         if (Timecode.Parse(AtBox.Text) is not { } t) t = -1;
@@ -906,7 +935,50 @@ public partial class VideoEditWindow : Window
     void OnDeleteAll(object s, RoutedEventArgs e)
     {
         times.Clear();
+        names.Clear();
         ShowTimes();
+    }
+
+    void OnImportChapters(object s, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog { Filter = Loc.Filter("Fichiers de chapitres|*.txt;*.xml;*.csv|Tous les fichiers|*.*"), Title = Loc.T("Importer des chapitres") };
+        if (dlg.ShowDialog(this) != true) return;
+        try
+        {
+            var imported = ChapterFiles.Load(dlg.FileName).Where(c => c.Time >= 0 && c.Time < duration).ToList();
+            if (imported.Count == 0)
+            {
+                MessageBox.Show(this, "Aucun chapitre valide trouvé dans ce fichier pour la durée de cette vidéo.", "Chapitres", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            ChapCustom.IsChecked = true;
+            times.Clear();
+            names.Clear();
+            foreach (var c in imported)
+            {
+                var t = Math.Round(c.Time, 1);
+                if (!times.Contains(t)) times.Add(t);
+                if (!string.IsNullOrWhiteSpace(c.Name)) names[t] = c.Name!;
+            }
+            times.Sort();
+            ShowTimes();
+        }
+        catch (Exception ex) when (ex is IOException or System.Xml.XmlException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, "Impossible de lire ce fichier de chapitres : " + ex.Message, "Chapitres", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    void OnExportChapters(object s, RoutedEventArgs e)
+    {
+        if (times.Count == 0)
+        {
+            MessageBox.Show(this, "La liste des chapitres est vide.", "Chapitres", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var dlg = new SaveFileDialog { Filter = Loc.Filter("Chapitres OGM (*.txt)|*.txt"), FileName = System.IO.Path.GetFileNameWithoutExtension(video) + "_chapitres.txt", Title = Loc.T("Exporter les chapitres") };
+        if (dlg.ShowDialog(this) != true) return;
+        File.WriteAllText(dlg.FileName, ChapterFiles.FormatOgm(times, times.Select(t => names.GetValueOrDefault(t)).ToList()), new System.Text.UTF8Encoding(false));
     }
 
     void OnOk(object s, RoutedEventArgs e)

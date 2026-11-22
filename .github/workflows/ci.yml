@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'
 
 permissions:
   contents: read
@@ -74,13 +77,21 @@ jobs:
       - name: Build, a warning is a failure
         run: dotnet build BurnSmith.slnx -c Release -warnaserror
 
+      - name: Unit tests
+        run: dotnet test tests/BurnSmith.Tests/BurnSmith.Tests.csproj -c Release --no-build
+
       # one check a step: a pwsh step reports only the exit code of its last command
       - name: check-update
         run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-update
 
-      # --no-dvd: the real DVD builds are slow, they run on a PC; each check names what it passes over
+      # --no-dvd on PR/push (fast); full DVD checks on nightly schedule / manual dispatch
       - name: check-edit
-        run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-edit --no-dvd
+        run: |
+          if ("${{ github.event_name }}" -eq "schedule" -or "${{ github.event_name }}" -eq "workflow_dispatch") {
+            ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-edit
+          } else {
+            ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-edit --no-dvd
+          }
 
       - name: check-elements
         run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-elements
@@ -107,4 +118,12 @@ jobs:
         run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-bd --no-dvd
 
       - name: check-reliability
-        run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-reliability --no-dvd
+        run: |
+          if ("${{ github.event_name }}" -eq "schedule" -or "${{ github.event_name }}" -eq "workflow_dispatch") {
+            ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-reliability
+          } else {
+            ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-reliability --no-dvd
+          }
+
+      - name: check-plan
+        run: ./src/BurnSmith.Cli/bin/Release/net10.0-windows/BurnSmith.Cli.exe check-plan

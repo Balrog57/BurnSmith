@@ -3,10 +3,71 @@ using System.Text.Json;
 
 namespace BurnSmith.Core;
 
-internal static class EncodeCache
+public static class EncodeCache
 {
-    static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BurnSmith", "encode-cache");
+    public static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BurnSmith", "encode-cache");
     const long Budget = 100_000_000_000;
+
+    /// <summary>Number of cached title entries and their total size in bytes.</summary>
+    public static (int Count, long Bytes) Stats()
+    {
+        if (!Directory.Exists(Root)) return (0, 0);
+        var count = 0;
+        var bytes = 0L;
+        foreach (var dir in Directory.EnumerateDirectories(Root))
+        {
+            if (Path.GetFileName(dir).StartsWith('.')) continue;
+            count++;
+            try { bytes += Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Sum(Tools.SizeOf); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        return (count, bytes);
+    }
+
+    /// <summary>Deletes all cached title preparations. Returns how many entries were removed.</summary>
+    public static int Clear()
+    {
+        if (!Directory.Exists(Root)) return 0;
+        var removed = 0;
+        foreach (var dir in Directory.EnumerateDirectories(Root))
+        {
+            if (Path.GetFileName(dir).StartsWith('.')) continue;
+            try { Directory.Delete(dir, true); removed++; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        return removed;
+    }
+
+    static void EvictLru(long neededBytes, long budget = Budget)
+    {
+        if (!Directory.Exists(Root)) return;
+        var entries = new List<(string Dir, DateTime LastUsed, long Bytes)>();
+        var total = 0L;
+        foreach (var dir in Directory.EnumerateDirectories(Root))
+        {
+            if (Path.GetFileName(dir).StartsWith('.')) continue;
+            try
+            {
+                var manifest = Path.Combine(dir, "files.json");
+                var used = File.Exists(manifest) ? File.GetLastWriteTimeUtc(manifest) : Directory.GetLastWriteTimeUtc(dir);
+                var size = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Sum(Tools.SizeOf);
+                entries.Add((dir, used, size));
+                total += size;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        if (total + neededBytes <= budget) return;
+        foreach (var entry in entries.OrderBy(e => e.LastUsed))
+        {
+            try
+            {
+                Directory.Delete(entry.Dir, true);
+                total -= entry.Bytes;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            if (total + neededBytes <= budget) break;
+        }
+    }
 
     static object Stamp(string path)
     {
@@ -71,6 +132,7 @@ internal static class EncodeCache
                         restored.Add(path);
                         Copy(Path.Combine(destination, file.Suffix), path);
                     }
+                    try { File.SetLastWriteTimeUtc(Path.Combine(destination, "files.json"), DateTime.UtcNow); } catch (IOException) { }
                     log($"Cache encodage : réutilisé ({Path.GetFileName(output)}).");
                     return;
                 }
@@ -95,6 +157,7 @@ internal static class EncodeCache
             if (files.Any(file => file.Bytes == 0)) return;
             Directory.CreateDirectory(Root);
             var bytes = files.Sum(file => file.Bytes);
+            EvictLru(bytes);
             if (bytes > new DriveInfo(Path.GetPathRoot(Root)!).AvailableFreeSpace
                 || bytes + Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories).Sum(Tools.SizeOf) > Budget)
             {

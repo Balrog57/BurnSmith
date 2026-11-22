@@ -159,6 +159,19 @@
               <ListBox x:Name="LookList" Height="190" SelectionChanged="OnFx" ScrollViewer.HorizontalScrollBarVisibility="Disabled" Background="{StaticResource InsetBrush}">
                 <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ListBox.ItemsPanel>
               </ListBox>
+              <TextBlock Text="Nettoyage et source entrelacée" Style="{StaticResource Section}" Margin="0,14,0,6"/>
+              <DockPanel Margin="0,0,0,8">
+                <TextBlock Text="Désentrelacer" Width="120" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+                <ComboBox x:Name="DeintBox" SelectionChanged="OnFx">
+                  <ComboBoxItem Content="Automatique (si source entrelacée)" Tag="auto"/>
+                  <ComboBoxItem Content="Activer (bwdif)" Tag="on"/>
+                  <ComboBoxItem Content="Désactiver" Tag="off"/>
+                </ComboBox>
+              </DockPanel>
+              <TextBlock Text="Réduction du bruit (grain / VHS / caméscope)" Style="{StaticResource Label}"/>
+              <Grid Margin="0,2,0,8"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="64"/></Grid.ColumnDefinitions>
+                <Slider x:Name="DenoiseSlider" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="OnFx"/>
+                <TextBlock Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center" Text="{Binding Value, ElementName=DenoiseSlider, StringFormat={}{0:0} %}"/></Grid>
               <TextBlock Text="Volume" Style="{StaticResource Section}" Margin="0,14,0,0"/>
               <Grid Margin="0,6,0,0">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
@@ -310,6 +323,9 @@
                 <Button Content="Supprimer" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnDelete"/>
                 <Button Content="Tout supprimer" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnDeleteAll"/>
                 <Button x:Name="FileChaptersButton" Content="Ceux du fichier" ToolTip="Remplace la liste par les chapitres que le fichier contient déjà" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnFileChapters"/>
+                <Button x:Name="DetectScenesButton" Content="Détecter les scènes" ToolTip="Détecte automatiquement les changements de scène (espacés d'au moins 1 min) pour créer des chapitres" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnDetectScenes"/>
+                <Button Content="Importer chapitres…" ToolTip="Importe un fichier de chapitres OGM (.txt), Matroska (.xml) ou liste de temps" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnImportChapters"/>
+                <Button Content="Exporter chapitres…" ToolTip="Enregistre la liste actuelle au format OGM (.txt)" Margin="0,6,0,0" HorizontalAlignment="Stretch" Click="OnExportChapters"/>
               </StackPanel>
             </Grid>
             <TextBlock Text="Les chapitres en dehors de la partie gardée sont ignorés." Style="{StaticResource Label}"/>

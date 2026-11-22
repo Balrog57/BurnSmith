@@ -67,6 +67,7 @@ public partial class AdvancedWindow : Window
         SubColorBox.ItemsSource = SubColors.Select(c => c.Name).Concat(SubColors.Any(c => c.Rgb == look.Rgb) ? [] : ["#" + look.Rgb]).ToList();
         SubColorBox.SelectedIndex = Array.FindIndex(SubColors, c => c.Rgb == look.Rgb) is var known and >= 0 ? known : SubColors.Length;
         SubPosSlider.Value = look.Lift;
+        SubHdrNitsSlider.Value = look.CalibratedNits > 0 ? look.CalibratedNits : 203;
 
         dvd = kind == "dvd";
         uhd = kind == "uhd";
@@ -90,6 +91,7 @@ public partial class AdvancedWindow : Window
         GpuBox.IsChecked = encode.Gpu;
         LosslessBox.IsChecked = encode.Lossless;
         CopyEac3Box.IsChecked = encode.CopyEac3;
+        NormalizeAudioBox.IsChecked = encode.NormalizeAudio;
         FpsBox.ItemsSource = Rates.Select(r => r == 0 ? "Comme la source" : r.ToString("0.###")).ToList();
         FpsBox.SelectedIndex = Math.Max(0, Array.IndexOf(Rates, encode.Fps ?? 0));
         SpeedBox.ItemsSource = Speeds.Select(q => q.Name).ToList();
@@ -102,8 +104,39 @@ public partial class AdvancedWindow : Window
         RememberPositionBox.Visibility = kind == "dvd" ? Visibility.Collapsed : Visibility.Visible;
         RememberPositionBox.IsChecked = playback.RememberPosition;
         ready = true;
+        RefreshCacheInfo();
+        _ = LoadGpuLabelAsync();
         OnMode(null!, null!);
         OnQuality(null!, null!);
+    }
+
+    async Task LoadGpuLabelAsync()
+    {
+        try
+        {
+            var (vendor, label) = await Task.Run(() => BluRay.HardwareGpu.Value);
+            GpuBox.Content = vendor == BluRay.GpuVendor.None
+                ? Loc.T("Convertir avec la carte graphique (aucun GPU détecté)")
+                : Loc.T("Convertir avec la carte graphique") + $" ({label})";
+        }
+        catch { }
+    }
+
+    void RefreshCacheInfo()
+    {
+        var (count, bytes) = EncodeCache.Stats();
+        CacheInfoText.Text = count == 0
+            ? "Cache des encodages : vide"
+            : $"Cache des encodages : {bytes / 1e9:0.00} Go ({count} titre{(count > 1 ? "s" : "")}, limite 100 Go)";
+        ClearCacheButton.IsEnabled = count > 0;
+    }
+
+    void OnClearCache(object s, RoutedEventArgs e)
+    {
+        if (MessageBox.Show(this, "Supprimer tous les titres en cache ? Les prochaines fabrications devront réencoder si nécessaire.",
+            "Vider le cache", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        EncodeCache.Clear();
+        RefreshCacheInfo();
     }
 
     int ChosenRate => QualityBox.SelectedIndex is var i && i > 0 && rates[i].Kbps > 0 ? rates[i].Kbps
@@ -119,7 +152,7 @@ public partial class AdvancedWindow : Window
             dvd ? Encode.BdKbps : Passthrough ? 0 : ChosenRate, dvd ? Encode.FitDisc : !Passthrough && QualityBox.SelectedIndex == 0, output.Hd720,
             TvPal.IsChecked == true ? true : TvNtsc.IsChecked == true ? false : null, Narrow.IsChecked != true,
             GpuBox.IsChecked == true, dvd ? Encode.Fps : FpsBox.SelectedIndex > 0 ? Rates[FpsBox.SelectedIndex] : null,
-            LosslessBox.IsChecked == true, CopyEac3Box.IsChecked == true);
+            LosslessBox.IsChecked == true, CopyEac3Box.IsChecked == true, NormalizeAudioBox.IsChecked == true);
     }
 
     void OnQuality(object s, RoutedEventArgs e)
@@ -157,7 +190,7 @@ public partial class AdvancedWindow : Window
         if (OutputBox.SelectedItem is Output output) Output = output;
         Encode = Current();
         var look = new SubtitleStyle(SubFontBox.SelectedIndex > 0 ? (string)SubFontBox.SelectedItem : null, SubSizeBox.SelectedItem is int size ? size : 100,
-                                     SubColorBox.SelectedIndex is var c and >= 0 && c < SubColors.Length ? SubColors[c].Rgb : ((string)SubColorBox.SelectedItem).TrimStart('#'), (int)SubPosSlider.Value);
+                                     SubColorBox.SelectedIndex is var c and >= 0 && c < SubColors.Length ? SubColors[c].Rgb : ((string)SubColorBox.SelectedItem).TrimStart('#'), (int)SubPosSlider.Value, (int)SubHdrNitsSlider.Value);
         Subtitles = look == new SubtitleStyle() ? null : look;
         var mode = Mode0.IsChecked == true ? 0 : Mode1.IsChecked == true ? 1 : 2;
         Playback = PlaybackOptions.FromMode(mode, mode == 0 ? Rewind0.IsChecked == true : mode == 1 ? Rewind1.IsChecked == true : true)

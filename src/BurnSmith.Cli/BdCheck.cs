@@ -935,7 +935,7 @@ static class BdCheck
             var log = new List<string>();
             var bdmv = Path.Combine(Bd("hdmv", [new DiscTitle(F("hdmv2audio.mkv"), Audio: [0, 1], ChapterAt: [0, 2, 4]), new DiscTitle(film, Bonus: true)],
                                        menu: new MenuDesign { Popup = true }, log: log.Add, hdmv: true), "BDMV");
-            Check("HDMV: no BD-J on the disc, and the log says what the menu leaves out", !new[] { "JAR", "BDJO" }.Any(d => Directory.Exists(Path.Combine(bdmv, d)) && Directory.EnumerateFiles(Path.Combine(bdmv, d)).Any()) && log.Any(l => l.Contains("pop-up")));
+            Check("HDMV: no BD-J on the disc, and the log records the native HDMV pop-up", !new[] { "JAR", "BDJO" }.Any(d => Directory.Exists(Path.Combine(bdmv, d)) && Directory.EnumerateFiles(Path.Combine(bdmv, d)).Any()) && log.Any(l => l.Contains("pop-up")));
             var pages = Directory.GetFiles(Path.Combine(bdmv, "PLAYLIST"), "001??.mpls").Length;
             Check("HDMV: a playlist, a video clip and a graphics clip per page", pages >= 3 && Enumerable.Range(0, pages * 2).All(k => File.Exists(Path.Combine(bdmv, "STREAM", $"{HdmvMenu.FirstClip + k:00000}.m2ts"))), $"{pages} pages");
             Check("HDMV 2D: video and IG clip pairs do not create any SSIF files", Udf.Interleaved(Path.GetDirectoryName(bdmv)!).Count == 0);

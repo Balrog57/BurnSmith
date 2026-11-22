@@ -58,19 +58,24 @@ public partial class MenuEditorWindow : Window
     public void ScrollProps(double? to = null)
     {
         UpdateLayout();
-        if ((Props.SelectedContent as ScrollViewer ?? InnerTabs?.SelectedContent as ScrollViewer) is not { } panel) return;
+        var panel = ElementInspectorPanel.Visibility == Visibility.Visible ? ElementInspectorPanel
+            : MenuSettingsPanel.Visibility == Visibility.Visible ? MenuSettingsPanel
+            : Props.SelectedContent as ScrollViewer;
+        if (panel == null) return;
         if (to is { } y) panel.ScrollToVerticalOffset(y); else panel.ScrollToEnd();
     }
 
     /// <summary>For the off-screen snapshot: the menu's language chosen in its list, as a click does ("fr" or "en").</summary>
     public void PickLanguage(string language) => LanguageBox.SelectedValue = language;
 
-    /// <summary>For the off-screen snapshot: which step is on show (see <see cref="ShowStep"/>) and which tab inside it (Pages: 0 buttons, 1 element, 2 texts, 3 style; Fond et musique: 0 background, 1 music).</summary>
+    /// <summary>For the off-screen snapshot: which step is on show (0 Modèle, 1 Personnaliser, 2 Aperçu) and optional drawer (tab=1 buttons, tab=2 backgrounds).</summary>
     public void ShowTabs(int? step, int? tab, bool withButton = false)
     {
-        if (step is { } st) ShowStep(st);
-        if (withButton && buttons.Count > 0) AddLibraryButton(buttons[0].Item, new System.Windows.Point(MenuBuilder.W / 2.0, MenuBuilder.H * 0.75)); // as a double click on the first button of the library does
-        if (tab is { } t && InnerTabs is { } inner) inner.SelectedIndex = Math.Clamp(t, 0, inner.Items.Count - 1);
+        if (step is { } st) ShowStep(st > 2 ? 2 : st);
+        if (withButton && buttons.Count > 0) AddLibraryButton(buttons[0].Item, new System.Windows.Point(MenuBuilder.W / 2.0, MenuBuilder.H * 0.75));
+        if (tab == 1) { drawerKind = "btn"; ShowStep(1); }
+        else if (tab == 2) { drawerKind = "bg"; ShowStep(1); }
+        ShowRightPanel();
         UpdateLayout();
     }
 
@@ -84,7 +89,7 @@ public partial class MenuEditorWindow : Window
         ColsBox.ItemsSource = new[] { 1, 2, 3, 4, 5 };
         RowsBox.ItemsSource = new[] { 1, 2, 3, 4 };
         working = design.Clone();
-        this.content = content;
+        this.content = baseContent = content;
         LoadCatalog();
         CustomList.ItemsSource = Templates.List();
         Props.DataContext = working;
@@ -127,22 +132,22 @@ public partial class MenuEditorWindow : Window
 
     // ---------------------------------------------------------------- undo / redo
     // one step per state the preview shows: the preview waits for a 250 ms pause, so a drag or a word typed is one step, not one per pixel or letter.
-    // shortcut: the names given to the videos on the pages (renamed) are not in the design, so undo leaves them; move them into it if that is missed
-    readonly Stack<(MenuDesign Design, string Json)> undo = new(), redo = new();
-    (MenuDesign Design, string Json)? kept; // the state last shown
+    readonly Stack<(MenuDesign Design, Dictionary<int, string> Renamed, string Json)> undo = new(), redo = new();
+    (MenuDesign Design, Dictionary<int, string> Renamed, string Json)? kept; // the state last shown
+    MenuContent baseContent;
 
-    /// <summary>The design as it is now becomes a step when it differs from the last one (a change not yet shown included).</summary>
+    /// <summary>The design and video renames as they stand become a step when they differ from the last one.</summary>
     void Remember()
     {
-        var json = System.Text.Json.JsonSerializer.Serialize(working);
+        var json = System.Text.Json.JsonSerializer.Serialize(new { working, renamed });
         if (kept?.Json == json) return;
         if (kept is { } previous) { undo.Push(previous); redo.Clear(); }
-        kept = (working.Clone(), json);
+        kept = (working.Clone(), new Dictionary<int, string>(renamed), json);
         UndoButton.IsEnabled = undo.Count > 0;
         RedoButton.IsEnabled = redo.Count > 0;
     }
 
-    void Step(Stack<(MenuDesign Design, string Json)> from, Stack<(MenuDesign Design, string Json)> to)
+    void Step(Stack<(MenuDesign Design, Dictionary<int, string> Renamed, string Json)> from, Stack<(MenuDesign Design, Dictionary<int, string> Renamed, string Json)> to)
     {
         if (editing != null) return; // a zone typed on the page: Escape or Enter first
         timer.Stop();
@@ -151,6 +156,9 @@ public partial class MenuEditorWindow : Window
         to.Push(now);
         kept = from.Pop();
         working = kept.Value.Design.Clone();
+        renamed.Clear();
+        foreach (var kv in kept.Value.Renamed) renamed[kv.Key] = kv.Value;
+        content = Named(baseContent);
         sel = null; // the elements are copies now
         UndoButton.IsEnabled = undo.Count > 0;
         RedoButton.IsEnabled = redo.Count > 0;
@@ -178,6 +186,8 @@ public partial class MenuEditorWindow : Window
         e.Handled = true;
     }
 
+    bool sceneModeSync;
+
     void Rebind()
     {
         Props.DataContext = null;
@@ -188,9 +198,78 @@ public partial class MenuEditorWindow : Window
         SelectBackground();
         HlBox.SelectedValue = working.HighlightStyle;
         LanguageBox.SelectedValue = working.ButtonLanguage;
+        sceneModeSync = true;
+        SceneModeBox.SelectedIndex = working.ScenesOnly ? 3 : working.SceneList ? 2 : working.Thumbnails ? 0 : 1;
+        sceneModeSync = false;
         RefreshElemList();
         ShowElem();
         Dirty();
+    }
+
+    void OnPickSceneMode(object s, SelectionChangedEventArgs e)
+    {
+        if (sceneModeSync || SceneModeBox.SelectedIndex < 0) return;
+        switch (SceneModeBox.SelectedIndex)
+        {
+            case 0: working.Thumbnails = true; working.SceneList = false; working.ScenesOnly = false; break;
+            case 1: working.Thumbnails = false; working.SceneList = false; working.ScenesOnly = false; break;
+            case 2: working.Thumbnails = false; working.SceneList = true; working.ScenesOnly = false; break;
+            case 3: working.Thumbnails = true; working.SceneList = false; working.ScenesOnly = true; break;
+        }
+        Dirty();
+    }
+
+    static readonly string[] PaletteSwatches =
+    [
+        "#FFFFFF", "#F4EFE6", "#D6DCE5", "#8B95A5", "#2B303A", "#14161B", "#08090C", "#000000",
+        "#E50914", "#C93B47", "#E67E22", "#F1C40F", "#2ECC71", "#1ABC9C", "#3498DB", "#9B59B6",
+        "#7F1D1D", "#78350F", "#1E3A5F", "#0F2942", "#1B4332", "#312E81", "#4C1D95", "#27272A",
+    ];
+
+    void OnSwatchClick(object s, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (s is not System.Windows.Controls.Border swatch || swatch.Parent is not DockPanel row) return;
+        var box = row.Children.OfType<TextBox>().FirstOrDefault();
+        if (box == null || !box.IsEnabled) return;
+        var popup = new System.Windows.Controls.Primitives.Popup
+        {
+            PlacementTarget = swatch,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            StaysOpen = false,
+            AllowsTransparency = true,
+        };
+        var grid = new System.Windows.Controls.Primitives.UniformGrid { Columns = 8 };
+        foreach (var hex in PaletteSwatches)
+        {
+            var btn = new Button
+            {
+                Width = 24, Height = 24, Margin = new Thickness(2), Padding = new Thickness(0),
+                Background = new System.Windows.Media.BrushConverter().ConvertFromString(hex) as System.Windows.Media.Brush,
+                BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(90, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                ToolTip = hex,
+                Cursor = System.Windows.Input.Cursors.Hand,
+            };
+            btn.Click += (_, _) =>
+            {
+                box.Text = hex;
+                box.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+                popup.IsOpen = false;
+            };
+            grid.Children.Add(btn);
+        }
+        var frame = new System.Windows.Controls.Border
+        {
+            Background = TryFindResource("SurfaceBrush") as System.Windows.Media.Brush ?? System.Windows.Media.Brushes.Black,
+            BorderBrush = TryFindResource("OutlineBrush") as System.Windows.Media.Brush ?? System.Windows.Media.Brushes.Gray,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(6),
+            Child = grid,
+        };
+        popup.Child = frame;
+        popup.IsOpen = true;
+        e.Handled = true;
     }
 
     void LoadCatalog()
@@ -472,1291 +551,4 @@ public partial class MenuEditorWindow : Window
         DrawMarks();
     }
 
-    // ---------------------------------------------------------------- the zones the template offers (see MenuZone)
-
-    readonly Dictionary<int, string> renamed = [];
-    List<string> panelZones = [];
-    TextBox? editing;
-
-    /// <summary>The videos the user renamed on the menu's pages: playlist number (in the disc's order, see MainWindow.DiscOrder) and name.</summary>
-    public IReadOnlyDictionary<int, string> RenamedTitles => renamed;
-
-    /// <summary>The disc's facts changed behind the open editor (its pictures have arrived): the names written here stay.</summary>
-    public void UseContent(MenuContent c)
-    {
-        content = Named(c);
-        Dirty();
-    }
-
-    MenuContent Named(MenuContent c)
-    {
-        List<TitleEntry>? Rename(IReadOnlyList<TitleEntry>? list) => list?.Select(t => renamed.TryGetValue(t.Playlist, out var name) ? t with { Name = name } : t).ToList();
-        return c with { Titles = Rename(c.Titles), Bonus = Rename(c.Bonus) };
-    }
-
-    string ZoneValue(string key)
-    {
-        if (key == "title") return working.Title;
-        if (key.StartsWith("slot:")) return working.TextZones.GetValueOrDefault(key[5..], "");
-        if (!key.StartsWith("name:")) return "";
-        var playlist = int.Parse(key[5..]);
-        return (content.Titles ?? []).Concat(content.Bonus ?? []).FirstOrDefault(t => t.Playlist == playlist)?.Name ?? "";
-    }
-
-    void SetZone(string key, string value)
-    {
-        if (key == "title") working.Title = value;
-        else if (key.StartsWith("slot:"))
-        {
-            if (value.Trim().Length > 0) working.TextZones[key[5..]] = value;
-            else working.TextZones.Remove(key[5..]);
-        }
-        else if (key.StartsWith("name:") && value.Trim().Length > 0) // a video keeps a name
-        {
-            renamed[int.Parse(key[5..])] = value.Trim();
-            content = Named(content);
-        }
-    }
-
-    static string ZoneName(string key) =>
-        key == "slot:info" ? "Ligne d'information"
-        : key.StartsWith("slot:overview") ? "Texte " + key[13..]
-        : key.StartsWith("name:") ? "Nom de la vidéo " + key[5..]
-        : key;
-
-    /// <summary>The same zones as text boxes in the Menu tab, for the keyboard. Rebuilt only when the page offers others: a redraw must not take a box away from under the typing.</summary>
-    void FillZonePanel(bool force = false)
-    {
-        var keys = current?.Zones.Select(z => z.Key).Where(k => k is not "title" and not "poster").ToList() ?? [];
-        if (!force && keys.SequenceEqual(panelZones)) return;
-        panelZones = keys;
-        ZonePanel.Children.Clear();
-        foreach (var key in keys)
-        {
-            ZonePanel.Children.Add(new TextBlock { Text = ZoneName(key), Style = (Style)FindResource("Caption") });
-            var box = new TextBox { Text = ZoneValue(key), TextWrapping = TextWrapping.Wrap };
-            System.Windows.Automation.AutomationProperties.SetName(box, ZoneName(key));
-            box.TextChanged += (_, _) => SetZone(key, box.Text); // the panel's own handler asks for the new preview
-            ZonePanel.Children.Add(box);
-        }
-    }
-
-    void DrawZone(MenuZone z)
-    {
-        var accent = AccentBrush();
-        var empty = z.Key.StartsWith("slot:") && z.Key != "slot:info" && ZoneValue(z.Key).Length == 0;
-        if (empty) // on the editor's screen only: an empty zone draws nothing on the disc
-        {
-            var hint = new TextBlock { Text = "Zone de texte du modèle : cliquez pour écrire", FontSize = 26, Opacity = 0.55, Foreground = System.Windows.Media.Brushes.White, IsHitTestVisible = false };
-            System.Windows.Controls.Canvas.SetLeft(hint, z.Rect.X + 8);
-            System.Windows.Controls.Canvas.SetTop(hint, z.Rect.Y + 8);
-            StageCanvas.Children.Add(hint);
-        }
-        var shape = new System.Windows.Shapes.Rectangle
-        {
-            Width = z.Rect.W, Height = z.Rect.H, Fill = System.Windows.Media.Brushes.Transparent, StrokeThickness = 3, StrokeDashArray = [6, 4],
-            Stroke = empty ? accent : null, Cursor = z.Key == "poster" ? System.Windows.Input.Cursors.Hand : System.Windows.Input.Cursors.IBeam,
-            ToolTip = z.Key == "poster" ? "Changer l'image" : "Cliquez pour écrire",
-        };
-        System.Windows.Controls.Canvas.SetLeft(shape, z.Rect.X);
-        System.Windows.Controls.Canvas.SetTop(shape, z.Rect.Y);
-        shape.MouseEnter += (_, _) =>
-        {
-            shape.Stroke = accent;
-            // a name drawn on its button: the button under it stays the one selected, as without the zone
-            var (x, y) = (z.Rect.X + z.Rect.W / 2, z.Rect.Y + z.Rect.H / 2);
-            Select(current?.Buttons.FirstOrDefault(b => x >= b.Rect.X && x < b.Rect.X + b.Rect.W && y >= b.Rect.Y && y < b.Rect.Y + b.Rect.H)?.Id);
-        };
-        shape.MouseLeave += (_, _) => shape.Stroke = empty ? accent : null;
-        shape.MouseLeftButtonDown += (_, me) =>
-        {
-            me.Handled = true;
-            if (sel != null) SelectElem(null);
-            if (z.Key == "poster") PosterMenu(); else BeginZoneEdit(z);
-        };
-        StageCanvas.Children.Add(shape);
-    }
-
-    /// <summary>For the off-screen snapshot (<c>undo</c>): two titles typed in the box, undone twice, redone once; the status line says whether each step came back.</summary>
-    public async Task TryUndo()
-    {
-        var start = TitleBox.Text;
-        TitleBox.Text = start + " A"; await Task.Delay(700);
-        TitleBox.Text = start + " B"; await Task.Delay(700);
-        Undo(); var one = TitleBox.Text; await Task.Delay(700);
-        Undo(); var two = TitleBox.Text; await Task.Delay(700);
-        Redo(); var three = TitleBox.Text; await Task.Delay(700);
-        var ok = one == start + " A" && two == start && three == start + " A" && working.Title == three && RedoButton.IsEnabled;
-        Status.Text = $"undo {(ok ? "ok" : "FAIL")}: {one} | {two} | {three}";
-    }
-
-    /// <summary>For the off-screen snapshot (<c>zones</c>): writes in the page's zones as a click then Enter does, and types in one that Escape gives back.</summary>
-    public void TryZones()
-    {
-        void Write(string key, string text, bool keep)
-        {
-            if (current?.Zones.FirstOrDefault(z => z.Key == key) is not { } zone) return;
-            BeginZoneEdit(zone);
-            editing!.Text = text;
-            EndZoneEdit(keep);
-        }
-        Write("slot:info", "2018 | Action, Drame", true);
-        Write("slot:overview1", "Ne doit pas rester", false);
-        Write("slot:overview2", "Distribution : William Zabka, Ralph Macchio", true);
-        Write("slot:overview4", "Trente ans après le tournoi de 1984, Johnny Lawrence rouvre le dojo Cobra Kai, ce qui ravive sa rivalité avec Daniel LaRusso. Une histoire de rédemption et de vieilles rancunes, assez longue pour passer à la ligne dans sa zone.", true);
-        Write("name:2", "S01E02 - Frappe en premier", true);
-    }
-
-    void BeginZoneEdit(MenuZone z)
-    {
-        EndZoneEdit(true); // a click on another zone: what was typed in the first one stays
-        var box = new TextBox
-        {
-            Text = ZoneValue(z.Key), Width = Math.Max(z.Rect.W, 300), MinHeight = z.Rect.H, FontSize = Math.Clamp(z.Rect.H * 0.6, 24, 34),
-            TextWrapping = z.Rect.H >= 100 ? TextWrapping.Wrap : TextWrapping.NoWrap, Tag = z.Key,
-        };
-        System.Windows.Automation.AutomationProperties.SetName(box, ZoneName(z.Key));
-        System.Windows.Controls.Canvas.SetLeft(box, Math.Min(z.Rect.X, MenuBuilder.W - box.Width));
-        System.Windows.Controls.Canvas.SetTop(box, z.Rect.Y);
-        box.LostKeyboardFocus += (_, _) => EndZoneEdit(true);
-        box.Loaded += (_, _) => { box.Focus(); box.SelectAll(); };
-        editing = box;
-        StageCanvas.Children.Add(box);
-    }
-
-    void EndZoneEdit(bool keep)
-    {
-        if (editing is not { } box) return;
-        editing = null; // first: taking the box off the page takes its focus, which comes back here
-        if (box.IsKeyboardFocusWithin) Stage.Focus(); // given away now: left to Windows, it would come back after the next box took it, and close that box
-        StageCanvas.Children.Remove(box);
-        if (keep) SetZone((string)box.Tag, box.Text);
-        FillZonePanel(true);
-        DrawStage();
-        Rebind();
-    }
-
-    void PosterMenu()
-    {
-        var menu = new ContextMenu();
-        var pick = new MenuItem { Header = "Choisir une image…" };
-        pick.Click += (_, _) =>
-        {
-            var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image du menu") };
-            if (dlg.ShowDialog(this) != true) return;
-            try
-            {
-                working.Poster = ElementLibrary.Reference(ElementLibrary.Import(dlg.FileName).Path);
-                Dirty();
-            }
-            catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
-            {
-                MessageBox.Show(this, ex.Message, "BurnSmith");
-            }
-        };
-        var film = new MenuItem { Header = "Reprendre l'image du film", IsEnabled = working.Poster != null };
-        film.Click += (_, _) => { working.Poster = null; Dirty(); };
-        menu.Items.Add(pick);
-        menu.Items.Add(film);
-        menu.IsOpen = true;
-    }
-
-    void Select(string? id)
-    {
-        if (id == null || id == focusId || current?.Buttons.Any(b => b.Id == id) != true) return;
-        focusId = id;
-        DrawStage();
-    }
-
-    async void GoTo(string id, bool first = true)
-    {
-        if (shot is not { } s || s.Pages.FirstOrDefault(p => p.Id == id) is not { } page) return;
-        var request = ++navigationRequest;
-        var mine = version;
-        try
-        {
-            if (!s.Cache.TryGetValue(id, out var images))
-            {
-                images = await Task.Run(() => MenuRenderer.Sta(() => DrawPage(s.Design, page)));
-                s.Cache[id] = images;
-            }
-            if (mine != version || shot != s || request != navigationRequest) return;
-            if (first) focusId = null;
-            Show(page, images);
-        }
-        catch (Exception ex)
-        {
-            if (mine == version && shot == s && request == navigationRequest) Status.Text = "Aperçu impossible : " + ex.Message;
-        }
-    }
-
-    /// <summary>What Enter does on the disc: a page opens, a playing button says what would play, audio / subtitle move the marker.</summary>
-    async void Activate(MenuButton b)
-    {
-        var a = b.Action;
-        switch (a.Kind)
-        {
-            case "page":
-                GoTo(a.Page ?? "root");
-                Status.Text = "";
-                break;
-            case "play":
-                previewPlaying = a.Playlist;
-                previewChain = Playback.PlayAll && a.Playlist <= (content.Titles?.Count ?? 1);
-                Status.Text = $"▶ Sur le disque : lecture du titre {a.Playlist}.";
-                break;
-            case "chapter":
-                previewPlaying = a.Playlist;
-                previewChain = Playback.PlayAll && a.Playlist <= (content.Titles?.Count ?? 1);
-                if (IsPreviewingPopup && shot?.Pages.FirstOrDefault() is { } root) GoTo(root.Id);
-                Status.Text = $"▶ Sur le disque : lecture du titre {a.Playlist} à partir du chapitre {a.Mark + 1}.";
-                break;
-            case "playall":
-                previewPlaying = a.Playlist;
-                previewChain = true;
-                Status.Text = $"▶ Sur le disque : lecture de {a.Mark} titre(s) à la suite.";
-                break;
-            case "resume":
-                if (shot?.Pages.FirstOrDefault() is { } origin) GoTo(origin.Id);
-                Status.Text = $"▶ Reprise du titre {previewPlaying}.";
-                break;
-            case "popup":
-                if (previewPlaying is int playing) GoTo($"pop{playing}");
-                break;
-            case "menu":
-                previewPlaying = null;
-                if (shot?.Pages.FirstOrDefault() is { } main) GoTo(main.Id);
-                break;
-            case "audio" or "sub":
-                if (shot is not { } s || current is not { } settingsPage) return;
-                if (a.Kind == "audio") audioSel = a.Mark; else subSel = a.Mark;
-                var at = s.Pages.FindIndex(p => p.Id == settingsPage.Id);
-                if (at < 0) return;
-                var (audio, sub, design, facts) = (audioSel, subSel, s.Design, content with { PlainFocus = DvdPreview });
-                var request = ++trackRequest;
-                var navigation = navigationRequest;
-                try
-                {
-                    var page = await Task.Run(() => MenuRenderer.Sta(() => settingsPage.Id.StartsWith("pop", StringComparison.Ordinal)
-                        ? MenuBuilder.Popup(design, facts, facts.PopupTitles, audio, sub).First(p => p.Id == settingsPage.Id)
-                        : SettingsPreview(design, facts, settingsPage.Id, audio, sub)));
-                    if (shot != s || request != trackRequest) return;
-                    s.Pages[at] = page;
-                    s.Cache.Remove(page.Id);
-                    if (navigation == navigationRequest && current?.Id == page.Id) GoTo(page.Id, false);
-                }
-                catch (Exception ex)
-                {
-                    if (shot == s && request == trackRequest) Status.Text = "Aperçu impossible : " + ex.Message;
-                }
-                break;
-        }
-    }
-
-    /// <summary>A click on the page that misses the selected element's outline and handles lets go of it.</summary>
-    void OnStageMouse(object s, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        Stage.Focus();
-        if (sel != null && (e.OriginalSource as FrameworkElement)?.Tag as string != "element") SelectElem(null);
-    }
-
-    // ---------------------------------------------------------------- free elements (free placement)
-    MenuElement? sel;
-    bool elemSync;
-    const int Handle = 30, MinW = 40, MinH = 20; // size of a resize handle on the 1920x1080 page, smallest element
-
-    // a record, not a tuple: the combo binds to properties, and a tuple's fields are not (the page would show empty and fall back to "all")
-    sealed record PageChoice(string Value, string Label);
-
-    static readonly PageChoice[] PageChoices =
-    [
-        new("all", "Toutes les pages"), new("root", "Menu principal"), new("scenes", "Chapitres"), new("bonus", "Bonus"), new("settings", "Réglages"), new("credits", "Crédits"),
-    ];
-
-    void InitElements()
-    {
-        ElemPage.SelectedValuePath = "Value";
-        ElemPage.DisplayMemberPath = "Label";
-        ElemAlign.ItemsSource = new[] { "left", "center", "right" };
-        ElemLook.ItemsSource = new[] { new { Label = "(celui du thème)", Value = "" } }.Concat(ElementLibrary.ButtonStyles.Select(b => new { b.Label, b.Value })).ToList();
-        RefreshElemList();
-        ShowElem();
-    }
-
-    static string Describe(MenuElement e) => e.Kind switch
-    {
-        "button" => $"Bouton · {e.Page} · {(e.Text.Length > 0 ? e.Text : e.Image != null ? Path.GetFileName(e.Image) : "sans texte")} → {e.Target}",
-        "image" => $"Image · {e.Page} · {Path.GetFileName(e.Image ?? "")}",
-        "box" => $"Cadre · {e.Page} · {e.W}×{e.H}",
-        _ => $"Texte · {e.Page} · {(e.Text.Length > 24 ? e.Text[..24] + "…" : e.Text)}",
-    };
-
-    /// <summary>The accent as it is being typed: "#FFC83" is not a colour yet, and must not raise an error box at every move of the mouse.</summary>
-    System.Windows.Media.SolidColorBrush AccentBrush()
-    {
-        try { return new((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(working.Accent)); }
-        catch (FormatException) { return System.Windows.Media.Brushes.White; }
-    }
-
-    void RefreshElemList()
-    {
-        elemSync = true;
-        ElemList.ItemsSource = working.Elements.Select(Describe).ToList();
-        ElemList.SelectedIndex = sel == null ? -1 : working.Elements.IndexOf(sel);
-        elemSync = false;
-    }
-
-    /// <summary>Puts the selected element's values into the panel; the handlers stay quiet while it runs.</summary>
-    void ShowElem()
-    {
-        elemSync = true;
-        var on = sel != null;
-        foreach (var c in new FrameworkElement[] { ElemPage, ElemText, ElemImage, ElemFocus, ElemLook, ElemCopy, ElemX, ElemY, ElemW, ElemH, ElemSize, ElemColor, ElemFill, ElemBorder, ElemBorderW, ElemOpacity, ElemAlign, ElemTarget, ElemBold, ElemItalic, ElemBehind })
-            c.IsEnabled = on;
-        if (sel is { } e)
-        {
-            ElemPage.ItemsSource = PageChoices.Concat(working.CustomPages.Select(page => new PageChoice(page.Id, page.Title)))
-                .Concat(PageChoices.Any(page => page.Value == e.Page) || working.CustomPages.Any(page => page.Id == e.Page)
-                    ? [] : [new PageChoice(e.Page, e.Page)]).ToList();
-            ElemTarget.ItemsSource = new[] { "movie", "all", "root", "scenes1", "settings", "credits", "bonus1" }
-                .Concat(working.CustomPages.Select(page => page.Id)).Append(e.Target).Distinct().ToArray();
-            ElemPage.SelectedValue = e.Page;
-            ElemText.Text = e.Text;
-            ElemImage.Text = e.Image ?? "";
-            ElemFocus.Text = e.Focus ?? "";
-            ElemLook.SelectedValue = e.Look;
-            ElemX.Value = e.X;
-            ElemY.Value = e.Y;
-            ElemW.Value = Math.Clamp(e.W, 40, 1920);
-            ElemH.Value = Math.Clamp(e.H, 20, 1080);
-            ElemSize.Value = Math.Clamp(e.Size, 12, 160);
-            ElemColor.Text = e.Color;
-            ElemFill.Text = e.Fill;
-            ElemBorder.Text = e.Border;
-            ElemBorderW.Value = Math.Clamp(e.BorderWidth, 0, 16);
-            ElemOpacity.Value = Math.Clamp(e.Opacity, 0, 100);
-            ElemAlign.SelectedItem = e.Align;
-            ElemTarget.SelectedItem = e.Target;
-            ElemBold.IsChecked = e.Bold;
-            ElemItalic.IsChecked = e.Italic;
-            ElemBehind.IsChecked = e.Behind;
-            ElemText.IsEnabled = e.Kind != "image";
-        }
-        elemSync = false;
-    }
-
-    /// <summary>Takes the panel's values into the selected element and asks for a new preview.</summary>
-    void SyncElem()
-    {
-        if (elemSync || sel is not { } e) return;
-        e.Page = ElemPage.SelectedValue as string ?? MenuElement.AllPages;
-        e.Text = ElemText.Text;
-        e.Image = string.IsNullOrWhiteSpace(ElemImage.Text) ? null : ElemImage.Text.Trim();
-        e.Focus = string.IsNullOrWhiteSpace(ElemFocus.Text) ? null : ElemFocus.Text.Trim();
-        e.Look = ElemLook.SelectedValue as string ?? "";
-        e.X = (int)ElemX.Value;
-        e.Y = (int)ElemY.Value;
-        e.W = (int)ElemW.Value;
-        e.H = (int)ElemH.Value;
-        e.Size = (int)ElemSize.Value;
-        e.Color = ElemColor.Text;
-        e.Fill = ElemFill.Text;
-        e.Border = ElemBorder.Text;
-        e.BorderWidth = (int)ElemBorderW.Value;
-        e.Opacity = (int)ElemOpacity.Value;
-        e.Align = ElemAlign.SelectedItem as string ?? "left";
-        e.Target = ElemTarget.SelectedItem as string ?? "movie";
-        e.Bold = ElemBold.IsChecked == true;
-        e.Italic = ElemItalic.IsChecked == true;
-        e.Behind = ElemBehind.IsChecked == true;
-        RefreshElemList(); // not ElemList.Items[at] = …: a list filled through ItemsSource refuses it, with an error box at every keystroke
-        Dirty();
-    }
-
-    void SelectElem(MenuElement? e)
-    {
-        sel = e;
-        elemSync = true;
-        ElemList.SelectedIndex = e == null ? -1 : working.Elements.IndexOf(e);
-        elemSync = false;
-        if (e != null) { ShowStep(2); PageTabs.SelectedIndex = 1; } // the element's own settings, wherever the panel was
-        ShowElem();
-        DrawStage();
-    }
-
-    /// <param name="settings">Its settings come up (a text to type, a picture to choose); a button taken from the library leaves the library on show, for the next one.</param>
-    void AddElem(MenuElement e, bool settings = true)
-    {
-        if (e.IsButton) e.NavigationId = "u-" + Guid.NewGuid().ToString("N")[..10];
-        working.Elements.Add(e);
-        sel = e;
-        RefreshElemList();
-        if (settings) { ShowStep(2); PageTabs.SelectedIndex = 1; }
-        ShowElem();
-        Dirty();
-    }
-
-    string ElementPage => current?.Id is { } page && (page == "root" || page.StartsWith("custom-")) ? page : MenuElement.AllPages;
-
-    void OnAddText(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "text", Page = ElementPage, Text = "Votre texte", X = 140, Y = 140, W = 700, H = 90, Size = 48 });
-
-    void OnAddBox(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "box", Page = ElementPage, X = 120, Y = 780, W = 1680, H = 200, Opacity = 45, Radius = 24, BorderWidth = 0, Behind = true });
-
-    void OnAddButton(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "button", Page = ElementPage, Text = "Bouton", Target = "movie", X = 300, Y = 620, W = 400, H = 110, Size = 44 });
-
-    void OnAddImage(object s, RoutedEventArgs e) => AddElem(new MenuElement { Kind = "image", Page = ElementPage, X = 1500, Y = 60, W = 300, H = 300, Fit = true, BorderWidth = 0 });
-
-    void OnAddSubmenu(object s, RoutedEventArgs e)
-    {
-        if (Prompt.Ask(this, "Nom du sous-menu", "Sous-menu")?.Trim() is not { Length: > 0 } name) return;
-        var parent = current?.Id ?? "root";
-        var id = "custom-" + Guid.NewGuid().ToString("N")[..8];
-        working.CustomPages.Add(new(id, name, parent));
-        AddElem(new MenuElement { Kind = "button", Page = parent, Text = name, Target = id, X = 300, Y = 620, W = 400, H = 110, Size = 44 });
-    }
-
-    void OnRenameSubmenu(object s, RoutedEventArgs e)
-    {
-        var index = working.CustomPages.FindIndex(page => page.Id == current?.Id);
-        if (index < 0) return;
-        var page = working.CustomPages[index];
-        if (Prompt.Ask(this, "Nom du sous-menu", page.Title)?.Trim() is not { Length: > 0 } name) return;
-        working.CustomPages[index] = page with { Title = name };
-        foreach (var button in working.Elements.Where(element => element.IsButton && element.Target == page.Id && element.Text == page.Title))
-            button.Text = name;
-        RefreshElemList();
-        ShowElem();
-        Dirty();
-    }
-
-    void OnDirectionLink(object s, RoutedEventArgs e)
-    {
-        if (current is not { } page || page.Buttons.Count == 0) return;
-        var ids = string.Join(", ", page.Buttons.Select(button => button.Id));
-        var entry = Prompt.Ask(this, $"Bouton, flèche et cible ({ids})", $"{focusId ?? page.Buttons[0].Id} droite auto");
-        if (entry == null) return;
-        var words = entry.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        if (words is not [var button, var direction, var target]
-            || !page.Buttons.Any(item => item.Id == button)
-            || target != "-" && target != "auto" && !page.Buttons.Any(item => item.Id == target))
-        {
-            Status.Text = "Entrez un bouton, une flèche et un bouton cible. Utilisez auto ou - pour la cible.";
-            return;
-        }
-        var key = direction switch { "gauche" => "left", "droite" => "right", "haut" => "up", "bas" => "down", _ => null };
-        if (key == null) { Status.Text = "Indiquez gauche, droite, haut ou bas."; return; }
-        working.Directions.RemoveAll(link => link.Page == page.Id && link.Button == button && link.Direction == key);
-        if (target != "auto") working.Directions.Add(new(page.Id, button, key, target));
-        Dirty();
-    }
-
-    void OnRemoveSubmenu(object s, RoutedEventArgs e)
-    {
-        if (working.CustomPages.FirstOrDefault(page => page.Id == current?.Id) is not { } selected) return;
-        if (working.CustomPages.Any(page => page.Parent == selected.Id))
-        {
-            Status.Text = "Retirez d’abord ses sous-menus enfants.";
-            return;
-        }
-        working.CustomPages.Remove(selected);
-        working.Elements.RemoveAll(element => element.Page == selected.Id || element.IsButton && element.Target == selected.Id);
-        working.Directions.RemoveAll(link => link.Page == selected.Id);
-        SelectElem(null);
-        RefreshElemList();
-        Dirty();
-    }
-
-    void OnElemPick(object s, SelectionChangedEventArgs e)
-    {
-        if (elemSync) return;
-        var at = ElemList.SelectedIndex;
-        SelectElem(at >= 0 && at < working.Elements.Count ? working.Elements[at] : null);
-    }
-
-    void OnElemText(object s, TextChangedEventArgs e) => SyncElem();
-    void OnElemSlide(object s, RoutedPropertyChangedEventArgs<double> e) => SyncElem();
-    void OnElemPickEvent(object s, SelectionChangedEventArgs e) => SyncElem();
-    void OnElemToggle(object s, RoutedEventArgs e) => SyncElem();
-
-    void OnElemImage(object s, RoutedEventArgs e)
-    {
-        if (sel is not { } el) return;
-        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image de l'élément") };
-        if (dlg.ShowDialog(this) != true) return;
-        try
-        {
-            el.Image = ElementLibrary.Import(dlg.FileName).Path;
-            ShowElem();
-            Dirty();
-        }
-        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
-        {
-            MessageBox.Show(this, ex.Message, "BurnSmith");
-        }
-    }
-
-    /// <summary>The picture a button image shows while it is selected (its "sub" twin). Stored where it is: a file that moves falls back to the theme's frame.</summary>
-    void OnElemFocus(object s, RoutedEventArgs e)
-    {
-        if (sel is not { } el) return;
-        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image du bouton sélectionné") };
-        if (dlg.ShowDialog(this) != true) return;
-        el.Focus = dlg.FileName;
-        ShowElem();
-        Dirty();
-    }
-
-    void OnElemDuplicate(object s, RoutedEventArgs e)
-    {
-        if (sel is not { } el) return;
-        var copy = el.Copy();
-        copy.X = Math.Min(el.X + 40, MenuBuilder.W - 8);
-        copy.Y = Math.Min(el.Y + 40, MenuBuilder.H - 8);
-        AddElem(copy);
-    }
-
-    void OnElemDelete(object s, RoutedEventArgs e)
-    {
-        if (sel is not { } el) return;
-        working.Elements.Remove(el);
-        SelectElem(null);
-        RefreshElemList();
-        Dirty();
-    }
-
-    // ---------------------------------------------------------------- the library onto the page
-
-    /// <summary>The page on show as an element's page: its kind ("scenes2" is "scenes"), so what is dropped belongs to that kind of page.</summary>
-    string PageOfCurrent()
-    {
-        var kind = new string((current?.Id ?? "root").TakeWhile(char.IsAsciiLetter).ToArray());
-        return kind is "root" or "scenes" or "bonus" or "settings" or "credits" ? kind : MenuElement.AllPages;
-    }
-
-    /// <summary>Sets a library picture as the page background. An installed template draws its own: the picture then replaces it, after a question.</summary>
-    void ApplyBackground(Element picked)
-    {
-        if (working.TemplateDir != null)
-        {
-            if (MessageBox.Show(this, "Ce fond remplace celui du modèle : ses boutons et sa mise en page deviennent les vôtres (police, boutons, grille, couleurs).\n\nContinuer ?",
-                                "Fond", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-            working.TemplateDir = null;
-        }
-        working.BackgroundImage = ElementLibrary.Reference(picked.Path);
-        Rebind();
-    }
-
-    /// <summary>A library button becomes a button element centred on <paramref name="at"/> (page coordinates): a picture button keeps its picture's proportions.</summary>
-    void AddLibraryButton(ElementLibrary.ButtonItem item, System.Windows.Point at)
-    {
-        int w = 400, h = 110;
-        var el = new MenuElement { Kind = "button", Page = PageOfCurrent(), Target = "movie", Size = 44 };
-        if (item.Normal != null)
-        {
-            el.Image = ElementLibrary.Reference(item.Normal);
-            el.Focus = item.Focus == null ? null : ElementLibrary.Reference(item.Focus);
-            if (MenuRenderer.Size(item.Normal) is { } size)
-            {
-                var k = Math.Min(1.0, 600.0 / size.W); // a picture made for a 1080p page stays as it is, a bigger one is brought down
-                w = Math.Max(60, (int)(size.W * k));
-                h = Math.Max(30, (int)(size.H * k));
-            }
-        }
-        else
-        {
-            el.Look = item.Style ?? "";
-            el.Text = "Bouton";
-        }
-        el.W = w;
-        el.H = h;
-        el.X = (int)Math.Clamp(at.X - w / 2.0, 0, MenuBuilder.W - w);
-        el.Y = (int)Math.Clamp(at.Y - h / 2.0, 0, MenuBuilder.H - h);
-        AddElem(el, settings: false);
-    }
-
-    void OnLibraryDown(object s, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        pressedAt = e.GetPosition(null);
-        pressed = e.OriginalSource is DependencyObject d && System.Windows.Controls.ItemsControl.ContainerFromElement((ListBox)s, d) is ListBoxItem item ? item.DataContext : null;
-    }
-
-    /// <summary>Pulling a library item away from the list starts a drag; letting it go on the page applies it.</summary>
-    void OnLibraryMove(object s, System.Windows.Input.MouseEventArgs e)
-    {
-        if (pressed == null || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed) { pressed = null; return; }
-        var d = pressedAt - e.GetPosition(null);
-        if (Math.Abs(d.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(d.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-        dragging = pressed;
-        pressed = null;
-        try { DragDrop.DoDragDrop((DependencyObject)s, new DataObject("burnsmith-library", "item"), DragDropEffects.Copy); }
-        finally { dragging = null; }
-    }
-
-    void OnStageDragOver(object s, DragEventArgs e)
-    {
-        e.Effects = dragging is Element or ButtonCard ? DragDropEffects.Copy : DragDropEffects.None;
-        e.Handled = true;
-    }
-
-    void OnStageDrop(object s, DragEventArgs e)
-    {
-        var at = e.GetPosition(StageCanvas);
-        switch (dragging)
-        {
-            case Element picture: ApplyBackground(picture); break;
-            case ButtonCard card: AddLibraryButton(card.Item, at); break;
-        }
-        e.Handled = true;
-    }
-
-    void OnBgDouble(object s, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (e.OriginalSource is DependencyObject d && System.Windows.Controls.ItemsControl.ContainerFromElement(BgList, d) is ListBoxItem { DataContext: Element picked }) ApplyBackground(picked);
-    }
-
-    void OnBtnDouble(object s, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (e.OriginalSource is DependencyObject d && System.Windows.Controls.ItemsControl.ContainerFromElement(BtnList, d) is ListBoxItem { DataContext: ButtonCard card })
-            AddLibraryButton(card.Item, new System.Windows.Point(MenuBuilder.W / 2.0, MenuBuilder.H * 0.75));
-    }
-
-    void OnBtnPick(object s, SelectionChangedEventArgs e) => BtnRemove.IsEnabled = (BtnList.SelectedItem as ButtonCard)?.Item.Removable == true;
-
-    /// <summary>Adds a button picture to your library: the picture, then (it may be left out) the one it shows when selected.</summary>
-    void OnBtnImport(object s, RoutedEventArgs e)
-    {
-        var filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*";
-        var normal = new OpenFileDialog { Filter = filter, Title = Loc.T("Image du bouton") };
-        if (normal.ShowDialog(this) != true) return;
-        var focus = new OpenFileDialog { Filter = filter, Title = Loc.T("Image du bouton sélectionné (Annuler = aucune : le cadre du thème)") };
-        try
-        {
-            ElementLibrary.ImportButton(normal.FileName, focus.ShowDialog(this) == true ? focus.FileName : null);
-            LoadButtons();
-        }
-        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
-        {
-            MessageBox.Show(this, ex.Message, "BurnSmith");
-        }
-    }
-
-    void OnBtnRemove(object s, RoutedEventArgs e)
-    {
-        if (BtnList.SelectedItem is not ButtonCard { Item.Removable: true } card) return;
-        try
-        {
-            ElementLibrary.RemoveButton(card.Item);
-            LoadButtons();
-        }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException)
-        {
-            MessageBox.Show(this, ex.Message, "BurnSmith");
-        }
-    }
-
-    // A drag on the page: the element, which part of it was grabbed (0 = the body moves it, 1..4 = a corner resizes it: NW, NE, SW, SE),
-    // where the mouse was, and the element's rectangle at that moment. The mouse is captured by the canvas, because the page is redrawn
-    // (and the shape under the mouse replaced) as soon as the element is selected.
-    (MenuElement El, int Part, System.Windows.Point Start, int X, int Y, int W, int H)? drag;
-    bool dragMoved;
-
-    /// <summary>The element outlines on the page on show: click one to edit it, drag it to move it, drag a corner of the selected one to resize it.</summary>
-    void DrawElements()
-    {
-        if (current == null) return;
-        var accent = AccentBrush();
-        var clear = System.Windows.Media.Brushes.Transparent;
-        var here = working.Elements.Where(x => x.AppliesTo(current.Id)).ToList();
-        foreach (var el in here.Where(x => x != sel).Concat(here.Where(x => x == sel))) // the selected one last, so its corners are the ones that get the click
-        {
-            var box = el.Box();
-            Piece(el, 0, box.X, box.Y, box.W, box.H, clear, accent, el == sel ? 5 : 2, System.Windows.Input.Cursors.SizeAll);
-            if (el != sel) continue;
-            var h = Math.Min(Handle, Math.Min(box.W, box.H) / 3);
-            var right = box.X + box.W - h;
-            var bottom = box.Y + box.H - h;
-            Piece(el, 1, box.X, box.Y, h, h, accent, clear, 0, System.Windows.Input.Cursors.SizeNWSE);
-            Piece(el, 2, right, box.Y, h, h, accent, clear, 0, System.Windows.Input.Cursors.SizeNESW);
-            Piece(el, 3, box.X, bottom, h, h, accent, clear, 0, System.Windows.Input.Cursors.SizeNESW);
-            Piece(el, 4, right, bottom, h, h, accent, clear, 0, System.Windows.Input.Cursors.SizeNWSE);
-        }
-    }
-
-    void Piece(MenuElement el, int part, int x, int y, int w, int h, System.Windows.Media.Brush fill, System.Windows.Media.Brush stroke, double thickness, System.Windows.Input.Cursor cursor)
-    {
-        var shape = new System.Windows.Shapes.Rectangle { Width = w, Height = h, Fill = fill, Stroke = stroke, StrokeThickness = thickness, Cursor = cursor, Tag = "element" };
-        if (part == 0) shape.StrokeDashArray = [6, 4];
-        System.Windows.Controls.Canvas.SetLeft(shape, x);
-        System.Windows.Controls.Canvas.SetTop(shape, y);
-        shape.MouseLeftButtonDown += (_, me) =>
-        {
-            Stage.Focus();
-            drag = (el, part, me.GetPosition(StageCanvas), el.X, el.Y, el.W, el.H);
-            dragMoved = false;
-            if (el != sel) SelectElem(el); // redraws the page: this shape is gone, the canvas keeps the mouse
-            StageCanvas.CaptureMouse();
-            me.Handled = true;
-        };
-        StageCanvas.Children.Add(shape);
-    }
-
-    void OnCanvasMove(object s, System.Windows.Input.MouseEventArgs e)
-    {
-        if (drag == null || !StageCanvas.IsMouseCaptured) return;
-        DragTo(e.GetPosition(StageCanvas), (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Alt) == 0);
-    }
-
-    // the alignment marks of the drag in progress (SmartGuides): lines across what the element is aligned with, drawn over the page
-    List<SmartGuides.Mark> marks = [];
-
-    /// <summary>The element being dragged follows the mouse to <paramref name="at"/>; with <paramref name="guided"/> (Alt not held) it meets the edges and middles within reach.</summary>
-    void DragTo(System.Windows.Point at, bool guided)
-    {
-        if (drag is not { } d) return;
-        int dx = (int)(at.X - d.Start.X), dy = (int)(at.Y - d.Start.Y);
-        var el = d.El;
-        // what it can be aligned with: the other elements of this page and the template's own buttons (an element's own button is the element)
-        var others = guided && current != null
-            ? working.Elements.Where(x => x != el && x.AppliesTo(current.Id)).Select(x => x.Box()).Concat(current.Buttons.Where(b => !b.Id.StartsWith('u')).Select(b => b.Rect)).ToList()
-            : null;
-        marks = [];
-        if (d.Part == 0)
-        {
-            el.X = Math.Clamp(d.X + dx, 0, MenuBuilder.W - 8);
-            el.Y = Math.Clamp(d.Y + dy, 0, MenuBuilder.H - 8);
-            if (others != null)
-            {
-                (var box, marks) = SmartGuides.Move(el.Box(), others);
-                (el.X, el.Y) = (box.X, box.Y);
-            }
-        }
-        else
-        {
-            int left = d.X, top = d.Y, right = d.X + d.W, bottom = d.Y + d.H;
-            if (d.Part is 1 or 3) left = Math.Clamp(left + dx, 0, right - MinW); else right = Math.Clamp(right + dx, left + MinW, MenuBuilder.W);
-            if (d.Part is 1 or 2) top = Math.Clamp(top + dy, 0, bottom - MinH); else bottom = Math.Clamp(bottom + dy, top + MinH, MenuBuilder.H);
-            var box = new Box(left, top, right - left, bottom - top);
-            if (others != null) (box, marks) = SmartGuides.Resize(box, d.Part is 1 or 3, d.Part is 1 or 2, others, minW: MinW, minH: MinH);
-            (el.X, el.Y, el.W, el.H) = (box.X, box.Y, box.W, box.H);
-        }
-        dragMoved = true;
-        ShowElem();
-        DrawStage();
-    }
-
-    /// <summary>The marks of the drag in progress: a line across everything the element is aligned with, a dashed one in each of two equal gaps.</summary>
-    void DrawMarks()
-    {
-        var ink = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0x2B, 0xD6)); // magenta, as picture editors draw them: no menu is that colour
-        foreach (var m in marks)
-        {
-            var (from, to) = m.Spacing ? (m.From, m.To) : (m.From - 24, m.To + 24);
-            var line = new System.Windows.Shapes.Line { Stroke = ink, StrokeThickness = 4, IsHitTestVisible = false, X1 = m.Vertical ? m.At : from, X2 = m.Vertical ? m.At : to, Y1 = m.Vertical ? from : m.At, Y2 = m.Vertical ? to : m.At };
-            if (m.Spacing) line.StrokeDashArray = [3, 2];
-            StageCanvas.Children.Add(line);
-        }
-    }
-
-    void OnSafeToggle(object s, RoutedEventArgs e) => DrawStage();
-
-    /// <summary>
-    /// « Zone sûre »: the action-safe and title-safe frames over the page (SafeArea), each button or text that leaves the title-safe one outlined in orange.
-    /// shortcut: the outlines follow the last render, so an element being dragged shows where it left from until the mouse is let go.
-    /// </summary>
-    void DrawSafe()
-    {
-        var visual = new System.Windows.Media.DrawingVisual();
-        var page = new System.Windows.Rect(0, 0, MenuBuilder.W, MenuBuilder.H);
-        using (var dc = visual.RenderOpen())
-        {
-            dc.PushClip(new System.Windows.Media.RectangleGeometry(page)); // the picture's bounds are the page's, so it lies on the canvas unscaled
-            dc.DrawRectangle(System.Windows.Media.Brushes.Transparent, null, page);
-            SafeArea.Draw(dc, current!, shot?.Design ?? working);
-        }
-        StageCanvas.Children.Add(new System.Windows.Controls.Image { Source = new System.Windows.Media.DrawingImage(visual.Drawing), Width = MenuBuilder.W, Height = MenuBuilder.H, IsHitTestVisible = false });
-    }
-
-    /// <summary>
-    /// For the off-screen snapshot (<c>guides</c>): two buttons one under the other, and a third dragged to just beside the place that continues
-    /// the column. The status line says where it landed: on the column's edge and at the same gap (300, 620), not where the mouse left it.
-    /// </summary>
-    public async Task TryGuides()
-    {
-        MenuElement Button(string text, int x, int y) { var b = new MenuElement { Kind = "button", Page = "root", Text = text, X = x, Y = y, W = 420, H = 90 }; working.Elements.Add(b); return b; }
-        Button("Un", 300, 300);
-        Button("Deux", 300, 460);
-        var third = Button("Trois", 180, 700);
-        sel = third;
-        drag = (third, 0, new System.Windows.Point(0, 0), third.X, third.Y, third.W, third.H);
-        DragTo(new System.Windows.Point(124, -84), true); // to (304, 616): 4 px off each way
-        drag = null;
-        var shown = marks;
-        Dirty();
-        await Task.Delay(2500); // the page is drawn again with the three buttons: the marks of the drag are put back over it for the picture
-        marks = shown;
-        DrawStage();
-        Status.Text = $"guides {(third.X == 300 && third.Y == 620 && marks.Count >= 3 ? "ok" : "FAIL")}: {third.X},{third.Y}, {marks.Count} repères";
-        await Task.Delay(300); // the page is laid out again before the picture is taken
-    }
-
-    /// <summary>The preview is redrawn when the mouse is let go (a click that did not move anything costs nothing).</summary>
-    void OnCanvasUp(object s, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (drag == null) return;
-        StageCanvas.ReleaseMouseCapture();
-    }
-
-    void OnCanvasLost(object s, System.Windows.Input.MouseEventArgs e)
-    {
-        var moved = dragMoved;
-        drag = null;
-        dragMoved = false;
-        marks = []; // the marks last as long as the drag
-        if (moved) { RefreshElemList(); Dirty(); }
-        else DrawStage();
-    }
-
-    /// <summary>Keys on the page: with an element selected, Delete removes it, Escape lets it go and the arrows nudge it (10 px, Shift 1 px); otherwise the arrows and Enter walk the buttons like a remote.</summary>
-    void OnStageKey(object s, System.Windows.Input.KeyEventArgs e)
-    {
-        if (editing != null) // the box takes every key but these two
-        {
-            if (e.Key is System.Windows.Input.Key.Enter or System.Windows.Input.Key.Escape)
-            {
-                EndZoneEdit(e.Key == System.Windows.Input.Key.Enter);
-                e.Handled = true;
-            }
-            return;
-        }
-        if (sel is { } el)
-        {
-            var step = (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Shift) != 0 ? 1 : 10;
-            switch (e.Key)
-            {
-                case System.Windows.Input.Key.Delete: OnElemDelete(s, new RoutedEventArgs()); break;
-                case System.Windows.Input.Key.Escape: SelectElem(null); break;
-                case System.Windows.Input.Key.Left: Nudge(el, -step, 0); break;
-                case System.Windows.Input.Key.Right: Nudge(el, step, 0); break;
-                case System.Windows.Input.Key.Up: Nudge(el, 0, -step); break;
-                case System.Windows.Input.Key.Down: Nudge(el, 0, step); break;
-                default: return;
-            }
-            e.Handled = true;
-            return;
-        }
-        if (Remote(e.Key)) e.Handled = true;
-    }
-
-    void Nudge(MenuElement el, int dx, int dy)
-    {
-        var box = el.Box();
-        el.X = Math.Clamp(el.X + dx, 0, MenuBuilder.W - box.W);
-        el.Y = Math.Clamp(el.Y + dy, 0, MenuBuilder.H - box.H);
-        ShowElem();
-        DrawStage();
-        Dirty();
-    }
-
-    void OnStripPick(object s, SelectionChangedEventArgs e)
-    {
-        if (!stripSync && PageStrip.SelectedItem is Slide slide) GoTo(slide.Id);
-    }
-
-    /// <summary>Applying a template changes the look but keeps the user's texts.</summary>
-    void OnPick(object s, SelectionChangedEventArgs e)
-    {
-        var t = ((ListBox)s).SelectedItem switch { TemplateCatalog.Found f => f.Design, MenuDesign m => m, _ => null };
-        if (t == null) return;
-        working.TakeLook(t);
-        Rebind();
-    }
-
-    void Step(int by)
-    {
-        if (shot == null || IsPreviewingPopup) return;
-        var pages = shot.Pages.Where(page => !page.Id.StartsWith("pop", StringComparison.Ordinal)).ToList();
-        var i = pages.FindIndex(p => p.Id == current?.Id) + by;
-        if (i >= 0 && i < pages.Count) GoTo(pages[i].Id);
-    }
-
-    void OnPrev(object s, RoutedEventArgs e) => Step(-1);
-    void OnNext(object s, RoutedEventArgs e) => Step(1);
-
-    // ---------------------------------------------------------------- the five steps
-    // Yuhan's one window (the page always in place) laid out as TMPGEnc's stages: the bar picks the panel on the right
-
-    static readonly string[] Hints =
-    [
-        "Cliquez un modèle : il habille le menu ; vos textes, vos vidéos et vos réglages restent.",
-        "Les pages que le menu contient et ce que fait le disque. L'aperçu suit chaque réglage.",
-        "Cliquez un élément de la page pour le déplacer ou le régler (coins : sa taille). Glissez un bouton de la bibliothèque sur la page, ou double-cliquez. Suppr le retire, les flèches le déplacent (Maj : pas fin).",
-        "Glissez un fond sur la page, ou double-cliquez. La musique et la vidéo du menu ne s'entendent et ne bougent que sur le disque.",
-        "Flèches et Entrée du clavier, ou la télécommande à droite : le menu se parcourt comme sur le disque.",
-    ];
-
-    /// <summary>The step on show is the last one: the page as the disc shows it, nothing to grab on it.</summary>
-    bool Previewing => Props.SelectedIndex == Hints.Length - 1;
-
-    /// <summary>The tabs inside the step on show, for the two steps that have some.</summary>
-    TabControl? InnerTabs => Props.SelectedIndex == 2 ? PageTabs : Props.SelectedIndex == 3 ? SoundTabs : null;
-
-    void OnStep(object s, RoutedEventArgs e)
-    {
-        if (Props != null) ShowStep(int.Parse((string)((FrameworkElement)s).Tag)); // null while the window is being built: its first step is shown by the constructor
-    }
-
-    /// <summary>Shows a step (0 Modèle, 1 Structure, 2 Pages, 3 Fond et musique, 4 Aperçu): its panel, its line of help.</summary>
-    public void ShowStep(int step)
-    {
-        step = Math.Clamp(step, 0, Hints.Length - 1);
-        if (StepBar.Children[step] is RadioButton bar && bar.IsChecked != true) { bar.IsChecked = true; return; } // comes back here through OnStep
-        Props.SelectedIndex = step;
-        Hint.Text = Hints[step];
-        BackStep.IsEnabled = step > 0;
-        NextStep.IsEnabled = step < Hints.Length - 1;
-        if (Previewing && sel != null) SelectElem(null); else DrawStage();
-        if (Previewing) Stage.Focus(); // the keyboard's arrows walk the menu at once
-    }
-
-    void OnBackStep(object s, RoutedEventArgs e) => ShowStep(Props.SelectedIndex - 1);
-    void OnNextStep(object s, RoutedEventArgs e) => ShowStep(Props.SelectedIndex + 1);
-
-    /// <summary>The disc's behaviour (« Lecture du disque », also in Paramètres avancés): given by the main window, read back by it after OK.</summary>
-    public PlaybackOptions Playback { get; set; } = new();
-
-    // ---------------------------------------------------------------- the templates, one family at a time
-    const string AllFamilies = "*", Mine = "+", Recent = "~";
-    List<TemplateCatalog.Found> catalog = [];
-    string? family;
-
-    /// <summary>The screen shape the gallery shows the templates for: a template with a 16:9 and a 4:3 version shows the chosen one.</summary>
-    bool narrow;
-
-    /// <summary>The gallery as shown: the templates of the chosen shape only (a name without « 4-3 » is a 16:9 one).</summary>
-    List<TemplateCatalog.Found> Shown => [.. catalog.Where(f => TemplateShape.IsNarrow(f.Design.Name) == narrow)];
-
-    /// <summary>One chip per use of the templates (Film, Série…, Original), « Tous » before and « Mes modèles » after; the use of the menu's own template is the one open.</summary>
-    void FillFamilies(List<TemplateCatalog.Found> usable)
-    {
-        catalog = usable;
-        narrow = TemplateShape.IsNarrow(working.Name);
-        (narrow ? Shape43 : Shape169).IsChecked = true;
-        var shown = Shown;
-        var names = TemplateUsage.All.Where(u => shown.Any(f => f.Usage == u)).ToList();
-        var own = TemplateUsage.Of(working.Name);
-        var recent = Recents().Count;
-        if (family is null || (family != AllFamilies && family != Mine && !(family == Recent && recent > 0) && !names.Contains(family)))
-            family = names.Contains(own) ? own : names.FirstOrDefault() ?? AllFamilies;
-        Families.Children.Clear();
-        foreach (var name in (recent > 0 ? names.Prepend(Recent) : names).Prepend(AllFamilies).Append(Mine))
-        {
-            var chip = new RadioButton
-            {
-                Content = name == AllFamilies ? $"Tous ({shown.Count})" : name == Mine ? "Mes modèles" : name == Recent ? $"Récemment utilisés ({recent})" : $"{name} ({shown.Count(f => f.Usage == name)})",
-                GroupName = "family", Style = (Style)FindResource("Step"), Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 6), IsChecked = name == family,
-            };
-            chip.Checked += (_, _) => { family = name; ShowFamily(); };
-            Families.Children.Add(chip);
-        }
-        ShowFamily();
-    }
-
-    void ShowFamily()
-    {
-        MinePanel.Visibility = family == Mine ? Visibility.Visible : Visibility.Collapsed;
-        BuiltInList.Visibility = family == Mine ? Visibility.Collapsed : Visibility.Visible;
-        var search = SearchBox.Text;
-        // a search looks through every template, whatever the group open; favourites first everywhere, the recent ones in the order used
-        BuiltInList.ItemsSource = family == Recent && search.Trim().Length == 0 ? Recents()
-            : TemplatePicks.Sorted(Shown.Where(f => search.Trim().Length > 0 ? TemplatePicks.Matches(f, search) : family == AllFamilies || f.Usage == family)).ToList();
-    }
-
-    /// <summary>The last templates used (OK of this window) that the gallery shows, the latest first.</summary>
-    List<TemplateCatalog.Found> Recents()
-    {
-        var shown = Shown;
-        return [.. TemplatePicks.Recent().Select(n => shown.FirstOrDefault(f => f.Label.Equals(n, StringComparison.OrdinalIgnoreCase))).OfType<TemplateCatalog.Found>()];
-    }
-
-    void OnSearch(object s, TextChangedEventArgs e)
-    {
-        if (family == Mine && SearchBox.Text.Trim().Length > 0) foreach (var chip in Families.Children.OfType<RadioButton>()) chip.IsChecked = chip == Families.Children[0]; // « Mes modèles » has no thumbnails to search: « Tous »
-        ShowFamily();
-    }
-
-    void OnStar(object s, RoutedEventArgs e)
-    {
-        if (((FrameworkElement)s).DataContext is not TemplateCatalog.Found f) return;
-        TemplatePicks.Star(f.Design.Name, !f.Favorite);
-        ShowFamily(); // the item is redrawn with its star, and moves to the top or back
-    }
-
-    /// <summary>16:9 or 4:3: the gallery shows that version of each template, and the menu's own template takes it when it has one.</summary>
-    void OnShape(object s, RoutedEventArgs e)
-    {
-        if (Shape43.IsChecked == narrow) return; // set by FillFamilies, not chosen
-        narrow = Shape43.IsChecked == true;
-        ShowFamily();
-        var twin = TemplateShape.Pick(working, narrow, catalog.Select(f => f.Design));
-        if (twin == working) return;
-        working.TakeLook(twin);
-        Rebind();
-    }
-
-    /// <summary>The remote's keys: the arrows go to the neighbour button, Enter does what the disc would.</summary>
-    bool Remote(System.Windows.Input.Key key)
-    {
-        if (current?.Buttons.FirstOrDefault(b => b.Id == focusId) is not { } b) return false;
-        switch (key)
-        {
-            case System.Windows.Input.Key.Left: Select(b.Left); break;
-            case System.Windows.Input.Key.Right: Select(b.Right); break;
-            case System.Windows.Input.Key.Up: Select(b.Up); break;
-            case System.Windows.Input.Key.Down: Select(b.Down); break;
-            case System.Windows.Input.Key.Enter: Activate(b); break;
-            default: return false;
-        }
-        return true;
-    }
-
-    /// <summary>For the off-screen snapshot: the remote's keys pressed one after the other on the Aperçu step ("Right,Enter").</summary>
-    public async Task TryRemote(string keys)
-    {
-        ShowStep(Hints.Length - 1);
-        foreach (var key in keys.Split(',')) { OnRemote(new FrameworkElement { Tag = key.Trim() }, new RoutedEventArgs()); await Task.Delay(800); }
-    }
-
-    void OnRemote(object s, RoutedEventArgs e)
-    {
-        var key = (string)((FrameworkElement)s).Tag;
-        if (key == "Start")
-        {
-            previewPlaying = content.HasIntro ? 0 : Playback.StartAtFirstTitle ? 1 : null;
-            previewChain = Playback.StartAtFirstTitle;
-            if (shot?.Pages.FirstOrDefault() is { } first) GoTo(first.Id);
-            Status.Text = previewPlaying switch { 0 => "▶ Démarrage : introduction.", 1 => "▶ Démarrage : titre 1.", _ => "Démarrage : menu principal." };
-        }
-        else if (key == "End")
-        {
-            if (previewPlaying is not int title) { Status.Text = "Choisissez un titre à lire."; return; }
-            if (title == 0)
-            {
-                previewPlaying = Playback.StartAtFirstTitle ? 1 : null;
-                if (previewPlaying == null && shot?.Pages.FirstOrDefault() is { } first) GoTo(first.Id);
-                Status.Text = previewPlaying != null ? "▶ Fin de l’introduction : lecture du titre 1." : "Fin de l’introduction : menu principal.";
-                return;
-            }
-            var main = content.Titles?.Count ?? 1;
-            if (previewChain && title < main)
-            {
-                previewPlaying = title + 1;
-                Status.Text = $"▶ Fin du titre {title} : lecture du titre {previewPlaying}.";
-            }
-            else if (Playback.StartAtFirstTitle && Playback.Rewind && (Hdmv || previewChain && title == main))
-            {
-                previewPlaying = 1;
-                previewChain = true;
-                Status.Text = $"▶ Fin du titre {title} : reprise au premier titre.";
-            }
-            else
-            {
-                previewPlaying = null;
-                var stop = Playback.PlayAll && !Playback.Rewind && (Hdmv || previewChain && title == main);
-                if (!stop && shot?.Pages.FirstOrDefault() is { } root) GoTo(root.Id);
-                Status.Text = stop ? $"Fin du titre {title} : arrêt." : $"Fin du titre {title} : retour au menu.";
-            }
-        }
-        else if (key == "Menu")
-        {
-            previewPlaying = null;
-            if (shot?.Pages.FirstOrDefault() is { } first) GoTo(first.Id);
-        }
-        else if (key == "Popup")
-        {
-            if (current?.Id.StartsWith("pop", StringComparison.Ordinal) == true && shot?.Pages.FirstOrDefault() is { } first) GoTo(first.Id);
-            else if (previewPlaying is int title && shot?.Pages.Any(page => page.Id == $"pop{title}") == true) GoTo($"pop{title}");
-            else Status.Text = "Choisissez un titre dans l’aperçu d’un menu Blu-ray BD-J avec pop-up activé.";
-        }
-        else Remote(Enum.Parse<System.Windows.Input.Key>(key));
-    }
-
-    /// <summary>Which of the three highlight styles marks the chosen button (a template with its own artwork keeps it).</summary>
-    void OnPickHighlight(object s, SelectionChangedEventArgs e)
-    {
-        if (HlBox.SelectedValue is not string style) return;
-        working.HighlightStyle = style;
-        Dirty();
-    }
-
-    /// <summary>The whole menu in French or in English: the words of the Menu tab and those drawn in a template's buttons.</summary>
-    void OnPickLanguage(object s, SelectionChangedEventArgs e)
-    {
-        if (LanguageBox.SelectedValue is not string language || language == working.ButtonLanguage) return; // shown by Rebind, not chosen
-        working.Language(language);
-        Rebind(); // the words are in the boxes
-        Dirty();
-    }
-
-    /// <summary>A click on a background only selects it (so it can be removed); a double click or a drop on the page applies it.</summary>
-    void OnBgPick(object s, SelectionChangedEventArgs e) => BgRemove.IsEnabled = (BgList.SelectedItem as Element)?.Removable == true;
-
-    /// <summary>Adds pictures to your library (a copy is kept in %APPDATA%\BurnSmith\library) and uses the last one.</summary>
-    void OnBg(object s, RoutedEventArgs e)
-    {
-        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Multiselect = true, Title = Loc.T("Images à ajouter à la bibliothèque") };
-        if (dlg.ShowDialog(this) != true) return;
-        try
-        {
-            var added = dlg.FileNames.Select(ElementLibrary.Import).ToList();
-            LoadBackgrounds();
-            ApplyBackground(added[^1]);
-        }
-        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
-        {
-            MessageBox.Show(this, ex.Message, "BurnSmith");
-        }
-    }
-
-    /// <summary>Picks the video or the sound of the moving menu; the files stay where they are (the path is stored).</summary>
-    void Pick(string filter, string title, Action<string> set)
-    {
-        var dlg = new OpenFileDialog { Filter = filter + "|Tous les fichiers|*.*", Title = title };
-        if (dlg.ShowDialog(this) != true) return;
-        set(dlg.FileName);
-        Rebind();
-    }
-
-    void OnLoopFile(object s, RoutedEventArgs e) =>
-        Pick("Vidéos|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv", "Vidéo du menu animé", f => working.LoopFile = f);
-
-    void OnMusic(object s, RoutedEventArgs e) =>
-        Pick("Sons|*.mp3;*.flac;*.wav;*.m4a;*.ogg;*.ac3;*.aac", "Musique du menu", f => working.Music = f);
-
-    void OnBgRemove(object s, RoutedEventArgs e)
-    {
-        if (BgList.SelectedItem is not Element { Removable: true } mine) return;
-        try
-        {
-            ElementLibrary.Remove(mine);
-            working.BackgroundImage = null;
-            LoadBackgrounds();
-            Dirty();
-        }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException)
-        {
-            MessageBox.Show(this, ex.Message, "BurnSmith");
-        }
-    }
-
-    /// <summary>A picture for the kind of page on show ("scenes" for every scenes page); a template's own background gives way to it.</summary>
-    void OnPageBg(object s, RoutedEventArgs e)
-    {
-        if (current == null) return;
-        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T($"Fond de la page « {PageName(current.Id)} »") };
-        if (dlg.ShowDialog(this) != true) return;
-        try
-        {
-            working.PageBackgrounds[MenuDesign.PageKind(current.Id)] = ElementLibrary.Reference(ElementLibrary.Import(dlg.FileName).Path);
-            Dirty();
-        }
-        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
-        {
-            MessageBox.Show(this, ex.Message, "BurnSmith");
-        }
-    }
-
-    void OnPageBgClear(object s, RoutedEventArgs e)
-    {
-        if (current == null || !working.PageBackgrounds.Remove(MenuDesign.PageKind(current.Id))) return;
-        Dirty();
-    }
-
-    void OnBgClear(object s, RoutedEventArgs e)
-    {
-        working.BackgroundImage = null;
-        Rebind();
-    }
-
-    /// <summary>Leaves an installed template but keeps its background (by path, not copied): font, buttons, grid and colours become yours.</summary>
-    void OnDetach(object s, RoutedEventArgs e)
-    {
-        var file = working.TemplateDir == null ? null : InstalledTemplate.Load(working.TemplateDir)?.BackgroundFile;
-        working.TemplateDir = null;
-        working.BackgroundImage = file == null ? null : ElementLibrary.Reference(file);
-        Rebind();
-    }
-
-    void OnSave(object s, RoutedEventArgs e)
-    {
-        var name = Prompt.Ask(this, "Enregistrer le modèle", working.Name)?.Trim();
-        if (string.IsNullOrEmpty(name)) return;
-        working.Name = name;
-        try
-        {
-            Templates.Save(working);
-            CustomList.ItemsSource = Templates.List();
-            Rebind();
-        }
-        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
-        {
-            MessageBox.Show(this, ex.Message, "BurnSmith");
-        }
-    }
-
-    void OnOk(object s, RoutedEventArgs e)
-    {
-        if (error != null) { MessageBox.Show(this, "Corrigez d'abord l'erreur de l'aperçu :\n" + error, "BurnSmith"); return; }
-        Playback = PlaybackOptions.FromMode(Math.Max(0, PlayModeBox.SelectedIndex), Playback.Rewind) with
-            { AutoStartSeconds = Playback.AutoStartSeconds, RememberPosition = Playback.RememberPosition };
-        if (catalog.Any(f => f.Design.Name == working.Name)) TemplatePicks.Used(working.Name); // « Récemment utilisés »: the template this menu went out with
-        DialogResult = true;
-    }
-}
-
-/// <summary>Minimal "type a name" dialog.</summary>
-static class Prompt
-{
-    public static string? Ask(Window owner, string title, string initial)
-    {
-        var box = new TextBox { Text = initial, MinWidth = 320, Margin = new Thickness(0, 0, 0, 16) };
-        var ok = new Button { Content = "OK", IsDefault = true, MinWidth = 90, Margin = new Thickness(0, 0, 8, 0) };
-        var cancel = new Button { Content = "Annuler", IsCancel = true, MinWidth = 90 };
-        var win = new Window
-        {
-            Title = title, Owner = owner, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x14, 0x14, 0x16)), SizeToContent = SizeToContent.WidthAndHeight, ResizeMode = ResizeMode.NoResize,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false,
-            Content = new StackPanel
-            {
-                Margin = new Thickness(20),
-                Children = { box, new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Children = { ok, cancel } } },
-            },
-        };
-        ok.Click += (_, _) => win.DialogResult = true;
-        win.Loaded += (_, _) => { box.Focus(); box.SelectAll(); };
-        return win.ShowDialog() == true ? box.Text : null;
-    }
-}
-
-/// <summary>A small decoded copy of a picture file for the gallery (the big one would be decoded for every row otherwise).</summary>
-sealed class ThumbConverter : System.Windows.Data.IValueConverter
-{
-    public object? Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
-    {
-        if (value is not string file || !File.Exists(file)) return null;
-        try
-        {
-            if (MenuRenderer.IsSvg(file)) return MenuRenderer.SvgPicture(file); // vectors: no decoding, sharp at any tile size
-            var img = new BitmapImage();
-            img.BeginInit();
-            img.UriSource = new Uri(file);
-            img.DecodePixelWidth = 320; // the tile grows with the library column
-            img.CacheOption = BitmapCacheOption.OnLoad; // does not keep the file open: "Retirer" can delete it
-            img.EndInit();
-            img.Freeze();
-            return img;
-        }
-        catch (Exception e) when (e is NotSupportedException or IOException or InvalidOperationException) { return null; } // InvalidDataException is an IOException
-    }
-
-    public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
 }

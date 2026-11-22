@@ -208,10 +208,11 @@ public sealed record Clip(double From, double To);
 /// the usual one, <see cref="Color"/> RRGGBB, <see cref="Position"/> 0 (bottom) to 100 (top). Picture subtitles (PGS, VobSub) keep their own look; a DVD has
 /// one palette, so there the colour is that of every subtitle.
 /// </summary>
-public sealed record SubtitleStyle(string? Font = null, int Size = 100, string Color = "FFFFFF", int Position = 0)
+public sealed record SubtitleStyle(string? Font = null, int Size = 100, string Color = "FFFFFF", int Position = 0, int HdrNits = 203)
 {
     [System.Text.Json.Serialization.JsonIgnore] public int Scale => Math.Clamp(Size, 30, 300);
     [System.Text.Json.Serialization.JsonIgnore] public int Lift => Math.Clamp(Position, 0, 100);
+    [System.Text.Json.Serialization.JsonIgnore] public int CalibratedNits => HdrNits <= 0 ? 0 : Math.Clamp(HdrNits, 80, 400);
     /// <summary>The colour as six hex digits; white when it is not one.</summary>
     [System.Text.Json.Serialization.JsonIgnore] public string Rgb => Color.Length == 6 && Color.All(Uri.IsHexDigit) ? Color.ToUpperInvariant() : "FFFFFF";
 }
@@ -355,7 +356,7 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
 
     /// <summary>
     /// A subtitle file (.sup pictures, else SRT) written for the whole span from <see cref="Start"/>, <paramref name="span"/> seconds long, with the gaps taken
-    /// out like the picture. shortcut: a picture still shown when a gap begins stays until the next one (its clear set falls in the gap); write a clear set if it shows.
+    /// out like the picture. If a PGS picture is still on screen when a gap starts, a clear set is injected right at the boundary so it never lingers.
     /// </summary>
     public void CloseGaps(string file, double span)
     {
@@ -368,11 +369,16 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
         if (file.EndsWith(".sup", StringComparison.OrdinalIgnoreCase))
         {
             var sup = File.ReadAllBytes(file);
+            var plane = PgsSubtitles.PlaneSize(sup) ?? (1920, 1080);
             var output = new MemoryStream();
-            foreach (var (from, to) in parts)
+            for (var i = 0; i < parts.Count; i++)
             {
-                output.Write(PgsSubtitles.Cut(PgsSubtitles.Cut(sup, from, to - from), -offset, 1e6)); // a negative start moves the part later
+                var (from, to) = parts[i];
+                var piece = PgsSubtitles.Cut(PgsSubtitles.Cut(sup, from, to - from), -offset, 1e6); // a negative start moves the part later
+                output.Write(piece);
                 offset += to - from;
+                if (i < parts.Count - 1 && PgsSubtitles.EndsVisible(piece))
+                    output.Write(PgsSubtitles.ClearSet(plane.Width, plane.Height, Math.Max(0, offset - 0.04)));
             }
             File.WriteAllBytes(file, output.ToArray());
             return;
@@ -453,18 +459,18 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
 
     /// <summary>
     /// Adds to <paramref name="args"/>, right after the video's own -i (input 0, cut by -ss / -t), one input per sound file among <paramref name="audio"/>, cut the same
-    /// way (<paramref name="span"/>: seconds read from <see cref="Start"/>), and gives each track's -map in order: "0:a:N" for the video's own, "K:a:0" for a file.
+    /// way (<paramref name="span"/>: seconds read from <paramref name="audioStart"/> or <see cref="Start"/>), and gives each track's -map in order: "0:a:N" for the video's own, "K:a:0" for a file.
     /// </summary>
-    public List<string> AudioMaps(IReadOnlyList<AudioTrack> audio, List<string> args, double span)
+    public List<string> AudioMaps(IReadOnlyList<AudioTrack> audio, List<string> args, double span, double? audioStart = null)
     {
-        // shortcut: a 4K title copied with a later start begins on the keyframe before it, the file's sound on the exact second (up to a GOP late); seek the file to that keyframe if it shows
-
+        var seek = audioStart ?? Start;
         var first = args.Count(x => x == "-i");
         var files = audio.Select(a => a.File).OfType<string>().Distinct().ToList();
         foreach (var file in files)
         {
-            if (Start > 0) args.AddRange(["-ss", Start.ToString(CultureInfo.InvariantCulture)]);
-            args.AddRange(["-t", span.ToString("0.###", CultureInfo.InvariantCulture), "-i", file]); // always -t: a dub a little longer than the film must not make the title longer
+            if (seek > 0) args.AddRange(["-ss", seek.ToString("0.###", CultureInfo.InvariantCulture)]);
+            var extra = Math.Max(0, Start - seek);
+            args.AddRange(["-t", (span + extra).ToString("0.###", CultureInfo.InvariantCulture), "-i", file]); // always -t: a dub a little longer than the film must not make the title longer
         }
         return [.. audio.Select(a => a.File == null ? $"0:a:{a.Index}" : $"{first + files.IndexOf(a.File)}:a:0")];
     }
@@ -489,6 +495,57 @@ public sealed record DiscTitle(string Video, string? Name = null, IReadOnlyList<
 
     public IReadOnlyList<SubtitleTrack> KeptSubtitles(SourceInfo s) =>
         Subtitles == null ? [] : Subtitles.Select(i => s.Subtitles.FirstOrDefault(t => t.Index == i)).OfType<SubtitleTrack>().ToList();
+
+    /// <summary>Detects scene-change timestamps (in seconds) using ffmpeg's scene filter, spaced by at least <paramref name="minGapSeconds"/>.</summary>
+    public static List<double> DetectSceneChapters(string video, double threshold = 0.35, double minGapSeconds = 60, double start = 0, double? end = null)
+    {
+        var ffmpeg = Tools.Find("ffmpeg.exe");
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var args = new List<string> { "-v", "info" };
+        if (start > 0) args.AddRange(["-ss", start.ToString(inv)]);
+        if (end is { } e && e > start) args.AddRange(["-t", (e - start).ToString(inv)]);
+        args.AddRange(["-i", video, "-vf", $"select='gt(scene,{threshold.ToString(inv)})',showinfo", "-an", "-sn", "-f", "null", "-"]);
+        var found = new List<double>();
+        var last = start;
+        Tools.Run(ffmpeg, args, line =>
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(line, @"pts_time:([0-9]+(?:\.[0-9]+)?)");
+            if (!m.Success || !double.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.Float, inv, out var t)) return;
+            var at = Math.Round(start + t, 1);
+            if (at - last >= minGapSeconds)
+            {
+                found.Add(at);
+                last = at;
+            }
+        });
+        return found;
+    }
+
+    /// <summary>
+    /// Reorders each title's kept audio tracks on a multi-title disc so language order matches the first title (exact name match first, then same display language).
+    /// Unlike subtitles, missing languages are not padded with silent tracks so a bonus with a single different language still plays its audio as track 1.
+    /// </summary>
+    public static List<List<AudioTrack>> LineUpAudio(IReadOnlyList<DiscTitle> titles, IReadOnlyList<SourceInfo> sources)
+    {
+        var places = titles[0].KeptAudio(sources[0]).ToList();
+        return [.. titles.Select((title, i) =>
+        {
+            var kept = title.KeptAudio(sources[i]).ToList();
+            if (i == 0 || kept.Count <= 1 || places.Count == 0) return kept;
+            var free = new List<AudioTrack>(kept);
+            var line = new List<AudioTrack>(kept.Count);
+            foreach (var place in places)
+            {
+                var match = free.FirstOrDefault(a => a.Name == place.Name)
+                    ?? free.FirstOrDefault(a => Languages.Display(a.Lang, "") == Languages.Display(place.Lang, ""));
+                if (match == null) continue;
+                free.Remove(match);
+                line.Add(match);
+            }
+            line.AddRange(free);
+            return line;
+        })];
+    }
 
     /// <summary>
     /// The subtitles each title carries on a disc of several: the menu and the remote select a subtitle by its number, the same for every title, so number k

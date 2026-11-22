@@ -1016,3 +1016,158 @@ Volume de « {0} » : {1} dB…	Volume of "{0}": {1} dB…
 Volume de la piste	Track volume
 Volume de la piste, en dB (de -30 à 30) : 6 = plus fort, -6 = moins fort, 0 = inchangé. Une piste copiée telle quelle (AC-3, DTS) est alors réencodée.	Track volume, in dB (-30 to 30): 6 = louder, -6 = quieter, 0 = unchanged. A track copied as it is (AC-3, DTS) is then re-encoded.
 Entrez un nombre de dB entre -30 et 30, par exemple 3 ou -4,5.	Enter a number of dB between -30 and 30, for example 3 or -4.5.
+
+# MainWindow / AdvancedWindow / VideoEditWindow / DiscImportWindow / SeasonSplitWindow / MenuEditorWindow (2026-11)
+1 · Vidéos	1 · Videos
+2 · Menu	2 · Menu
+3 · Sortie	3 · Output
+Menu	Menu
+Chapitres auto	Auto chapters
+Menu puis tout lire	Menu then play all
+Lire dès l'insertion	Play on insert
+Retour au menu	Return to menu
+Navigation	Navigation
+Obtenir : Dossier	Output: Folder
+Obtenir : Image ISO	Output: ISO image
+Obtenir : Disque gravé	Output: Burn disc
+Obtenir : Gravé + ISO	Output: Burn + ISO
+AVCHD (USB / SD)	AVCHD (USB / SD)
+Répartir manuellement…	Split manually…
+Répartir la saison sur plusieurs disques	Split season across multiple discs
+Répartir la saison sur plusieurs disques…	Split season across multiple discs…
+Nombre de disques :	Number of discs:
+Répartir également	Distribute evenly
+Répartit le même nombre de vidéos sur chaque disque (modifiable ensuite vidéo par vidéo)	Distributes the same number of videos to each disc (editable per video afterwards)
+La vidéo de début est reprise automatiquement sur chaque disque.	The start video is automatically included on every disc.
+Ajouter à la file	Add to queue
+Ajoutez une ou plusieurs vidéos (film, épisodes d'une série, bonus)	Add one or more videos (movie, series episodes, extras)
+Choisissez le modèle, le titre, le fond et testez la télécommande	Choose the template, title, background and test the remote control
+Choisissez le format de sortie (dossier, ISO ou gravure) puis cliquez Démarrer	Choose the output format (folder, ISO or burn) then click Start
+Comportement à l'insertion du disque et à la fin d'un titre	Behavior on disc insertion and at the end of a title
+Intervalle des chapitres automatiques (si la vidéo n'en a pas)	Automatic chapter interval (when the video has none)
+Que voulez-vous obtenir à la fin : un dossier BDMV/VIDEO_TS, une image ISO ou un disque gravé ?	What do you want to produce: a BDMV/VIDEO_TS folder, an ISO image, or a burned disc?
+Afficher dans le journal les parcours et les pistes du menu BD-J fabriqué.	Show the built BD-J menu routes and tracks in the log.
+Importer des titres du disque	Import titles from disc
+Cochez un ou plusieurs titres à importer dans votre projet.	Select one or more titles to import into your project.
+Tout cocher	Select all
+Tout décocher	Select none
+Importer	Import
+Sous-titres	Subtitles
+Convertir avec la carte graphique (GPU)	Encode with graphics card (GPU)
+Convertir avec la carte graphique	Encode with graphics card
+Convertir avec la carte graphique (aucun GPU détecté)	Encode with graphics card (no GPU detected)
+Détection automatique NVIDIA NVENC, Intel QuickSync ou AMD AMF. Le processeur reste utilisé si aucun GPU compatible n'est disponible, ou pour le 1080i, 4K HDR10+/Dolby Vision et MPEG-2 DVD.	Auto-detects NVIDIA NVENC, Intel QuickSync or AMD AMF. CPU is used when no compatible GPU is available, or for 1080i, 4K HDR10+/Dolby Vision and DVD MPEG-2.
+Conserver le Dolby Digital Plus (E-AC-3)	Keep Dolby Digital Plus (E-AC-3)
+Copie le Dolby Digital Plus à 48 kHz quand les réglages le permettent. La lecture du Dolby Digital Plus autonome sur platine reste à vérifier. Une conversion en LPCM ou AC-3 ne conserve pas les objets Atmos.	Copies 48 kHz Dolby Digital Plus when settings allow. Standalone DD+ playback on hardware players should be verified. Converting to LPCM or AC-3 drops Atmos objects.
+Normaliser le volume audio (Loudness EBU R128)	Normalize audio volume (EBU R128 Loudness)
+Applique le filtre loudnorm (-16 LUFS) lors de la conversion audio pour équilibrer le volume entre vidéos.	Applies loudnorm (-16 LUFS) during audio encoding to balance volume across videos.
+Garde les pistes Blu-ray compatibles, dont le DTS-HD et le TrueHD complet avec sa piste AC-3 de secours. Quand le son doit être décodé, BurnSmith utilise le LPCM. Cela peut prendre plus de place.	Keeps Blu-ray-compliant tracks including DTS-HD and full TrueHD with its AC-3 core. When audio must be decoded, BurnSmith uses LPCM. This may use more space.
+HDMV : menu natif sans Java (compatibilité maximale)	HDMV: native menu without Java (maximum compatibility)
+Le menu utilise les commandes natives du Blu-ray, sans Java : lu par toutes les platines.	The menu uses native Blu-ray commands without Java: playable on every player.
+En HDMV : navigation native sans Java, avec fond animé et menu pop-up natif pris en charge. Le choix audio et sous-titres du menu principal s'applique au lancement du titre.	In HDMV: native Java-free navigation with animated background and native pop-up menu supported. Audio and subtitle selections from the main menu apply when a title starts.
+REMARQUE : Passthrough copie la vidéo telle quelle (sources HEVC 2160p, HDR10, HDR10+ et Dolby Vision profil 7 gardés). Conversion la refait en HEVC 10 bits 2160p en conservant HDR10, HDR10+ et Dolby Vision (profil 7 MEL).	NOTE: Passthrough copies the video as-is (2160p HEVC, HDR10, HDR10+ and Dolby Vision Profile 7 kept). Conversion re-encodes to 10-bit 2160p HEVC while keeping HDR10, HDR10+ and Dolby Vision (Profile 7 MEL).
+Police et couleur s'appliquent aux sous-titres texte (SRT, ASS…). Taille, hauteur et luminosité HDR s'appliquent aussi aux sous-titres en images (PGS, VobSub) sur Blu-ray. Le décalage se règle dans la liste des vidéos.	Font and color apply to text subtitles (SRT, ASS…). Size, height and HDR luminance also apply to image subtitles (PGS, VobSub) on Blu-ray. Delay is set in the video list.
+Luminosité des sous-titres en HDR (nits, 203 = standard, 400 = sans atténuation)	Subtitle HDR brightness (nits, 203 = standard, 400 = no attenuation)
+Démarrage automatique BD-J après (0 = désactivé)	BD-J auto-start after (0 = off)
+secondes	seconds
+Reprendre la lecture à la prochaine ouverture (BD-J)	Resume playback on next open (BD-J)
+Utilise le stockage local du lecteur. La touche Menu principal reste disponible.	Uses the player's local storage. The Top Menu key remains available.
+Vider le cache	Clear cache
+Supprime les encodages réutilisables stockés localement (éviction automatique au-delà de 100 Go)	Deletes locally stored reusable encodes (automatic LRU eviction above 100 GB)
+9:16 (vertical)	9:16 (vertical)
+Nettoyage et source entrelacée	Cleanup and interlaced source
+Désentrelacer	Deinterlace
+Automatique (si source entrelacée)	Automatic (if source is interlaced)
+Activer (bwdif)	Enable (bwdif)
+Désactiver	Disable
+Réduction du bruit (grain / VHS / caméscope)	Noise reduction (grain / VHS / camcorder)
+Détecter les scènes	Detect scenes
+Détecte automatiquement les changements de scène (espacés d'au moins 1 min) pour créer des chapitres	Automatically detects scene changes (at least 1 min apart) to create chapters
+Importer chapitres…	Import chapters…
+Importe un fichier de chapitres OGM (.txt), Matroska (.xml) ou liste de temps	Imports an OGM (.txt), Matroska (.xml) or timestamp chapter file
+Exporter chapitres…	Export chapters…
+Enregistre la liste actuelle au format OGM (.txt)	Saves the current list in OGM (.txt) format
+Image	Image
+minutes	minutes
+Position	Position
+Rotation	Rotation
+Saturation	Saturation
+Volume	Volume
++ Ajouter ▾	+ Add ▾
++ Image	+ Image
++ Sous-menu	+ Submenu
+← Fermer	← Close
+← Retour au menu	← Back to menu
+2 · Personnaliser	2 · Customize
+3 · Aperçu	3 · Preview
+5 à 300 s sur Blu-ray, 5 à 120 s sur DVD. 0 = la chanson entière.	5 to 300 s on Blu-ray, 5 to 120 s on DVD. 0 = full song.
+Affichage des scènes	Scene display
+Affiche le graphe des pages, boutons, cibles et détecte les pages inaccessibles ou sans issue (BD-J, HDMV et DVD).	Displays the graph of pages, buttons and targets and detects unreachable or dead-end pages (BD-J, HDMV and DVD).
+Ajouter un texte, une image, un cadre, un bouton ou un sous-menu sur la page	Add text, an image, a frame, a button or a submenu on the page
+Aligner à droite (marge sûre TV)	Align right (TV safe margin)
+Aligner à gauche (marge sûre TV)	Align left (TV safe margin)
+Aligner en bas (marge sûre TV)	Align bottom (TV safe margin)
+Aligner en haut (marge sûre TV)	Align top (TV safe margin)
+Aligner sur l'écran (zone sûre TV / centre)	Align to screen (TV safe area / center)
+Après avoir choisi un titre ou un chapitre, affiche son menu de lecture BD-J sur une image fixe.	After selecting a title or chapter, displays its BD-J playback pop-up menu over a still frame.
+Augmente l’opacité du fond du pop-up pour améliorer la lisibilité du texte sur le film.	Increases pop-up background opacity to improve text readability over the video.
+Calibre la luminance des menus et du pop-up sur les téléviseurs HDR (203 nits = référence SDR-dans-HDR ITU-R BT.2408).	Calibrates menu and pop-up luminance on HDR TVs (203 nits = ITU-R BT.2408 SDR-in-HDR reference).
+Carte de navigation…	Navigation map…
+Centrer horizontalement	Center horizontally
+Centrer verticalement	Center vertically
+Cette page…	This page…
+Chapitres / épisodes par page	Chapters / episodes per page
+Chapitres directement en menu principal	Chapters directly as main menu
+Choisit la mise en page des chapitres ou épisodes (grille avec vignettes, texte seul, liste ou accès direct).	Chooses the chapters or episodes layout (thumbnail grid, text only, list or direct scenes menu).
+Cliquez un élément ci-dessous ou directement sur la page pour le modifier.	Click an element below or directly on the page to edit it.
+Démarrage du disque	Disc start
+Élément sélectionné	Selected element
+Éléments et navigation personnalisés	Custom elements and navigation
+Fin du titre	Title end
+Fond et musique	Background and music
+Fond sombre du pop-up BD-J	BD-J pop-up dark shade
+Fondu audio (s)	Audio fade (s)
+Fondu entre les pages BD-J (ms, 0 = aucun)	BD-J page fade (ms, 0 = none)
+Galerie de boutons…	Button gallery…
+Galerie de fonds…	Background gallery…
+Grille avec vignettes	Grid with thumbnails
+Grille texte seul	Text-only grid
+Horizontal	Horizontal
+Image…	Image…
+Journal du simulateur	Simulator log
+Libellés des boutons et pages	Button and page labels
+Liens des flèches…	Arrow links…
+Liste sans vignettes (selon le modèle)	List without thumbnails (template-dependent)
+Luminosité des graphismes en HDR (nits, 203 = standard)	Graphics HDR brightness (nits, 203 = standard)
+Menu animé : vidéo en boucle derrière les boutons	Motion menu: looping video behind buttons
+Menu pop-up par-dessus le film (Blu-ray)	Pop-up menu over movie (Blu-ray)
+Options et import de modèles	Template options and import
+Ouvre le tiroir des fonds fournis et de vos images importées	Opens the drawer of built-in and imported backgrounds
+Page	Page
+Page Crédits (une ligne par rangée, vide = aucune)	Credits page (one line per row, empty = none)
+Placement et style avancés	Advanced placement and style
+Pop-up	Pop-up
+Présentation	Layout
+Réglages fins vidéo et musique	Fine video and music settings
+Renommer le sous-menu	Rename submenu
+Retirer le sous-menu	Remove submenu
+Structure, pop-up et BD-J	Structure, pop-up and BD-J
+Style	Style
+Style et couleurs avancés	Advanced style and colors
+Titre du disque par langue, Blu-ray (ex. fra: Mon disque)	Disc title by language, Blu-ray (e.g. fra: My disc)
+Titre du menu	Menu title
+Titre et langue	Title and language
+Titre, fond, musique, présentation et éléments de chaque page	Title, background, music, layout and elements of each page
+Tous les mots du menu en français ou en anglais. Un mot que vous avez écrit vous-même est gardé.	All menu labels in French or English. Any text you edited yourself is kept.
+Une image de fond pour ce genre de page ; les autres gardent le fond du modèle	A background image for this page type; other pages keep the template background
+Vertical	Vertical
+Vide = aucune musique	Empty = no music
+Vide = le premier film	Empty = first movie
+Vidéo	Video
+Conseil gravure DVD : privilégiez des DVD-R / DVD+R de marque (Verbatim AZO / Taiyo Yuden) gravés à 4× ou 8×.	DVD burning tip: prefer quality DVD-R / DVD+R discs (Verbatim AZO / Taiyo Yuden) burned at 4x or 8x.
+Conseil gravure BD-100 : peu de platines lisent les BD-R XL 100 Go ; privilégiez des BD-R 25/50 Go HTL (jamais LTH) gravés à 2×–4×.	BD-100 burning tip: few players read 100 GB BD-R XL discs; prefer 25/50 GB HTL BD-R (never LTH) burned at 2x–4x.
+Conseil gravure Blu-ray : privilégiez des BD-R HTL (inorganiques, ex. Verbatim DataLifePlus) plutôt que LTH, gravés à 2×–4×.	Blu-ray burning tip: prefer inorganic HTL BD-R discs (e.g. Verbatim DataLifePlus) over LTH, burned at 2x–4x.
+Encodage matériel actif : {0}.	Hardware encoding active: {0}.
+Normalisation du volume audio (Loudness EBU R128) activée.	Audio Loudness normalization (EBU R128) enabled.
+Format de sortie : AVCHD (dossier AVCHD/BDMV pour clé USB ou carte SD).	Output format: AVCHD (AVCHD/BDMV folder for USB drive or SD card).
+Menu natif HDMV (sans Java, compatibilité maximale).	Native HDMV menu (Java-free, maximum compatibility).

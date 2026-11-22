@@ -27,11 +27,37 @@ public static class MediaMaker
     /// <summary>One line of a concat list: ffmpeg wants forward slashes and a quote inside a quoted name written '\''.</summary>
     static string Quoted(string file) => "file '" + Path.GetFullPath(file).Replace('\\', '/').Replace("'", @"'\''") + "'";
 
+    /// <summary>FFmpeg video filter that corrects a phone photo's EXIF orientation (tag 274), or null when upright/unknown.</summary>
+    internal static string? ExifRotationFilter(string photo)
+    {
+        try
+        {
+            using var stream = File.OpenRead(photo);
+            var decoder = System.Windows.Media.Imaging.BitmapDecoder.Create(stream,
+                System.Windows.Media.Imaging.BitmapCreateOptions.IgnoreColorProfile,
+                System.Windows.Media.Imaging.BitmapCacheOption.None);
+            if (decoder.Frames.Count == 0 || decoder.Frames[0].Metadata is not System.Windows.Media.Imaging.BitmapMetadata meta) return null;
+            var raw = meta.ContainsQuery("/app1/ifd/{ushort=274}") ? meta.GetQuery("/app1/ifd/{ushort=274}")
+                : meta.ContainsQuery("System.Photo.Orientation") ? meta.GetQuery("System.Photo.Orientation") : null;
+            return raw is ushort or short or int ? Convert.ToInt32(raw) switch
+            {
+                2 => "hflip",
+                3 => "hflip,vflip",
+                4 => "vflip",
+                5 => "transpose=0",
+                6 => "transpose=1",
+                7 => "transpose=3",
+                8 => "transpose=2",
+                _ => null
+            } : null;
+        }
+        catch { return null; }
+    }
+
     /// <summary>
-    /// Photos shown <paramref name="secondsEach"/> seconds each, in the order given, fitted to 1920x1080 on black. Under the pictures: the <paramref name="music"/> files one
+    /// Photos shown <paramref name="secondsEach"/> seconds each, in the order given, fitted to 1920x1080 on black (with EXIF orientation applied). Under the pictures: the <paramref name="music"/> files one
     /// after the other, started again when the photos last longer, faded out at the end (silence when there is none). Returns <paramref name="output"/>.
     /// <paramref name="transition"/> is an ffmpeg xfade name (see <see cref="TransitionOf"/>, "mix" = a few in turn) played between two photos, null for none.
-    /// shortcut: a phone photo's EXIF rotation is not applied, upgrade with an explicit -vf transpose when it matters.
     /// </summary>
     public static string Slideshow(IReadOnlyList<string> photos, double secondsEach, IReadOnlyList<string> music, string output, Action<string>? log = null, string? transition = null)
     {
@@ -44,30 +70,19 @@ public static class MediaMaker
         var work = output + ".photos";
         var songs = output + ".music.txt";
         var graph = output + ".graph.txt";
-        // shortcut: one input per photo, so past 600 photos the slideshow has no transition (command line length), upgrade with a slideshow made in parts
-        var fade = transition == null || photos.Count < 2 || photos.Count > 600 ? 0 : Math.Min(1, secondsEach / 3);
-        if (transition != null && photos.Count > 600) log?.Invoke("Diaporama : plus de 600 photos, sans transition");
+        const int MaxPhotosPerChunk = 200;
+        var fade = transition == null || photos.Count < 2 ? 0 : Math.Min(1, secondsEach / 3);
         Directory.CreateDirectory(work);
         try
         {
             for (var k = 0; k < photos.Count; k++)
-                Tools.Run(Ffmpeg, ["-y", "-v", "error", "-i", photos[k], "-vf", FitPicture, "-frames:v", "1", "-q:v", "2", Path.Combine(work, $"{k + 1:0000}.jpg")]);
-            var args = new List<string> { "-y", "-v", "warning" };
-            if (fade == 0) args.AddRange(["-framerate", $"1000/{Math.Round(secondsEach * 1000)}", "-i", Path.Combine(work, "%04d.jpg")]);
-            else
             {
-                // every photo but the last lasts one fade longer; joining photo k at k × secondsEach then keeps the whole at photos × secondsEach (inputs named from the work folder: short command line)
-                for (var k = 0; k < photos.Count; k++)
-                    args.AddRange(["-loop", "1", "-framerate", "25", "-t", (secondsEach + (k < photos.Count - 1 ? fade : 0)).ToString(Inv), "-i", $"{k + 1:0000}.jpg"]);
-                var joins = new StringBuilder();
-                for (var k = 1; k < photos.Count; k++)
-                    joins.Append($"{(k == 1 ? "[0:v]" : $"[x{k - 1}]")}[{k}:v]xfade=transition={(transition == "mix" ? Mix[(k - 1) % Mix.Length] : transition)}:duration={fade.ToString(Inv)}:offset={(k * secondsEach).ToString(Inv)}[x{k}];\n");
-                File.WriteAllText(graph, joins + $"[x{photos.Count - 1}]format=yuv420p[v]\n", new UTF8Encoding(false));
+                var vf = ExifRotationFilter(photos[k]) is { } rot ? rot + "," + FitPicture : FitPicture;
+                Tools.Run(Ffmpeg, ["-y", "-v", "error", "-noautorotate", "-i", photos[k], "-vf", vf, "-frames:v", "1", "-q:v", "2", Path.Combine(work, $"{k + 1:0000}.jpg")]);
             }
-            var audio = fade == 0 ? 1 : photos.Count;
+            string? audioInput = null;
             if (music.Count > 0)
             {
-                // each song is first made a WAV of one format (a concat list cannot mix an mp3 and a flac, and ffmpeg 9 stops at the second of a list of FLACs, with exit 0), then listed again and again until they cover the photos (a concat input cannot be looped)
                 var lengths = music.Select(m => Describe(m).Seconds).ToList();
                 if (lengths.Sum() < 1) throw new InvalidDataException("no sound in the music files");
                 var same = music.Select((m, k) => Path.Combine(work, $"music{k + 1:000}.wav")).ToList();
@@ -76,15 +91,72 @@ public static class MediaMaker
                 var lines = new List<string>();
                 for (double sum = 0; sum < total;) for (var k = 0; k < music.Count && sum < total; k++) { lines.Add(Quoted(same[k])); sum += lengths[k]; }
                 File.WriteAllText(songs, string.Join('\n', lines) + "\n", new UTF8Encoding(false));
-                args.AddRange(["-f", "concat", "-safe", "0", "-i", songs]);
+                audioInput = songs;
             }
+
+            if (fade > 0 && photos.Count > MaxPhotosPerChunk)
+            {
+                // Large albums (> 200 photos): render video-only chunks of up to 200 photos with xfade, then concat losslessly + mux audio
+                var chunks = new List<string>();
+                for (var start = 0; start < photos.Count; start += MaxPhotosPerChunk)
+                {
+                    var count = Math.Min(MaxPhotosPerChunk, photos.Count - start);
+                    var chunkFile = Path.Combine(work, $"chunk_{chunks.Count:000}.mkv");
+                    var chunkGraph = Path.Combine(work, $"graph_{chunks.Count:000}.txt");
+                    var cArgs = new List<string> { "-y", "-v", "warning" };
+                    if (count == 1)
+                    {
+                        cArgs.AddRange(["-loop", "1", "-framerate", "25", "-t", secondsEach.ToString(Inv), "-i", $"{start + 1:0000}.jpg", "-vf", "format=yuv420p"]);
+                    }
+                    else
+                    {
+                        for (var k = 0; k < count; k++)
+                            cArgs.AddRange(["-loop", "1", "-framerate", "25", "-t", (secondsEach + (k < count - 1 ? fade : 0)).ToString(Inv), "-i", $"{start + k + 1:0000}.jpg"]);
+                        var joins = new StringBuilder();
+                        for (var k = 1; k < count; k++)
+                            joins.Append($"{(k == 1 ? "[0:v]" : $"[x{k - 1}]")}[{k}:v]xfade=transition={(transition == "mix" ? Mix[(start + k - 1) % Mix.Length] : transition)}:duration={fade.ToString(Inv)}:offset={(k * secondsEach).ToString(Inv)}[x{k}];\n");
+                        File.WriteAllText(chunkGraph, joins + $"[x{count - 1}]format=yuv420p[v]\n", new UTF8Encoding(false));
+                        cArgs.AddRange(["-/filter_complex", chunkGraph, "-map", "[v]"]);
+                    }
+                    cArgs.AddRange(["-r", "25"]);
+                    cArgs.AddRange(Video);
+                    cArgs.AddRange(["-an", "-t", (count * secondsEach).ToString(Inv), chunkFile]);
+                    Tools.Run(Ffmpeg, cArgs, workDir: work);
+                    chunks.Add(chunkFile);
+                }
+                var chunkList = Path.Combine(work, "chunks.txt");
+                File.WriteAllText(chunkList, string.Join('\n', chunks.Select(Quoted)) + "\n", new UTF8Encoding(false));
+                var mArgs = new List<string> { "-y", "-v", "warning", "-f", "concat", "-safe", "0", "-i", chunkList };
+                if (audioInput != null) mArgs.AddRange(["-f", "concat", "-safe", "0", "-i", audioInput]);
+                else mArgs.AddRange(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]);
+                mArgs.AddRange(["-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "ac3", "-b:a", "192k", "-ac", "2", "-ar", "48000"]);
+                if (audioInput != null) mArgs.AddRange(["-af", $"afade=t=out:st={Math.Max(0, total - 2).ToString(Inv)}:d=2"]);
+                mArgs.AddRange(["-t", total.ToString(Inv), output]);
+                log?.Invoke($"Diaporama : {photos.Count} photos ({chunks.Count} segments), {secondsEach:0.#} s chacune, transition {transition}{(music.Count > 0 ? ", avec de la musique" : "")}");
+                Tools.Run(Ffmpeg, mArgs, workDir: work);
+                return output;
+            }
+
+            var args = new List<string> { "-y", "-v", "warning" };
+            if (fade == 0) args.AddRange(["-framerate", $"1000/{Math.Round(secondsEach * 1000)}", "-i", Path.Combine(work, "%04d.jpg")]);
+            else
+            {
+                for (var k = 0; k < photos.Count; k++)
+                    args.AddRange(["-loop", "1", "-framerate", "25", "-t", (secondsEach + (k < photos.Count - 1 ? fade : 0)).ToString(Inv), "-i", $"{k + 1:0000}.jpg"]);
+                var joins = new StringBuilder();
+                for (var k = 1; k < photos.Count; k++)
+                    joins.Append($"{(k == 1 ? "[0:v]" : $"[x{k - 1}]")}[{k}:v]xfade=transition={(transition == "mix" ? Mix[(k - 1) % Mix.Length] : transition)}:duration={fade.ToString(Inv)}:offset={(k * secondsEach).ToString(Inv)}[x{k}];\n");
+                File.WriteAllText(graph, joins + $"[x{photos.Count - 1}]format=yuv420p[v]\n", new UTF8Encoding(false));
+            }
+            var audio = fade == 0 ? 1 : photos.Count;
+            if (audioInput != null) args.AddRange(["-f", "concat", "-safe", "0", "-i", audioInput]);
             else args.AddRange(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]);
             if (fade == 0) args.AddRange(["-map", "0:v", "-map", "1:a", "-vf", "format=yuv420p"]);
-            else args.AddRange(["-/filter_complex", graph, "-map", "[v]", "-map", $"{audio}:a"]); // the graph from a file: one join per photo would not fit a command line
-            args.AddRange(["-r", "25"]); // -r repeats each picture to 25 fps; the fps filter would drop the first photos here
+            else args.AddRange(["-/filter_complex", graph, "-map", "[v]", "-map", $"{audio}:a"]);
+            args.AddRange(["-r", "25"]);
             args.AddRange(Video);
             args.AddRange(["-c:a", "ac3", "-b:a", "192k", "-ac", "2", "-ar", "48000"]);
-            if (music.Count > 0) args.AddRange(["-af", $"afade=t=out:st={Math.Max(0, total - 2).ToString(Inv)}:d=2"]);
+            if (audioInput != null) args.AddRange(["-af", $"afade=t=out:st={Math.Max(0, total - 2).ToString(Inv)}:d=2"]);
             args.AddRange(["-t", total.ToString(Inv), output]);
             log?.Invoke($"Diaporama : {photos.Count} photos, {secondsEach:0.#} s chacune{(fade > 0 ? $", transition {transition}" : "")}{(music.Count > 0 ? ", avec de la musique" : "")}");
             Tools.Run(Ffmpeg, args, workDir: work);
