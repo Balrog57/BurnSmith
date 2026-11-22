@@ -396,4 +396,103 @@ public sealed class CoreUnitTests
         }
         Assert.True(missing.Count == 0, "Untranslated XAML strings missing in en.tsv:\n" + string.Join('\n', missing.Distinct()));
     }
+
+    [Fact]
+    public void DiscCheck_ValidatesUhdVersionConsistencyAndBluRayAudioSampleRate()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "bs_bdchk_" + Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            var bdmv = Path.Combine(dir, "BDMV");
+            foreach (var sub in new[] { "BACKUP", "PLAYLIST", "CLIPINF", "STREAM" })
+                Directory.CreateDirectory(Path.Combine(bdmv, sub));
+
+            // Empty CLPI (no declared streams)
+            var clpi = new BinaryWriterBE();
+            clpi.Str("HDMV0300", 8); clpi.Zero(4); clpi.U32(16);
+            clpi.U32(2); clpi.Zero(2);
+            File.WriteAllBytes(Path.Combine(bdmv, "CLIPINF", "00001.clpi"), clpi.ToArray());
+
+            // Minimal 192-byte M2TS packets carrying a PES start on PID 0x1100 (audio) so transport check passes
+            var packets = new byte[192 * 4];
+            for (var k = 0; k < 4; k++)
+            {
+                packets[192 * k + 4] = 0x47;
+                packets[192 * k + 5] = (byte)(0x40 | (0x1100 >> 8)); // PUSI + PID high
+                packets[192 * k + 6] = 0x00;                         // PID low
+                packets[192 * k + 7] = 0x10;                         // payload only
+                packets[192 * k + 8] = 0x00;
+                packets[192 * k + 9] = 0x00;
+                packets[192 * k + 10] = 0x01;
+                packets[192 * k + 11] = 0xBD;
+            }
+            File.WriteAllBytes(Path.Combine(bdmv, "STREAM", "00001.m2ts"), packets);
+
+            static byte[] MakeMpls(byte audioRateCode)
+            {
+                // PlayItem with 1 AC-3 audio stream on PID 0x1100
+                var stn = new BinaryWriterBE();
+                stn.U16(0); // length placeholder
+                stn.U16(0); // reserved
+                stn.U8(0); stn.U8(1); stn.U8(0); stn.U8(0); // 0 video, 1 audio, 0 pg, 0 ig
+                stn.Zero(8); // secondary counts + reserved
+                // stream_entry: len=9, type=1, pid=0x1100, pad
+                stn.U8(9); stn.U8(1); stn.U16(0x1100); stn.Zero(6);
+                // stream_attributes: len=5, coding=0x81 (AC-3), pres=3|rate, lang="fre"
+                stn.U8(5); stn.U8(0x81); stn.U8((3 << 4) | (audioRateCode & 15)); stn.Str("fre", 3);
+                var stnBytes = stn.ToArray();
+                BinaryPrimitives.WriteUInt16BigEndian(stnBytes.AsSpan(0), (ushort)(stnBytes.Length - 2));
+
+                var item = new BinaryWriterBE();
+                item.U16(0); // length placeholder
+                item.Str("00001M2TS", 9);
+                item.Zero(3); // flags + stc
+                item.U32(45000); item.U32(90000); // in / out
+                item.Zero(12); // UO mask + flags + still
+                item.Bytes(stnBytes);
+                var itemBytes = item.ToArray();
+                BinaryPrimitives.WriteUInt16BigEndian(itemBytes.AsSpan(0), (ushort)(itemBytes.Length - 2));
+
+                var playList = new BinaryWriterBE();
+                playList.U32(6 + itemBytes.Length);
+                playList.U16(0); playList.U16(1); playList.U16(0);
+                playList.Bytes(itemBytes);
+                var playListBytes = playList.ToArray();
+
+                var marksAt = 40 + playListBytes.Length;
+                var mpls = new BinaryWriterBE();
+                mpls.Str("MPLS0300", 8);
+                mpls.U32(40); mpls.U32(marksAt); mpls.Zero(24);
+                mpls.Bytes(playListBytes);
+                mpls.U32(2); mpls.U16(0); // empty marks
+                return mpls.ToArray();
+            }
+
+            // Build UHD INDX0300 + MOBJ0300
+            var index = MovieObjectFile.Index([0], 0, ushort.MaxValue, 6, 1);
+            "INDX0300"u8.CopyTo(index);
+            var objects = MovieObjectFile.Write([[Nav.PlayPlaylist(1)]], "0300");
+            foreach (var folder in new[] { bdmv, Path.Combine(bdmv, "BACKUP") })
+            {
+                File.WriteAllBytes(Path.Combine(folder, "index.bdmv"), index);
+                File.WriteAllBytes(Path.Combine(folder, "MovieObject.bdmv"), objects);
+            }
+            File.WriteAllBytes(Path.Combine(bdmv, "PLAYLIST", "00001.mpls"), MakeMpls(1)); // 48 kHz
+
+            Assert.Empty(DiscCheck.Folder(dir));
+
+            // Mismatched MOBJ0200 on UHD INDX0300 disc must be flagged
+            var mobj0200 = MovieObjectFile.Write([[Nav.PlayPlaylist(1)]], "0200");
+            File.WriteAllBytes(Path.Combine(bdmv, "MovieObject.bdmv"), mobj0200);
+            File.WriteAllBytes(Path.Combine(bdmv, "BACKUP", "MovieObject.bdmv"), mobj0200);
+            Assert.Contains(DiscCheck.Folder(dir), p => p.Contains("MovieObject.bdmv") && p.Contains("UHD"));
+
+            // Restore MOBJ0300 and inject invalid audio sample rate code (e.g. 2, not in 48/96/192 kHz)
+            File.WriteAllBytes(Path.Combine(bdmv, "MovieObject.bdmv"), objects);
+            File.WriteAllBytes(Path.Combine(bdmv, "BACKUP", "MovieObject.bdmv"), objects);
+            File.WriteAllBytes(Path.Combine(bdmv, "PLAYLIST", "00001.mpls"), MakeMpls(2));
+            Assert.Contains(DiscCheck.Folder(dir), p => p.Contains("fréquence d'échantillonnage non conforme Blu-ray"));
+        }
+        finally { Tools.TryDelete(dir); }
+    }
 }

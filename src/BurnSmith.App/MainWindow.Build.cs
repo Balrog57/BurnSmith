@@ -384,7 +384,7 @@ public partial class MainWindow
         finally
         {
             busy = writing = false;
-            StartButton.IsEnabled = true;
+            Update();
             ProgressPanel.Visibility = Visibility.Collapsed;
             TaskbarItemInfo.ProgressState = ended == "failed" ? System.Windows.Shell.TaskbarItemProgressState.Error : System.Windows.Shell.TaskbarItemProgressState.None;
             cancel.Dispose();

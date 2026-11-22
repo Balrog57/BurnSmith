@@ -131,7 +131,7 @@ public static class Dvd
         {
             var menuBytes = menuPages.Sum(m => new FileInfo(m.Mpg).Length);
             log($"menu: {menuPages.Count} pages, {menuBytes / 1e6:0} MB on the disc");
-            // shortcut: the bit rate above is fixed before the menu exists, so it cannot reserve this; warn instead, lower the loop length or the pages to fix
+            // VideoBitrate already reserves an estimate for moving/audio menus; warn if the actual menu still pushes total size over capacity
             if (job.CapacityGB > 0 && movies.Sum(m => new FileInfo(m.Mpg).Length) + menuBytes > job.CapacityGB * 1e9)
                 log("warning: the movie and the looping menu together may not fit the disc; shorten the menu loop or use a lower quality");
         }

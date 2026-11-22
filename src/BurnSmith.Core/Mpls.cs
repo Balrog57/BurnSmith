@@ -9,7 +9,7 @@ namespace BurnSmith.Core;
 /// </summary>
 public sealed record Mpls(List<Mpls.Item> Items, List<int> SubPathTypes, List<Mpls.Mark> Marks)
 {
-    /// <summary>One stream of an STN table: PID, coding type (0x1B H.264, 0x86 DTS-HD MA, 0x90 PG...), language ("" for video), video rate code (0 otherwise).</summary>
+    /// <summary>One stream of an STN table: PID, coding type (0x1B H.264, 0x86 DTS-HD MA, 0x90 PG...), language ("" for video), video frame-rate or audio sample-rate code (0 otherwise).</summary>
     public sealed record Stream(int Pid, int Coding, string Lang, int Rate = 0, int EntryType = 1);
     public sealed record Item(string Clip, uint In, uint Out, List<Stream> Video, List<Stream> Audio, List<Stream> Pg, List<Stream> Ig)
     {
@@ -171,7 +171,9 @@ public sealed record Mpls(List<Mpls.Item> Items, List<int> SubPathTypes, List<Mp
                     0x92 => Encoding.ASCII.GetString(b, a + 2, 3),
                     _ => "",
                 };
-                group.Add(new Stream(pid, coding, lang, coding is 0x1B or 0x02 or 0xEA or 0x24 ? b[a + 1] & 15 : 0, type));
+                var isAudio = coding is 0x80 or 0x81 or 0x82 or 0x83 or 0x84 or 0x85 or 0x86 or 0xA1 or 0xA2;
+                var rate = coding is 0x1B or 0x02 or 0xEA or 0x24 || isAudio ? b[a + 1] & 15 : 0;
+                group.Add(new Stream(pid, coding, lang, rate, type));
                 r += 1 + b[r];
             }
             groups.Add(group);
@@ -228,6 +230,9 @@ public sealed record Mpls(List<Mpls.Item> Items, List<int> SubPathTypes, List<Mp
 
     /// <summary>Frames per second of a video rate code of the STN table (1 = 23.976 ... 7 = 59.94); 0 when unknown.</summary>
     public static double Fps(int rateCode) => rateCode switch { 1 => 24000 / 1001.0, 2 => 24, 3 => 25, 4 => 30000 / 1001.0, 6 => 50, 7 => 60000 / 1001.0, _ => 0 };
+
+    /// <summary>True for Blu-ray compliant audio sample-rate codes (1 = 48 kHz, 4 = 96 kHz, 5 = 192 kHz, 12 = 48/192 kHz, 14 = 48/96 kHz).</summary>
+    public static bool ValidBluRayAudioRate(int rateCode) => rateCode is 1 or 4 or 5 or 12 or 14;
 
     public static string CodingName(int coding) => coding switch
     {

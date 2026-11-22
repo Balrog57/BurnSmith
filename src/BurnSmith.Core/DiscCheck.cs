@@ -91,7 +91,7 @@ public static class DiscCheck
             var bytes = Metadata(e, 16 << 20);
             var problem = !bytes.AsSpan().StartsWith("MPLS"u8) ? "en-tête MPLS invalide" : Mpls.StructuralProblem(bytes);
             if (problem != null) problems.Add($"{e.Name} : {problem}");
-            else AddClipTracks(bytes, e.Name[5..], clips);
+            else AddClipTracks(bytes, e.Name[5..], clips, problems);
         }
         CheckClipTracks(clips, name => entries.TryGetValue("BDMV\\" + name, out var e) ? (e.Size, DamageScan.Open(e)) : null, problems);
         foreach (var name in entries.Keys.Where(n => n.StartsWith("BDMV\\JAR\\", StringComparison.OrdinalIgnoreCase)
@@ -106,7 +106,7 @@ public static class DiscCheck
         public HashSet<int> Pids { get; } = [];
     }
 
-    static void AddClipTracks(byte[] playlist, string shown, Dictionary<string, ClipTracks> clips)
+    static void AddClipTracks(byte[] playlist, string shown, Dictionary<string, ClipTracks> clips, List<string>? problems = null)
     {
         ClipTracks Clip(string id)
         {
@@ -123,8 +123,13 @@ public static class DiscCheck
         try { parsed = Mpls.Read(playlist); }
         catch (NotSupportedException) { return; } // multi-angle: the CLPI of each referenced clip still supplies its declared PIDs
         foreach (var item in parsed.Items)
+        {
             Clip(item.Clip).Pids.UnionWith(item.Video.Concat(item.Audio).Concat(item.Pg).Concat(item.Ig)
                 .Where(track => track.EntryType == 1).Select(track => track.Pid));
+            if (problems != null)
+                foreach (var audio in item.Audio.Where(a => a.EntryType == 1 && !Mpls.ValidBluRayAudioRate(a.Rate)))
+                    problems.Add($"{shown} : piste audio PID 0x{audio.Pid:X4} ({Mpls.CodingName(audio.Coding)}) à fréquence d'échantillonnage non conforme Blu-ray (code {audio.Rate}, 48/96/192 kHz requis)");
+        }
     }
 
     static void CheckClipTracks(Dictionary<string, ClipTracks> clips,
@@ -382,37 +387,48 @@ public static class DiscCheck
         else if (File.Exists(a) && !File.ReadAllBytes(a).AsSpan().SequenceEqual(File.ReadAllBytes(b))) problems.Add($"la copie de secours {shown} diffère de l'original");
     }
 
-    static void CheckBluRayIndex(string bdmv, List<string> problems)
+    static bool CheckBluRayIndex(string bdmv, List<string> problems)
     {
         var movieObject = Path.Combine(bdmv, "MovieObject.bdmv");
         int? objects = null;
+        string? mobjVer = null;
         if (Starts(movieObject, "MOBJ", "BDMV\\MovieObject.bdmv", problems))
         {
-            try { objects = Bdmv.ReadObjects(File.ReadAllBytes(movieObject)).Count; }
+            var mobjBytes = File.ReadAllBytes(movieObject);
+            if (mobjBytes.Length >= 8) mobjVer = Encoding.ASCII.GetString(mobjBytes, 4, 4);
+            try { objects = Bdmv.ReadObjects(mobjBytes).Count; }
             catch (InvalidDataException ex) { problems.Add($"BDMV\\MovieObject.bdmv : {ex.Message}"); }
         }
         var index = Path.Combine(bdmv, "index.bdmv");
-        if (!Starts(index, "INDX", "BDMV\\index.bdmv", problems)) return;
+        if (!Starts(index, "INDX", "BDMV\\index.bdmv", problems)) return false;
         var bytes = File.ReadAllBytes(index);
+        var isUhd = bytes.Length >= 8 && bytes.AsSpan(4, 4).SequenceEqual("0300"u8);
+        if (mobjVer != null)
+        {
+            if (isUhd && mobjVer != "0300")
+                problems.Add($"BDMV\\MovieObject.bdmv : version {mobjVer} incompatible avec un disque UHD (0300 attendu)");
+            else if (!isUhd && mobjVer == "0300")
+                problems.Add("BDMV\\MovieObject.bdmv : version UHD 0300 incompatible avec index.bdmv non UHD");
+        }
         const string shown = "BDMV\\index.bdmv";
         var start = bytes.Length >= 12 ? BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(8)) : 0;
         if (start < 78 || start > bytes.Length - 4)
         {
             problems.Add($"{shown} : adresse de la table des titres hors du fichier");
-            return;
+            return isUhd;
         }
         var length = BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan((int)start));
         if (length < 26 || length > bytes.Length - (int)start - 4)
         {
             problems.Add($"{shown} : table des titres tronquée");
-            return;
+            return isUhd;
         }
         var table = bytes.AsSpan((int)start + 4, (int)length);
         var titles = BinaryPrimitives.ReadUInt16BigEndian(table[24..]);
         if (titles > (table.Length - 26) / 12)
         {
             problems.Add($"{shown} : table des titres tronquée");
-            return;
+            return isUhd;
         }
         for (var i = 0; i < titles + 2; i++)
         {
@@ -435,11 +451,12 @@ public static class DiscCheck
                     break;
             }
         }
+        return isUhd;
     }
 
     static void CheckBluRay(string bdmv, List<string> problems)
     {
-        CheckBluRayIndex(bdmv, problems);
+        var isUhd = CheckBluRayIndex(bdmv, problems);
         foreach (var name in new[] { "index.bdmv", "MovieObject.bdmv" }) Same(Path.Combine(bdmv, name), Path.Combine(bdmv, "BACKUP", name), "BACKUP\\" + name, problems);
         var lists = Directory.Exists(Path.Combine(bdmv, "PLAYLIST")) ? Directory.GetFiles(Path.Combine(bdmv, "PLAYLIST"), "*.mpls") : [];
         if (lists.Length == 0) problems.Add("aucune liste de lecture (PLAYLIST\\*.mpls)");
@@ -450,7 +467,7 @@ public static class DiscCheck
             if (!Starts(list, "MPLS", shown, problems)) continue;
             var bytes = File.ReadAllBytes(list);
             if (Mpls.StructuralProblem(bytes) is { } problem) problems.Add($"{shown} : {problem}");
-            try { AddClipTracks(bytes, shown, clips); }
+            try { AddClipTracks(bytes, shown, clips, problems); }
             catch (Exception ex) when (ex is InvalidDataException or ArgumentException or IndexOutOfRangeException)
             { problems.Add($"{shown} : pistes MPLS illisibles ({ex.Message})"); }
         }
@@ -483,6 +500,11 @@ public static class DiscCheck
                 problems.Add($"{shown} : en-tête BD-J absent ou tronqué");
                 continue;
             }
+            var bdjoVer = Encoding.ASCII.GetString(header.Slice(4, 4));
+            if (isUhd && bdjoVer != "0300")
+                problems.Add($"{shown} : version {bdjoVer} incompatible avec un disque UHD (0300 attendu)");
+            else if (!isUhd && bdjoVer == "0300")
+                problems.Add($"{shown} : version UHD 0300 incompatible avec un disque non UHD");
             var applications = BinaryPrimitives.ReadUInt32BigEndian(header[20..]);
             if (applications < header.Length || applications > f.Length - 6)
             {
@@ -499,8 +521,23 @@ public static class DiscCheck
         foreach (var name in new[] { "app.discroot.crt", "bu.discroot.crt", "id.bdmv" })
             if (!File.Exists(Path.Combine(cert, name))) problems.Add($"CERTIFICATE\\{name} manque : une platine refusera le menu BD-J");
             else Same(Path.Combine(cert, name), Path.Combine(cert, "BACKUP", name), "CERTIFICATE\\BACKUP\\" + name, problems);
-        if (File.Exists(Path.Combine(cert, "app.discroot.crt")) && File.Exists(Path.Combine(cert, "id.bdmv")))
-            foreach (var jar in jars) problems.AddRange(BdjSign.Verify(jar, File.ReadAllBytes(Path.Combine(cert, "app.discroot.crt")), File.ReadAllBytes(Path.Combine(cert, "id.bdmv"))));
+        var idPath = Path.Combine(cert, "id.bdmv");
+        if (File.Exists(idPath))
+        {
+            var idBytes = File.ReadAllBytes(idPath);
+            if (idBytes.Length < 8 || !idBytes.AsSpan(0, 4).SequenceEqual("BDID"u8))
+                problems.Add("CERTIFICATE\\id.bdmv : en-tête BDID absent ou invalide");
+            else
+            {
+                var idVer = Encoding.ASCII.GetString(idBytes, 4, 4);
+                if (isUhd && idVer != "0300")
+                    problems.Add($"CERTIFICATE\\id.bdmv : version {idVer} incompatible avec un disque UHD (0300 attendu)");
+                else if (!isUhd && idVer == "0300")
+                    problems.Add("CERTIFICATE\\id.bdmv : version UHD 0300 incompatible avec un disque non UHD");
+            }
+        }
+        if (File.Exists(Path.Combine(cert, "app.discroot.crt")) && File.Exists(idPath))
+            foreach (var jar in jars) problems.AddRange(BdjSign.Verify(jar, File.ReadAllBytes(Path.Combine(cert, "app.discroot.crt")), File.ReadAllBytes(idPath)));
         foreach (var jar in jars)
             CheckMenuNavigation(Path.Combine("JAR", Path.GetFileName(jar)),
                 name => File.Exists(Path.Combine(bdmv, name)) ? File.OpenRead(Path.Combine(bdmv, name)) : null, problems);

@@ -341,7 +341,7 @@
           </Button>
         </StackPanel>
         <Button x:Name="StartButton" Style="{StaticResource Primary}" Grid.Column="6" Content="Démarrer" Margin="16,0,0,0"
-                MinWidth="150" Padding="24,10" FontSize="16" FontWeight="SemiBold" Click="OnStart"/>
+                MinWidth="150" Padding="24,10" FontSize="16" FontWeight="SemiBold" ToolTipService.ShowOnDisabled="True" Click="OnStart"/>
       </Grid>
 
       <Expander x:Name="LogExpander" Grid.Row="4" Header="Journal" Margin="0,10,0,0">

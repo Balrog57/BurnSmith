@@ -1171,3 +1171,5 @@ Encodage matériel actif : {0}.	Hardware encoding active: {0}.
 Normalisation du volume audio (Loudness EBU R128) activée.	Audio Loudness normalization (EBU R128) enabled.
 Format de sortie : AVCHD (dossier AVCHD/BDMV pour clé USB ou carte SD).	Output format: AVCHD (AVCHD/BDMV folder for USB drive or SD card).
 Menu natif HDMV (sans Java, compatibilité maximale).	Native HDMV menu (Java-free, maximum compatibility).
+Une vidéo source est introuvable.	A source video cannot be found.
+Lancer la création du disque	Start disc creation

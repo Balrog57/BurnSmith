@@ -374,6 +374,7 @@ public partial class MainWindow : Window
             FreeText.Text = root == null ? "" : $"Espace libre : {new DriveInfo(root).AvailableFreeSpace / 1e9:0} Go";
         }
         catch (Exception) { FreeText.Text = ""; } // a path being typed
+        Update();
     }
 
     void OnModeClick(object s, RoutedEventArgs e)
@@ -509,13 +510,22 @@ public partial class MainWindow : Window
         if (CapacityBox?.SelectedItem is not Output cap || CapBar == null) return;
         var hdrWidth = kind == "dvd" ? new GridLength(0) : new GridLength(84);
         foreach (var t in titles) if (t.HdrColWidth != hdrWidth) { t.HdrColWidth = hdrWidth; t.Refresh(); }
+        var hasVideos = titles.Count > 0;
+        var hasOut = !string.IsNullOrWhiteSpace(OutBox?.Text);
         if (Step1Btn != null)
         {
-            var hasVideos = titles.Count > 0;
-            var hasOut = !string.IsNullOrWhiteSpace(OutBox?.Text);
             Step1Btn.Style = (Style)FindResource(!hasVideos ? "Primary" : typeof(Button));
-            Step2Btn.Style = (Style)FindResource(hasVideos && !hasOut ? "Primary" : typeof(Button));
-            Step3Btn.Style = (Style)FindResource(hasVideos && hasOut ? "Primary" : typeof(Button));
+            Step2Btn.Style = (Style)FindResource(typeof(Button));
+            Step3Btn.Style = (Style)FindResource(hasVideos ? "Primary" : typeof(Button));
+        }
+        if (StartButton != null && !busy)
+        {
+            var blocker = !hasVideos ? "Ajoutez d'abord une vidéo."
+                : !hasOut ? "Choisissez un dossier de sortie."
+                : titles.Any(t => !File.Exists(t.Path)) ? "Une vidéo source est introuvable."
+                : null;
+            StartButton.IsEnabled = blocker == null;
+            StartButton.ToolTip = Loc.T(blocker ?? "Lancer la création du disque");
         }
         SyncQuickSettings();
         var est = 0.0;

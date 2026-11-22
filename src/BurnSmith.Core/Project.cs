@@ -7,7 +7,7 @@ namespace BurnSmith.Core;
 /// A disc being prepared, as the file the app saves and reopens (<see cref="Extension"/>, JSON) and as one step of its undo: the videos with their settings,
 /// the menu and the disc's options. <see cref="Kind"/>: dvd | bd | uhd. <see cref="Label"/> and <see cref="Out"/>: null = follow the first video's name.
 /// <see cref="Output"/>: the name of the disc size ("BD25 1080p/i"; null = the kind's usual one), <see cref="CapacityGB"/> what it holds (0 = the kind's usual, below 0 = no size limit). <see cref="Trial"/>: seconds of each video on a trial disc, 0 = the real one.
-/// shortcut: files are named by their full path, so a project moved to another PC opens without its videos; write them relative to the project if that is missed.
+/// Moved projects automatically re-resolve missing video, audio, subtitle and menu media paths relative to the .burnsmith file (see <see cref="ResolvePaths"/>).
 /// </summary>
 public sealed record Project(string Kind = "bd", IReadOnlyList<DiscTitle>? Titles = null, MenuDesign? Design = null, bool Menu = true, string? Label = null,
                              int ChapterMinutes = 5, EncodeOptions? Encode = null, PlaybackOptions? Playback = null, SubtitleStyle? Subtitles = null,
