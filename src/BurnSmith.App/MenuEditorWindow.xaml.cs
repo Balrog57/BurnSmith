@@ -138,12 +138,7 @@ public partial class MenuEditorWindow : Window
             }
             if (!Hdmv) return;
             BdCursorPanel.Visibility = Visibility.Collapsed;
-            foreach (var box in new[] { PopupBox, LoopBox }) // kept in the design (a BD-J disc of the same menu has them), only not offered
-            {
-                box.IsEnabled = false;
-                box.ToolTip = "Pas avec un menu HDMV (Paramètres avancés, Type de menu)";
-                ToolTipService.SetShowOnDisabled(box, true);
-            }
+            BdOnlyStructurePanel.Visibility = Visibility.Collapsed;
         };
     }
 

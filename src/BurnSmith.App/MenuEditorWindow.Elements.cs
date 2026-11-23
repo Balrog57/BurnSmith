@@ -521,16 +521,16 @@ public partial class MenuEditorWindow
     void OnElemPickEvent(object s, SelectionChangedEventArgs e) => SyncElem();
     void OnElemToggle(object s, RoutedEventArgs e) => SyncElem();
 
-    void OnElemImage(object s, RoutedEventArgs e)
+    void PickElemImage(string title, Action<MenuElement, string> onEl, Action<NativeElementOverride, string> onOv)
     {
         if (!HasSelection) return;
-        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image de l'élément") };
+        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T(title) };
         if (dlg.ShowDialog(this) != true) return;
         try
         {
             var refPath = ElementLibrary.Import(dlg.FileName).Path;
-            if (sel is { } el) el.Image = refPath;
-            else if (nativeSelId is { } nid) GetOrCreateNativeOverride(nid).Image = refPath;
+            if (sel is { } el) onEl(el, refPath);
+            else if (nativeSelId is { } nid) onOv(GetOrCreateNativeOverride(nid), refPath);
             ShowElem();
             Dirty();
         }
@@ -540,28 +540,15 @@ public partial class MenuEditorWindow
         }
     }
 
-    /// <summary>The picture a button image shows while it is selected (its "sub" twin).</summary>
-    void OnElemFocus(object s, RoutedEventArgs e)
-    {
-        if (!HasSelection) return;
-        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image du bouton sélectionné") };
-        if (dlg.ShowDialog(this) != true) return;
-        if (sel is { } el) el.Focus = dlg.FileName;
-        else if (nativeSelId is { } nid) GetOrCreateNativeOverride(nid).Focus = dlg.FileName;
-        ShowElem();
-        Dirty();
-    }
+    void OnElemImage(object s, RoutedEventArgs e) =>
+        PickElemImage("Image de l'élément", (el, p) => el.Image = p, (ov, p) => ov.Image = p);
 
-    void OnElemActive(object s, RoutedEventArgs e)
-    {
-        if (!HasSelection) return;
-        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image du bouton activé (OK)") };
-        if (dlg.ShowDialog(this) != true) return;
-        if (sel is { } el) el.ActiveImage = dlg.FileName;
-        else if (nativeSelId is { } nid) GetOrCreateNativeOverride(nid).ActiveImage = dlg.FileName;
-        ShowElem();
-        Dirty();
-    }
+    /// <summary>The picture a button image shows while it is selected (its "sub" twin).</summary>
+    void OnElemFocus(object s, RoutedEventArgs e) =>
+        PickElemImage("Image du bouton sélectionné", (el, p) => el.Focus = p, (ov, p) => ov.Focus = p);
+
+    void OnElemActive(object s, RoutedEventArgs e) =>
+        PickElemImage("Image du bouton activé (OK)", (el, p) => el.ActiveImage = p, (ov, p) => ov.ActiveImage = p);
 
     void OnPreviewStateChanged(object s, RoutedEventArgs e)
     {

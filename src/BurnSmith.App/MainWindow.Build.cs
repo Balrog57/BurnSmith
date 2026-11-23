@@ -29,7 +29,7 @@ public partial class MainWindow
         IEnumerable<(int Index, string Text, bool Enabled)> tracks = audio
             ? entry.Tracks.Audio.Select(a => (a.Index, $"{a.Name}  ({(a.File != null ? Path.GetFileName(a.File) : a.Codec)})", true))
             : entry.Tracks.Subtitles.Select(t => (t.Index, t.Supported ? $"{t.Name}  ({(t.File != null ? Path.GetFileName(t.File) : t.Codec)})" : $"{t.Name}  ({t.Codec}, non pris en charge)", t.Supported));
-        var menu = new ContextMenu { PlacementTarget = button, Placement = PlacementMode.Bottom };
+        var menu = new ContextMenu { PlacementTarget = button, Placement = PlacementMode.Bottom, FontFamily = FontFamily };
         var keepAll = new MenuItem { Header = titles.Count > 1 ? "Tout garder sur toutes les vidéos" : "Tout garder" };
         keepAll.Click += (_, _) => KeepAll(audio);
         menu.Items.Add(keepAll);
@@ -599,7 +599,7 @@ public partial class MainWindow
 
     void OnQueue(object s, RoutedEventArgs e)
     {
-        var menu = new ContextMenu { PlacementTarget = (Button)s, Placement = PlacementMode.Bottom };
+        var menu = new ContextMenu { PlacementTarget = (Button)s, Placement = PlacementMode.Bottom, FontFamily = FontFamily };
         var current = new MenuItem { Header = "Ajouter ce disque à la file", IsEnabled = titles.Count > 0 };
         current.Click += (_, _) => QueueCurrent();
         menu.Items.Add(current);

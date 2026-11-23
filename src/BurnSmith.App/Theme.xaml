@@ -364,4 +364,11 @@
       </Setter.Value>
     </Setter>
   </Style>
+
+  <Style TargetType="ContextMenu" BasedOn="{StaticResource {x:Type ContextMenu}}">
+    <Setter Property="FontFamily" Value="Segoe UI"/>
+  </Style>
+  <Style TargetType="ToolTip" BasedOn="{StaticResource {x:Type ToolTip}}">
+    <Setter Property="FontFamily" Value="Segoe UI"/>
+  </Style>
 </ResourceDictionary>

@@ -19,13 +19,19 @@
       <Setter Property="Padding" Value="10,2,0,2"/>
     </Style>
     <Style x:Key="IconBtn" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-      <Setter Property="FontFamily" Value="{StaticResource Icons}"/>
       <Setter Property="FontSize" Value="14"/>
       <Setter Property="Width" Value="30"/>
       <Setter Property="Height" Value="32"/>
       <Setter Property="Padding" Value="0"/>
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="ContentTemplate">
+        <Setter.Value>
+          <DataTemplate>
+            <TextBlock Text="{Binding}" FontFamily="{StaticResource Icons}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </DataTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
     <Style x:Key="Drop" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
       <Setter Property="HorizontalAlignment" Value="Stretch"/>
@@ -127,7 +133,7 @@
           </Button>
           <Button x:Name="ModeButton" Style="{StaticResource Primary}" Padding="18,8" Margin="0,0,8,0" Click="OnModeClick" ToolTip="Type de disque">
             <Button.ContextMenu>
-              <ContextMenu Placement="Bottom">
+              <ContextMenu Placement="Bottom" FontFamily="Segoe UI">
                 <MenuItem Header="Blu-ray" Tag="bd" Click="OnMode"/>
                 <MenuItem Header="Blu-ray 4K" Tag="uhd" Click="OnMode"/>
                 <MenuItem Header="DVD" Tag="dvd" Click="OnMode"/>
@@ -333,7 +339,7 @@
           <Button x:Name="BurnOptionsButton" Style="{StaticResource IconBtn}" Content="&#xE713;" Width="34" Height="34" Margin="4,0,0,0" Click="OnBurnOptionsClick"
                   AutomationProperties.Name="Options de gravure" ToolTip="Options de gravure : vérifier le disque après la gravure, l'éjecter à la fin">
             <Button.ContextMenu>
-              <ContextMenu Placement="Top">
+              <ContextMenu Placement="Top" FontFamily="Segoe UI">
                 <MenuItem x:Name="VerifyCheck" Header="Vérifier le disque après la gravure" IsCheckable="True" IsChecked="True" StaysOpenOnClick="True" Click="OnBurnOption"/>
                 <MenuItem x:Name="EjectCheck" Header="Éjecter le disque à la fin" IsCheckable="True" StaysOpenOnClick="True" Click="OnBurnOption"/>
               </ContextMenu>

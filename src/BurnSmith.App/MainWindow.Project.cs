@@ -111,6 +111,7 @@ public partial class MainWindow
         autosave.Tick += (_, _) => WriteAutosave();
         Closed += (_, _) => { Remember(); if (autosave.IsEnabled) WriteAutosave(); }; // the last change, made less than two seconds before closing
         autosaving = true;
+        if (droppedOnOpen && File.Exists(Project.AutosaveFile())) WriteAutosave();
     }
 
     /// <summary>« Nouveau projet » : no video, the usual disc settings, the menu template kept with its sample title. Annuler brings the former project back.</summary>
@@ -159,6 +160,13 @@ public partial class MainWindow
         if (dlg.ShowDialog(this) == true) _ = OpenProject(dlg.FileName);
     }
 
+    bool droppedOnOpen;
+
+    static string OneLine(Exception ex) =>
+        ex is FileNotFoundException ? "fichier introuvable"
+        : ex.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) is [var head, var detail, ..] && head.EndsWith(':') ? $"{head} {detail}"
+        : ex.Message.Split('\n')[0];
+
     /// <summary>Replaces what the window holds by a saved project (Annuler brings the former back). A video that is gone or unreadable is told and left out.</summary>
     public async Task OpenProject(string file, bool autosaved = false)
     {
@@ -173,14 +181,25 @@ public partial class MainWindow
         }
         await defaultDesign; // arriving later, it would not replace the project's menu, but Annuler would have no state to go back to
         Remember();
+        droppedOnOpen = false;
         loading++;
         try
         {
             foreach (var video in (p.Titles ?? []).Select(t => t.Video).Where(v => !probed.ContainsKey(v)).Distinct().ToList())
             {
+                if (!File.Exists(video))
+                {
+                    droppedOnOpen = true;
+                    Warn($"Projet : « {Path.GetFileName(video)} » est introuvable ou illisible, cette vidéo n'est pas reprise (fichier introuvable).");
+                    continue;
+                }
                 StatusText.Text = "Ouverture de " + Path.GetFileName(video) + "…";
                 try { probed[video] = await Task.Run(() => BluRay.Probe(video)); }
-                catch (Exception ex) { Warn($"Projet : « {Path.GetFileName(video)} » est introuvable ou illisible, cette vidéo n'est pas reprise ({ex.Message.Split('\n')[0]})."); }
+                catch (Exception ex)
+                {
+                    droppedOnOpen = true;
+                    Warn($"Projet : « {Path.GetFileName(video)} » est introuvable ou illisible, cette vidéo n'est pas reprise ({OneLine(ex)}).");
+                }
             }
             Apply(p);
             if (autosaved) return; // the kept project is no file of the user's: Ctrl+S asks where
@@ -303,7 +322,7 @@ public partial class MainWindow
         }
         catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or IOException)
         {
-            Warn("Photos / musique : " + ex.Message.Split('\n')[0]);
+            Warn("Photos / musique : " + OneLine(ex));
         }
         finally { making--; }
         return videos;
@@ -357,7 +376,7 @@ public partial class MainWindow
             }
             catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or IOException or UnauthorizedAccessException)
             {
-                Warn($"Impossible de lire {Path.GetFileName(Path.TrimEndingDirectorySeparator(f))} : {ex.Message.Split('\n')[0]}");
+                Warn($"Impossible de lire {Path.GetFileName(Path.TrimEndingDirectorySeparator(f))} : {OneLine(ex)}");
             }
         }
         NaturalOrder(list);
@@ -379,7 +398,7 @@ public partial class MainWindow
             }
             catch (Exception ex)
             {
-                Warn($"Impossible de lire {Path.GetFileName(path)} : {ex.Message.Split('\n')[0]}");
+                Warn($"Impossible de lire {Path.GetFileName(path)} : {OneLine(ex)}");
             }
         }
         AfterTitlesChanged();
@@ -612,7 +631,7 @@ public partial class MainWindow
         }
         catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or IOException)
         {
-            Warn("Fusion : " + ex.Message.Split('\n')[0]);
+            Warn("Fusion : " + OneLine(ex));
         }
         finally { making--; }
     }

@@ -265,7 +265,7 @@ public partial class MainWindow : Window
 
     public MenuEditorWindow CreateEditor(MenuDesign? start = null) => openEditor = new(start ?? design, previewFrame, EditorContent())
         { Playback = playback, DvdPreview = kind == "dvd", Hdmv = kind != "dvd" && (hdmvMenu || CompatCheck.IsChecked == true),
-          CanPreviewPopup = kind != "dvd" && !hdmvMenu && CompatCheck.IsChecked != true };
+          CanPreviewPopup = kind != "dvd" && CompatCheck.IsChecked != true };
 
     /// <summary>The video the menu's picture, the disc's name and the audio / subtitle pages come from: the first that is not a bonus.</summary>
     Entry? MainEntry => titles.FirstOrDefault(t => !t.Bonus && !t.Intro) ?? titles.FirstOrDefault();
