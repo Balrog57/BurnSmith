@@ -58,6 +58,20 @@ public sealed class MenuElement
     public string Look { get; set; } = "";
     /// <summary>Part of a design's look (the veil or the fades a template lays on its pages): it comes and goes with the template, where the user's own elements stay.</summary>
     public bool OfLook { get; set; }
+    public int ZIndex { get; set; }
+    public bool Hidden { get; set; }
+    public bool Locked { get; set; }
+    public int ElementOpacity { get; set; } = 100;
+    public double Rotation { get; set; }
+    public string? ShadowColor { get; set; }
+    public int ShadowBlur { get; set; }
+    public int ShadowOffsetX { get; set; }
+    public int ShadowOffsetY { get; set; }
+    public int ImageBlur { get; set; }
+    public string? TintColor { get; set; }
+    public int TintStrength { get; set; }
+    public string? ActiveImage { get; set; }
+    public string? ActiveColor { get; set; }
 
     public const string AllPages = "all";
 
@@ -88,39 +102,49 @@ public sealed class MenuElement
     /// <summary>The drawing instructions of this element on a page (empty when the picture is missing: the page stays drawable).</summary>
     public IEnumerable<Op> Ops(MenuDesign d)
     {
+        if (Hidden) yield break;
         var box = Box();
+        var raw = new List<Op>();
         switch (Kind.Trim().ToLowerInvariant())
         {
             case "image":
                 var file = ElementLibrary.Resolve(Image) ?? Image;
                 if (file is null || !(MenuRenderer.IsSvgText(file) || File.Exists(file))) yield break; // a drawing can be given as its SVG text (a design's own fade)
-                yield return new Image(file, box, Cover: !Fit);
-                if (BorderWidth > 0) yield return new Border(box, Border, BorderWidth, Radius);
+                raw.Add(new Image(file, box, Cover: !Fit));
+                if (BorderWidth > 0) raw.Add(new Border(box, Border, BorderWidth, Radius));
                 break;
             case "box":
-                yield return new Fill(box, Fill, Math.Clamp(Opacity, 0, 100) / 100.0, Math.Max(0, Radius));
-                if (BorderWidth > 0) yield return new Border(box, Border, BorderWidth, Radius);
+                raw.Add(new Fill(box, Fill, Math.Clamp(Opacity, 0, 100) / 100.0, Math.Max(0, Radius)));
+                if (BorderWidth > 0) raw.Add(new Border(box, Border, BorderWidth, Radius));
                 break;
             case "button":
                 if (ElementLibrary.Resolve(Image) is { } art && File.Exists(art))
                 {
                     // a library button: its picture is the look, the label (if any) goes over it
-                    yield return new Image(art, box);
-                    if (Text.Length > 0) yield return new Label(Text, box, Math.Clamp(Size, 20, 80), true, Ink: MenuRenderer.InkOn(art, d.TextColor));
+                    raw.Add(new Image(art, box));
+                    if (Text.Length > 0) raw.Add(new Label(Text, box, Math.Clamp(Size, 20, 80), true, Ink: Color != "#FFFFFF" ? Color : MenuRenderer.InkOn(art, d.TextColor)));
                     break;
                 }
                 // the button's own look, else the design's (card, label), so a hand-placed button sits beside the template's own
                 var look = ElementLibrary.ButtonStyles.Any(s => s.Value == Look) ? Look : "";
                 var styled = look.Length == 0 ? d : d.Clone();
                 styled.ButtonStyle = look.Length == 0 ? d.ButtonStyle : look;
-                foreach (var op in MenuBuilder.Button(styled, box, Text.Length > 0 ? Text : "Button", Math.Clamp(Size, 20, 80))) yield return op;
+                if (Fill != "#000000") styled.CardFill = Fill;
+                if (Color != "#FFFFFF") styled.TextColor = Color;
+                if (!string.IsNullOrWhiteSpace(Font)) styled.Font = Font;
+                raw.AddRange(MenuBuilder.Button(styled, box, Text.Length > 0 ? Text : "Button", Math.Clamp(Size, 20, 80)));
                 break;
             default:
                 if (Text.Length == 0) yield break;
-                yield return new Text(Text, box, Math.Clamp(Size, 8, 300), Font.Length > 0 ? Font : d.Font, null, Color, Bold, Italic, Align,
-                                      OutlineWidth > 0 ? Outline : null, OutlineWidth);
+                raw.Add(new Text(Text, box, Math.Clamp(Size, 8, 300), Font.Length > 0 ? Font : d.Font, null, Color, Bold, Italic, Align,
+                                      OutlineWidth > 0 ? (Outline ?? "#000000") : null, OutlineWidth));
                 break;
         }
+        var blur = Kind.Equals("image", StringComparison.OrdinalIgnoreCase) ? ImageBlur : 0;
+        var tint = Kind.Equals("image", StringComparison.OrdinalIgnoreCase) || Kind.Equals("box", StringComparison.OrdinalIgnoreCase) ? TintColor : null;
+        var tintStrength = tint != null ? TintStrength : 0;
+        foreach (var op in raw)
+            yield return MenuBuilder.WithEffects(op, box, ElementOpacity, Rotation, ShadowColor, ShadowBlur, ShadowOffsetX, ShadowOffsetY, blur, tint, tintStrength);
     }
 
     /// <summary>
@@ -157,6 +181,7 @@ public sealed class MenuElement
                 case "outlinew": if (int.TryParse(value, out var ow)) e.OutlineWidth = ow; break;
                 case "fill": e.Fill = value; break;
                 case "opacity": if (int.TryParse(value, out var op)) e.Opacity = op; break;
+                case "elemopacity": if (int.TryParse(value, out var eop)) e.ElementOpacity = eop; break;
                 case "radius": if (int.TryParse(value, out var r)) e.Radius = r; break;
                 case "border": e.Border = value; break;
                 case "borderw": if (int.TryParse(value, out var bw)) e.BorderWidth = bw; break;
@@ -164,7 +189,16 @@ public sealed class MenuElement
                 case "behind": e.Behind = value is "1" or "true" or "oui"; break;
                 case "target": e.Target = value.ToLowerInvariant(); break;
                 case "focus": e.Focus = value; break;
+                case "active": e.ActiveImage = value; break;
+                case "activecolor": e.ActiveColor = value; break;
                 case "look": e.Look = value; break;
+                case "z": if (int.TryParse(value, out var zv)) e.ZIndex = zv; break;
+                case "hidden": e.Hidden = value is "1" or "true" or "oui"; break;
+                case "locked": e.Locked = value is "1" or "true" or "oui"; break;
+                case "rotation": if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var rot)) e.Rotation = rot; break;
+                case "shadow": e.ShadowColor = value; break;
+                case "shadowdx": if (int.TryParse(value, out var sdx)) e.ShadowOffsetX = sdx; break;
+                case "shadowdy": if (int.TryParse(value, out var sdy)) e.ShadowOffsetY = sdy; break;
             }
         }
         if (e.Kind is not ("text" or "image" or "box" or "button")) throw new ArgumentException($"element kind unknown: {e.Kind} (text, image, box or button)");

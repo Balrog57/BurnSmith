@@ -46,6 +46,7 @@ public partial class MenuEditorWindow
         {
             el.Image = ElementLibrary.Reference(item.Normal);
             el.Focus = item.Focus == null ? null : ElementLibrary.Reference(item.Focus);
+            el.ActiveImage = item.Active == null ? null : ElementLibrary.Reference(item.Active);
             if (MenuRenderer.Size(item.Normal) is { } size)
             {
                 var k = Math.Min(1.0, 600.0 / size.W); // a picture made for a 1080p page stays as it is, a bigger one is brought down
@@ -129,11 +130,13 @@ public partial class MenuEditorWindow
                 try
                 {
                     var stem = Path.GetFileNameWithoutExtension(normal.FileName);
-                    var selLayer = layers.FirstOrDefault(l => l.Name.Contains("select", StringComparison.OrdinalIgnoreCase)
+                    var actLayer = layers.FirstOrDefault(l => l.Name.Contains("active", StringComparison.OrdinalIgnoreCase)
+                        || l.Name.Contains("press", StringComparison.OrdinalIgnoreCase));
+                    var selLayer = layers.FirstOrDefault(l => l != actLayer && (l.Name.Contains("select", StringComparison.OrdinalIgnoreCase)
                         || l.Name.Contains("focus", StringComparison.OrdinalIgnoreCase)
-                        || l.Name.Contains("hover", StringComparison.OrdinalIgnoreCase));
-                    var normLayer = layers.FirstOrDefault(l => l != selLayer && (l.Name.Contains("normal", StringComparison.OrdinalIgnoreCase)
-                        || l.Name.Contains("base", StringComparison.OrdinalIgnoreCase))) ?? layers.FirstOrDefault(l => l != selLayer);
+                        || l.Name.Contains("hover", StringComparison.OrdinalIgnoreCase)));
+                    var normLayer = layers.FirstOrDefault(l => l != selLayer && l != actLayer && (l.Name.Contains("normal", StringComparison.OrdinalIgnoreCase)
+                        || l.Name.Contains("base", StringComparison.OrdinalIgnoreCase))) ?? layers.FirstOrDefault(l => l != selLayer && l != actLayer);
                     var normBytes = normLayer?.Png ?? comp ?? throw new InvalidDataException("Le fichier PSD ne contient aucun calque visible.");
                     var normPath = Path.Combine(tmp, stem + ".png");
                     File.WriteAllBytes(normPath, normBytes);
@@ -143,7 +146,13 @@ public partial class MenuEditorWindow
                         selPath = Path.Combine(tmp, stem + "_sel.png");
                         File.WriteAllBytes(selPath, selLayer.Png);
                     }
-                    ElementLibrary.ImportButton(normPath, selPath);
+                    string? actPath = null;
+                    if (actLayer != null)
+                    {
+                        actPath = Path.Combine(tmp, stem + "_act.png");
+                        File.WriteAllBytes(actPath, actLayer.Png);
+                    }
+                    ElementLibrary.ImportButton(normPath, selPath, actPath);
                 }
                 finally { Tools.TryDelete(tmp); }
             }
@@ -172,209 +181,6 @@ public partial class MenuEditorWindow
         {
             MessageBox.Show(this, ex.Message, "BurnSmith");
         }
-    }
-
-    // A drag on the page: the element, which part of it was grabbed (0 = the body moves it, 1..4 = a corner resizes it: NW, NE, SW, SE),
-    // where the mouse was, and the element's rectangle at that moment. The mouse is captured by the canvas, because the page is redrawn
-    // (and the shape under the mouse replaced) as soon as the element is selected.
-    (MenuElement El, int Part, System.Windows.Point Start, int X, int Y, int W, int H)? drag;
-    bool dragMoved;
-
-    /// <summary>The element outlines on the page on show: click one to edit it, drag it to move it, drag a corner of the selected one to resize it.</summary>
-    void DrawElements()
-    {
-        if (current == null) return;
-        var accent = AccentBrush();
-        var clear = System.Windows.Media.Brushes.Transparent;
-        var here = working.Elements.Where(x => x.AppliesTo(current.Id)).ToList();
-        foreach (var el in here.Where(x => x != sel).Concat(here.Where(x => x == sel))) // the selected one last, so its corners are the ones that get the click
-        {
-            var box = el.Box();
-            Piece(el, 0, box.X, box.Y, box.W, box.H, clear, accent, el == sel ? 5 : 2, System.Windows.Input.Cursors.SizeAll);
-            if (el != sel) continue;
-            var h = Math.Min(Handle, Math.Min(box.W, box.H) / 3);
-            var right = box.X + box.W - h;
-            var bottom = box.Y + box.H - h;
-            Piece(el, 1, box.X, box.Y, h, h, accent, clear, 0, System.Windows.Input.Cursors.SizeNWSE);
-            Piece(el, 2, right, box.Y, h, h, accent, clear, 0, System.Windows.Input.Cursors.SizeNESW);
-            Piece(el, 3, box.X, bottom, h, h, accent, clear, 0, System.Windows.Input.Cursors.SizeNESW);
-            Piece(el, 4, right, bottom, h, h, accent, clear, 0, System.Windows.Input.Cursors.SizeNWSE);
-        }
-    }
-
-    void Piece(MenuElement el, int part, int x, int y, int w, int h, System.Windows.Media.Brush fill, System.Windows.Media.Brush stroke, double thickness, System.Windows.Input.Cursor cursor)
-    {
-        var shape = new System.Windows.Shapes.Rectangle { Width = w, Height = h, Fill = fill, Stroke = stroke, StrokeThickness = thickness, Cursor = cursor, Tag = "element" };
-        if (part == 0) shape.StrokeDashArray = [6, 4];
-        System.Windows.Controls.Canvas.SetLeft(shape, x);
-        System.Windows.Controls.Canvas.SetTop(shape, y);
-        shape.MouseLeftButtonDown += (_, me) =>
-        {
-            Stage.Focus();
-            drag = (el, part, me.GetPosition(StageCanvas), el.X, el.Y, el.W, el.H);
-            dragMoved = false;
-            if (el != sel) SelectElem(el); // redraws the page: this shape is gone, the canvas keeps the mouse
-            StageCanvas.CaptureMouse();
-            me.Handled = true;
-        };
-        StageCanvas.Children.Add(shape);
-    }
-
-    void OnCanvasMove(object s, System.Windows.Input.MouseEventArgs e)
-    {
-        if (drag == null || !StageCanvas.IsMouseCaptured) return;
-        DragTo(e.GetPosition(StageCanvas), (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Alt) == 0);
-    }
-
-    // the alignment marks of the drag in progress (SmartGuides): lines across what the element is aligned with, drawn over the page
-    List<SmartGuides.Mark> marks = [];
-
-    /// <summary>The element being dragged follows the mouse to <paramref name="at"/>; with <paramref name="guided"/> (Alt not held) it meets the edges and middles within reach.</summary>
-    void DragTo(System.Windows.Point at, bool guided)
-    {
-        if (drag is not { } d) return;
-        int dx = (int)(at.X - d.Start.X), dy = (int)(at.Y - d.Start.Y);
-        var el = d.El;
-        // what it can be aligned with: the other elements of this page and the template's own buttons (an element's own button is the element)
-        var others = guided && current != null
-            ? working.Elements.Where(x => x != el && x.AppliesTo(current.Id)).Select(x => x.Box()).Concat(current.Buttons.Where(b => !b.Id.StartsWith('u')).Select(b => b.Rect)).ToList()
-            : null;
-        marks = [];
-        if (d.Part == 0)
-        {
-            el.X = Math.Clamp(d.X + dx, 0, MenuBuilder.W - 8);
-            el.Y = Math.Clamp(d.Y + dy, 0, MenuBuilder.H - 8);
-            if (others != null)
-            {
-                (var box, marks) = SmartGuides.Move(el.Box(), others);
-                (el.X, el.Y) = (box.X, box.Y);
-            }
-        }
-        else
-        {
-            int left = d.X, top = d.Y, right = d.X + d.W, bottom = d.Y + d.H;
-            if (d.Part is 1 or 3) left = Math.Clamp(left + dx, 0, right - MinW); else right = Math.Clamp(right + dx, left + MinW, MenuBuilder.W);
-            if (d.Part is 1 or 2) top = Math.Clamp(top + dy, 0, bottom - MinH); else bottom = Math.Clamp(bottom + dy, top + MinH, MenuBuilder.H);
-            var box = new Box(left, top, right - left, bottom - top);
-            if (others != null) (box, marks) = SmartGuides.Resize(box, d.Part is 1 or 3, d.Part is 1 or 2, others, minW: MinW, minH: MinH);
-            (el.X, el.Y, el.W, el.H) = (box.X, box.Y, box.W, box.H);
-        }
-        dragMoved = true;
-        ShowElem();
-        DrawStage();
-    }
-
-    /// <summary>The marks of the drag in progress: a line across everything the element is aligned with, a dashed one in each of two equal gaps.</summary>
-    void DrawMarks()
-    {
-        var ink = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0x2B, 0xD6)); // magenta, as picture editors draw them: no menu is that colour
-        foreach (var m in marks)
-        {
-            var (from, to) = m.Spacing ? (m.From, m.To) : (m.From - 24, m.To + 24);
-            var line = new System.Windows.Shapes.Line { Stroke = ink, StrokeThickness = 4, IsHitTestVisible = false, X1 = m.Vertical ? m.At : from, X2 = m.Vertical ? m.At : to, Y1 = m.Vertical ? from : m.At, Y2 = m.Vertical ? to : m.At };
-            if (m.Spacing) line.StrokeDashArray = [3, 2];
-            StageCanvas.Children.Add(line);
-        }
-    }
-
-    void OnSafeToggle(object s, RoutedEventArgs e) => DrawStage();
-
-    /// <summary>
-    /// « Zone sûre »: the action-safe and title-safe frames over the page (SafeArea), each button or text that leaves the title-safe one outlined in orange.
-    /// shortcut: the outlines follow the last render, so an element being dragged shows where it left from until the mouse is let go.
-    /// </summary>
-    void DrawSafe()
-    {
-        var visual = new System.Windows.Media.DrawingVisual();
-        var page = new System.Windows.Rect(0, 0, MenuBuilder.W, MenuBuilder.H);
-        using (var dc = visual.RenderOpen())
-        {
-            dc.PushClip(new System.Windows.Media.RectangleGeometry(page)); // the picture's bounds are the page's, so it lies on the canvas unscaled
-            dc.DrawRectangle(System.Windows.Media.Brushes.Transparent, null, page);
-            SafeArea.Draw(dc, current!, shot?.Design ?? working);
-        }
-        StageCanvas.Children.Add(new System.Windows.Controls.Image { Source = new System.Windows.Media.DrawingImage(visual.Drawing), Width = MenuBuilder.W, Height = MenuBuilder.H, IsHitTestVisible = false });
-    }
-
-    /// <summary>
-    /// For the off-screen snapshot (<c>guides</c>): two buttons one under the other, and a third dragged to just beside the place that continues
-    /// the column. The status line says where it landed: on the column's edge and at the same gap (300, 620), not where the mouse left it.
-    /// </summary>
-    public async Task TryGuides()
-    {
-        MenuElement Button(string text, int x, int y) { var b = new MenuElement { Kind = "button", Page = "root", Text = text, X = x, Y = y, W = 420, H = 90 }; working.Elements.Add(b); return b; }
-        Button("Un", 300, 300);
-        Button("Deux", 300, 460);
-        var third = Button("Trois", 180, 700);
-        sel = third;
-        drag = (third, 0, new System.Windows.Point(0, 0), third.X, third.Y, third.W, third.H);
-        DragTo(new System.Windows.Point(124, -84), true); // to (304, 616): 4 px off each way
-        drag = null;
-        var shown = marks;
-        Dirty();
-        await Task.Delay(2500); // the page is drawn again with the three buttons: the marks of the drag are put back over it for the picture
-        marks = shown;
-        DrawStage();
-        Status.Text = $"guides {(third.X == 300 && third.Y == 620 && marks.Count >= 3 ? "ok" : "FAIL")}: {third.X},{third.Y}, {marks.Count} repères";
-        await Task.Delay(300); // the page is laid out again before the picture is taken
-    }
-
-    /// <summary>The preview is redrawn when the mouse is let go (a click that did not move anything costs nothing).</summary>
-    void OnCanvasUp(object s, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (drag == null) return;
-        StageCanvas.ReleaseMouseCapture();
-    }
-
-    void OnCanvasLost(object s, System.Windows.Input.MouseEventArgs e)
-    {
-        var moved = dragMoved;
-        drag = null;
-        dragMoved = false;
-        marks = []; // the marks last as long as the drag
-        if (moved) { RefreshElemList(); Dirty(); }
-        else DrawStage();
-    }
-
-    /// <summary>Keys on the page: with an element selected, Delete removes it, Escape lets it go and the arrows nudge it (10 px, Shift 1 px); otherwise the arrows and Enter walk the buttons like a remote.</summary>
-    void OnStageKey(object s, System.Windows.Input.KeyEventArgs e)
-    {
-        if (editing != null) // the box takes every key but these two
-        {
-            if (e.Key is System.Windows.Input.Key.Enter or System.Windows.Input.Key.Escape)
-            {
-                EndZoneEdit(e.Key == System.Windows.Input.Key.Enter);
-                e.Handled = true;
-            }
-            return;
-        }
-        if (sel is { } el)
-        {
-            var step = (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Shift) != 0 ? 1 : 10;
-            switch (e.Key)
-            {
-                case System.Windows.Input.Key.Delete: OnElemDelete(s, new RoutedEventArgs()); break;
-                case System.Windows.Input.Key.Escape: SelectElem(null); break;
-                case System.Windows.Input.Key.Left: Nudge(el, -step, 0); break;
-                case System.Windows.Input.Key.Right: Nudge(el, step, 0); break;
-                case System.Windows.Input.Key.Up: Nudge(el, 0, -step); break;
-                case System.Windows.Input.Key.Down: Nudge(el, 0, step); break;
-                default: return;
-            }
-            e.Handled = true;
-            return;
-        }
-        if (Remote(e.Key)) e.Handled = true;
-    }
-
-    void Nudge(MenuElement el, int dx, int dy)
-    {
-        var box = el.Box();
-        el.X = Math.Clamp(el.X + dx, 0, MenuBuilder.W - box.W);
-        el.Y = Math.Clamp(el.Y + dy, 0, MenuBuilder.H - box.H);
-        ShowElem();
-        DrawStage();
-        Dirty();
     }
 
     void OnStripPick(object s, SelectionChangedEventArgs e)
@@ -415,7 +221,7 @@ public partial class MenuEditorWindow
     /// <summary>The step on show is the last one: the page as the disc shows it, nothing to grab on it.</summary>
     bool Previewing => Props.SelectedIndex == Hints.Length - 1;
 
-    string? drawerKind; // "bg" | "btn" | null
+    string? drawerKind; // "bg" | "btn" | "layers" | null
 
     void ShowRightPanel()
     {
@@ -424,9 +230,16 @@ public partial class MenuEditorWindow
         LibraryDrawer.Visibility = hasDrawer ? Visibility.Visible : Visibility.Collapsed;
         BgDrawerPanel.Visibility = drawerKind == "bg" ? Visibility.Visible : Visibility.Collapsed;
         BtnDrawerPanel.Visibility = drawerKind == "btn" ? Visibility.Visible : Visibility.Collapsed;
-        DrawerTitle.Text = drawerKind == "btn" ? "Bibliothèque de boutons" : "Bibliothèque de fonds";
-        ElementInspectorPanel.Visibility = !hasDrawer && sel != null ? Visibility.Visible : Visibility.Collapsed;
-        MenuSettingsPanel.Visibility = !hasDrawer && sel == null ? Visibility.Visible : Visibility.Collapsed;
+        LayersDrawerPanel.Visibility = drawerKind == "layers" ? Visibility.Visible : Visibility.Collapsed;
+        DrawerTitle.Text = drawerKind switch
+        {
+            "btn" => "Bibliothèque de boutons",
+            "layers" => "Calques de la page",
+            _ => "Bibliothèque de fonds",
+        };
+        if (drawerKind == "layers") RefreshLayersDrawer();
+        ElementInspectorPanel.Visibility = !hasDrawer && HasSelection ? Visibility.Visible : Visibility.Collapsed;
+        MenuSettingsPanel.Visibility = !hasDrawer && !HasSelection ? Visibility.Visible : Visibility.Collapsed;
     }
 
     void OnBackToMenu(object s, RoutedEventArgs e) => SelectElem(null);
@@ -464,12 +277,12 @@ public partial class MenuEditorWindow
         step = Math.Clamp(step, 0, Hints.Length - 1);
         if (StepBar.Children[step] is RadioButton bar && bar.IsChecked != true) { bar.IsChecked = true; return; } // comes back here through OnStep
         Props.SelectedIndex = step;
-        Hint.Text = Hints[step];
+        Hint.Text = Loc.T(Hints[step]);
         BackStep.IsEnabled = step > 0;
         NextStep.IsEnabled = step < Hints.Length - 1;
         if (step != 1) drawerKind = null;
         ShowRightPanel();
-        if (Previewing && sel != null) SelectElem(null); else DrawStage();
+        if (Previewing && HasSelection) SelectElem(null); else DrawStage();
         if (Previewing) Stage.Focus(); // the keyboard's arrows walk the menu at once
     }
 
@@ -650,6 +463,118 @@ public partial class MenuEditorWindow
         Dirty();
     }
 
+    void OnPickCursorPreset(object s, SelectionChangedEventArgs e)
+    {
+        if (CursorPresetBox.SelectedValue is not string preset) return;
+        working.CursorPreset = preset;
+        CursorCustomBtn.Visibility = preset == "custom" ? Visibility.Visible : Visibility.Collapsed;
+        if (preset == "none") working.FocusFrames = null;
+        else if (preset is "pulse" or "ring" or "arrow") working.FocusFrames = MenuRenderer.BuiltInCursorFrames(preset, working.Accent);
+        Dirty();
+    }
+
+    void OnPickCursorFrames(object s, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images PNG|*.png|Images|*.png;*.jpg;*.bmp|Tous les fichiers|*.*"), Multiselect = true, Title = Loc.T("Images du curseur animé BD-J (2 ou plus)") };
+        if (dlg.ShowDialog(this) != true || dlg.FileNames.Length < 2)
+        {
+            if (dlg.FileNames.Length == 1) Status.Text = Loc.T("Sélectionnez au moins 2 images PNG pour animer le curseur.");
+            return;
+        }
+        working.CursorPreset = "custom";
+        working.FocusFrames = dlg.FileNames.OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToArray();
+        Dirty();
+    }
+
+    bool pageMediaSync;
+
+    void SyncPageMediaToUi()
+    {
+        if (LoopBox == null || PageMediaScopeBox == null) return;
+        pageMediaSync = true;
+        var pid = current?.Id ?? "root";
+        var hasOverride = working.PageMedias.Any(m => m.Page.Equals(pid, StringComparison.OrdinalIgnoreCase));
+        PageMediaScopeBox.IsChecked = hasOverride;
+        var pm = working.MediaFor(pid);
+        LoopBox.IsChecked = pm.Loop ?? working.Loop;
+        LoopFileBox.Text = pm.LoopFile ?? "";
+        MusicFileBox.Text = pm.Music ?? "";
+        MusicVolumeSlider.Value = pm.MusicVolume ?? working.MusicVolume;
+        pageMediaSync = false;
+    }
+
+    void OnPageMediaScopeChanged(object s, RoutedEventArgs e)
+    {
+        if (pageMediaSync || current == null) return;
+        var pid = current.Id;
+        if (PageMediaScopeBox.IsChecked == true)
+        {
+            if (!working.PageMedias.Any(m => m.Page.Equals(pid, StringComparison.OrdinalIgnoreCase)))
+                working.PageMedias.Add(new PageMedia { Page = pid, Loop = working.Loop, LoopFile = working.LoopFile, Music = working.Music, MusicVolume = working.MusicVolume });
+        }
+        else
+        {
+            working.PageMedias.RemoveAll(m => m.Page.Equals(pid, StringComparison.OrdinalIgnoreCase));
+        }
+        SyncPageMediaToUi();
+        Dirty();
+    }
+
+    void OnPageMediaChanged(object s, RoutedEventArgs e)
+    {
+        if (pageMediaSync) return;
+        if (PageMediaScopeBox.IsChecked == true && current != null)
+        {
+            var pid = current.Id;
+            var pm = working.PageMedias.FirstOrDefault(m => m.Page.Equals(pid, StringComparison.OrdinalIgnoreCase));
+            if (pm == null) { pm = new PageMedia { Page = pid }; working.PageMedias.Add(pm); }
+            pm.Loop = LoopBox.IsChecked == true;
+            pm.LoopFile = string.IsNullOrWhiteSpace(LoopFileBox.Text) ? null : LoopFileBox.Text.Trim();
+            pm.Music = string.IsNullOrWhiteSpace(MusicFileBox.Text) ? null : MusicFileBox.Text.Trim();
+            pm.MusicVolume = (int)MusicVolumeSlider.Value;
+        }
+        else
+        {
+            working.Loop = LoopBox.IsChecked == true;
+            working.LoopFile = string.IsNullOrWhiteSpace(LoopFileBox.Text) ? null : LoopFileBox.Text.Trim();
+            working.Music = string.IsNullOrWhiteSpace(MusicFileBox.Text) ? null : MusicFileBox.Text.Trim();
+            working.MusicVolume = (int)MusicVolumeSlider.Value;
+        }
+        Dirty();
+    }
+
+    void OnPickSoundPack(object s, SelectionChangedEventArgs e)
+    {
+        if (SoundPackBox.SelectedValue is not string pack) return;
+        working.Sounds.Pack = pack;
+        SoundCustomPanel.Visibility = pack == "custom" ? Visibility.Visible : Visibility.Collapsed;
+        Dirty();
+    }
+
+    void OnPickMoveWav(object s, RoutedEventArgs e) =>
+        Pick("Fichiers audio|*.wav;*.mp3;*.flac;*.ogg;*.aac", Loc.T("Son de déplacement (télécommande)"), f => working.Sounds.MoveWav = f);
+
+    void OnPickSelectWav(object s, RoutedEventArgs e) =>
+        Pick("Fichiers audio|*.wav;*.mp3;*.flac;*.ogg;*.aac", Loc.T("Son de validation OK (télécommande)"), f => working.Sounds.SelectWav = f);
+
+    void OnPreviewSound(object s, RoutedEventArgs e)
+    {
+        try
+        {
+            var pack = working.Sounds.Pack;
+            var snd = string.IsNullOrWhiteSpace(pack) || pack == "none"
+                ? new MenuSoundSettings { Pack = "discret", Volume = working.Sounds.Volume }
+                : working.Sounds;
+            var wav = SoundBank.BuildWav(snd, true);
+            using var ms = new MemoryStream(wav);
+            new System.Media.SoundPlayer(ms).Play();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            Status.Text = ex.Message;
+        }
+    }
+
     /// <summary>The whole menu in French or in English: the words of the Menu tab and those drawn in a template's buttons.</summary>
     void OnPickLanguage(object s, SelectionChangedEventArgs e)
     {
@@ -701,10 +626,28 @@ public partial class MenuEditorWindow
     }
 
     void OnLoopFile(object s, RoutedEventArgs e) =>
-        Pick("Vidéos|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv", "Vidéo du menu animé", f => working.LoopFile = f);
+        Pick("Vidéos|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.wmv", "Vidéo du menu animé", f =>
+        {
+            if (PageMediaScopeBox.IsChecked == true && current != null)
+            {
+                var pm = working.PageMedias.FirstOrDefault(m => m.Page.Equals(current.Id, StringComparison.OrdinalIgnoreCase));
+                if (pm == null) { pm = new PageMedia { Page = current.Id }; working.PageMedias.Add(pm); }
+                pm.LoopFile = f;
+            }
+            else working.LoopFile = f;
+        });
 
     void OnMusic(object s, RoutedEventArgs e) =>
-        Pick("Sons|*.mp3;*.flac;*.wav;*.m4a;*.ogg;*.ac3;*.aac", "Musique du menu", f => working.Music = f);
+        Pick("Sons|*.mp3;*.flac;*.wav;*.m4a;*.ogg;*.ac3;*.aac", "Musique du menu", f =>
+        {
+            if (PageMediaScopeBox.IsChecked == true && current != null)
+            {
+                var pm = working.PageMedias.FirstOrDefault(m => m.Page.Equals(current.Id, StringComparison.OrdinalIgnoreCase));
+                if (pm == null) { pm = new PageMedia { Page = current.Id }; working.PageMedias.Add(pm); }
+                pm.Music = f;
+            }
+            else working.Music = f;
+        });
 
     void OnBgRemove(object s, RoutedEventArgs e)
     {
@@ -760,6 +703,61 @@ public partial class MenuEditorWindow
         Rebind();
     }
 
+    void RefreshMineList()
+    {
+        CustomList.ItemsSource = Templates.Entries();
+        MineRenameBtn.IsEnabled = MineDupBtn.IsEnabled = MineDelBtn.IsEnabled = CustomList.SelectedItem is Templates.UserTemplate;
+    }
+
+    void OnPickMine(object s, SelectionChangedEventArgs e)
+    {
+        MineRenameBtn.IsEnabled = MineDupBtn.IsEnabled = MineDelBtn.IsEnabled = CustomList.SelectedItem is Templates.UserTemplate;
+        if (CustomList.SelectedItem is not Templates.UserTemplate u) return;
+        working.TakeLook(u.Design);
+        Rebind();
+    }
+
+    void OnQuickBlank(object s, RoutedEventArgs e)
+    {
+        var blank = BuiltInTemplates.Blank(working.Title);
+        working.TakeLook(blank);
+        Rebind();
+        ShowStep(1);
+    }
+
+    void OnQuickTemplate(object s, RoutedEventArgs e)
+    {
+        if (s is not FrameworkElement { Tag: string name } || TemplateCatalog.Find(name) is not { } tpl) return;
+        working.TakeLook(tpl);
+        Rebind();
+    }
+
+    void OnMineRename(object s, RoutedEventArgs e)
+    {
+        if (CustomList.SelectedItem is not Templates.UserTemplate u) return;
+        var next = Prompt.Ask(this, "Renommer le modèle", u.Name)?.Trim();
+        if (string.IsNullOrEmpty(next) || next == u.Name) return;
+        try { Templates.Rename(u.Name, next); RefreshMineList(); }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException) { MessageBox.Show(this, ex.Message, "BurnSmith"); }
+    }
+
+    void OnMineDuplicate(object s, RoutedEventArgs e)
+    {
+        if (CustomList.SelectedItem is not Templates.UserTemplate u) return;
+        var copy = Prompt.Ask(this, "Nom de la copie", u.Name + " (copie)")?.Trim();
+        if (string.IsNullOrEmpty(copy)) return;
+        try { Templates.Duplicate(u.Name, copy); RefreshMineList(); }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException) { MessageBox.Show(this, ex.Message, "BurnSmith"); }
+    }
+
+    void OnMineDelete(object s, RoutedEventArgs e)
+    {
+        if (CustomList.SelectedItem is not Templates.UserTemplate u) return;
+        if (MessageBox.Show(this, $"Supprimer définitivement le modèle « {u.Name} » ?", "BurnSmith", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        try { Templates.Delete(u.Name); RefreshMineList(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { MessageBox.Show(this, ex.Message, "BurnSmith"); }
+    }
+
     void OnSave(object s, RoutedEventArgs e)
     {
         var name = Prompt.Ask(this, "Enregistrer le modèle", working.Name)?.Trim();
@@ -768,7 +766,7 @@ public partial class MenuEditorWindow
         try
         {
             Templates.Save(working);
-            CustomList.ItemsSource = Templates.List();
+            RefreshMineList();
             Rebind();
         }
         catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)

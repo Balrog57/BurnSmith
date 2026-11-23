@@ -1173,3 +1173,121 @@ Format de sortie : AVCHD (dossier AVCHD/BDMV pour clé USB ou carte SD).	Output 
 Menu natif HDMV (sans Java, compatibilité maximale).	Native HDMV menu (Java-free, maximum compatibility).
 Une vidéo source est introuvable.	A source video cannot be found.
 Lancer la création du disque	Start disc creation
++ Page vierge	+ Blank page
+Partir d'une page libre personnalisable de zéro	Start from a blank free-form page
+Film minimal	Minimal movie
+Modèle épuré pour un film	Clean minimal movie template
+Série minimal	Minimal series
+Modèle épuré pour une saison / série	Clean minimal series template
+Renommer…	Rename…
+Dupliquer…	Duplicate…
+Convertir cette page en composition libre	Convert this page to free layout
+Transforme les boutons et zones du modèle sur cette page en éléments libres entièrement modifiables	Converts this page's template buttons and zones into fully editable free elements
+Réinitialiser	Reset
+Rétablir la position et le style d'origine de cet élément du modèle	Restore original template position and style for this element
+Grille	Grid
+Affiche une grille magnétique (repères 40 px, aimantation 20 px ; maintenez Alt pour placer au pixel près)	Show a magnetic grid (40 px guides, 20 px snap; hold Alt for pixel-precise placement)
+Calques…	Layers…
+Afficher et réordonner les calques de la page (ordre Z, visibilité, verrouillage)	Show and reorder page layers (Z-order, visibility, lock)
+Angle du dégradé (°)	Gradient angle (°)
+Orientation du dégradé entre la couleur haute et la couleur basse (0° = horizontal, 90° = vertical)	Gradient orientation between top and bottom colors (0° = horizontal, 90° = vertical)
+Aligner / répartir (Maj+clic ou lasso pour grouper)	Align / distribute (Shift+click or lasso to group)
+Répartir horizontalement (3+ sélectionnés)	Distribute horizontally (3+ selected)
+Répartir verticalement (3+ sélectionnés)	Distribute vertically (3+ selected)
+Opacité du calque (%)	Layer opacity (%)
+Rotation (°)	Rotation (°)
+Contour	Outline
+Épaisseur du contour	Outline width
+Ombre	Shadow
+Couleur d'ombre (#000000), vide = aucune	Shadow color (#000000), empty = none
+Flou d'ombre	Shadow blur
+Décalage d'ombre	Shadow offset
+Flou d'image	Image blur
+Tout afficher	Show all
+Réafficher tous les calques masqués de cette page	Show all hidden layers on this page
+Monter d'un cran	Move up one layer
+Descendre d'un cran	Move down one layer
+Mettre tout devant	Bring to front
+Envoyer à l'arrière	Send to back
+De haut en bas (premier plan → arrière-plan). Cliquez un calque pour le sélectionner.	Top to bottom (foreground → background). Click a layer to select it.
+Verrouiller / déverrouiller sur la scène	Lock / unlock on stage
+Afficher / masquer ce calque	Show / hide this layer
+Calques de la page	Page layers
+Masquer	Hide
+Bouton du modèle	Template button
+Zone {0}	Zone {0}
+Vignette / Poster	Thumbnail / Poster
+Titre page	Page title
+Masqué	Hidden
+Titre de la page (double-clic pour éditer)	Page title (double-click to edit)
+Zone du modèle (clic : déplacer/régler, double-clic : éditer)	Template zone (click: move/edit, double-click: text)
+Vignette / image (clic : régler, double-clic : changer)	Thumbnail / image (click: adjust, double-click: change)
+Bouton du modèle (clic : déplacer/régler, double-clic : texte, Ctrl+clic : ouvrir la cible)	Template button (click: move/edit, double-click: text, Ctrl+click: open target)
+Sélectionnez au moins 3 éléments (Maj+clic ou lasso) pour répartir.	Select at least 3 elements (Shift+click or lasso) to distribute.
+État affiché sur l'aperçu : Normal, Sélectionné ou Activé (appui sur OK)	Preview button state: Normal, Selected or Activated (on OK press)
+Normal	Normal
+Activé	Activated
+Curseur animé BD-J	BD-J animated cursor
+PNG…	PNG…
+Choisir plusieurs images PNG (2 ou plus) pour animer le curseur sur Blu-ray	Choose 2 or more PNG frames to animate the BD-J cursor
+Curseur animé affiché sur le bouton sélectionné (Blu-ray BD-J)	Animated cursor shown on the focused button (Blu-ray BD-J)
+Aucun	None
+Pulsation dorée	Golden pulse
+Anneau lumineux	Luminous ring
+Flèche cinéma	Cinema arrow
+Images PNG personnalisées…	Custom PNG frames…
+Position du pop-up	Pop-up dock position
+Style boutons pop-up	Pop-up button style
+Fond pop-up	Pop-up background
+Hauteur barre pop-up	Pop-up bar height
+Largeur boutons pop-up	Pop-up button width
+Bouton Reprendre	Resume button
+Bouton Chapitres	Chapters button
+Bouton Réglages	Settings button
+Bouton Menu	Menu button
+Activée…	Activated…
+L'image que montre un bouton quand on appuie sur OK (vide = surbrillance sélectionnée)	Picture shown when the button is pressed with OK (empty = selected state)
+Image du bouton activé (OK)	Activated button picture (OK)
+Images du curseur animé BD-J (2 ou plus)	BD-J animated cursor PNG frames (2 or more)
+Sélectionnez au moins 2 images PNG pour animer le curseur.	Select at least 2 PNG images to animate the cursor.
+Gauche / Haut / Bas / Droite	Left / Top / Bottom / Right
+Flèches	Arrows
+Affiche les flèches de navigation télécommande et les alertes normatives sur la page	Show remote-control navigation arrows and disc compliance alerts on canvas
+Bouton sélectionné par défaut sur cette page	Default focused button on this page
+Ce bouton reçoit le focus dès l'ouverture de cette page sur le lecteur	This button receives remote focus when this page opens on the player
+Navigation à la télécommande (Haut / Bas / Gauche / Droite)	Remote-control navigation (Up / Down / Left / Right)
+Recalculer automatiquement les flèches de la page	Auto-recalculate page navigation arrows
+Lire le film principal	Play main movie
+Tout lire à la suite	Play all titles in order
+Lire la vidéo {0}	Play video {0}
+Chapitre {0}	Chapter {0}
+Audio : {0}	Audio: {0}
+Sous-titre : {0}	Subtitle: {0}
+Sous-titres : Désactivés	Subtitles: Off
+Page : Menu principal	Page: Main menu
+Page : Chapitres / Épisodes	Page: Chapters / Episodes
+Page : Réglages	Page: Settings
+Page : Crédits	Page: Credits
+Page : Bonus	Page: Bonus
+Page : {0}	Page: {0}
+Reprendre le film (Pop-up)	Resume movie (Pop-up)
+Retour au menu du disque (Pop-up)	Back to disc menu (Pop-up)
+(Automatique)	(Automatic)
+(Aucun / bloqué)	(None / locked)
+Appliquer vidéo/musique à cette page seulement	Apply video/music to this page only
+Cochez pour associer une vidéo animée ou une musique différente uniquement à la page affichée	Check to set a different motion background video or music for the current page only
+Vignettes animées	Animated thumbnails
+Un extrait vidéo du chapitre ou de l'épisode tourne dans chaque vignette (DVD et Blu-ray)	A short video clip plays inside each chapter or episode thumbnail (DVD and Blu-ray)
+Bruitages des boutons (Blu-ray)	Button sound effects (Blu-ray)
+🔊 Écouter	🔊 Listen
+Écouter un aperçu des bruitages télécommande sur ce PC	Preview remote-control button sound effects on this PC
+Volume des bruitages (%)	Sound effects volume (%)
+Déplacement…	Move…
+Validation…	Select…
+Son de déplacement (télécommande)	Navigation move sound (remote)
+Son de validation OK (télécommande)	Activation OK sound (remote)
+Boutons superposés sur « {0} » : {1} et {2}.	Overlapping buttons on "{0}": {1} and {2}.
+Norme DVD : maximum {0} boutons par page dépassé ({1}).	DVD standard: maximum {0} buttons per page exceeded ({1}).
+Bouton inatteignable à la télécommande sur « {0} » : {1}.	Unreachable button by remote on "{0}": {1}.
+Hors zone sûre TV (90 %) sur « {0} » : {1}.	Outside TV title-safe area (90%) on "{0}": {1}.
+Modifiez le titre, le fond, la musique et la présentation, ou cliquez un élément sur la page pour le déplacer et le régler (Suppr le retire, flèches : déplacement, Maj : pas fin).	Edit the title, background, music and layout, or click an element on the page to move and style it (Del removes, arrows move, Shift: fine step).

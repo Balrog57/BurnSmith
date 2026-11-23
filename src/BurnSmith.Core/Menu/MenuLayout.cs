@@ -30,6 +30,8 @@ public sealed record Text(string Value, Box Rect, double Size, string Font, stri
 /// <summary>A picture (null = dark placeholder) cut by the template's mask, with its frame drawn on top.</summary>
 /// <param name="Whole">The picture is shown whole, centred on black (a Yuhan theme), instead of filling the frame with its sides cut.</param>
 public sealed record Framed(Box Rect, string? Picture, string? Frame, string? Mask, bool Whole = false) : Op;
+/// <summary>Wraps any <see cref="Op"/> with studio layer opacity, rotation, drop shadow, or image blur/tint.</summary>
+public sealed record StyledOp(Op Inner, double Opacity = 1.0, double Rotation = 0, Box Bounds = default, string? ShadowColor = null, int ShadowBlur = 0, int ShadowDx = 0, int ShadowDy = 0, int ImageBlur = 0, string? TintColor = null, int TintStrength = 0) : Op;
 
 /// <summary>
 /// What a button does. Kinds: play (Playlist), chapter (Playlist + Mark), page (Page),
@@ -108,7 +110,7 @@ public sealed record MenuContent(int Playlist, string? PreviewPicture, IReadOnly
 }
 
 /// <summary>Turns a design + disc facts into pages on a 1920x1080 canvas. Root page first, then the scene/episode pages, then settings.</summary>
-public static class MenuBuilder
+public static partial class MenuBuilder
 {
     public const int W = 1920, H = 1080, FocusMargin = 10, MaxAudio = 6, MaxSubtitles = 5, MaxCreditLines = 14, MarkerSize = 36, MarkerGap = 24;
 
@@ -165,8 +167,14 @@ public static class MenuBuilder
             ops.AddRange(Button(d, back, d.BackLabel, 46));
             pages.Add(new MenuPage(custom.Id, ops, [new MenuButton("back", back, new MenuAction("page", custom.Parent))]));
         }
-        if (d.Elements.Count == 0 && d.CustomPages.Count == 0 && d.Directions.Count == 0) return pages;
-        pages = pages.Select(p => WithElements(d, p, c)).ToList();
+        if (d.Elements.Count == 0 && d.CustomPages.Count == 0 && d.Directions.Count == 0
+            && d.NativeOverrides.Count == 0 && d.FreePages.Count == 0 && d.DefaultButtons.Count == 0) return pages;
+        pages = pages.Select(p =>
+        {
+            p = ApplyNativeState(d, p, c);
+            p = WithElements(d, p, c);
+            return ApplyDefaultButton(d, p);
+        }).ToList();
         // a hand-placed button to a page this disc does not have (Scènes on a one-page menu, Bonus without extras, a mistyped name) leads to the
         // root page: left as it is, the button does nothing, or the name breaks the menu file the player reads
         var ids = pages.Select(p => p.Id).ToHashSet();
@@ -180,7 +188,7 @@ public static class MenuBuilder
     /// </summary>
     public static MenuPage WithElements(MenuDesign d, MenuPage page, MenuContent c)
     {
-        var mine = d.Elements.Where(e => e.AppliesTo(page.Id)).ToList();
+        var mine = d.Elements.Where(e => !e.Hidden && e.AppliesTo(page.Id)).OrderBy(e => e.ZIndex).ToList();
         if (mine.Count == 0) return ApplyDirections(d, page);
         var behind = mine.Where(e => e.Behind && !e.IsButton).SelectMany(e => e.Ops(d)).ToList();
         var front = mine.Where(e => !e.Behind || e.IsButton).SelectMany(e => e.Ops(d)).ToList();
@@ -199,7 +207,8 @@ public static class MenuBuilder
             {
                 // a picture button is selected with its own "sub" picture: on a Blu-ray menu it is the focus image, on a DVD the highlight a subpicture is made from
                 var focus = ElementLibrary.Resolve(e.Focus) is { } f && File.Exists(f) && ElementLibrary.Resolve(e.Image) is { } art && File.Exists(art) ? f : null;
-                buttons.Add(new MenuButton(id, e.Box(), Action(d, e, c)) { FocusImage = focus, DvdHighlightImage = focus });
+                var active = ElementLibrary.Resolve(e.ActiveImage) is { } act && File.Exists(act) ? act : null;
+                buttons.Add(new MenuButton(id, e.Box(), Action(d, e.Target, c)) { FocusImage = focus, DvdHighlightImage = focus, DvdSelectImage = active });
             }
         }
         var result = page with { Ops = ops, Buttons = buttons };
@@ -226,16 +235,35 @@ public static class MenuBuilder
         }).ToList() };
     }
 
-    /// <summary>What a hand-placed button does: the film, every title in turn, a page, or a chapter of the film.</summary>
-    static MenuAction Action(MenuDesign d, MenuElement e, MenuContent c)
+    /// <summary>What a hand-placed button or overridden native button does.</summary>
+    public static MenuAction Action(MenuDesign d, string rawTarget, MenuContent c)
     {
-        var target = e.Target.Trim().ToLowerInvariant();
+        var target = rawTarget.Trim().ToLowerInvariant();
         MenuAction Film() => c.Series
             ? new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count)
             : new MenuAction("play", Playlist: c.Playlist);
-        if (target is "movie" or "play" or "all" or "playall" or "") return Film();
+        if (target is "movie" or "play" or "") return Film();
+        if (target is "all" or "playall")
+            return c.Series ? new MenuAction("playall", Playlist: c.Titles![0].Playlist, Mark: c.Titles.Count) : new MenuAction("play", Playlist: c.Playlist);
+        if (target.StartsWith("title:", StringComparison.Ordinal) && int.TryParse(target[6..], out var pl))
+            return new MenuAction("play", Playlist: Math.Max(1, pl));
+        if (target.StartsWith("chapter:", StringComparison.Ordinal))
+        {
+            var parts = target[8..].Split(':', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 2 && int.TryParse(parts[0], out var tpl) && int.TryParse(parts[1], out var ch))
+                return new MenuAction("chapter", Playlist: Math.Max(1, tpl), Mark: Math.Max(0, ch - 1));
+            if (parts.Length == 1 && int.TryParse(parts[0], out var chSingle))
+                return new MenuAction("chapter", Playlist: c.Playlist, Mark: Math.Max(0, chSingle - 1));
+        }
         if (target.StartsWith("chapter", StringComparison.Ordinal))
             return new MenuAction("chapter", Playlist: c.Playlist, Mark: Math.Max(0, (int.TryParse(target[7..].TrimStart(':'), out var n) ? n : 1) - 1));
+        if (target.StartsWith("audio:", StringComparison.Ordinal) && int.TryParse(target[6..], out var aIdx))
+            return new MenuAction("audio", Mark: Math.Max(1, aIdx));
+        if (target.StartsWith("sub:", StringComparison.Ordinal) && int.TryParse(target[4..], out var sIdx))
+            return new MenuAction("sub", Mark: Math.Max(0, sIdx));
+        if (target == "resume") return new MenuAction("resume");
+        if (target == "menu") return new MenuAction("menu");
+        if (target.StartsWith("page:", StringComparison.Ordinal)) target = target[5..];
         return new MenuAction("page", target == "settings" && SettingsIds(d, c) is [var entry, ..] ? Pack(d)?.SettingsEntry(c) ?? entry : target);
     }
 
@@ -545,15 +573,31 @@ public static class MenuBuilder
             Ops = [veil, .. p.Ops],
             Buttons = p.Buttons.Select(b => b.Action is { Kind: "page", Page: "root" } ? b with { Action = new MenuAction("popup") } : b).ToList(),
         };
+        var pop = d.PopupLayout ?? new();
+        if (!string.IsNullOrWhiteSpace(pop.ButtonLook)) g.ButtonStyle = pop.ButtonLook;
+        var dock = (pop.Dock ?? "bottom").Trim().ToLowerInvariant();
+        var vertical = dock is "left" or "right";
+        var bw = Math.Clamp(pop.ButtonWidth, 160, 520);
+        var bh = Math.Clamp(pop.ButtonHeight, 56, 200);
+        var barH = Math.Clamp(pop.BarHeight, 120, 600);
+        var barFill = string.IsNullOrWhiteSpace(pop.Fill) ? "#000000" : pop.Fill;
+        var bgBox = dock switch
+        {
+            "top" => new Box(0, 0, W, barH),
+            "left" => new Box(0, 0, Math.Clamp(bw + 80, 220, 700), H),
+            "right" => new Box(W - Math.Clamp(bw + 80, 220, 700), 0, Math.Clamp(bw + 80, 220, 700), H),
+            _ => new Box(0, H - barH, W, barH),
+        };
         var pages = new List<MenuPage>();
         var settings = new List<(IReadOnlyList<string> Audio, IReadOnlyList<(string Name, int Number)> Subtitles, MenuPage Page)>();
         foreach (var (playlist, chapters, audio, subtitles) in titles)
         {
-            var entries = new List<(string Id, string Text, MenuAction Action)> { ("resume", d.ResumeLabel, new MenuAction("resume")) };
-            if (chapters > 1) entries.Add(("chapters", d.ScenesLabel, new MenuAction("page", $"popc{playlist}_1")));
+            var entries = new List<(string Id, string Text, MenuAction Action)>();
+            if (pop.ShowResume) entries.Add(("resume", d.ResumeLabel, new MenuAction("resume")));
+            if (chapters > 1 && pop.ShowChapters) entries.Add(("chapters", d.ScenesLabel, new MenuAction("page", $"popc{playlist}_1")));
             var subChoices = subtitles.Take(MaxSubtitles).ToList();
             var setup = c with { Audio = audio, Subtitles = subChoices.Select(s => s.Name).ToList() };
-            if (setup.HasSettings)
+            if (setup.HasSettings && pop.ShowSettings)
             {
                 var choices = setup.AudioNames.Count > 1 ? setup.AudioNames : [];
                 var page = settings.FirstOrDefault(s => s.Audio.SequenceEqual(choices) && s.Subtitles.SequenceEqual(subChoices)).Page;
@@ -565,21 +609,42 @@ public static class MenuBuilder
                 }
                 entries.Add(("settings", d.SettingsLabel, new MenuAction("page", page.Id)));
             }
-            entries.Add(("main", d.MainMenuLabel, new MenuAction("menu")));
-            const int bw = 380, gap = 50;
+            if (pop.ShowMainMenu || entries.Count == 0)
+                entries.Add(("main", d.MainMenuLabel, new MenuAction("menu")));
+            const int gap = 50;
             var n = entries.Count;
-            var x0 = (W - (n * bw + (n - 1) * gap)) / 2;
-            var ops = new List<Op> { new Fill(new Box(0, 820, W, H - 820), "#000000", shade, 0) };
+            var ops = new List<Op> { new Fill(bgBox, barFill, shade, 0) };
             var buttons = new List<MenuButton>();
-            for (var k = 0; k < n; k++)
+            if (vertical)
             {
-                var box = new Box(x0 + k * (bw + gap), 890, bw, 100);
-                ops.AddRange(Button(g, box, entries[k].Text, 46));
-                buttons.Add(new MenuButton(entries[k].Id, box, entries[k].Action)
+                const int vGap = 28;
+                var bx = bgBox.X + (bgBox.W - bw) / 2;
+                var y0 = Math.Max(40, (H - (n * bh + (n - 1) * vGap)) / 2);
+                for (var k = 0; k < n; k++)
                 {
-                    Left = n > 1 ? entries[(k + n - 1) % n].Id : null,
-                    Right = n > 1 ? entries[(k + 1) % n].Id : null,
-                });
+                    var box = new Box(bx, y0 + k * (bh + vGap), bw, bh);
+                    ops.AddRange(Button(g, box, entries[k].Text, Math.Clamp(bh / 2 - 4, 24, 52)));
+                    buttons.Add(new MenuButton(entries[k].Id, box, entries[k].Action)
+                    {
+                        Up = n > 1 ? entries[(k + n - 1) % n].Id : null,
+                        Down = n > 1 ? entries[(k + 1) % n].Id : null,
+                    });
+                }
+            }
+            else
+            {
+                var x0 = (W - (n * bw + (n - 1) * gap)) / 2;
+                var by = bgBox.Y + Math.Max(16, (bgBox.H - bh) / 2 - 10);
+                for (var k = 0; k < n; k++)
+                {
+                    var box = new Box(x0 + k * (bw + gap), by, bw, bh);
+                    ops.AddRange(Button(g, box, entries[k].Text, Math.Clamp(bh / 2 - 4, 24, 52)));
+                    buttons.Add(new MenuButton(entries[k].Id, box, entries[k].Action)
+                    {
+                        Left = n > 1 ? entries[(k + n - 1) % n].Id : null,
+                        Right = n > 1 ? entries[(k + 1) % n].Id : null,
+                    });
+                }
             }
             pages.Add(new MenuPage($"pop{playlist}", ops, buttons));
             if (chapters <= 1) continue;

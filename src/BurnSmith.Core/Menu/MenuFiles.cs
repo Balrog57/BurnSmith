@@ -13,7 +13,8 @@ public static class MenuFiles
     /// </summary>
     public static void WriteBdj(MenuDesign design, IReadOnlyList<MenuPage> pages, string dir, int loopPlaylist = 0, double scale = 1, PlaybackOptions? playback = null, int titles = 0, bool overlay = false, int defaultSubtitle = 0, IReadOnlyList<MenuPage>? popup = null,
         IEnumerable<(int Playlist, IEnumerable<int> Visible, IReadOnlyList<(int Audio, int Sub)> Forced)>? subtitleTracks = null, Action<string>? log = null, int loopReturnMark = -1,
-        IEnumerable<(int Playlist, string? Action)>? titleEnds = null, int hdrGraphicsNits = 0)
+        IEnumerable<(int Playlist, string? Action)>? titleEnds = null, int hdrGraphicsNits = 0,
+        IReadOnlyDictionary<string, (int Playlist, bool Overlay, IReadOnlyList<Box>? Cutouts)>? pageLoops = null)
     {
         Directory.CreateDirectory(dir);
         var ext = overlay ? "png" : "jpg";
@@ -24,6 +25,14 @@ public static class MenuFiles
         var txt = new StringBuilder($"size {Px(MenuBuilder.W)} {Px(MenuBuilder.H)}\n");
         if (loopPlaylist > 0) txt.Append($"loop {loopPlaylist}\n");
         if (loopPlaylist > 0 && loopReturnMark >= 0) txt.Append($"loop-return-mark {loopReturnMark}\n");
+        var hasSounds = design.Sounds != null && !string.IsNullOrWhiteSpace(design.Sounds.Pack) && !design.Sounds.Pack.Equals("none", StringComparison.OrdinalIgnoreCase);
+        if (hasSounds)
+        {
+            File.WriteAllBytes(Path.Combine(dir, "snd_move.wav"), SoundBank.BuildWav(design.Sounds!, false));
+            File.WriteAllBytes(Path.Combine(dir, "snd_select.wav"), SoundBank.BuildWav(design.Sounds!, true));
+            txt.Append("sound-move snd_move.wav\n");
+            txt.Append("sound-select snd_select.wav\n");
+        }
         if (playback != null && titles > 0)
             txt.Append($"playback {(playback.StartAtFirstTitle ? "first" : "menu")} {(playback.PlayAll ? 1 : 0)} {(playback.Rewind ? 1 : 0)} {BluRay.MoviePlaylist} {titles}\n");
         if (playback is { StartAtFirstTitle: false, AutoStartSeconds: > 0 } && titles > 0)
@@ -45,8 +54,20 @@ public static class MenuFiles
             var list = new List<(string Name, byte[] Data)>();
             foreach (var p in pages)
             {
-                list.Add(($"bg_{p.Id}.{ext}", Calibrate(overlay ? MenuRenderer.Overlay(design, p, scale) : MenuRenderer.Background(design, p, scale), !overlay)));
-                foreach (var b in p.Buttons) list.Add(($"hl_{p.Id}_{b.Id}.png", Calibrate(MenuRenderer.Focus(design, p, b, scale), false)));
+                var pInfo = pageLoops != null && pageLoops.TryGetValue(p.Id, out var pl) ? pl : (Playlist: loopPlaylist, Overlay: overlay, Cutouts: (IReadOnlyList<Box>?)null);
+                var pExt = pInfo.Overlay ? "png" : "jpg";
+                var bgBytes = pInfo.Overlay ? MenuRenderer.Overlay(design, p, scale) : MenuRenderer.Background(design, p, scale);
+                if (pInfo.Cutouts is { Count: > 0 } && !pInfo.Overlay)
+                    bgBytes = MenuRenderer.PunchAlphaCutouts(MenuRenderer.Background(design, p, scale), pInfo.Cutouts, scale);
+                else if (pInfo.Cutouts is { Count: > 0 })
+                    bgBytes = MenuRenderer.PunchAlphaCutouts(MenuRenderer.Background(design, p, scale), pInfo.Cutouts, scale);
+                list.Add(($"bg_{p.Id}.{pExt}", Calibrate(bgBytes, !pInfo.Overlay)));
+                foreach (var b in p.Buttons)
+                {
+                    list.Add(($"hl_{p.Id}_{b.Id}.png", Calibrate(MenuRenderer.Focus(design, p, b, scale), false)));
+                    if (b.DvdSelectImage != null)
+                        list.Add(($"act_{p.Id}_{b.Id}.png", Calibrate(MenuRenderer.Activated(design, p, b, scale), false)));
+                }
             }
             // the pop-up pages go over the film: always transparent overlays, in BurnSmith's own layout
             foreach (var p in popup ?? [])
@@ -59,8 +80,11 @@ public static class MenuFiles
             return list;
         });
         foreach (var (name, data) in images) File.WriteAllBytes(Path.Combine(dir, name), data);
-        var focusFrames = pages.Any(p => p.Id == "root" && p.Buttons.Any(b => b.FocusSlot != null))
-            ? (design.FocusFrames ?? []).Select(path => ElementLibrary.Resolve(path) ?? path).ToArray() : [];
+        var hasCursorPreset = design.CursorPreset is "pulse" or "ring" or "arrow" or "custom" || pages.Any(p => p.Id == "root" && p.Buttons.Any(b => b.FocusSlot != null));
+        var focusFrames = hasCursorPreset
+            ? (design.FocusFrames ?? MenuRenderer.BuiltInCursorFrames(design.CursorPreset, design.Accent) ?? [])
+                .Select(path => ElementLibrary.Resolve(path) ?? path).ToArray()
+            : [];
         var animatedFocus = focusFrames.Length >= 2 && MenuRenderer.Sta(() => focusFrames.All(path =>
             File.Exists(path) && MenuRenderer.Size(path) is { W: > 0 and <= 8192, H: > 0 and <= 8192 }));
         if (focusFrames.Length >= 2 && !animatedFocus)
@@ -81,9 +105,14 @@ public static class MenuFiles
 
         foreach (var p in pages.Concat(popup ?? []))
         {
+            var isMainPage = pages.Contains(p);
+            var pInfo = isMainPage && pageLoops != null && pageLoops.TryGetValue(p.Id, out var pl) ? pl : (Playlist: loopPlaylist, Overlay: overlay, Cutouts: (IReadOnlyList<Box>?)null);
+            var pExt = isMainPage ? (pInfo.Overlay ? "png" : "jpg") : "png";
             // a pop-up page is BurnSmith's layout: its own marker offset, whatever the template's settings page uses
-            txt.Append(pages.Contains(p) ? $"page {p.Id} bg_{p.Id}.{ext}\n" :
+            txt.Append(isMainPage ? $"page {p.Id} bg_{p.Id}.{pExt}\n" :
                 $"page {p.Id} bg_{p.Id}.png {Px(MenuBuilder.MarkerOffset(look) + MenuBuilder.MarkerSize - marker.W)}\n");
+            if (isMainPage && pInfo.Playlist != loopPlaylist && pInfo.Playlist > 0)
+                txt.Append($"page-loop {p.Id} {pInfo.Playlist}\n");
             foreach (var b in p.Buttons)
             {
                 var r = MenuRenderer.FocusBox(b);
@@ -99,8 +128,14 @@ public static class MenuFiles
                     _ => $"page {b.Action.Page}",
                 };
                 txt.Append($"button {p.Id} {b.Id} {Px(r.X)} {Px(r.Y)} {Px(r.W)} {Px(r.H)} hl_{p.Id}_{b.Id}.png {N(b.Left)} {N(b.Right)} {N(b.Up)} {N(b.Down)} {action}\n");
-                if (animatedFocus && p.Id == "root" && b.FocusSlot is { } slot)
-                    txt.Append($"focus-slot {Px(slot.X)} {Px(slot.Y)} {Px(slot.W)} {Px(slot.H)}\n");
+                if (b.DvdSelectImage != null)
+                    txt.Append($"button-act {p.Id} {b.Id} act_{p.Id}_{b.Id}.png\n");
+                if (animatedFocus)
+                {
+                    var slot = b.FocusSlot ?? new Box(Math.Max(0, b.Rect.X - 54), b.Rect.Y + (b.Rect.H - 44) / 2, 44, 44);
+                    if (b.FocusSlot != null || (!p.Id.StartsWith("pop", StringComparison.Ordinal) && b.Id == p.Buttons[0].Id || design.CursorPreset is "pulse" or "ring" or "arrow" or "custom"))
+                        txt.Append($"focus-slot {Px(slot.X)} {Px(slot.Y)} {Px(slot.W)} {Px(slot.H)}\n");
+                }
             }
         }
         File.WriteAllText(Path.Combine(dir, "menu.txt"), txt.ToString(), new UTF8Encoding(false));

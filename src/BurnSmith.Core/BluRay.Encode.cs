@@ -291,71 +291,8 @@ public static partial class BluRay
     /// a moving menu = <see cref="MenuDesign.LoopSeconds"/> seconds of video (the design's file, else the first title) re-encoded as 1080p H.264;
     /// A static menu uses black video behind its opaque graphics. Its audio is the chosen music or generated silence.
     /// </summary>
-    static void MuxLoop(BluRayJob job, string work, Action<string> log)
-    {
-        var menu = job.Menu!;
-        var musicFile = menu.ExistingMusic();
-        var silent = !menu.Loop && musicFile == null;
-        var seconds = silent ? SilentMenuLoopSeconds : LoopLength(menu, MaxLoopSeconds);
-        var music = musicFile == null ? null : PrepareMusic(menu, musicFile, seconds, work, log);
-        var (w, h) = VideoSize(job);
-        var ts = Path.Combine(work, "loop.ts");
-        var args = new List<string> { "-y", "-v", "warning" };
-        SourceInfo? src = null;
-        var (fps, declared) = DiscRate(0);
-        var tone = "";
-        if (menu.Loop)
-        {
-            var (file, probe, start, input) = LoopSource(menu, job.Titles[0], seconds);
-            src = probe;
-            (fps, declared) = DiscRate(Fps(job, src), h);
-            tone = !job.Uhd && ToSdr(src.Hdr, src.Width, src.Height, w) is { Length: > 0 } sdr ? sdr + "," : ""; // a moving menu taken from an HDR film; a 4K disc keeps its HDR, like the film
-            log($"menu: moving background, {seconds}s from {Path.GetFileName(file)} at {start}s{(music != null ? " + music" : "")}");
-            if (input[0] == "-stream_loop") log("menu: the clip is shorter than the loop, it plays again from its start");
-            args.AddRange(input);
-        }
-        else
-        {
-            log(silent ? $"menu BD-J : boucle de fond silencieuse ({seconds} s)" : $"menu: music from {Path.GetFileName(musicFile)}, {seconds}s over a black picture");
-            args.AddRange(["-f", "lavfi", "-i", $"color=c=black:s={w}x{h}:r={fps}:d={seconds}"]);
-        }
-        if (silent) args.AddRange(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]);
-        else if (music != null) args.AddRange(["-i", music]);
-        args.AddRange(["-map", "0:v:0"]);
-        if (silent || music != null) args.AddRange(["-map", "1:a:0"]);
-        else if (src is { Audio.Count: > 0 }) args.AddRange(["-map", "0:a:0"]);
-        var hasAudio = silent || music != null || src is { Audio.Count: > 0 };
-        args.AddRange(["-t", seconds.ToString(Inv),
-            "-vf", tone + (src?.SourceView ?? "") + Fit(w, h) + (src is { } loop ? HdMatrix(loop) : ""), "-r", fps]);
-        args.AddRange(MenuCodec(job.Uhd, src?.Hdr ?? "SDR", fps, h));
-        if (hasAudio) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2", "-ar", "48000"]); // the first title's own sound can be anything
-        if (hasAudio && menu.Loop) args.AddRange(["-af", "apad"]);
-        args.AddRange(["-sn", "-dn", ts]);
-        Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
-
-        var meta = Path.Combine(work, "loop.meta");
-        // Null packets keep small menu clips from reaching several play items in the player's initial read-ahead.
-        var muxRate = menu.Loop ? $"--vbr --minbitrate=8000 --maxbitrate={(job.Uhd ? 60000 : 32000)}" : "--vbr";
-        var lines = new List<string>
-        {
-            $"MUXOPT {(job.Uhd ? "--blu-ray-v3" : "--blu-ray")} --label={job.Label} {muxRate} --no-pcr-on-video-pid --new-audio-pes --mplsOffset={LoopPlaylist} --m2tsOffset={LoopPlaylist}",
-            job.Uhd ? $"V_MPEGH/ISO/HEVC, \"{ts}\", fps={declared}, track=256" : $"V_MPEG4/ISO/AVC, \"{ts}\", fps={declared}, track=256",
-        };
-        if (hasAudio) lines.Add($"A_AC3, \"{ts}\", track=257");
-        File.WriteAllLines(meta, lines);
-        var dest = Path.Combine(work, "mux" + LoopPlaylist);
-        if (Directory.Exists(dest)) Directory.Delete(dest, true);
-        Tools.Run(Tools.Find("tsMuxeR.exe"), [meta, dest], log);
-        if (menu.Loop)
-        {
-            var name = $"{LoopPlaylist:00000}.mpls";
-            var playlist = Path.Combine(dest, "BDMV", "PLAYLIST", name);
-            var repeated = Mpls.RepeatMenuClip(File.ReadAllBytes(playlist));
-            File.WriteAllBytes(playlist, repeated);
-            File.WriteAllBytes(Path.Combine(dest, "BDMV", "BACKUP", "PLAYLIST", name), repeated);
-        }
-        Merge(dest, job.OutDir);
-    }
+    static void MuxLoop(BluRayJob job, string work, Action<string> log) =>
+        MuxLoopForSpec(job, job.Menu!, LoopPlaylist, null, work, log);
 
     /// <summary>How the video of a menu clip is encoded: 10-bit HEVC like a 4K film (see Prepare; only the base layer of a Dolby Vision film is taken, as HDR10), else H.264 within a Blu-ray's limits.</summary>
     internal static string[] MenuCodec(bool uhd, string hdr, string fps, int h) => uhd

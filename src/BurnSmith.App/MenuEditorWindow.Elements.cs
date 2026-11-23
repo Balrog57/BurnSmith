@@ -15,299 +15,93 @@ namespace BurnSmith.App;
 /// </summary>
 public partial class MenuEditorWindow
 {
-    // ---------------------------------------------------------------- the zones the template offers (see MenuZone)
-
-    readonly Dictionary<int, string> renamed = [];
-    List<string> panelZones = [];
-    TextBox? editing;
-
-    /// <summary>The videos the user renamed on the menu's pages: playlist number (in the disc's order, see MainWindow.DiscOrder) and name.</summary>
-    public IReadOnlyDictionary<int, string> RenamedTitles => renamed;
-
-    /// <summary>The disc's facts changed behind the open editor (its pictures have arrived): the names written here stay.</summary>
-    public void UseContent(MenuContent c)
-    {
-        baseContent = c;
-        content = Named(c);
-        Dirty();
-    }
-
-    MenuContent Named(MenuContent c)
-    {
-        List<TitleEntry>? Rename(IReadOnlyList<TitleEntry>? list) => list?.Select(t => renamed.TryGetValue(t.Playlist, out var name) ? t with { Name = name } : t).ToList();
-        return c with { Titles = Rename(c.Titles), Bonus = Rename(c.Bonus) };
-    }
-
-    string ZoneValue(string key)
-    {
-        if (key == "title") return working.Title;
-        if (key.StartsWith("slot:")) return working.TextZones.GetValueOrDefault(key[5..], "");
-        if (!key.StartsWith("name:")) return "";
-        var playlist = int.Parse(key[5..]);
-        return (content.Titles ?? []).Concat(content.Bonus ?? []).FirstOrDefault(t => t.Playlist == playlist)?.Name ?? "";
-    }
-
-    void SetZone(string key, string value)
-    {
-        if (key == "title") working.Title = value;
-        else if (key.StartsWith("slot:"))
-        {
-            if (value.Trim().Length > 0) working.TextZones[key[5..]] = value;
-            else working.TextZones.Remove(key[5..]);
-        }
-        else if (key.StartsWith("name:") && value.Trim().Length > 0) // a video keeps a name
-        {
-            renamed[int.Parse(key[5..])] = value.Trim();
-            content = Named(content);
-        }
-    }
-
-    static string ZoneName(string key) =>
-        key == "slot:info" ? "Ligne d'information"
-        : key.StartsWith("slot:overview") ? "Texte " + key[13..]
-        : key.StartsWith("name:") ? "Nom de la vidéo " + key[5..]
-        : key;
-
-    /// <summary>The same zones as text boxes in the Menu tab, for the keyboard. Rebuilt only when the page offers others: a redraw must not take a box away from under the typing.</summary>
-    void FillZonePanel(bool force = false)
-    {
-        var keys = current?.Zones.Select(z => z.Key).Where(k => k is not "title" and not "poster").ToList() ?? [];
-        if (!force && keys.SequenceEqual(panelZones)) return;
-        panelZones = keys;
-        ZonePanel.Children.Clear();
-        foreach (var key in keys)
-        {
-            ZonePanel.Children.Add(new TextBlock { Text = ZoneName(key), Style = (Style)FindResource("Caption") });
-            var box = new TextBox { Text = ZoneValue(key), TextWrapping = TextWrapping.Wrap };
-            System.Windows.Automation.AutomationProperties.SetName(box, ZoneName(key));
-            box.TextChanged += (_, _) => SetZone(key, box.Text); // the panel's own handler asks for the new preview
-            ZonePanel.Children.Add(box);
-        }
-    }
-
-    void DrawZone(MenuZone z)
-    {
-        var accent = AccentBrush();
-        var empty = z.Key.StartsWith("slot:") && z.Key != "slot:info" && ZoneValue(z.Key).Length == 0;
-        if (empty) // on the editor's screen only: an empty zone draws nothing on the disc
-        {
-            var hint = new TextBlock { Text = "Zone de texte du modèle : cliquez pour écrire", FontSize = 26, Opacity = 0.55, Foreground = System.Windows.Media.Brushes.White, IsHitTestVisible = false };
-            System.Windows.Controls.Canvas.SetLeft(hint, z.Rect.X + 8);
-            System.Windows.Controls.Canvas.SetTop(hint, z.Rect.Y + 8);
-            StageCanvas.Children.Add(hint);
-        }
-        var shape = new System.Windows.Shapes.Rectangle
-        {
-            Width = z.Rect.W, Height = z.Rect.H, Fill = System.Windows.Media.Brushes.Transparent, StrokeThickness = 3, StrokeDashArray = [6, 4],
-            Stroke = empty ? accent : null, Cursor = z.Key == "poster" ? System.Windows.Input.Cursors.Hand : System.Windows.Input.Cursors.IBeam,
-            ToolTip = z.Key == "poster" ? "Changer l'image" : "Cliquez pour écrire",
-        };
-        System.Windows.Controls.Canvas.SetLeft(shape, z.Rect.X);
-        System.Windows.Controls.Canvas.SetTop(shape, z.Rect.Y);
-        shape.MouseEnter += (_, _) =>
-        {
-            shape.Stroke = accent;
-            // a name drawn on its button: the button under it stays the one selected, as without the zone
-            var (x, y) = (z.Rect.X + z.Rect.W / 2, z.Rect.Y + z.Rect.H / 2);
-            Select(current?.Buttons.FirstOrDefault(b => x >= b.Rect.X && x < b.Rect.X + b.Rect.W && y >= b.Rect.Y && y < b.Rect.Y + b.Rect.H)?.Id);
-        };
-        shape.MouseLeave += (_, _) => shape.Stroke = empty ? accent : null;
-        shape.MouseLeftButtonDown += (_, me) =>
-        {
-            me.Handled = true;
-            if (sel != null) SelectElem(null);
-            if (z.Key == "poster") PosterMenu(); else BeginZoneEdit(z);
-        };
-        StageCanvas.Children.Add(shape);
-    }
-
-    /// <summary>For the off-screen snapshot (<c>undo</c>): two titles typed in the box, undone twice, redone once; the status line says whether each step came back.</summary>
-    public async Task TryUndo()
-    {
-        var start = TitleBox.Text;
-        TitleBox.Text = start + " A"; await Task.Delay(700);
-        TitleBox.Text = start + " B"; await Task.Delay(700);
-        Undo(); var one = TitleBox.Text; await Task.Delay(700);
-        Undo(); var two = TitleBox.Text; await Task.Delay(700);
-        Redo(); var three = TitleBox.Text; await Task.Delay(700);
-        var ok = one == start + " A" && two == start && three == start + " A" && working.Title == three && RedoButton.IsEnabled;
-        Status.Text = $"undo {(ok ? "ok" : "FAIL")}: {one} | {two} | {three}";
-    }
-
-    /// <summary>For the off-screen snapshot (<c>zones</c>): writes in the page's zones as a click then Enter does, and types in one that Escape gives back.</summary>
-    public void TryZones()
-    {
-        void Write(string key, string text, bool keep)
-        {
-            if (current?.Zones.FirstOrDefault(z => z.Key == key) is not { } zone) return;
-            BeginZoneEdit(zone);
-            editing!.Text = text;
-            EndZoneEdit(keep);
-        }
-        Write("slot:info", "2018 | Action, Drame", true);
-        Write("slot:overview1", "Ne doit pas rester", false);
-        Write("slot:overview2", "Distribution : William Zabka, Ralph Macchio", true);
-        Write("slot:overview4", "Trente ans après le tournoi de 1984, Johnny Lawrence rouvre le dojo Cobra Kai, ce qui ravive sa rivalité avec Daniel LaRusso. Une histoire de rédemption et de vieilles rancunes, assez longue pour passer à la ligne dans sa zone.", true);
-        Write("name:2", "S01E02 - Frappe en premier", true);
-    }
-
-    void BeginZoneEdit(MenuZone z)
-    {
-        EndZoneEdit(true); // a click on another zone: what was typed in the first one stays
-        var box = new TextBox
-        {
-            Text = ZoneValue(z.Key), Width = Math.Max(z.Rect.W, 300), MinHeight = z.Rect.H, FontSize = Math.Clamp(z.Rect.H * 0.6, 24, 34),
-            TextWrapping = z.Rect.H >= 100 ? TextWrapping.Wrap : TextWrapping.NoWrap, Tag = z.Key,
-        };
-        System.Windows.Automation.AutomationProperties.SetName(box, ZoneName(z.Key));
-        System.Windows.Controls.Canvas.SetLeft(box, Math.Min(z.Rect.X, MenuBuilder.W - box.Width));
-        System.Windows.Controls.Canvas.SetTop(box, z.Rect.Y);
-        box.LostKeyboardFocus += (_, _) => EndZoneEdit(true);
-        box.Loaded += (_, _) => { box.Focus(); box.SelectAll(); };
-        editing = box;
-        StageCanvas.Children.Add(box);
-    }
-
-    void EndZoneEdit(bool keep)
-    {
-        if (editing is not { } box) return;
-        editing = null; // first: taking the box off the page takes its focus, which comes back here
-        if (box.IsKeyboardFocusWithin) Stage.Focus(); // given away now: left to Windows, it would come back after the next box took it, and close that box
-        StageCanvas.Children.Remove(box);
-        if (keep) SetZone((string)box.Tag, box.Text);
-        FillZonePanel(true);
-        DrawStage();
-        Rebind();
-    }
-
-    void PosterMenu()
-    {
-        var menu = new ContextMenu();
-        var pick = new MenuItem { Header = "Choisir une image…" };
-        pick.Click += (_, _) =>
-        {
-            var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image du menu") };
-            if (dlg.ShowDialog(this) != true) return;
-            try
-            {
-                working.Poster = ElementLibrary.Reference(ElementLibrary.Import(dlg.FileName).Path);
-                Dirty();
-            }
-            catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
-            {
-                MessageBox.Show(this, ex.Message, "BurnSmith");
-            }
-        };
-        var film = new MenuItem { Header = "Reprendre l'image du film", IsEnabled = working.Poster != null };
-        film.Click += (_, _) => { working.Poster = null; Dirty(); };
-        menu.Items.Add(pick);
-        menu.Items.Add(film);
-        menu.IsOpen = true;
-    }
-
-    void Select(string? id)
-    {
-        if (id == null || id == focusId || current?.Buttons.Any(b => b.Id == id) != true) return;
-        focusId = id;
-        DrawStage();
-    }
-
-    async void GoTo(string id, bool first = true)
-    {
-        if (shot is not { } s || s.Pages.FirstOrDefault(p => p.Id == id) is not { } page) return;
-        var request = ++navigationRequest;
-        var mine = version;
-        try
-        {
-            if (!s.Cache.TryGetValue(id, out var images))
-            {
-                images = await Task.Run(() => MenuRenderer.Sta(() => DrawPage(s.Design, page)));
-                s.Cache[id] = images;
-            }
-            if (mine != version || shot != s || request != navigationRequest) return;
-            if (first) focusId = null;
-            Show(page, images);
-        }
-        catch (Exception ex)
-        {
-            if (mine == version && shot == s && request == navigationRequest) Status.Text = "Aperçu impossible : " + ex.Message;
-        }
-    }
-
-    /// <summary>What Enter does on the disc: a page opens, a playing button says what would play, audio / subtitle move the marker.</summary>
-    async void Activate(MenuButton b)
-    {
-        var a = b.Action;
-        switch (a.Kind)
-        {
-            case "page":
-                GoTo(a.Page ?? "root");
-                Status.Text = "";
-                break;
-            case "play":
-                previewPlaying = a.Playlist;
-                previewChain = Playback.PlayAll && a.Playlist <= (content.Titles?.Count ?? 1);
-                Status.Text = $"▶ Sur le disque : lecture du titre {a.Playlist}.";
-                break;
-            case "chapter":
-                previewPlaying = a.Playlist;
-                previewChain = Playback.PlayAll && a.Playlist <= (content.Titles?.Count ?? 1);
-                if (IsPreviewingPopup && shot?.Pages.FirstOrDefault() is { } root) GoTo(root.Id);
-                Status.Text = $"▶ Sur le disque : lecture du titre {a.Playlist} à partir du chapitre {a.Mark + 1}.";
-                break;
-            case "playall":
-                previewPlaying = a.Playlist;
-                previewChain = true;
-                Status.Text = $"▶ Sur le disque : lecture de {a.Mark} titre(s) à la suite.";
-                break;
-            case "resume":
-                if (shot?.Pages.FirstOrDefault() is { } origin) GoTo(origin.Id);
-                Status.Text = $"▶ Reprise du titre {previewPlaying}.";
-                break;
-            case "popup":
-                if (previewPlaying is int playing) GoTo($"pop{playing}");
-                break;
-            case "menu":
-                previewPlaying = null;
-                if (shot?.Pages.FirstOrDefault() is { } main) GoTo(main.Id);
-                break;
-            case "audio" or "sub":
-                if (shot is not { } s || current is not { } settingsPage) return;
-                if (a.Kind == "audio") audioSel = a.Mark; else subSel = a.Mark;
-                var at = s.Pages.FindIndex(p => p.Id == settingsPage.Id);
-                if (at < 0) return;
-                var (audio, sub, design, facts) = (audioSel, subSel, s.Design, content with { PlainFocus = DvdPreview });
-                var request = ++trackRequest;
-                var navigation = navigationRequest;
-                try
-                {
-                    var page = await Task.Run(() => MenuRenderer.Sta(() => settingsPage.Id.StartsWith("pop", StringComparison.Ordinal)
-                        ? MenuBuilder.Popup(design, facts, facts.PopupTitles, audio, sub).First(p => p.Id == settingsPage.Id)
-                        : SettingsPreview(design, facts, settingsPage.Id, audio, sub)));
-                    if (shot != s || request != trackRequest) return;
-                    s.Pages[at] = page;
-                    s.Cache.Remove(page.Id);
-                    if (navigation == navigationRequest && current?.Id == page.Id) GoTo(page.Id, false);
-                }
-                catch (Exception ex)
-                {
-                    if (shot == s && request == trackRequest) Status.Text = "Aperçu impossible : " + ex.Message;
-                }
-                break;
-        }
-    }
-
-    /// <summary>A click on the page that misses the selected element's outline and handles lets go of it.</summary>
+    /// <summary>A click on empty canvas starts a marquee lasso in Step 2 (or deselects on simple click).</summary>
     void OnStageMouse(object s, System.Windows.Input.MouseButtonEventArgs e)
     {
         Stage.Focus();
-        if (sel != null && (e.OriginalSource as FrameworkElement)?.Tag as string != "element") SelectElem(null);
+        if (!Previewing && e.ChangedButton == System.Windows.Input.MouseButton.Left && (e.OriginalSource as FrameworkElement)?.Tag as string != "element")
+        {
+            lassoStart = lassoEnd = e.GetPosition(StageCanvas);
+            StageCanvas.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+        if (HasSelection && (e.OriginalSource as FrameworkElement)?.Tag as string != "element") SelectElem(null);
     }
 
-    // ---------------------------------------------------------------- free elements (free placement)
+    // ---------------------------------------------------------------- free elements & native overrides
     MenuElement? sel;
+    string? nativeSelId;
     bool elemSync;
-    const int Handle = 30, MinW = 40, MinH = 20; // size of a resize handle on the 1920x1080 page, smallest element
+    const int Handle = 30, MinW = 40, MinH = 20;
+    bool HasSelection => sel != null || nativeSelId != null || multiSel.Count > 0;
+
+    NativeElementOverride? FindNativeOverride(string id) =>
+        current == null ? null : working.NativeOverrides.FirstOrDefault(o => o.Id == id && o.AppliesTo(current.Id));
+
+    NativeElementOverride GetOrCreateNativeOverride(string id)
+    {
+        var pageId = current?.Id ?? "root";
+        if (working.NativeOverrides.FirstOrDefault(o => o.Id == id && o.Page.Equals(pageId, StringComparison.OrdinalIgnoreCase)) is { } exact)
+            return exact;
+        if (working.NativeOverrides.FirstOrDefault(o => o.Id == id && o.AppliesTo(pageId)) is { } matched)
+        {
+            var copy = matched.Copy();
+            copy.Page = pageId;
+            working.NativeOverrides.Add(copy);
+            return copy;
+        }
+        var ov = new NativeElementOverride { Page = pageId, Id = id };
+        working.NativeOverrides.Add(ov);
+        return ov;
+    }
+
+    string ReadNativeText(string id)
+    {
+        if (FindNativeOverride(id)?.Text is { } ovText) return ovText;
+        if (id == "title") return working.Title;
+        if (id.StartsWith("slot:", StringComparison.Ordinal)) return working.TextZones.GetValueOrDefault(id[5..], "");
+        if (current != null && MenuBuilder.FindNativeRect(current, id) is { } rect)
+        {
+            var rawOps = current.Ops.Select(o => o is StyledOp so ? so.Inner : o).ToList();
+            if (rawOps.OfType<BurnSmith.Core.Menu.Text>().FirstOrDefault(t => t.Rect == rect) is { } txt) return txt.Value;
+            if (rawOps.OfType<BurnSmith.Core.Menu.Label>().FirstOrDefault(l => l.Rect == rect) is { } lbl) return lbl.Value;
+            if (rawOps.OfType<BurnSmith.Core.Menu.Label>().FirstOrDefault(l => Math.Abs(l.Rect.X - rect.X) <= 10 && Math.Abs(l.Rect.W - rect.W) <= 20
+                && l.Rect.Y >= rect.Y + rect.H - 12 && l.Rect.Y <= rect.Y + rect.H + 30) is { } below) return below.Value;
+        }
+        return id;
+    }
+
+    void SelectNative(string? id)
+    {
+        sel = null;
+        nativeSelId = id;
+        SyncMultiToPrimary();
+        elemSync = true;
+        ElemList.SelectedIndex = -1;
+        elemSync = false;
+        if (id != null && drawerKind != "layers") { drawerKind = null; ShowStep(1); }
+        ShowElem();
+        if (drawerKind == "layers") RefreshLayersDrawer();
+        DrawStage();
+    }
+
+    void OnResetNative(object s, RoutedEventArgs e)
+    {
+        if (nativeSelId is not { } nid || current == null) return;
+        working.NativeOverrides.RemoveAll(o => o.Id == nid && o.AppliesTo(current.Id));
+        ShowElem();
+        Dirty();
+    }
+
+    void OnConvertFree(object s, RoutedEventArgs e)
+    {
+        if (current == null) return;
+        MenuBuilder.ConvertPageToFree(working, current);
+        RefreshElemList();
+        Rebind();
+        ShowRightPanel();
+    }
 
     // a record, not a tuple: the combo binds to properties, and a tuple's fields are not (the page would show empty and fall back to "all")
     sealed record PageChoice(string Value, string Label);
@@ -350,24 +144,117 @@ public partial class MenuEditorWindow
         elemSync = false;
     }
 
-    /// <summary>Puts the selected element's values into the panel; the handlers stay quiet while it runs.</summary>
+    sealed record ChoiceItem(string Value, string Label);
+
+    string? CurrentButtonId()
+    {
+        if (sel is { IsButton: true } el) return el.NavigationId;
+        if (nativeSelId is { } nid && current != null && current.Buttons.Any(b => b.Id == nid)) return nid;
+        return null;
+    }
+
+    List<ChoiceItem> BuildTargetChoices(string? curTarget)
+    {
+        var list = new List<ChoiceItem>
+        {
+            new("movie", Loc.T("Lire le film principal")),
+            new("all", Loc.T("Tout lire à la suite")),
+        };
+        var titleCount = Math.Max(1, content.Titles?.Count ?? 1);
+        for (var t = 1; t <= Math.Min(titleCount, 20); t++)
+            list.Add(new($"title:{t}", string.Format(Loc.T("Lire la vidéo {0}"), t)));
+        var chapCount = Math.Min(content.ChapterPictures.Count, 24);
+        for (var ch = 1; ch <= chapCount; ch++)
+            list.Add(new($"chapter:1:{ch}", string.Format(Loc.T("Chapitre {0}"), ch)));
+        var audios = content.Audio ?? [];
+        for (var a = 0; a < audios.Count; a++)
+            list.Add(new($"audio:{a + 1}", string.Format(Loc.T("Audio : {0}"), audios[a])));
+        list.Add(new("sub:0", Loc.T("Sous-titres : Désactivés")));
+        var subs = content.Subtitles ?? [];
+        for (var sb = 0; sb < subs.Count; sb++)
+            list.Add(new($"sub:{sb + 1}", string.Format(Loc.T("Sous-titre : {0}"), subs[sb])));
+        list.Add(new("root", Loc.T("Page : Menu principal")));
+        list.Add(new("scenes1", Loc.T("Page : Chapitres / Épisodes")));
+        list.Add(new("settings", Loc.T("Page : Réglages")));
+        list.Add(new("credits", Loc.T("Page : Crédits")));
+        list.Add(new("bonus1", Loc.T("Page : Bonus")));
+        foreach (var cp in working.CustomPages)
+            list.Add(new(cp.Id, string.Format(Loc.T("Page : {0}"), cp.Title)));
+        list.Add(new("resume", Loc.T("Reprendre le film (Pop-up)")));
+        list.Add(new("menu", Loc.T("Retour au menu du disque (Pop-up)")));
+        if (!string.IsNullOrEmpty(curTarget) && !list.Any(x => x.Value == curTarget))
+            list.Add(new(curTarget, curTarget));
+        return list;
+    }
+
+    List<ChoiceItem> BuildNavButtonChoices()
+    {
+        var list = new List<ChoiceItem>
+        {
+            new("__auto__", Loc.T("(Automatique)")),
+            new("-", Loc.T("(Aucun / bloqué)")),
+        };
+        if (current != null)
+        {
+            foreach (var b in current.Buttons)
+                list.Add(new(b.Id, $"{ReadNativeText(b.Id)} ({b.Id})"));
+        }
+        return list;
+    }
+
+    void PopulateNavSection(string? btnId)
+    {
+        var isBtn = btnId != null && current != null;
+        foreach (var box in new FrameworkElement[] { ElemDefaultBtn, NavUpBox, NavDownBox, NavLeftBox, NavRightBox })
+            box.IsEnabled = isBtn;
+        if (!isBtn || current == null || btnId == null)
+        {
+            ElemDefaultBtn.IsChecked = false;
+            return;
+        }
+        var curDef = working.DefaultButtons.TryGetValue(current.Id, out var d1) ? d1
+            : working.DefaultButtons.TryGetValue(MenuDesign.PageKind(current.Id), out var d2) ? d2 : null;
+        ElemDefaultBtn.IsChecked = curDef != null ? curDef == btnId : current.Buttons.FirstOrDefault()?.Id == btnId;
+
+        var choices = BuildNavButtonChoices();
+        string DirVal(string dir) => working.Directions.FirstOrDefault(l => l.Page == current.Id && l.Button == btnId && l.Direction == dir)?.Target ?? "__auto__";
+        foreach (var (box, dir) in new[] { (NavUpBox, "up"), (NavDownBox, "down"), (NavLeftBox, "left"), (NavRightBox, "right") })
+        {
+            box.ItemsSource = choices;
+            box.SelectedValue = DirVal(dir);
+        }
+    }
+
+    /// <summary>Puts the selected element (free or native) values into the inspector panel.</summary>
     void ShowElem()
     {
         elemSync = true;
-        var on = sel != null;
-        foreach (var c in new FrameworkElement[] { ElemPage, ElemText, ElemImage, ElemFocus, ElemLook, ElemCopy, ElemX, ElemY, ElemW, ElemH, ElemSize, ElemColor, ElemFill, ElemBorder, ElemBorderW, ElemOpacity, ElemAlign, ElemTarget, ElemBold, ElemItalic, ElemBehind })
+        var isFree = sel != null;
+        var isNative = sel == null && nativeSelId != null && current != null;
+        var on = isFree || isNative;
+        foreach (var c in new FrameworkElement[] { ElemPage, ElemText, ElemImage, ElemFocus, ElemActive, ElemLook, ElemCopy, ElemDelBtn, ElemX, ElemY, ElemW, ElemH, ElemSize, ElemColor, ElemFill, ElemBorder, ElemBorderW, ElemOpacity, ElemLayerOpacity, ElemRotation, ElemOutline, ElemOutlineW, ElemShadow, ElemShadowBlur, ElemShadowOffset, ElemImageBlur, ElemAlign, ElemTarget, ElemBold, ElemItalic, ElemBehind })
             c.IsEnabled = on;
+        DistHBtn.IsEnabled = multiSel.Count >= 3;
+        DistVBtn.IsEnabled = multiSel.Count >= 3;
+        ResetNativeBtn.Visibility = isNative && FindNativeOverride(nativeSelId!) != null ? Visibility.Visible : Visibility.Collapsed;
+        ElemDelBtn.Content = Loc.T(isNative ? "Masquer" : "Supprimer");
+
         if (sel is { } e)
         {
+            ElemCopy.IsEnabled = true;
+            ElemPage.IsEnabled = true;
+            ElemBehind.IsEnabled = true;
             ElemPage.ItemsSource = PageChoices.Concat(working.CustomPages.Select(page => new PageChoice(page.Id, page.Title)))
                 .Concat(PageChoices.Any(page => page.Value == e.Page) || working.CustomPages.Any(page => page.Id == e.Page)
                     ? [] : [new PageChoice(e.Page, e.Page)]).ToList();
-            ElemTarget.ItemsSource = new[] { "movie", "all", "root", "scenes1", "settings", "credits", "bonus1" }
-                .Concat(working.CustomPages.Select(page => page.Id)).Append(e.Target).Distinct().ToArray();
+            ElemTarget.ItemsSource = BuildTargetChoices(e.Target);
+            ElemTarget.IsEnabled = e.IsButton;
             ElemPage.SelectedValue = e.Page;
             ElemText.Text = e.Text;
             ElemImage.Text = e.Image ?? "";
             ElemFocus.Text = e.Focus ?? "";
+            ElemActive.Text = e.ActiveImage ?? "";
+            ElemActive.IsEnabled = e.IsButton;
             ElemLook.SelectedValue = e.Look;
             ElemX.Value = e.X;
             ElemY.Value = e.Y;
@@ -379,53 +266,164 @@ public partial class MenuEditorWindow
             ElemBorder.Text = e.Border;
             ElemBorderW.Value = Math.Clamp(e.BorderWidth, 0, 16);
             ElemOpacity.Value = Math.Clamp(e.Opacity, 0, 100);
+            ElemLayerOpacity.Value = Math.Clamp(e.ElementOpacity, 0, 100);
+            ElemRotation.Value = Math.Clamp(e.Rotation, -180, 180);
+            ElemOutline.Text = e.Outline ?? "#000000";
+            ElemOutlineW.Value = Math.Clamp(e.OutlineWidth, 0, 12);
+            ElemShadow.Text = e.ShadowColor ?? "";
+            ElemShadowBlur.Value = Math.Clamp(e.ShadowBlur, 0, 24);
+            ElemShadowOffset.Value = Math.Clamp(e.ShadowOffsetX, -24, 24);
+            ElemImageBlur.Value = Math.Clamp(e.ImageBlur, 0, 30);
+            ElemImageBlur.IsEnabled = e.Kind == "image";
             ElemAlign.SelectedItem = e.Align;
-            ElemTarget.SelectedItem = e.Target;
+            ElemTarget.SelectedValue = e.Target;
             ElemBold.IsChecked = e.Bold;
             ElemItalic.IsChecked = e.Italic;
             ElemBehind.IsChecked = e.Behind;
             ElemText.IsEnabled = e.Kind != "image";
+            PopulateNavSection(e.IsButton ? e.NavigationId : null);
+        }
+        else if (isNative && current != null && nativeSelId is { } nid)
+        {
+            var ov = FindNativeOverride(nid);
+            var nbtn = current.Buttons.FirstOrDefault(b => b.Id == nid);
+            var nbox = MenuBuilder.FindNativeRect(current, nid) ?? new Box(0, 0, 200, 80);
+            ElemCopy.IsEnabled = false;
+            ElemPage.IsEnabled = false;
+            ElemBehind.IsEnabled = false;
+            ElemPage.ItemsSource = PageChoices;
+            ElemPage.SelectedValue = MenuDesign.PageKind(current.Id) is "scenes" or "bonus" or "settings" or "credits" or "root" ? MenuDesign.PageKind(current.Id) : "all";
+            var actTarget = ov?.Target ?? (nbtn != null ? MenuBuilder.ActionTarget(nbtn.Action) : "movie");
+            ElemTarget.ItemsSource = BuildTargetChoices(actTarget);
+            ElemTarget.IsEnabled = nbtn != null;
+            ElemTarget.SelectedValue = actTarget;
+            ElemText.Text = ReadNativeText(nid);
+            ElemText.IsEnabled = nid != "poster";
+            ElemImage.Text = ov?.Image ?? "";
+            ElemFocus.Text = ov?.Focus ?? nbtn?.FocusImage ?? "";
+            ElemActive.Text = ov?.ActiveImage ?? nbtn?.DvdSelectImage ?? "";
+            ElemActive.IsEnabled = nbtn != null;
+            ElemLook.SelectedValue = ov?.Look ?? "";
+            ElemLook.IsEnabled = nbtn != null;
+            ElemX.Value = ov?.X ?? nbox.X;
+            ElemY.Value = ov?.Y ?? nbox.Y;
+            ElemW.Value = Math.Clamp(ov?.W ?? nbox.W, 40, 1920);
+            ElemH.Value = Math.Clamp(ov?.H ?? nbox.H, 20, 1080);
+            ElemSize.Value = Math.Clamp(ov?.Size ?? 48, 12, 160);
+            ElemColor.Text = ov?.Color ?? working.TextColor;
+            ElemFill.Text = ov?.Fill ?? working.CardFill;
+            ElemBorder.Text = ov?.Border ?? "#FFFFFF";
+            ElemBorderW.Value = Math.Clamp(ov?.BorderWidth ?? 0, 0, 16);
+            ElemOpacity.Value = Math.Clamp(ov?.Opacity ?? 100, 0, 100);
+            ElemLayerOpacity.Value = Math.Clamp(ov?.Opacity ?? 100, 0, 100);
+            ElemRotation.Value = Math.Clamp(ov?.Rotation ?? 0, -180, 180);
+            ElemOutline.Text = ov?.Outline ?? "#000000";
+            ElemOutlineW.Value = Math.Clamp(ov?.OutlineWidth ?? 0, 0, 12);
+            ElemShadow.Text = ov?.ShadowColor ?? "";
+            ElemShadowBlur.Value = Math.Clamp(ov?.ShadowBlur ?? 0, 0, 24);
+            ElemShadowOffset.Value = Math.Clamp(ov?.ShadowOffsetX ?? 0, -24, 24);
+            ElemImageBlur.Value = Math.Clamp(ov?.ImageBlur ?? 0, 0, 30);
+            ElemImageBlur.IsEnabled = nid == "poster";
+            ElemAlign.SelectedItem = ov?.Align ?? "center";
+            ElemBold.IsChecked = ov?.Bold ?? true;
+            ElemItalic.IsChecked = ov?.Italic ?? false;
+            PopulateNavSection(nbtn != null ? nid : null);
+        }
+        else
+        {
+            PopulateNavSection(null);
         }
         elemSync = false;
         ShowRightPanel();
     }
 
-    /// <summary>Takes the panel's values into the selected element and asks for a new preview.</summary>
+    /// <summary>Takes the panel's values into the selected free element or native override.</summary>
     void SyncElem()
     {
-        if (elemSync || sel is not { } e) return;
-        e.Page = ElemPage.SelectedValue as string ?? MenuElement.AllPages;
-        e.Text = ElemText.Text;
-        e.Image = string.IsNullOrWhiteSpace(ElemImage.Text) ? null : ElemImage.Text.Trim();
-        e.Focus = string.IsNullOrWhiteSpace(ElemFocus.Text) ? null : ElemFocus.Text.Trim();
-        e.Look = ElemLook.SelectedValue as string ?? "";
-        e.X = (int)ElemX.Value;
-        e.Y = (int)ElemY.Value;
-        e.W = (int)ElemW.Value;
-        e.H = (int)ElemH.Value;
-        e.Size = (int)ElemSize.Value;
-        e.Color = ElemColor.Text;
-        e.Fill = ElemFill.Text;
-        e.Border = ElemBorder.Text;
-        e.BorderWidth = (int)ElemBorderW.Value;
-        e.Opacity = (int)ElemOpacity.Value;
-        e.Align = ElemAlign.SelectedItem as string ?? "left";
-        e.Target = ElemTarget.SelectedItem as string ?? "movie";
-        e.Bold = ElemBold.IsChecked == true;
-        e.Italic = ElemItalic.IsChecked == true;
-        e.Behind = ElemBehind.IsChecked == true;
-        RefreshElemList(); // not ElemList.Items[at] = …: a list filled through ItemsSource refuses it, with an error box at every keystroke
-        Dirty();
+        if (elemSync) return;
+        if (sel is { } e)
+        {
+            e.Page = ElemPage.SelectedValue as string ?? MenuElement.AllPages;
+            e.Text = ElemText.Text;
+            e.Image = string.IsNullOrWhiteSpace(ElemImage.Text) ? null : ElemImage.Text.Trim();
+            e.Focus = string.IsNullOrWhiteSpace(ElemFocus.Text) ? null : ElemFocus.Text.Trim();
+            e.ActiveImage = string.IsNullOrWhiteSpace(ElemActive.Text) ? null : ElemActive.Text.Trim();
+            e.Look = ElemLook.SelectedValue as string ?? "";
+            e.X = (int)ElemX.Value;
+            e.Y = (int)ElemY.Value;
+            e.W = (int)ElemW.Value;
+            e.H = (int)ElemH.Value;
+            e.Size = (int)ElemSize.Value;
+            e.Color = ElemColor.Text;
+            e.Fill = ElemFill.Text;
+            e.Border = ElemBorder.Text;
+            e.BorderWidth = (int)ElemBorderW.Value;
+            e.Opacity = (int)ElemOpacity.Value;
+            e.ElementOpacity = (int)ElemLayerOpacity.Value;
+            e.Rotation = ElemRotation.Value;
+            e.OutlineWidth = (int)ElemOutlineW.Value;
+            e.Outline = e.OutlineWidth > 0 && !string.IsNullOrWhiteSpace(ElemOutline.Text) ? ElemOutline.Text.Trim() : null;
+            e.ShadowColor = string.IsNullOrWhiteSpace(ElemShadow.Text) ? null : ElemShadow.Text.Trim();
+            e.ShadowBlur = (int)ElemShadowBlur.Value;
+            e.ShadowOffsetX = (int)ElemShadowOffset.Value;
+            e.ShadowOffsetY = (int)ElemShadowOffset.Value;
+            e.ImageBlur = (int)ElemImageBlur.Value;
+            e.Align = ElemAlign.SelectedItem as string ?? "left";
+            e.Target = ElemTarget.SelectedValue as string ?? "movie";
+            e.Bold = ElemBold.IsChecked == true;
+            e.Italic = ElemItalic.IsChecked == true;
+            e.Behind = ElemBehind.IsChecked == true;
+            RefreshElemList();
+            Dirty();
+        }
+        else if (nativeSelId is { } nid && current != null)
+        {
+            var ov = GetOrCreateNativeOverride(nid);
+            if (ElemText.IsEnabled)
+            {
+                if (nid == "title") working.Title = ElemText.Text;
+                else if (nid.StartsWith("slot:", StringComparison.Ordinal)) SetZone(nid, ElemText.Text);
+                else ov.Text = ElemText.Text;
+            }
+            ov.Image = string.IsNullOrWhiteSpace(ElemImage.Text) ? null : ElemImage.Text.Trim();
+            ov.Focus = string.IsNullOrWhiteSpace(ElemFocus.Text) ? null : ElemFocus.Text.Trim();
+            ov.ActiveImage = string.IsNullOrWhiteSpace(ElemActive.Text) ? null : ElemActive.Text.Trim();
+            ov.Look = ElemLook.SelectedValue is string lk && lk.Length > 0 ? lk : null;
+            ov.X = (int)ElemX.Value;
+            ov.Y = (int)ElemY.Value;
+            ov.W = (int)ElemW.Value;
+            ov.H = (int)ElemH.Value;
+            ov.Size = (int)ElemSize.Value;
+            ov.Color = ElemColor.Text != working.TextColor ? ElemColor.Text : ov.Color;
+            ov.Fill = ElemFill.Text != working.CardFill ? ElemFill.Text : ov.Fill;
+            ov.Opacity = (int)ElemLayerOpacity.Value;
+            ov.Rotation = ElemRotation.Value;
+            ov.OutlineWidth = (int)ElemOutlineW.Value;
+            ov.Outline = ov.OutlineWidth > 0 && !string.IsNullOrWhiteSpace(ElemOutline.Text) ? ElemOutline.Text.Trim() : null;
+            ov.ShadowColor = string.IsNullOrWhiteSpace(ElemShadow.Text) ? null : ElemShadow.Text.Trim();
+            ov.ShadowBlur = (int)ElemShadowBlur.Value;
+            ov.ShadowOffsetX = (int)ElemShadowOffset.Value;
+            ov.ShadowOffsetY = (int)ElemShadowOffset.Value;
+            ov.ImageBlur = (int)ElemImageBlur.Value;
+            ov.Align = ElemAlign.SelectedItem as string;
+            if (ElemTarget.IsEnabled && ElemTarget.SelectedValue is string tgt) ov.Target = tgt;
+            ov.Bold = ElemBold.IsChecked;
+            ov.Italic = ElemItalic.IsChecked;
+            Dirty();
+        }
     }
 
     void SelectElem(MenuElement? e)
     {
         sel = e;
+        nativeSelId = null;
+        SyncMultiToPrimary();
         elemSync = true;
         ElemList.SelectedIndex = e == null ? -1 : working.Elements.IndexOf(e);
         elemSync = false;
-        if (e != null) { drawerKind = null; ShowStep(1); } // contextual inspector opens in Personnaliser
+        if (e != null && drawerKind != "layers") { drawerKind = null; ShowStep(1); } // contextual inspector opens in Personnaliser
         ShowElem();
+        if (drawerKind == "layers") RefreshLayersDrawer();
         DrawStage();
     }
 
@@ -525,12 +523,14 @@ public partial class MenuEditorWindow
 
     void OnElemImage(object s, RoutedEventArgs e)
     {
-        if (sel is not { } el) return;
+        if (!HasSelection) return;
         var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image de l'élément") };
         if (dlg.ShowDialog(this) != true) return;
         try
         {
-            el.Image = ElementLibrary.Import(dlg.FileName).Path;
+            var refPath = ElementLibrary.Import(dlg.FileName).Path;
+            if (sel is { } el) el.Image = refPath;
+            else if (nativeSelId is { } nid) GetOrCreateNativeOverride(nid).Image = refPath;
             ShowElem();
             Dirty();
         }
@@ -540,31 +540,57 @@ public partial class MenuEditorWindow
         }
     }
 
-    /// <summary>The picture a button image shows while it is selected (its "sub" twin). Stored where it is: a file that moves falls back to the theme's frame.</summary>
+    /// <summary>The picture a button image shows while it is selected (its "sub" twin).</summary>
     void OnElemFocus(object s, RoutedEventArgs e)
     {
-        if (sel is not { } el) return;
+        if (!HasSelection) return;
         var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image du bouton sélectionné") };
         if (dlg.ShowDialog(this) != true) return;
-        el.Focus = dlg.FileName;
+        if (sel is { } el) el.Focus = dlg.FileName;
+        else if (nativeSelId is { } nid) GetOrCreateNativeOverride(nid).Focus = dlg.FileName;
         ShowElem();
         Dirty();
     }
 
-    void OnElemAlignCanvas(object s, RoutedEventArgs e)
+    void OnElemActive(object s, RoutedEventArgs e)
     {
-        if (sel is not { } el || s is not Button btn || btn.Tag is not string dir) return;
-        const int safeX = 96, safeY = 54; // 5 % title-safe TV margins on 1920x1080
-        switch (dir)
-        {
-            case "left": el.X = safeX; break;
-            case "center-h": el.X = Math.Max(0, (MenuBuilder.W - el.W) / 2); break;
-            case "right": el.X = Math.Max(0, MenuBuilder.W - safeX - el.W); break;
-            case "top": el.Y = safeY; break;
-            case "center-v": el.Y = Math.Max(0, (MenuBuilder.H - el.H) / 2); break;
-            case "bottom": el.Y = Math.Max(0, MenuBuilder.H - safeY - el.H); break;
-            default: return;
-        }
+        if (!HasSelection) return;
+        var dlg = new OpenFileDialog { Filter = Loc.Filter("Images|*.jpg;*.jpeg;*.png;*.bmp;*.svg|Tous les fichiers|*.*"), Title = Loc.T("Image du bouton activé (OK)") };
+        if (dlg.ShowDialog(this) != true) return;
+        if (sel is { } el) el.ActiveImage = dlg.FileName;
+        else if (nativeSelId is { } nid) GetOrCreateNativeOverride(nid).ActiveImage = dlg.FileName;
+        ShowElem();
+        Dirty();
+    }
+
+    void OnPreviewStateChanged(object s, RoutedEventArgs e)
+    {
+        if (s is not RadioButton rb || rb.Tag is not string st) return;
+        previewState = st;
+        if (StageCanvas != null) DrawStage();
+    }
+
+    void OnDefaultBtnToggle(object s, RoutedEventArgs e)
+    {
+        if (elemSync || current == null || CurrentButtonId() is not { } bid) return;
+        if (ElemDefaultBtn.IsChecked == true) working.DefaultButtons[current.Id] = bid;
+        else working.DefaultButtons.Remove(current.Id);
+        Dirty();
+    }
+
+    void OnNavDirPick(object s, SelectionChangedEventArgs e)
+    {
+        if (elemSync || current == null || CurrentButtonId() is not { } bid || s is not ComboBox cb || cb.SelectedValue is not string val) return;
+        var dir = cb == NavUpBox ? "up" : cb == NavDownBox ? "down" : cb == NavLeftBox ? "left" : "right";
+        working.Directions.RemoveAll(l => l.Page == current.Id && l.Button == bid && l.Direction == dir);
+        if (val != "__auto__") working.Directions.Add(new(current.Id, bid, dir, val));
+        Dirty();
+    }
+
+    void OnAutoNavRelink(object s, RoutedEventArgs e)
+    {
+        if (current == null) return;
+        working.Directions.RemoveAll(l => l.Page == current.Id);
         ShowElem();
         Dirty();
     }
@@ -580,11 +606,30 @@ public partial class MenuEditorWindow
 
     void OnElemDelete(object s, RoutedEventArgs e)
     {
-        if (sel is not { } el) return;
-        working.Elements.Remove(el);
-        SelectElem(null);
-        RefreshElemList();
-        Dirty();
+        if (multiSel.Count > 1 && current != null)
+        {
+            foreach (var item in multiSel.ToList())
+            {
+                if (item.El is { } mel) working.Elements.Remove(mel);
+                else if (item.NativeId is { } mnid) GetOrCreateNativeOverride(mnid).Hidden = true;
+            }
+            SelectElem(null);
+            RefreshElemList();
+            Dirty();
+        }
+        else if (sel is { } el)
+        {
+            working.Elements.Remove(el);
+            SelectElem(null);
+            RefreshElemList();
+            Dirty();
+        }
+        else if (nativeSelId is { } nid && current != null)
+        {
+            GetOrCreateNativeOverride(nid).Hidden = true;
+            SelectNative(null);
+            Dirty();
+        }
     }
 
 }

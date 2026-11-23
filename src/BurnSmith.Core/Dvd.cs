@@ -367,20 +367,31 @@ public static class Dvd
                 for (var s = 0; s < subStates; s++)
                     pages.Add(PreviewSettings(job.Menu!, content, "settings_sub", 1, s));
         }
-        var loop = job.Menu!.Loop;
-        // a moving menu: the pages are transparent overlays burned onto a clip of the film (or the design's own video) that plays and repeats
-        var backgrounds = MenuRenderer.Sta(() => pages.Select(p => loop ? MenuRenderer.Overlay(job.Menu!, p) : MenuRenderer.Background(job.Menu!, p)).ToList());
-        var loopSeconds = BluRay.LoopLength(job.Menu, 120);
-        var (loopFile, loopSrc, loopStart, loopInput) = loop ? BluRay.LoopSource(job.Menu, job.Titles[0], loopSeconds) : default;
-        var musicFile = job.Menu.ExistingMusic();
-        var music = musicFile == null ? null : BluRay.PrepareMusic(job.Menu, musicFile, loopSeconds, work, log);
-        if (loop) log($"menu: moving background, {loopSeconds}s from {Path.GetFileName(loopFile)} at {loopStart}s{(music != null ? " + music" : "")}");
-        else if (music != null) log($"menu: music from {Path.GetFileName(musicFile)}, {loopSeconds}s on every page");
+        var pageSpecs = pages.Select(p => BluRay.MediaSpec.From(job.Menu!, job.Menu!.MediaFor(p.Id))).ToList();
+        var backgrounds = MenuRenderer.Sta(() => pages.Select((p, k) => pageSpecs[k].Loop ? MenuRenderer.Overlay(job.Menu!, p) : MenuRenderer.Background(job.Menu!, p)).ToList());
+        var mediaCache = new Dictionary<BluRay.MediaSpec, (bool Loop, int Seconds, string? MusicWav, string LoopFile, SourceInfo LoopSrc, int LoopStart, string[] LoopInput)>();
+        (bool Loop, int Seconds, string? MusicWav, string LoopFile, SourceInfo LoopSrc, int LoopStart, string[] LoopInput) PrepareMedia(BluRay.MediaSpec spec, int tag)
+        {
+            if (mediaCache.TryGetValue(spec, out var cached)) return cached;
+            var dSpec = spec.ToDesign(job.Menu!);
+            var secs = BluRay.LoopLength(dSpec, 120);
+            var (lf, ls, lst, lin) = spec.Loop ? BluRay.LoopSource(dSpec, job.Titles[0], secs) : default;
+            var mf = dSpec.ExistingMusic();
+            var mwav = mf == null ? null : BluRay.PrepareMusic(dSpec, mf, secs, Path.Combine(work, $"dvd_snd_{tag}"), log);
+            if (spec.Loop) log($"menu: moving background, {secs}s from {Path.GetFileName(lf)} at {lst}s{(mwav != null ? " + music" : "")}");
+            else if (mwav != null) log($"menu: music from {Path.GetFileName(mf)}, {secs}s");
+            return mediaCache[spec] = (spec.Loop, secs, mwav, lf, ls, lst, lin);
+        }
 
         var result = new List<MenuOut>();
         for (var i = 0; i < pages.Count; i++)
         {
             var p = pages[i];
+            var m = PrepareMedia(pageSpecs[i], i);
+            var loop = m.Loop;
+            var loopSeconds = m.Seconds;
+            var music = m.MusicWav;
+            var (loopSrc, loopInput) = (m.LoopSrc, m.LoopInput);
             var bg = Path.Combine(work, $"menu_{p.Id}.{(loop ? "png" : "jpg")}");
             File.WriteAllBytes(bg, backgrounds[i]);
             var plain = Path.Combine(work, $"menu_{p.Id}_plain.mpg");

@@ -33,7 +33,7 @@
       <Setter Property="Foreground" Value="{StaticResource AccentHoverBrush}"/>
       <Setter Property="Margin" Value="0,14,0,6"/>
     </Style>
-    <Style x:Key="AdvExpander" TargetType="Expander">
+    <Style x:Key="AdvExpander" TargetType="Expander" BasedOn="{StaticResource {x:Type Expander}}">
       <Setter Property="Margin" Value="0,10,0,0"/>
       <Setter Property="Padding" Value="0,4,0,0"/>
       <Setter Property="IsExpanded" Value="False"/>
@@ -59,15 +59,27 @@
     </UniformGrid>
 
     <DockPanel Grid.Row="1" Margin="0,0,16,0">
-      <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DockPanel.Dock="Bottom" Margin="0,10,0,0">
-        <Button x:Name="UndoButton" Content="↶ Annuler" Click="OnUndo" Padding="10,4" Margin="0,0,8,0" IsEnabled="False" ToolTip="Annuler la dernière modification (Ctrl+Z)"/>
-        <Button x:Name="RedoButton" Content="↷ Rétablir" Click="OnRedo" Padding="10,4" Margin="0,0,20,0" IsEnabled="False" ToolTip="Rétablir ce qui a été annulé (Ctrl+Y)"/>
-        <Button Content="◀" Width="40" Click="OnPrev" AutomationProperties.Name="Page précédente"/>
-        <TextBlock x:Name="PageText" Margin="14,0" VerticalAlignment="Center"/>
-        <Button Content="▶" Width="40" Click="OnNext" AutomationProperties.Name="Page suivante"/>
-        <ToggleButton x:Name="SafeToggle" Content="Zone sûre" Padding="10,4" Margin="20,0,8,0" Checked="OnSafeToggle" Unchecked="OnSafeToggle"
+      <WrapPanel HorizontalAlignment="Center" DockPanel.Dock="Bottom" Margin="0,10,0,0">
+        <Button x:Name="UndoButton" Content="↶ Annuler" Click="OnUndo" Padding="9,4" Margin="0,2,6,2" IsEnabled="False" ToolTip="Annuler la dernière modification (Ctrl+Z)"/>
+        <Button x:Name="RedoButton" Content="↷ Rétablir" Click="OnRedo" Padding="9,4" Margin="0,2,12,2" IsEnabled="False" ToolTip="Rétablir ce qui a été annulé (Ctrl+Y)"/>
+        <Button Content="◀" Width="36" Margin="0,2" Click="OnPrev" AutomationProperties.Name="Page précédente"/>
+        <TextBlock x:Name="PageText" Margin="10,2" VerticalAlignment="Center"/>
+        <Button Content="▶" Width="36" Margin="0,2,12,2" Click="OnNext" AutomationProperties.Name="Page suivante"/>
+        <ToggleButton x:Name="SafeToggle" Content="Zone sûre" Padding="9,4" Margin="0,2,6,2" Checked="OnSafeToggle" Unchecked="OnSafeToggle"
                       ToolTip="Ce qu'un téléviseur peut couper : cadre plein = zone des titres (90 %), pointillés = zone d'action (93 %). En orange, un bouton ou un texte qui dépasse de la zone des titres"/>
-        <Button x:Name="AddMenuButton" Content="+ Ajouter ▾" Padding="12,4" Click="OnAddMenuClick"
+        <ToggleButton x:Name="GridToggle" Content="Grille" Padding="9,4" Margin="0,2,6,2" Checked="OnGridToggle" Unchecked="OnGridToggle"
+                      ToolTip="Affiche une grille magnétique (repères 40 px, aimantation 20 px ; maintenez Alt pour placer au pixel près)"/>
+        <ToggleButton x:Name="ArrowsToggle" Content="Flèches" Padding="9,4" Margin="0,2,6,2" Checked="OnArrowsToggle" Unchecked="OnArrowsToggle"
+                      ToolTip="Affiche les flèches de navigation télécommande et les alertes normatives sur la page"/>
+        <Button x:Name="LayersBtn" Content="Calques…" Padding="9,4" Margin="0,2,6,2" Click="OnOpenLayersDrawer"
+                ToolTip="Afficher et réordonner les calques de la page (ordre Z, visibilité, verrouillage)"/>
+        <StackPanel Orientation="Horizontal" Margin="0,2,6,2" VerticalAlignment="Center"
+                    ToolTip="État affiché sur l'aperçu : Normal, Sélectionné ou Activé (appui sur OK)">
+          <RadioButton x:Name="StateNormalRadio" Style="{StaticResource Step}" GroupName="btnState" Tag="normal" Content="Normal" Padding="7,4" Margin="0,0,2,0" Checked="OnPreviewStateChanged"/>
+          <RadioButton x:Name="StateFocusRadio" Style="{StaticResource Step}" GroupName="btnState" Tag="focus" Content="Sélection" Padding="7,4" Margin="0,0,2,0" IsChecked="True" Checked="OnPreviewStateChanged"/>
+          <RadioButton x:Name="StateActiveRadio" Style="{StaticResource Step}" GroupName="btnState" Tag="active" Content="Activé" Padding="7,4" Margin="0" Checked="OnPreviewStateChanged"/>
+        </StackPanel>
+        <Button x:Name="AddMenuButton" Content="+ Ajouter ▾" Padding="10,4" Margin="0,2" Click="OnAddMenuClick"
                 ToolTip="Ajouter un texte, une image, un cadre, un bouton ou un sous-menu sur la page">
           <Button.ContextMenu>
             <ContextMenu Placement="Top">
@@ -85,7 +97,7 @@
             </ContextMenu>
           </Button.ContextMenu>
         </Button>
-      </StackPanel>
+      </WrapPanel>
       <TextBlock x:Name="Status" DockPanel.Dock="Bottom" Foreground="{StaticResource AccentHoverBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/>
       <TextBlock x:Name="Hint" DockPanel.Dock="Bottom" TextWrapping="Wrap" Opacity="0.65" Margin="0,6,0,0"/>
       <ListBox x:Name="PageStrip" DockPanel.Dock="Bottom" Margin="0,10,0,0" Height="96" SelectionChanged="OnStripPick"
@@ -105,7 +117,7 @@
       <Border x:Name="Stage" Background="Black" CornerRadius="12" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Focusable="True" FocusVisualStyle="{x:Null}"
               AllowDrop="True" PreviewKeyDown="OnStageKey" MouseDown="OnStageMouse" DragOver="OnStageDragOver" Drop="OnStageDrop">
         <Viewbox Stretch="Uniform">
-          <Canvas x:Name="StageCanvas" Width="1920" Height="1080" ClipToBounds="True" RenderOptions.BitmapScalingMode="HighQuality"
+          <Canvas x:Name="StageCanvas" Width="1920" Height="1080" Background="Transparent" ClipToBounds="True" RenderOptions.BitmapScalingMode="HighQuality"
                   MouseMove="OnCanvasMove" MouseLeftButtonUp="OnCanvasUp" LostMouseCapture="OnCanvasLost"/>
         </Viewbox>
       </Border>
@@ -127,6 +139,14 @@
             <TextBox x:Name="SearchBox" TextChanged="OnSearch" AutomationProperties.Name="Chercher un modèle"
                      ToolTip="Un mot du nom ou de l'usage (mariage, série, voyage…) : la recherche porte sur tous les modèles"/>
           </DockPanel>
+          <UniformGrid DockPanel.Dock="Top" Columns="3" Margin="0,0,-6,8">
+            <Button Content="+ Page vierge" Click="OnQuickBlank" Margin="0,0,6,0" Padding="6,5" FontSize="12"
+                    ToolTip="Partir d'une page libre personnalisable de zéro"/>
+            <Button Content="Film minimal" Tag="Film minimal" Click="OnQuickTemplate" Margin="0,0,6,0" Padding="6,5" FontSize="12"
+                    ToolTip="Modèle épuré pour un film"/>
+            <Button Content="Série minimal" Tag="Série minimal" Click="OnQuickTemplate" Margin="0,0,6,0" Padding="6,5" FontSize="12"
+                    ToolTip="Modèle épuré pour une saison / série"/>
+          </UniformGrid>
           <WrapPanel x:Name="Families" DockPanel.Dock="Top" Margin="0,0,0,4"/>
           <Expander DockPanel.Dock="Bottom" Header="Options et import de modèles" Margin="0,8,0,0" IsExpanded="False">
             <StackPanel Margin="0,8,0,0">
@@ -180,8 +200,29 @@
               </ListBox.ItemTemplate>
             </ListBox>
             <DockPanel x:Name="MinePanel" Visibility="Collapsed">
-              <TextBlock DockPanel.Dock="Top" Text="Les menus que vous enregistrez avec « Enregistrer le modèle… », en bas de la fenêtre." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
-              <ListBox x:Name="CustomList" DisplayMemberPath="Name" SelectionChanged="OnPick"/>
+              <TextBlock DockPanel.Dock="Top" Text="Les menus que vous enregistrez avec « Enregistrer le modèle… », en bas de la fenêtre." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+              <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                <Button x:Name="MineRenameBtn" Content="Renommer…" Click="OnMineRename" Margin="0,0,6,0" IsEnabled="False"/>
+                <Button x:Name="MineDupBtn" Content="Dupliquer…" Click="OnMineDuplicate" Margin="0,0,6,0" IsEnabled="False"/>
+                <Button x:Name="MineDelBtn" Content="Supprimer" Click="OnMineDelete" IsEnabled="False"/>
+              </DockPanel>
+              <ListBox x:Name="CustomList" SelectionChanged="OnPickMine" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                <ListBox.ItemsPanel>
+                  <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top"/></ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Margin="0,2" ToolTip="{Binding Name}">
+                      <Viewbox Stretch="Uniform">
+                        <Border Width="170" Height="96" Background="#22000000" CornerRadius="4">
+                          <Image Source="{Binding Thumbnail, Converter={StaticResource Thumb}}" Stretch="Uniform"/>
+                        </Border>
+                      </Viewbox>
+                      <TextBlock Text="{Binding Name}" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="12" Margin="0,3,0,0"/>
+                    </StackPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
             </DockPanel>
           </Grid>
         </DockPanel>
@@ -211,22 +252,26 @@
                 <Button x:Name="PageBgClear" Content="Fond commun" Click="OnPageBgClear" Margin="0,0,6,6"/>
                 <Button Content="Aucun" Click="OnBgClear" Margin="0,0,0,6" ToolTip="Revient au dégradé de couleurs"/>
               </WrapPanel>
-              <CheckBox x:Name="LoopBox" Content="Menu animé : vidéo en boucle derrière les boutons" IsChecked="{Binding Loop}" Margin="0,4,0,0"/>
+              <CheckBox x:Name="LoopBox" Content="Menu animé : vidéo en boucle derrière les boutons" Margin="0,4,0,0"
+                        Checked="OnPageMediaChanged" Unchecked="OnPageMediaChanged"/>
               <DockPanel Margin="0,6,0,0">
                 <TextBlock Text="Vidéo" Width="62" VerticalAlignment="Center" Opacity="0.7" DockPanel.Dock="Left"/>
                 <Button Content="…" Width="36" Padding="0,4" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnLoopFile" AutomationProperties.Name="Choisir la vidéo du menu"/>
-                <TextBox Text="{Binding LoopFile, UpdateSourceTrigger=PropertyChanged}" ToolTip="Vide = le premier film"/>
+                <TextBox x:Name="LoopFileBox" TextChanged="OnPageMediaChanged" ToolTip="Vide = le premier film"/>
               </DockPanel>
               <DockPanel Margin="0,6,0,0">
                 <TextBlock Text="Musique" Width="62" VerticalAlignment="Center" Opacity="0.7" DockPanel.Dock="Left"/>
                 <Button Content="…" Width="36" Padding="0,4" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnMusic" AutomationProperties.Name="Choisir la musique"/>
-                <TextBox Text="{Binding Music, UpdateSourceTrigger=PropertyChanged}" ToolTip="Vide = aucune musique"/>
+                <TextBox x:Name="MusicFileBox" TextChanged="OnPageMediaChanged" ToolTip="Vide = aucune musique"/>
               </DockPanel>
               <DockPanel Margin="0,6,0,0">
                 <TextBlock Text="Volume" Width="62" VerticalAlignment="Center" Opacity="0.7" DockPanel.Dock="Left"/>
                 <TextBlock Text="{Binding Value, ElementName=MusicVolumeSlider, StringFormat={}{0:0} %}" Width="46" DockPanel.Dock="Right" TextAlignment="Right" VerticalAlignment="Center"/>
-                <Slider x:Name="MusicVolumeSlider" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding MusicVolume}" AutomationProperties.Name="Volume de la musique"/>
+                <Slider x:Name="MusicVolumeSlider" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="OnPageMediaChanged" AutomationProperties.Name="Volume de la musique"/>
               </DockPanel>
+              <CheckBox x:Name="PageMediaScopeBox" Content="Appliquer vidéo/musique à cette page seulement" Margin="0,8,0,0"
+                        Checked="OnPageMediaScopeChanged" Unchecked="OnPageMediaScopeChanged"
+                        ToolTip="Cochez pour associer une vidéo animée ou une musique différente uniquement à la page affichée"/>
 
               <TextBlock Text="Présentation" Style="{StaticResource Head}"/>
               <TextBlock Text="Affichage des scènes" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
@@ -248,6 +293,8 @@
                 </DockPanel>
               </StackPanel>
               <TextBlock x:Name="GridNote" Text="Ce modèle fixe lui-même le nombre de cases par page." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="Collapsed"/>
+              <Button x:Name="ConvertFreeButton" Content="Convertir cette page en composition libre" Click="OnConvertFree" Margin="0,8,0,0" HorizontalAlignment="Stretch"
+                      ToolTip="Transforme les boutons et zones du modèle sur cette page en éléments libres entièrement modifiables"/>
               <CheckBox x:Name="PopupBox" Content="Menu pop-up par-dessus le film (Blu-ray)" IsChecked="{Binding Popup}" Margin="0,8,0,0"
                         ToolTip="La touche Pop-up de la télécommande ouvre un petit menu sans arrêter le film"/>
               <TextBlock Text="Lecture du disque" Style="{StaticResource Caption}"/>
@@ -271,6 +318,15 @@
                     <CheckBox Content="Coins carrés" IsChecked="{Binding Square}" Margin="0,4,0,0"/>
                     <TextBlock Text="Surbrillance du bouton choisi" Style="{StaticResource Caption}"/>
                     <ComboBox x:Name="HlBox" SelectionChanged="OnPickHighlight" DisplayMemberPath="Label" SelectedValuePath="Value"/>
+                    <StackPanel x:Name="BdCursorPanel">
+                      <TextBlock Text="Curseur animé BD-J" Style="{StaticResource Caption}"/>
+                      <DockPanel>
+                        <Button x:Name="CursorCustomBtn" Content="PNG…" DockPanel.Dock="Right" Margin="6,0,0,0" Padding="8,4" Click="OnPickCursorFrames" Visibility="Collapsed"
+                                ToolTip="Choisir plusieurs images PNG (2 ou plus) pour animer le curseur sur Blu-ray"/>
+                        <ComboBox x:Name="CursorPresetBox" SelectionChanged="OnPickCursorPreset" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                  ToolTip="Curseur animé affiché sur le bouton sélectionné (Blu-ray BD-J)"/>
+                      </DockPanel>
+                    </StackPanel>
                     <TextBlock Text="Couleurs (#RRGGBB)" Style="{StaticResource Caption}"/>
                     <DockPanel Margin="0,2">
                       <Border Style="{StaticResource Swatch}" Background="{Binding Top}"/>
@@ -311,6 +367,9 @@
                     </DockPanel>
                     <TextBlock Text="Assombrir le fond (%)" Style="{StaticResource Caption}"/>
                     <Slider Minimum="0" Maximum="80" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding Dim}"/>
+                    <TextBlock Text="Angle du dégradé (°)" Style="{StaticResource Caption}"/>
+                    <Slider Minimum="0" Maximum="360" TickFrequency="15" IsSnapToTickEnabled="True" Value="{Binding GradientAngle}"
+                            ToolTip="Orientation du dégradé entre la couleur haute et la couleur basse (0° = horizontal, 90° = vertical)"/>
                   </StackPanel>
                   <TextBlock Text="Flouter l'image de fond" Style="{StaticResource Caption}"/>
                   <Slider Minimum="0" Maximum="40" TickFrequency="2" IsSnapToTickEnabled="True" Value="{Binding BackgroundBlur}" AutomationProperties.Name="Flouter l'image de fond"/>
@@ -320,18 +379,58 @@
               <Expander Header="Structure, pop-up et BD-J" Style="{StaticResource AdvExpander}">
                 <StackPanel Margin="0,6,0,4">
                   <CheckBox Content="Aperçu du film sur le menu principal" IsChecked="{Binding ShowPreview}" Margin="0,0,0,4"/>
-                  <CheckBox Content="Vignettes animées (DVD)" IsChecked="{Binding AnimatedThumbs}" Margin="0,4,0,0" ToolTip="Un extrait du chapitre tourne dans chaque case"/>
+                  <CheckBox Content="Vignettes animées" IsChecked="{Binding AnimatedThumbs}" Margin="0,4,0,0"
+                            ToolTip="Un extrait vidéo du chapitre ou de l'épisode tourne dans chaque vignette (DVD et Blu-ray)"/>
                   <CheckBox Content="Pas de menu principal : les chapitres d'abord" IsChecked="{Binding ScenesOnly}" Margin="0,4,0,0" ToolTip="La première page de chapitres ou d'épisodes sert de menu"/>
                   <CheckBox Content="Série : pas de case pour la première vidéo" IsChecked="{Binding SkipFirstScene}" Margin="0,4,0,0" ToolTip="« Tout lire » la joue"/>
                   <CheckBox Content="Page Bonus en texte, sans vignettes" IsChecked="{Binding BonusText}" Margin="0,4,0,0"/>
+                  <StackPanel x:Name="PopupSettingsGroup">
                   <TextBlock Text="Fond sombre du pop-up BD-J" Style="{StaticResource Caption}"/>
                   <Slider Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding PopupShade}"
                           ToolTip="Augmente l’opacité du fond du pop-up pour améliorer la lisibilité du texte sur le film."/>
-                  <TextBlock Text="Fondu entre les pages BD-J (ms, 0 = aucun)" Style="{StaticResource Caption}"/>
-                  <Slider Minimum="0" Maximum="500" TickFrequency="50" IsSnapToTickEnabled="True" Value="{Binding PageFadeMs}"/>
-                  <TextBlock Text="Luminosité des graphismes en HDR (nits, 203 = standard)" Style="{StaticResource Caption}"/>
-                  <Slider Minimum="80" Maximum="400" TickFrequency="10" IsSnapToTickEnabled="True" Value="{Binding HdrGraphicsNits}"
-                          ToolTip="Calibre la luminance des menus et du pop-up sur les téléviseurs HDR (203 nits = référence SDR-dans-HDR ITU-R BT.2408)."/>
+                  <StackPanel IsEnabled="{Binding IsChecked, ElementName=PopupBox}" Margin="0,4,0,0">
+                    <Grid Margin="0,4,0,0">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="*"/>
+                      </Grid.ColumnDefinitions>
+                      <StackPanel>
+                        <TextBlock Text="Position du pop-up" Style="{StaticResource Caption}" Margin="0,0,0,2"/>
+                        <ComboBox x:Name="PopDockBox" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding PopupLayout.Dock}"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="2">
+                        <TextBlock Text="Style boutons pop-up" Style="{StaticResource Caption}" Margin="0,0,0,2"/>
+                        <ComboBox x:Name="PopLookBox" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding PopupLayout.ButtonLook}"/>
+                      </StackPanel>
+                    </Grid>
+                    <DockPanel Margin="0,6,0,0">
+                      <Border Style="{StaticResource Swatch}" Background="{Binding PopupLayout.Fill}"/>
+                      <TextBlock Text="Fond pop-up" Width="88" VerticalAlignment="Center"/>
+                      <TextBox Text="{Binding PopupLayout.Fill, UpdateSourceTrigger=PropertyChanged}"/>
+                    </DockPanel>
+                    <Grid Margin="0,4,0,0">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="*"/>
+                      </Grid.ColumnDefinitions>
+                      <StackPanel>
+                        <TextBlock Text="Hauteur barre pop-up" Style="{StaticResource Caption}" Margin="0,0,0,2"/>
+                        <Slider Minimum="140" Maximum="500" TickFrequency="10" IsSnapToTickEnabled="True" Value="{Binding PopupLayout.BarHeight}"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="2">
+                        <TextBlock Text="Largeur boutons pop-up" Style="{StaticResource Caption}" Margin="0,0,0,2"/>
+                        <Slider Minimum="180" Maximum="520" TickFrequency="10" IsSnapToTickEnabled="True" Value="{Binding PopupLayout.ButtonWidth}"/>
+                      </StackPanel>
+                    </Grid>
+                    <UniformGrid Columns="2" Margin="0,6,0,0">
+                      <CheckBox Content="Bouton Reprendre" IsChecked="{Binding PopupLayout.ShowResume}" Margin="0,2"/>
+                      <CheckBox Content="Bouton Chapitres" IsChecked="{Binding PopupLayout.ShowChapters}" Margin="0,2"/>
+                      <CheckBox Content="Bouton Réglages" IsChecked="{Binding PopupLayout.ShowSettings}" Margin="0,2"/>
+                      <CheckBox Content="Bouton Menu" IsChecked="{Binding PopupLayout.ShowMainMenu}" Margin="0,2"/>
+                    </UniformGrid>
+                  </StackPanel>
                   <DockPanel Margin="0,8,0,0" IsEnabled="{Binding IsChecked, ElementName=PopupBox}">
                     <TextBlock Text="Bouton reprendre" Width="150" VerticalAlignment="Center" DockPanel.Dock="Left"/>
                     <TextBox Text="{Binding ResumeLabel, UpdateSourceTrigger=PropertyChanged}"/>
@@ -340,10 +439,38 @@
                     <TextBlock Text="Bouton menu principal" Width="150" VerticalAlignment="Center" DockPanel.Dock="Left"/>
                     <TextBox Text="{Binding MainMenuLabel, UpdateSourceTrigger=PropertyChanged}"/>
                   </DockPanel>
+                  </StackPanel>
+                  <StackPanel x:Name="SoundSettingsPanel" Margin="0,8,0,0">
+                    <TextBlock Text="Bruitages des boutons (Blu-ray)" Style="{StaticResource Caption}" Margin="0,4,0,3"/>
+                    <DockPanel>
+                      <Button Content="🔊 Écouter" DockPanel.Dock="Right" Margin="6,0,0,0" Padding="8,4" Click="OnPreviewSound"
+                              ToolTip="Écouter un aperçu des bruitages télécommande sur ce PC"/>
+                      <ComboBox x:Name="SoundPackBox" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="OnPickSoundPack"/>
+                    </DockPanel>
+                    <TextBlock Text="Volume des bruitages (%)" Style="{StaticResource Caption}"/>
+                    <Slider Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding Sounds.Volume}"/>
+                    <StackPanel x:Name="SoundCustomPanel" Visibility="Collapsed" Margin="0,6,0,0">
+                      <DockPanel Margin="0,2">
+                        <Button Content="Déplacement…" Width="104" DockPanel.Dock="Left" Click="OnPickMoveWav"/>
+                        <TextBox Text="{Binding Sounds.MoveWav, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,0,0"/>
+                      </DockPanel>
+                      <DockPanel Margin="0,4,0,0">
+                        <Button Content="Validation…" Width="104" DockPanel.Dock="Left" Click="OnPickSelectWav"/>
+                        <TextBox Text="{Binding Sounds.SelectWav, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,0,0"/>
+                      </DockPanel>
+                    </StackPanel>
+                  </StackPanel>
+                  <StackPanel x:Name="BdOnlyStructurePanel">
+                    <TextBlock Text="Fondu entre les pages BD-J (ms, 0 = aucun)" Style="{StaticResource Caption}"/>
+                    <Slider Minimum="0" Maximum="500" TickFrequency="50" IsSnapToTickEnabled="True" Value="{Binding PageFadeMs}"/>
+                    <TextBlock Text="Luminosité des graphismes en HDR (nits, 203 = standard)" Style="{StaticResource Caption}"/>
+                    <Slider Minimum="80" Maximum="400" TickFrequency="10" IsSnapToTickEnabled="True" Value="{Binding HdrGraphicsNits}"
+                            ToolTip="Calibre la luminance des menus et du pop-up sur les téléviseurs HDR (203 nits = référence SDR-dans-HDR ITU-R BT.2408)."/>
+                    <TextBlock Text="Titre du disque par langue, Blu-ray (ex. fra: Mon disque)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+                    <TextBox Text="{Binding TitlesByLanguage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48" VerticalScrollBarVisibility="Auto"/>
+                  </StackPanel>
                   <TextBlock Text="Page Crédits (une ligne par rangée, vide = aucune)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
                   <TextBox Text="{Binding Credits, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Texte des crédits"/>
-                  <TextBlock Text="Titre du disque par langue, Blu-ray (ex. fra: Mon disque)" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
-                  <TextBox Text="{Binding TitlesByLanguage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48" VerticalScrollBarVisibility="Auto"/>
                   <TextBlock Text="La page Langues (audio et sous-titres) et la page Bonus se créent d'elles-mêmes quand le disque a plusieurs pistes ou des bonus." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
                 </StackPanel>
               </Expander>
@@ -421,6 +548,8 @@
             <StackPanel Margin="0,0,8,12">
               <DockPanel Margin="0,0,0,10">
                 <Button Content="← Retour au menu" Click="OnBackToMenu" Padding="10,4" DockPanel.Dock="Left"/>
+                <Button x:Name="ResetNativeBtn" Content="Réinitialiser" Click="OnResetNative" Padding="10,4" DockPanel.Dock="Right" Visibility="Collapsed"
+                        ToolTip="Rétablir la position et le style d'origine de cet élément du modèle"/>
                 <TextBlock Text="Élément sélectionné" Style="{StaticResource Head}" Margin="12,0,0,0" VerticalAlignment="Center"/>
               </DockPanel>
               <DockPanel Margin="0,4,0,0">
@@ -429,8 +558,11 @@
               </DockPanel>
               <DockPanel Margin="0,4,0,0">
                 <TextBlock Text="Mène à" Width="80" VerticalAlignment="Center"/>
-                <ComboBox x:Name="ElemTarget" SelectionChanged="OnElemPickEvent"/>
+                <ComboBox x:Name="ElemTarget" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="OnElemPickEvent"/>
               </DockPanel>
+              <CheckBox x:Name="ElemDefaultBtn" Content="Bouton sélectionné par défaut sur cette page" Margin="0,6,0,0"
+                        Checked="OnDefaultBtnToggle" Unchecked="OnDefaultBtnToggle"
+                        ToolTip="Ce bouton reçoit le focus dès l'ouverture de cette page sur le lecteur"/>
               <DockPanel Margin="0,4,0,0">
                 <TextBlock Text="Page" Width="80" VerticalAlignment="Center"/>
                 <ComboBox x:Name="ElemPage" SelectionChanged="OnElemPickEvent"/>
@@ -443,25 +575,31 @@
                 <TextBox x:Name="ElemColor" TextChanged="OnElemText"/>
               </DockPanel>
               <DockPanel Margin="0,4,0,0">
-                <Button Content="Image…" Width="80" DockPanel.Dock="Left" Click="OnElemImage"/>
+                <Button Content="Image…" Width="96" DockPanel.Dock="Left" Click="OnElemImage"/>
                 <TextBox x:Name="ElemImage" TextChanged="OnElemText" Margin="6,0,0,0"/>
               </DockPanel>
               <DockPanel Margin="0,4,0,0">
-                <Button Content="Sélection…" Width="80" DockPanel.Dock="Left" Click="OnElemFocus" ToolTip="L'image que montre un bouton image quand il est sélectionné (vide = le cadre du thème)"/>
+                <Button Content="Sélection…" Width="96" DockPanel.Dock="Left" Click="OnElemFocus" ToolTip="L'image que montre un bouton image quand il est sélectionné (vide = le cadre du thème)"/>
                 <TextBox x:Name="ElemFocus" TextChanged="OnElemText" Margin="6,0,0,0"/>
               </DockPanel>
-              <TextBlock Text="Aligner sur l'écran (zone sûre TV / centre)" Style="{StaticResource Caption}"/>
-              <UniformGrid Columns="6" Margin="0,2,0,6">
+              <DockPanel Margin="0,4,0,0">
+                <Button Content="Activée…" Width="96" DockPanel.Dock="Left" Click="OnElemActive" ToolTip="L'image que montre un bouton quand on appuie sur OK (vide = surbrillance sélectionnée)"/>
+                <TextBox x:Name="ElemActive" TextChanged="OnElemText" Margin="6,0,0,0"/>
+              </DockPanel>
+              <TextBlock Text="Aligner / répartir (Maj+clic ou lasso pour grouper)" Style="{StaticResource Caption}"/>
+              <UniformGrid Columns="8" Margin="0,2,0,6">
                 <Button Content="⟸" Tag="left" Click="OnElemAlignCanvas" Padding="0,4" Margin="0,0,4,0" ToolTip="Aligner à gauche (marge sûre TV)"/>
                 <Button Content="↔" Tag="center-h" Click="OnElemAlignCanvas" Padding="0,4" Margin="0,0,4,0" ToolTip="Centrer horizontalement"/>
                 <Button Content="⟹" Tag="right" Click="OnElemAlignCanvas" Padding="0,4" Margin="0,0,4,0" ToolTip="Aligner à droite (marge sûre TV)"/>
                 <Button Content="⟰" Tag="top" Click="OnElemAlignCanvas" Padding="0,4" Margin="0,0,4,0" ToolTip="Aligner en haut (marge sûre TV)"/>
                 <Button Content="↕" Tag="center-v" Click="OnElemAlignCanvas" Padding="0,4" Margin="0,0,4,0" ToolTip="Centrer verticalement"/>
-                <Button Content="⟱" Tag="bottom" Click="OnElemAlignCanvas" Padding="0,4" ToolTip="Aligner en bas (marge sûre TV)"/>
+                <Button Content="⟱" Tag="bottom" Click="OnElemAlignCanvas" Padding="0,4" Margin="0,0,4,0" ToolTip="Aligner en bas (marge sûre TV)"/>
+                <Button x:Name="DistHBtn" Content="⇹" Tag="dist-h" Click="OnElemAlignCanvas" Padding="0,4" Margin="0,0,4,0" ToolTip="Répartir horizontalement (3+ sélectionnés)"/>
+                <Button x:Name="DistVBtn" Content="⇕" Tag="dist-v" Click="OnElemAlignCanvas" Padding="0,4" ToolTip="Répartir verticalement (3+ sélectionnés)"/>
               </UniformGrid>
               <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
                 <Button x:Name="ElemCopy" Content="Dupliquer" Click="OnElemDuplicate" Margin="0,0,8,0"/>
-                <Button Content="Supprimer" Click="OnElemDelete"/>
+                <Button x:Name="ElemDelBtn" Content="Supprimer" Click="OnElemDelete"/>
               </StackPanel>
 
               <Expander Header="Placement et style avancés" Style="{StaticResource AdvExpander}">
@@ -502,7 +640,60 @@
                   <Slider x:Name="ElemBorderW" Minimum="0" Maximum="16" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
                   <TextBlock Text="Opacité du cadre (%)" Style="{StaticResource Caption}"/>
                   <Slider x:Name="ElemOpacity" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
-                  <Button Content="Liens des flèches…" Click="OnDirectionLink" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+                  <TextBlock Text="Opacité du calque (%)" Style="{StaticResource Caption}"/>
+                  <Slider x:Name="ElemLayerOpacity" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+                  <TextBlock Text="Rotation (°)" Style="{StaticResource Caption}"/>
+                  <Slider x:Name="ElemRotation" Minimum="-180" Maximum="180" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+                  <DockPanel Margin="0,4">
+                    <Border Style="{StaticResource Swatch}" Background="{Binding ElementName=ElemOutline, Path=Text}"/>
+                    <TextBlock Text="Contour" Width="76" VerticalAlignment="Center"/>
+                    <TextBox x:Name="ElemOutline" TextChanged="OnElemText"/>
+                  </DockPanel>
+                  <TextBlock Text="Épaisseur du contour" Style="{StaticResource Caption}"/>
+                  <Slider x:Name="ElemOutlineW" Minimum="0" Maximum="12" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+                  <DockPanel Margin="0,4">
+                    <Border Style="{StaticResource Swatch}" Background="{Binding ElementName=ElemShadow, Path=Text}"/>
+                    <TextBlock Text="Ombre" Width="76" VerticalAlignment="Center"/>
+                    <TextBox x:Name="ElemShadow" TextChanged="OnElemText" ToolTip="Couleur d'ombre (#000000), vide = aucune"/>
+                  </DockPanel>
+                  <Grid Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="10"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                      <TextBlock Text="Flou d'ombre" Style="{StaticResource Caption}" Margin="0,0,0,2"/>
+                      <Slider x:Name="ElemShadowBlur" Minimum="0" Maximum="24" TickFrequency="2" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                      <TextBlock Text="Décalage d'ombre" Style="{StaticResource Caption}" Margin="0,0,0,2"/>
+                      <Slider x:Name="ElemShadowOffset" Minimum="-24" Maximum="24" TickFrequency="2" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+                    </StackPanel>
+                  </Grid>
+                  <TextBlock Text="Flou d'image" Style="{StaticResource Caption}"/>
+                  <Slider x:Name="ElemImageBlur" Minimum="0" Maximum="30" TickFrequency="2" IsSnapToTickEnabled="True" ValueChanged="OnElemSlide"/>
+                  <TextBlock Text="Navigation à la télécommande (Haut / Bas / Gauche / Droite)" Style="{StaticResource Caption}"/>
+                  <Grid Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="8"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                      <TextBlock Text="Haut" FontSize="11" Opacity="0.65"/>
+                      <ComboBox x:Name="NavUpBox" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="OnNavDirPick"/>
+                      <TextBlock Text="Gauche" FontSize="11" Opacity="0.65" Margin="0,6,0,0"/>
+                      <ComboBox x:Name="NavLeftBox" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="OnNavDirPick"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                      <TextBlock Text="Bas" FontSize="11" Opacity="0.65"/>
+                      <ComboBox x:Name="NavDownBox" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="OnNavDirPick"/>
+                      <TextBlock Text="Droite" FontSize="11" Opacity="0.65" Margin="0,6,0,0"/>
+                      <ComboBox x:Name="NavRightBox" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="OnNavDirPick"/>
+                    </StackPanel>
+                  </Grid>
+                  <Button Content="Recalculer automatiquement les flèches de la page" Click="OnAutoNavRelink" Margin="0,6,0,0" HorizontalAlignment="Stretch"/>
                 </StackPanel>
               </Expander>
             </StackPanel>
@@ -578,6 +769,34 @@
                             <Image Source="{Binding Sample}" Stretch="Uniform" Margin="3"/>
                           </Border>
                         </Viewbox>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </DockPanel>
+
+                <!-- Tiroir calques -->
+                <DockPanel x:Name="LayersDrawerPanel" Visibility="Collapsed">
+                  <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                    <Button Content="Tout afficher" DockPanel.Dock="Right" Click="OnLayerShowAll" ToolTip="Réafficher tous les calques masqués de cette page"/>
+                    <StackPanel Orientation="Horizontal">
+                      <Button Content="▲" Width="32" Margin="0,0,4,0" Click="OnLayerUp" ToolTip="Monter d'un cran"/>
+                      <Button Content="▼" Width="32" Margin="0,0,4,0" Click="OnLayerDown" ToolTip="Descendre d'un cran"/>
+                      <Button Content="⤒" Width="32" Margin="0,0,4,0" Click="OnLayerTop" ToolTip="Mettre tout devant"/>
+                      <Button Content="⤓" Width="32" Click="OnLayerBottom" ToolTip="Envoyer à l'arrière"/>
+                    </StackPanel>
+                  </DockPanel>
+                  <TextBlock DockPanel.Dock="Top" Text="De haut en bas (premier plan → arrière-plan). Cliquez un calque pour le sélectionner." Opacity="0.65" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                  <ListBox x:Name="LayersList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" SelectionChanged="OnLayersListSelection">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <DockPanel Opacity="{Binding RowOpacity}" Margin="0,2">
+                          <Button Content="🔒" Tag="{Binding Key}" DockPanel.Dock="Right" Padding="6,2" Margin="4,0,0,0" Opacity="{Binding LockOpacity}" Click="OnLayerToggleLock" ToolTip="Verrouiller / déverrouiller sur la scène"/>
+                          <Button Content="👁" Tag="{Binding Key}" DockPanel.Dock="Right" Padding="6,2" Opacity="{Binding EyeOpacity}" Click="OnLayerToggleHide" ToolTip="Afficher / masquer ce calque"/>
+                          <StackPanel>
+                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding KindTag}" FontSize="11" Opacity="0.65"/>
+                          </StackPanel>
+                        </DockPanel>
                       </DataTemplate>
                     </ListBox.ItemTemplate>
                   </ListBox>

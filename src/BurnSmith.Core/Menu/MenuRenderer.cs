@@ -592,7 +592,7 @@ public static partial class MenuRenderer
         }
         else
         {
-            dc.DrawRectangle(new LinearGradientBrush(Col(d.Top), Col(d.Bottom), 90), null, full);
+            dc.DrawRectangle(new LinearGradientBrush(Col(d.Top), Col(d.Bottom), d.GradientAngle), null, full);
             var rnd = new Random(d.Name.Sum(ch => ch)); // stable per design: same menu on every render
             for (var i = 0; i < 9; i++)
             {
@@ -603,35 +603,42 @@ public static partial class MenuRenderer
         }
 
         foreach (var op in page.Ops)
-            switch (op)
-            {
-                case Image im:
-                    if ((overlay || own != null) && im.Backdrop) break; // a template's background picture: the page has its own, or the video is behind
-                    // Backdrop and Cover together: the film frame a template shows behind its page, the one picture of the user's among a template's ops
-                    if (im.Cover) dc.DrawRectangle(new ImageBrush(im.Backdrop ? Backdrop(im.Path, d) : Load(im.Path)) { Stretch = Stretch.UniformToFill }, null, R(im.Rect));
-                    else dc.DrawImage(Load(im.Path, R(im.Rect)), R(im.Rect));
-                    break;
-                case Text t:
-                    DrawText(dc, t);
-                    break;
-                case Framed f:
-                    DrawFramed(dc, f);
-                    break;
-                case Fill f:
-                    dc.DrawRoundedRectangle(new SolidColorBrush(Col(f.Color, f.Opacity)), null, R(f.Rect), f.Radius, f.Radius);
-                    break;
-                case Border b:
-                    dc.DrawRoundedRectangle(null, new Pen(new SolidColorBrush(Col(b.Color)), b.Width) { LineJoin = PenLineJoin.Round }, R(b.Rect), Math.Max(0, b.Radius), Math.Max(0, b.Radius));
-                    break;
-                case Picture p:
-                    var rect = R(p.Rect);
-                    var pen = p.BorderWidth > 0 ? new Pen(new SolidColorBrush(Col(d.Accent)), p.BorderWidth) : null;
-                    dc.DrawRoundedRectangle(new ImageBrush(Load(p.Path)) { Stretch = Stretch.UniformToFill }, pen, rect, p.Radius, p.Radius);
-                    break;
-                case Label l:
-                    DrawLabel(dc, d, l);
-                    break;
-            }
+            DrawOp(dc, d, op, overlay, own);
+    }
+
+    static void DrawOp(DrawingContext dc, MenuDesign d, Op op, bool overlay, string? own)
+    {
+        switch (op)
+        {
+            case StyledOp s:
+                DrawStyledOp(dc, d, s, overlay, own);
+                break;
+            case Image im:
+                if ((overlay || own != null) && im.Backdrop) break;
+                if (im.Cover) dc.DrawRectangle(new ImageBrush(im.Backdrop ? Backdrop(im.Path, d) : Load(im.Path)) { Stretch = Stretch.UniformToFill }, null, R(im.Rect));
+                else dc.DrawImage(Load(im.Path, R(im.Rect)), R(im.Rect));
+                break;
+            case Text t:
+                DrawText(dc, t);
+                break;
+            case Framed f:
+                DrawFramed(dc, f);
+                break;
+            case Fill f:
+                dc.DrawRoundedRectangle(new SolidColorBrush(Col(f.Color, f.Opacity)), null, R(f.Rect), f.Radius, f.Radius);
+                break;
+            case Border b:
+                dc.DrawRoundedRectangle(null, new Pen(new SolidColorBrush(Col(b.Color)), b.Width) { LineJoin = PenLineJoin.Round }, R(b.Rect), Math.Max(0, b.Radius), Math.Max(0, b.Radius));
+                break;
+            case Picture p:
+                var rect = R(p.Rect);
+                var pen = p.BorderWidth > 0 ? new Pen(new SolidColorBrush(Col(d.Accent)), p.BorderWidth) : null;
+                dc.DrawRoundedRectangle(new ImageBrush(Load(p.Path)) { Stretch = Stretch.UniformToFill }, pen, rect, p.Radius, p.Radius);
+                break;
+            case Label l:
+                DrawLabel(dc, d, l);
+                break;
+        }
     }
 
     static void DrawFramed(DrawingContext dc, Framed f)
@@ -798,30 +805,5 @@ public static partial class MenuRenderer
             argb[i] = ((uint)a << 24) | ((uint)r << 16) | ((uint)g << 8) | b;
         }
         return argb;
-    }
-
-    /// <summary>Scales an encoded PNG or JPEG image's RGB luminance for HDR graphics calibration (ITU-R BT.2408: nits / 400).</summary>
-    public static byte[] ScaleImageForHdr(byte[] encoded, int nits, bool jpeg)
-    {
-        if (nits is <= 0 or >= 400) return encoded;
-        var factor = Math.Clamp(nits, 80, 400) / 400.0;
-        using var src = new MemoryStream(encoded);
-        var decoder = BitmapDecoder.Create(src, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-        var formatted = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
-        int w = formatted.PixelWidth, h = formatted.PixelHeight;
-        var px = new byte[w * h * 4];
-        formatted.CopyPixels(px, w * 4, 0);
-        for (var i = 0; i < px.Length; i += 4)
-        {
-            px[i] = (byte)Math.Clamp((int)Math.Round(px[i] * factor), 0, 255);
-            px[i + 1] = (byte)Math.Clamp((int)Math.Round(px[i + 1] * factor), 0, 255);
-            px[i + 2] = (byte)Math.Clamp((int)Math.Round(px[i + 2] * factor), 0, 255);
-        }
-        var wb = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, px, w * 4);
-        BitmapEncoder encoder = jpeg ? new JpegBitmapEncoder { QualityLevel = 92 } : new PngBitmapEncoder();
-        encoder.Frames.Add(BitmapFrame.Create(wb));
-        using var dst = new MemoryStream();
-        encoder.Save(dst);
-        return dst.ToArray();
     }
 }

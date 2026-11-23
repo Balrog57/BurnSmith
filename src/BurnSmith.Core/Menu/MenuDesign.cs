@@ -1,4 +1,4 @@
-namespace BurnSmith.Core.Menu;
+﻿namespace BurnSmith.Core.Menu;
 
 /// <summary>What the user edits: the look of the menu pages. Plain data so it saves as a JSON template.</summary>
 public sealed class MenuDesign
@@ -194,6 +194,8 @@ public sealed class MenuDesign
     public bool Loop { get; set; }
     /// <summary>Optional PNG frames for the BD-J focus marker on the main page.</summary>
     public string[]? FocusFrames { get; set; }
+    /// <summary>Preset name for BD-J animated cursor ("none", "pulse", "ring", "arrow", "custom").</summary>
+    public string CursorPreset { get; set; } = "none";
     public string? LoopFile { get; set; }
     public int LoopStart { get; set; }
     public int LoopSeconds { get; set; } = 30;
@@ -210,7 +212,36 @@ public sealed class MenuDesign
     /// <summary>The music file when it is set and exists, else null.</summary>
     public string? ExistingMusic() => Music is { Length: > 0 } m && File.Exists(m) ? m : null;
 
-    /// <summary>A copy safe to edit: the free elements are copied too (a shared list would be changed behind the caller's back).</summary>
+    /// <summary>Studio extensions: non-destructive native overrides, blank/free pages, default focus buttons, per-page media, pop-up layout and navigation sounds.</summary>
+    public List<NativeElementOverride> NativeOverrides { get; set; } = [];
+    public List<string> FreePages { get; set; } = [];
+    public Dictionary<string, string> DefaultButtons { get; set; } = [];
+    public List<PageMedia> PageMedias { get; set; } = [];
+    public PopupStyle PopupLayout { get; set; } = new();
+    public MenuSoundSettings Sounds { get; set; } = new();
+    public int GradientAngle { get; set; } = 90;
+
+    /// <summary>Effective looping video / music configuration for <paramref name="pageId"/>.</summary>
+    public PageMedia MediaFor(string pageId)
+    {
+        var exact = PageMedias.FirstOrDefault(m => m.Page.Equals(pageId, StringComparison.OrdinalIgnoreCase));
+        var kind = PageMedias.FirstOrDefault(m => m.Page.Equals(PageKind(pageId), StringComparison.OrdinalIgnoreCase));
+        var picked = exact ?? kind;
+        return new PageMedia
+        {
+            Page = pageId,
+            Loop = picked?.Loop ?? Loop,
+            LoopFile = picked?.LoopFile ?? LoopFile,
+            LoopStart = picked?.LoopStart ?? LoopStart,
+            LoopSeconds = picked?.LoopSeconds ?? LoopSeconds,
+            Music = picked?.Music ?? Music,
+            MusicStart = picked?.MusicStart ?? MusicStart,
+            MusicVolume = picked?.MusicVolume ?? MusicVolume,
+            MusicFade = picked?.MusicFade ?? MusicFade,
+        };
+    }
+
+    /// <summary>A copy safe to edit: the free elements and studio overrides are copied too.</summary>
     public MenuDesign Clone()
     {
         var copy = (MenuDesign)MemberwiseClone();
@@ -220,6 +251,12 @@ public sealed class MenuDesign
         copy.PageBackgrounds = new(PageBackgrounds);
         copy.TextZones = new(TextZones);
         copy.FocusFrames = FocusFrames?.ToArray();
+        copy.NativeOverrides = NativeOverrides.Select(o => o.Copy()).ToList();
+        copy.FreePages = [.. FreePages];
+        copy.DefaultButtons = new(DefaultButtons);
+        copy.PageMedias = PageMedias.Select(m => m.Copy()).ToList();
+        copy.PopupLayout = (PopupLayout ?? new()).Copy();
+        copy.Sounds = (Sounds ?? new()).Copy();
         return copy;
     }
 
@@ -252,6 +289,7 @@ public sealed class MenuDesign
         Name = t.Name; Category = t.Category; Kind = t.Kind; TemplateDir = t.TemplateDir; BackgroundImage = t.BackgroundImage;
         Top = t.Top; Bottom = t.Bottom; TextColor = t.TextColor; Accent = t.Accent; HighlightStyle = t.HighlightStyle; SelectionColor = t.SelectionColor; SelectionOpacity = t.SelectionOpacity; AnimatedThumbs = t.AnimatedThumbs; Font = t.Font;
         FocusFrames = t.FocusFrames?.ToArray();
+        CursorPreset = t.CursorPreset;
         ButtonStyle = t.ButtonStyle; Cols = t.Cols; Rows = t.Rows; Thumbnails = t.Thumbnails; Square = t.Square;
         CardFill = t.CardFill; Glow = t.Glow; Dim = t.Dim; BackgroundBlur = t.BackgroundBlur; OwnBackdrop = t.OwnBackdrop; ShowPreview = t.ShowPreview;
         MarginX = t.MarginX; MarginY = t.MarginY; Gap = t.Gap; Header = t.Header; Footer = t.Footer;
@@ -261,5 +299,9 @@ public sealed class MenuDesign
         // the veils and fades of the look change with it, under the elements the user placed
         Elements.RemoveAll(e => e.OfLook);
         Elements.InsertRange(0, t.Elements.Where(e => e.OfLook).Select(e => e.Copy()));
+        GradientAngle = t.GradientAngle;
+        FreePages = [.. t.FreePages];
+        if (t.FreePages.Count > 0 && Elements.Count == t.Elements.Count(e => e.OfLook))
+            Elements.AddRange(t.Elements.Where(e => !e.OfLook).Select(e => e.Copy()));
     }
 }

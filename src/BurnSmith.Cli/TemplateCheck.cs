@@ -186,7 +186,7 @@ static class TemplateCheck
         return off <= a.W * a.H / 2000;
     }
 
-    static IEnumerable<string> Files(Op op) => (op switch
+    static IEnumerable<string> Files(Op op) => ((op is StyledOp s ? s.Inner : op) switch
     {
         Image i => [i.Path],
         Picture p => [p.Path],

@@ -421,21 +421,63 @@ public static partial class BluRay
                     (IReadOnlyList<(string Name, int Number)>)subtitleTracks[i].Visible))) : null;
             if (popup != null) log($"menu: pop-up menu on {job.Titles.Count} title(s)");
             // the BD-J graphics plane is 1920x1080 on a 4K disc too (the player scales it up): 3840x2160 pages ran the xlet out of heap
+            var titleSources = muxed.Select((m, i) => (File: m.Prepared, Chapters: (IReadOnlyList<double>)m.ChapterTimes, Duration: sources[i].Duration)).ToList();
             if (job.HdmvMenu)
             {
                 HdmvMenu.Add(job, menuPages, mainCount, muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0,
                     subtitleTracks.Select((s, i) => (muxed[i].Audio.Count, (IReadOnlyList<int>)s.Visible.Select(t => t.Number).ToList(),
-                        (IReadOnlyList<(int Audio, int Sub)>)s.Forced)).ToList(), intro != null, work, log);
+                        (IReadOnlyList<(int Audio, int Sub)>)s.Forced)).ToList(), intro != null, work, log, titleSources);
                 return;
             }
+            WriteSoundFiles(job, "BD-J", log);
+            var menuScale = Math.Min(1, VideoSize(job).H / 1080.0);
             MuxLoop(job, work, log);
+            var baseSpec = MediaSpec.From(job.Menu, job.Menu.MediaFor("root"));
+            var specPlaylists = new Dictionary<MediaSpec, int> { [baseSpec] = LoopPlaylist };
+            var pageLoops = new Dictionary<string, (int Playlist, bool Overlay, IReadOnlyList<Box>? Cutouts)>();
+            var nextExtraPlaylist = LoopPlaylist - 1;
+            var animDir = Path.Combine(work, "anim_thumbs");
+            foreach (var p in menuPages)
+            {
+                var pSpec = MediaSpec.From(job.Menu, job.Menu.MediaFor(p.Id));
+                var thumbClips = !pSpec.Loop && job.Menu.AnimatedThumbs ? BluRayThumbnailClips(p, titleSources) : [];
+                if (thumbClips.Count > 0)
+                {
+                    Directory.CreateDirectory(animDir);
+                    var staticBg = Path.Combine(animDir, $"base_{p.Id}.jpg");
+                    File.WriteAllBytes(staticBg, MenuRenderer.Sta(() => MenuRenderer.Background(job.Menu, p, menuScale)));
+                    var secs = LoopLength(pSpec.ToDesign(job.Menu), MaxLoopSeconds);
+                    var mFile = pSpec.ToDesign(job.Menu).ExistingMusic();
+                    var mWav = mFile == null ? null : PrepareMusic(pSpec.ToDesign(job.Menu), mFile, secs, Path.Combine(animDir, p.Id), log);
+                    var (ts, decl) = BuildAnimatedThumbsTs(job, $"bdj_{p.Id}", staticBg, thumbClips, mWav, secs, animDir, log);
+                    var pl = nextExtraPlaylist--;
+                    MuxLoopForSpec(job, pSpec.ToDesign(job.Menu), pl, ts, work, log, repeatClip: true, declaredOverride: decl);
+                    pageLoops[p.Id] = (pl, true, thumbClips.Select(c => c.Rect).ToList());
+                    continue;
+                }
+                if (!pSpec.Equals(baseSpec))
+                {
+                    if (!specPlaylists.TryGetValue(pSpec, out var pl))
+                    {
+                        pl = nextExtraPlaylist--;
+                        specPlaylists[pSpec] = pl;
+                        MuxLoopForSpec(job, pSpec.ToDesign(job.Menu), pl, null, work, log);
+                    }
+                    pageLoops[p.Id] = (pl, pSpec.Loop, null);
+                }
+                else if (pSpec.Loop != job.Menu.Loop)
+                {
+                    pageLoops[p.Id] = (LoopPlaylist, pSpec.Loop, null);
+                }
+            }
             var moving = job.Menu.Loop;
-            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, LoopPlaylist, Math.Min(1, VideoSize(job).H / 1080.0), job.Playback ?? new(), mainCount,
+            MenuFiles.WriteBdj(job.Menu, menuPages, menuDir, LoopPlaylist, menuScale, job.Playback ?? new(), mainCount,
                 overlay: moving, defaultSubtitle: muxed[0].DefaultSubtitle <= listed ? muxed[0].DefaultSubtitle : 0, popup: popup,
                 subtitleTracks: subtitleTracks.Select((s, i) => (MoviePlaylist + i, s.Visible.Select(t => t.Number), (IReadOnlyList<(int Audio, int Sub)>)s.Forced)),
                 log: log, loopReturnMark: moving ? Mpls.MenuLoopReturnMark : -1,
                 titleEnds: job.Titles.Select((title, index) => (MoviePlaylist + index, title.EndAction)),
-                hdrGraphicsNits: job.Uhd ? job.Menu.HdrGraphicsNits : 0);
+                hdrGraphicsNits: job.Uhd ? job.Menu.HdrGraphicsNits : 0,
+                pageLoops: pageLoops);
             AddMenu(job, menuDir, intro != null, log);
         }
         else if (muxed[0].DefaultSubtitle > 0 || intro != null)

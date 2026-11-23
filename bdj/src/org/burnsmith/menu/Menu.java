@@ -43,6 +43,7 @@ import org.bluray.media.SubtitlingControl;
 import org.bluray.net.BDLocator;
 import org.bluray.system.RegisterAccess;
 import org.dvb.event.EventManager;
+import org.havi.ui.HSound;
 import org.dvb.event.UserEvent;
 import org.dvb.event.UserEventListener;
 import org.dvb.event.UserEventRepository;
@@ -88,8 +89,8 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
     private static class Button {
         String id, left, right, up, down, action, arg;
         int x, y, w, h, n1, n2;
-        String focusName;
-        Image focus;
+        String focusName, activeName;
+        Image focus, active;
         int motionX, motionY, motionW, motionH;
     }
 
@@ -97,6 +98,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
         String id, bgName;
         Image bg;
         int markerDx = Integer.MIN_VALUE; // MIN_VALUE: the marker line's offset
+        int loopPlaylist = -1; // -1: default global loopPlaylist
         Vector buttons = new Vector();
     }
 
@@ -104,9 +106,9 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
         public void paint(Graphics g) {
             Page p = page;
             Button b = focus;
-            if (loopPlaylist > 0 || popupOpen) clear(g);
+            if (activeLoopPlaylist > 0 || loopPlaylist > 0 || popupOpen) clear(g);
             if (p == null) return;
-            Image bg = p.bg, hl = b == null ? null : b.focus; // read once: show() frees the previous page's pictures while this may run
+            Image bg = p.bg, hl = b == null ? null : (b == activeBtn && System.currentTimeMillis() < activeUntil && b.active != null ? b.active : b.focus); // read once: show() frees the previous page's pictures while this may run
             if (bg != null) g.drawImage(bg, 0, 0, this);
             Image[] frames = focusFrames;
             if (b != null && b.motionW > 0 && frames != null) {
@@ -141,10 +143,13 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
     private volatile Player loopPlayer;
     private volatile PlaybackControl loopControl;
     private int pendingMark = -1; // chapter to skip to once the player starts (-1: none)
-    private int loopPlaylist; // menu video playing behind the pages, 0 = none
+    private int loopPlaylist, activeLoopPlaylist; // menu video playing behind the pages, 0 = none
     private int loopReturnMark = -1;
     private volatile long nextLoopJump;
+    private HSound moveSound, selectSound;
     private final Hashtable pages = new Hashtable();
+    private Button activeBtn;
+    private long activeUntil;
     private Page firstPage, page;
     /** Button of the first page the viewer last started something from, so the menu opens on it again (kept in GPR108). */
     private int lastButton = -1;
@@ -469,6 +474,13 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
         Page old = page;
         pictures(p, true);
         page = p;
+        if (!popupOpen && player == null) {
+            int wantLoop = p.loopPlaylist >= 0 ? p.loopPlaylist : loopPlaylist;
+            if (wantLoop != activeLoopPlaylist) {
+                stopLoop();
+                startLoop(wantLoop);
+            }
+        }
         fadeEnd = !popupOpen && old != null && old != p && pageFadeMs > 0 ? System.currentTimeMillis() + pageFadeMs : 0;
         focus = p.buttons.isEmpty() ? null : (Button) p.buttons.elementAt(0);
         // back from a title: the button that started it is focused again, from GPR108
@@ -536,12 +548,18 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
         }
     }
 
+    private void playSound(HSound s) {
+        if (s == null) return;
+        try { s.play(); } catch (Throwable ignored) { }
+    }
+
     private void move(String id) {
         if (id == null) return;
         for (int i = 0; i < page.buttons.size(); i++) {
             Button b = (Button) page.buttons.elementAt(i);
             if (b.id.equals(id)) {
                 focus = b;
+                playSound(moveSound);
                 view.repaint();
                 return;
             }
@@ -549,6 +567,12 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
     }
 
     private void run(Button b) {
+        playSound(selectSound);
+        if (b.active != null) {
+            activeBtn = b;
+            activeUntil = System.currentTimeMillis() + 160;
+            view.repaint();
+        }
         if (b.action.equals("page")) {
             Page p = (Page) pages.get(b.arg);
             if (p != null) show(p);
@@ -700,14 +724,20 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
 
     /** Starts the menu video, if the disc has one. A failure only costs the video: the menu still works over black. */
     private void startLoop() {
-        if (loopPlaylist <= 0 || loopPlayer != null) return;
+        int want = page != null && page.loopPlaylist >= 0 ? page.loopPlaylist : loopPlaylist;
+        startLoop(want);
+    }
+
+    private void startLoop(int targetPlaylist) {
+        if (targetPlaylist <= 0 || loopPlayer != null) return;
         try {
-            BDLocator loc = new BDLocator(null, -1, loopPlaylist);
+            activeLoopPlaylist = targetPlaylist;
+            BDLocator loc = new BDLocator(null, -1, targetPlaylist);
             nextLoopJump = 0;
             loopPlayer = Manager.createPlayer(new MediaLocator(loc.toExternalForm()));
             loopPlayer.addControllerListener(this);
             loopPlayer.start();
-            log("loop started playlist " + loopPlaylist);
+            log("loop started playlist " + targetPlaylist);
         } catch (Throwable t) {
             log("loop failed: " + t);
             stopLoop();
@@ -717,6 +747,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
     private void stopLoop() {
         Player p = loopPlayer;
         loopPlayer = null;
+        activeLoopPlaylist = 0;
         PlaybackControl control = loopControl;
         loopControl = null;
         if (control != null) {
@@ -760,8 +791,9 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
                 }
             } else if (e instanceof EndOfMediaEvent) {
                 log("loop restarts");
+                int cur = activeLoopPlaylist;
                 stopLoop();
-                startLoop();
+                startLoop(cur > 0 ? cur : loopPlaylist);
             } else if (e instanceof ControllerErrorEvent) {
                 log("loop error: " + e.getClass().getName());
                 stopLoop();
@@ -868,6 +900,8 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
                 Button b = (Button) p.buttons.elementAt(i);
                 if (b.focus != null) b.focus.flush();
                 b.focus = null;
+                if (b.active != null) b.active.flush();
+                b.active = null;
             }
             return;
         }
@@ -878,6 +912,7 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
             for (int i = 0; i < p.buttons.size(); i++) {
                 Button b = (Button) p.buttons.elementAt(i);
                 b.focus = load(b.focusName, tracker, i + 1);
+                if (b.activeName != null) b.active = load(b.activeName, tracker, p.buttons.size() + i + 1);
             }
             tracker.waitForAll(); // no isErrorAny() check: libbluray's tracker flags every picture as failed though they draw (seen in VLC)
         } catch (Throwable t) {
@@ -896,6 +931,23 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
         Image img = Toolkit.getDefaultToolkit().createImage(out.toByteArray());
         tracker.addImage(img, id);
         return img;
+    }
+
+    private HSound loadSound(String name) {
+        if (name == null) return null;
+        try {
+            InputStream in = Menu.class.getResourceAsStream("/" + name);
+            if (in == null) return null;
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            for (int n; (n = in.read(buf)) > 0;) out.write(buf, 0, n);
+            in.close();
+            HSound hs = new HSound();
+            hs.set(out.toByteArray());
+            return hs;
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     private static String dash(String s) {
@@ -953,8 +1005,25 @@ public class Menu implements Xlet, UserEventListener, ControllerListener, Playba
                 loopPlaylist = Integer.parseInt(t.nextToken());
             } else if (cmd.equals("loop-return-mark")) {
                 loopReturnMark = Integer.parseInt(t.nextToken());
+            } else if (cmd.equals("page-loop")) {
+                Page lp = (Page) pages.get(t.nextToken());
+                if (lp != null) lp.loopPlaylist = Integer.parseInt(t.nextToken());
+            } else if (cmd.equals("sound-move")) {
+                moveSound = loadSound(t.nextToken());
+            } else if (cmd.equals("sound-select")) {
+                selectSound = loadSound(t.nextToken());
             } else if (cmd.equals("focus-frames")) {
                 while (t.hasMoreTokens()) focusFrameNames.addElement(t.nextToken());
+            } else if (cmd.equals("button-act")) {
+                Page p = (Page) pages.get(t.nextToken());
+                String bid = t.nextToken();
+                String aname = dash(t.nextToken());
+                if (p != null) {
+                    for (int i = 0; i < p.buttons.size(); i++) {
+                        Button qb = (Button) p.buttons.elementAt(i);
+                        if (qb.id.equals(bid)) { qb.activeName = aname; break; }
+                    }
+                }
             } else if (cmd.equals("focus-slot")) {
                 if (last == null) throw new Exception("menu.txt: focus-slot without a button");
                 last.motionX = Integer.parseInt(t.nextToken());

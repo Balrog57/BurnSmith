@@ -9,7 +9,8 @@ namespace BurnSmith.Core.Disc;
 /// run as soon as it is selected. <see cref="Enabled"/> false: hidden until a command enables it.
 /// </summary>
 public sealed record IgButton(int Id, int X, int Y, int W, int H, uint[]? Selected, uint[]? Normal, int Up, int Down, int Left, int Right,
-                              IReadOnlyList<byte[]> Commands, bool Auto = false, bool Enabled = true);
+                              IReadOnlyList<byte[]> Commands, bool Auto = false, bool Enabled = true, uint[]? Activated = null,
+                              byte MoveSound = 0xFF, byte SelectSound = 0xFF);
 
 /// <summary>
 /// The Interactive Graphics stream of a native menu page, as the file tsMuxeR muxes ("S_HDMV/IGS"): one display set = the composition (buttons, their
@@ -30,7 +31,7 @@ public static class IgStream
     public static byte[] Write(int width, int height, int rateCode, IReadOnlyList<IgButton> buttons, int selected, bool inMuxPopup = false)
     {
         if (buttons.Count is 0 or > 255) throw new ArgumentException($"a menu page takes 1 to 255 buttons, not {buttons.Count}");
-        var pictures = buttons.SelectMany(b => new[] { b.Normal, b.Selected }).Where(p => p != null).Select(p => p!).Distinct().ToList();
+        var pictures = buttons.SelectMany(b => new[] { b.Normal, b.Selected, b.Activated }).Where(p => p != null).Select(p => p!).Distinct().ToList();
         var (palette, index) = Quantize(pictures, MaxColours);
         int Object(uint[]? picture) => picture == null ? 0xFFFF : pictures.IndexOf(picture);
 
@@ -56,8 +57,8 @@ public static class IgStream
             page.U16(b.X); page.U16(b.Y);
             page.U16(b.Up); page.U16(b.Down); page.U16(b.Left); page.U16(b.Right);
             page.U16(Object(b.Normal)); page.U16(Object(b.Normal)); page.U8(0);
-            page.U8(0xFF); page.U16(Object(b.Selected)); page.U16(Object(b.Selected)); page.U8(0); // 0xFF: no sound
-            page.U8(0xFF); page.U16(Object(b.Selected)); page.U16(Object(b.Selected));
+            page.U8(b.MoveSound); page.U16(Object(b.Selected)); page.U16(Object(b.Selected)); page.U8(0);
+            page.U8(b.SelectSound); page.U16(Object(b.Activated ?? b.Selected)); page.U16(Object(b.Activated ?? b.Selected));
             page.U16(b.Commands.Count);
             foreach (var c in b.Commands) page.Bytes(c);
         }

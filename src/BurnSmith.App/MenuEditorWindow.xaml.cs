@@ -29,7 +29,7 @@ public partial class MenuEditorWindow : Window
         public Dictionary<string, PageImages> Cache { get; } = [];
     }
 
-    sealed record PageImages(BitmapImage Background, Dictionary<string, BitmapImage> Focus);
+    sealed record PageImages(BitmapImage Background, Dictionary<string, BitmapImage> Focus, Dictionary<string, BitmapImage> Activated);
     public sealed record Slide(string Id, string Name, BitmapImage Thumb)
     {
         public override string ToString() => Name; // what a screen reader says for a list item
@@ -86,12 +86,30 @@ public partial class MenuEditorWindow : Window
         StyleBox.ItemsSource = ElementLibrary.ButtonStyles.Select(b => new { b.Label, b.Value }).ToList();
         LanguageBox.ItemsSource = new[] { new { Label = "Français", Value = "fr" }, new { Label = "Anglais", Value = "en" } };
         HlBox.ItemsSource = new[] { new { Value = "box", Label = "Cadre (comme avant)" }, new { Value = "underline", Label = "Soulignement" }, new { Value = "textcolor", Label = "Texte en couleur" } };
+        CursorPresetBox.ItemsSource = new[]
+        {
+            new { Value = "none", Label = "Aucun" },
+            new { Value = "pulse", Label = "Pulsation dorée" },
+            new { Value = "ring", Label = "Anneau lumineux" },
+            new { Value = "arrow", Label = "Flèche cinéma" },
+            new { Value = "custom", Label = "Images PNG personnalisées…" },
+        };
+        PopDockBox.ItemsSource = new[]
+        {
+            new { Value = "bottom", Label = "Bas" },
+            new { Value = "top", Label = "Haut" },
+            new { Value = "left", Label = "Gauche" },
+            new { Value = "right", Label = "Droite" },
+        };
+        PopLookBox.ItemsSource = new[] { new { Label = "(celui du thème)", Value = "" } }
+            .Concat(ElementLibrary.ButtonStyles.Select(b => new { b.Label, b.Value })).ToList();
+        SoundPackBox.ItemsSource = SoundBank.Packs.Select(p => new { p.Value, p.Label }).ToList();
         ColsBox.ItemsSource = new[] { 1, 2, 3, 4, 5 };
         RowsBox.ItemsSource = new[] { 1, 2, 3, 4 };
         working = design.Clone();
         this.content = baseContent = content;
         LoadCatalog();
-        CustomList.ItemsSource = Templates.List();
+        RefreshMineList();
         Props.DataContext = working;
         InitElements();
 
@@ -109,7 +127,17 @@ public partial class MenuEditorWindow : Window
             PreviewPopupButton.Visibility = CanPreviewPopup ? Visibility.Visible : Visibility.Collapsed;
             PreviewStartButton.Visibility = PreviewEndButton.Visibility = DvdPreview || Hdmv ? Visibility.Visible : Visibility.Collapsed;
             if (!CanPreviewPopup) PopupBox.IsEnabled = false;
+            if (DvdPreview)
+            {
+                BdCursorPanel.Visibility = Visibility.Collapsed;
+                PopupBox.Visibility = Visibility.Collapsed;
+                PopupSettingsGroup.Visibility = Visibility.Collapsed;
+                SoundSettingsPanel.Visibility = Visibility.Collapsed;
+                BdOnlyStructurePanel.Visibility = Visibility.Collapsed;
+                return;
+            }
             if (!Hdmv) return;
+            BdCursorPanel.Visibility = Visibility.Collapsed;
             foreach (var box in new[] { PopupBox, LoopBox }) // kept in the design (a BD-J disc of the same menu has them), only not offered
             {
                 box.IsEnabled = false;
@@ -197,7 +225,14 @@ public partial class MenuEditorWindow : Window
         LookNote.Visibility = Detach.Visibility = working.TemplateDir == null ? Visibility.Collapsed : Visibility.Visible;
         SelectBackground();
         HlBox.SelectedValue = working.HighlightStyle;
+        CursorPresetBox.SelectedValue = string.IsNullOrEmpty(working.CursorPreset) ? (working.FocusFrames?.Length > 0 ? "custom" : "none") : working.CursorPreset;
+        CursorCustomBtn.Visibility = working.CursorPreset == "custom" ? Visibility.Visible : Visibility.Collapsed;
+        PopDockBox.SelectedValue = working.PopupLayout?.Dock ?? "bottom";
+        PopLookBox.SelectedValue = working.PopupLayout?.ButtonLook ?? "";
+        SoundPackBox.SelectedValue = working.Sounds?.Pack ?? "none";
+        SoundCustomPanel.Visibility = working.Sounds?.Pack == "custom" ? Visibility.Visible : Visibility.Collapsed;
         LanguageBox.SelectedValue = working.ButtonLanguage;
+        SyncPageMediaToUi();
         sceneModeSync = true;
         SceneModeBox.SelectedIndex = working.ScenesOnly ? 3 : working.SceneList ? 2 : working.Thumbnails ? 0 : 1;
         sceneModeSync = false;
@@ -341,7 +376,10 @@ public partial class MenuEditorWindow : Window
             buttons = [.. buttons.Where(c => c.Item.Style != null), .. cards];
             BtnList.ItemsSource = BySource(buttons);
         }
-        catch (Exception ex) { AppFiles.LogError("Boutons de la bibliothèque", ex); } // the looks BurnSmith draws stay listed
+        catch (Exception ex)
+        {
+            AppFiles.LogError("Boutons de la bibliothèque", ex);
+        }
     }
 
     /// <summary>The looks BurnSmith draws have no picture file: one sample of each is drawn (in this design's colours) behind the list.</summary>
@@ -395,7 +433,7 @@ public partial class MenuEditorWindow : Window
         {
             var result = await Task.Run(() => TemplatePack.ConvertAll(line => ((IProgress<string>)progress).Report(line)));
             LoadCatalog();
-            CustomList.ItemsSource = Templates.List();
+            RefreshMineList();
             ConvertNote.Text = $"{result.Converted} converti(s), {result.Skipped} déjà présent(s), {result.Failed} échec(s) — dossier Documents\\BurnSmith\\Templates\\converted";
             if (result.Failed > 0)
                 MessageBox.Show(this, string.Join(Environment.NewLine, result.Messages.Take(10)), "Modèles non convertis");
@@ -420,8 +458,8 @@ public partial class MenuEditorWindow : Window
         return img;
     }
 
-    /// <summary>The page picture and one focus frame per button. Call it on an STA thread (see <see cref="MenuRenderer.Sta{T}"/>).</summary>
-    static PageImages DrawPage(MenuDesign d, MenuPage p)
+    /// <summary>The page picture and one focus/activated frame per button. Call it on an STA thread (see <see cref="MenuRenderer.Sta{T}"/>).</summary>
+    static PageImages DrawPage(MenuDesign d, MenuPage p, bool dvdPreview = false)
     {
         if (p.Id.StartsWith("pop", StringComparison.Ordinal))
         {
@@ -430,8 +468,21 @@ public partial class MenuEditorWindow : Window
             d.Poster = picture;
         }
         var focus = new Dictionary<string, BitmapImage>();
-        foreach (var b in p.Buttons) focus[b.Id] = Decode(MenuRenderer.Focus(d, b, written: p.Ops.OfType<BurnSmith.Core.Menu.Label>().FirstOrDefault(l => l.Rect == b.Rect)));
-        return new PageImages(Decode(MenuRenderer.Background(d, p)), focus);
+        var activated = new Dictionary<string, BitmapImage>();
+        foreach (var b in p.Buttons)
+        {
+            var rawLabel = p.Ops.Select(o => o is StyledOp so ? so.Inner : o).OfType<BurnSmith.Core.Menu.Label>().FirstOrDefault(l => l.Rect == b.Rect);
+            var focusBytes = MenuRenderer.Focus(d, b, written: rawLabel);
+            var actBytes = MenuRenderer.Activated(d, b, written: rawLabel);
+            if (dvdPreview)
+            {
+                focusBytes = MenuRenderer.QuantizeDvdSpu(focusBytes, d.SelectionInk);
+                actBytes = MenuRenderer.QuantizeDvdSpu(actBytes, "#FFFFFF");
+            }
+            focus[b.Id] = Decode(focusBytes);
+            activated[b.Id] = Decode(actBytes);
+        }
+        return new PageImages(Decode(MenuRenderer.Background(d, p)), focus, activated);
     }
 
     string PageName(string id) => PageName(working, id);
@@ -464,14 +515,14 @@ public partial class MenuEditorWindow : Window
                     if (built.FindIndex(p => p.Id == id) is >= 0 and var at) built[at] = SettingsPreview(d, facts, id, audio, sub);
                 if (CanPreviewPopup && d.Popup) built.AddRange(MenuBuilder.Popup(d, facts, facts.PopupTitles, audio, sub));
                 var shown = built.FirstOrDefault(p => p.Id == wanted) ?? built[0];
-                return (built, shown, DrawPage(d, shown));
+                return (built, shown, DrawPage(d, shown, DvdPreview));
             }));
             if (mine != version) return; // a newer edit is already rendering
             shot = new Shot(d, pages);
             shot.Cache[page.Id] = images;
             Show(page, images);
             error = null;
-            Status.Text = "";
+            UpdateValidationStatus();
             _ = FillStrip(shot, mine);
         }
         catch (Exception ex)
@@ -488,8 +539,15 @@ public partial class MenuEditorWindow : Window
         try
         {
             var slides = await Task.Run(() => MenuRenderer.Sta(() =>
-                s.Pages.Where(p => !p.Id.StartsWith("pop", StringComparison.Ordinal))
-                    .Select(p => new Slide(p.Id, PageName(s.Design, p.Id), Decode(MenuRenderer.Background(s.Design, p), 224))).ToList()));
+                s.Pages.Where(p => !p.Id.StartsWith("pop", StringComparison.Ordinal) || p.Id == "pop1")
+                    .Select(p =>
+                    {
+                        MenuDesign renderDesign;
+                        if (p.Id == "pop1") { renderDesign = MenuBuilder.PopupDesign(s.Design); renderDesign.Poster = s.Design.Poster; }
+                        else renderDesign = s.Design;
+                        var label = p.Id == "pop1" ? "Pop-up" : PageName(s.Design, p.Id);
+                        return new Slide(p.Id, label, Decode(MenuRenderer.Background(renderDesign, p), 224));
+                    }).ToList()));
             if (mine != version) return;
             stripSync = true;
             PageStrip.ItemsSource = slides;
@@ -504,12 +562,17 @@ public partial class MenuEditorWindow : Window
         current = page;
         RenameSubmenu.Visibility = RemoveSubmenu.Visibility = working.CustomPages.Any(custom => custom.Id == page.Id)
             ? Visibility.Visible : Visibility.Collapsed;
+        var isFree = working.FreePages.Any(fp => fp.Equals(page.Id, StringComparison.OrdinalIgnoreCase)
+            || fp.Equals(MenuDesign.PageKind(page.Id), StringComparison.OrdinalIgnoreCase));
+        if (ConvertFreeButton != null)
+            ConvertFreeButton.Visibility = !isFree && !page.Id.StartsWith("pop", StringComparison.Ordinal) ? Visibility.Visible : Visibility.Collapsed;
         currentImages = images;
         FillZonePanel();
         if (page.Buttons.All(b => b.Id != focusId)) focusId = page.Buttons.FirstOrDefault()?.Id;
         var mainPages = shot?.Pages.Where(p => !p.Id.StartsWith("pop", StringComparison.Ordinal)).ToList() ?? [];
         PageText.Text = IsPreviewingPopup ? $"Pop-up · titre {previewPlaying}" :
             $"{PageName(page.Id)} · page {mainPages.FindIndex(p => p.Id == page.Id) + 1} / {mainPages.Count}";
+        SyncPageMediaToUi();
         if (PageStrip.ItemsSource is List<Slide> slides)
         {
             stripSync = true;
@@ -519,36 +582,52 @@ public partial class MenuEditorWindow : Window
         DrawStage();
     }
 
-    /// <summary>The page as the disc shows it: its picture, the focus frame of the selected button, and a hit area per button for the mouse.</summary>
+    string previewState = "focus"; // "normal" | "focus" | "active"
+
+    /// <summary>The page as the disc shows it: its picture, the selected/activated frame of the chosen button, optional BD-J animated cursor, and hit areas.</summary>
     void DrawStage()
     {
         if (editing != null) return; // a redraw would take the text box away from under the typing: the end of the edit redraws
         StageCanvas.Children.Clear();
         if (current == null || currentImages == null) return;
         StageCanvas.Children.Add(new System.Windows.Controls.Image { Source = currentImages.Background, Width = MenuBuilder.W, Height = MenuBuilder.H });
-        if (current.Buttons.FirstOrDefault(b => b.Id == focusId) is { } selected && currentImages.Focus.TryGetValue(selected.Id, out var frame))
+        var stateMap = previewState == "active" ? currentImages.Activated : currentImages.Focus;
+        if (previewState != "normal" && current.Buttons.FirstOrDefault(b => b.Id == focusId) is { } selected && stateMap.TryGetValue(selected.Id, out var frame))
         {
             var box = MenuRenderer.FocusBox(selected);
             var image = new System.Windows.Controls.Image { Source = frame, Width = box.W, Height = box.H, IsHitTestVisible = false };
             System.Windows.Controls.Canvas.SetLeft(image, box.X);
             System.Windows.Controls.Canvas.SetTop(image, box.Y);
             StageCanvas.Children.Add(image);
+
+            var cf = working.FocusFrames ?? MenuRenderer.BuiltInCursorFrames(working.CursorPreset, working.Accent);
+            if (!DvdPreview && !Hdmv && cf is { Length: > 0 } && File.Exists(ElementLibrary.Resolve(cf[0]) ?? cf[0]))
+            {
+                var cFile = ElementLibrary.Resolve(cf[0]) ?? cf[0];
+                var slot = selected.FocusSlot ?? new Box(Math.Max(0, selected.Rect.X - 54), selected.Rect.Y + (selected.Rect.H - 44) / 2, 44, 44);
+                var cursorImg = new System.Windows.Controls.Image { Source = Decode(File.ReadAllBytes(cFile)), Width = slot.W, Height = slot.H, IsHitTestVisible = false };
+                System.Windows.Controls.Canvas.SetLeft(cursorImg, slot.X);
+                System.Windows.Controls.Canvas.SetTop(cursorImg, slot.Y);
+                StageCanvas.Children.Add(cursorImg);
+            }
         }
-        foreach (var b in current.Buttons)
+        if (Previewing)
         {
-            var hit = new System.Windows.Shapes.Rectangle { Width = b.Rect.W, Height = b.Rect.H, Fill = System.Windows.Media.Brushes.Transparent, Cursor = System.Windows.Input.Cursors.Hand };
-            System.Windows.Controls.Canvas.SetLeft(hit, b.Rect.X);
-            System.Windows.Controls.Canvas.SetTop(hit, b.Rect.Y);
-            var id = b.Id;
-            hit.MouseEnter += (_, _) => Select(id);
-            hit.MouseLeftButtonUp += (_, _) => { Select(id); Activate(b); };
-            StageCanvas.Children.Add(hit);
+            foreach (var b in current.Buttons)
+            {
+                var hit = new System.Windows.Shapes.Rectangle { Width = b.Rect.W, Height = b.Rect.H, Fill = System.Windows.Media.Brushes.Transparent, Cursor = System.Windows.Input.Cursors.Hand };
+                System.Windows.Controls.Canvas.SetLeft(hit, b.Rect.X);
+                System.Windows.Controls.Canvas.SetTop(hit, b.Rect.Y);
+                var id = b.Id;
+                hit.MouseEnter += (_, _) => Select(id);
+                hit.MouseLeftButtonUp += (_, _) => { Select(id); Activate(b); };
+                StageCanvas.Children.Add(hit);
+            }
+            if (SafeToggle.IsChecked == true) DrawSafe();
+            return;
         }
         if (SafeToggle.IsChecked == true) DrawSafe();
-        if (Previewing) return; // the page as the disc shows it: nothing to grab
-        foreach (var z in current.Zones) DrawZone(z);
-        DrawElements();
-        DrawMarks();
+        DrawEditableCanvas();
     }
 
 }

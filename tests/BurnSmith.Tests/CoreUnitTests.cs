@@ -495,4 +495,159 @@ public sealed class CoreUnitTests
         }
         finally { Tools.TryDelete(dir); }
     }
+
+    [Fact]
+    public void MenuBuilder_NativeOverridesConvertToFreeAndBlankWorkCleanly()
+    {
+        var content = new MenuContent(1, null, Enumerable.Repeat<string?>(null, 4).ToList(), null, ["Français 5.1", "English 5.1"], ["Français"]);
+        var design = BuiltInTemplates.All().First();
+        design.Title = "Mon Film";
+
+        // 1. Native override moves & restyles Play button and hides Settings button
+        design.NativeOverrides.Add(new NativeElementOverride { Page = "root", Id = "play", X = 120, Y = 500, W = 500, H = 130, Text = "Lancer" });
+        design.NativeOverrides.Add(new NativeElementOverride { Page = "root", Id = "settings", Hidden = true });
+        design.DefaultButtons["root"] = "scenes";
+
+        var pages = MenuBuilder.Build(design, content);
+        var root = pages[0];
+        Assert.Equal("scenes", root.Buttons[0].Id); // DefaultButtons promotes to index 0
+        Assert.DoesNotContain(root.Buttons, b => b.Id == "settings");
+        var playBtn = root.Buttons.First(b => b.Id == "play");
+        Assert.Equal(new Box(120, 500, 500, 130), playBtn.Rect);
+        Assert.Contains(root.Ops.Select(o => o is StyledOp s ? s.Inner : o).OfType<Label>(), l => l.Value == "Lancer");
+
+        // 2. ConvertPageToFree converts remaining root elements and clears NativeOverrides
+        MenuBuilder.ConvertPageToFree(design, root);
+        Assert.Contains("root", design.FreePages);
+        Assert.Empty(design.NativeOverrides);
+        Assert.Contains(design.Elements, e => e.IsButton && e.NavigationId == "play" && e.X == 120);
+
+        var rebuilt = MenuBuilder.Build(design, content)[0];
+        Assert.Equal(root.Buttons.Count, rebuilt.Buttons.Count);
+
+        // 3. Blank template produces free root page with Play button and editable title
+        var blank = BuiltInTemplates.Blank("Test Vierge");
+        var blankRoot = MenuBuilder.Build(blank, content)[0];
+        Assert.Single(blankRoot.Buttons);
+        Assert.Contains(blankRoot.Ops.Select(o => o is StyledOp s ? s.Inner : o).OfType<Text>(), t => t.Value == "Test Vierge");
+    }
+
+    [Fact]
+    public void MenuValidator_DetectsOverlapDvdLimitOrphanAndSafeArea()
+    {
+        var d = new MenuDesign { Name = "Test 16-9" };
+        // Overlapping buttons
+        var b1 = new MenuButton("b1", new Box(100, 100, 300, 100), new MenuAction("play", Playlist: 1)) { Right = "b2" };
+        var b2 = new MenuButton("b2", new Box(200, 120, 300, 100), new MenuAction("play", Playlist: 1)) { Left = "b1" };
+        // Orphan button (not reachable from b1) & outside safe area (X=10)
+        var b3 = new MenuButton("b3", new Box(10, 400, 200, 80), new MenuAction("page", Page: "root"));
+        var page = new MenuPage("root", [], [b1, b2, b3]);
+
+        var issues = MenuValidator.Validate(d, page, "dvd");
+        Assert.Contains(issues, i => i.Kind == "overlap");
+        Assert.Contains(issues, i => i.Kind == "orphan" && i.ButtonId == "b3");
+        Assert.Contains(issues, i => i.Kind == "safe");
+
+        // DVD 16:9 limit > 18 buttons
+        var twenty = Enumerable.Range(0, 20).Select(k =>
+            new MenuButton($"k{k}", new Box(120 + (k % 5) * 320, 100 + (k / 5) * 200, 200, 80), new MenuAction("play", Playlist: 1))).ToList();
+        var limitIssues = MenuValidator.Validate(d, new MenuPage("scenes1", [], twenty), "dvd");
+        Assert.Equal(2, limitIssues.Count(i => i.Kind == "limit"));
+    }
+
+    [Fact]
+    public void SoundBank_BuildSoundBdmvAndWav_EncodeValidHeaders()
+    {
+        var snd = new MenuSoundSettings { Pack = "cinema", Volume = 85 };
+        var bdmv = SoundBank.BuildSoundBdmv(snd);
+        Assert.True(bdmv.Length > 80);
+        Assert.Equal("BCLK0200", System.Text.Encoding.ASCII.GetString(bdmv, 0, 8));
+        Assert.Equal(2, bdmv[45]); // 2 sound entries (move + select)
+
+        var wav = SoundBank.BuildWav(snd, true);
+        Assert.True(wav.Length > 44);
+        Assert.Equal("RIFF", System.Text.Encoding.ASCII.GetString(wav, 0, 4));
+        Assert.Equal("WAVEfmt ", System.Text.Encoding.ASCII.GetString(wav, 8, 8));
+    }
+
+    [Fact]
+    public void MenuBuilder_PopupStyle_CustomDockAndButtonsApplied()
+    {
+        var d = new MenuDesign
+        {
+            Title = "Pop Test",
+            Popup = true,
+            PopupLayout = new PopupStyle
+            {
+                Dock = "left",
+                ButtonWidth = 300,
+                ButtonHeight = 90,
+                ShowChapters = false,
+                ShowSettings = false,
+                Fill = "#112233",
+            },
+        };
+        var content = new MenuContent(1, null, [null, null], null, ["FR", "EN"], ["FR"]);
+        var pages = MenuBuilder.Popup(d, content, [(1, 2, ["FR", "EN"], [("FR", 1)])]);
+        var pop = pages.First(p => p.Id == "pop1");
+        Assert.Equal(2, pop.Buttons.Count); // only Resume and MainMenu (Chapters & Settings disabled)
+        Assert.All(pop.Buttons, b => Assert.Equal(300, b.Rect.W));
+        Assert.Contains(pop.Ops.OfType<Fill>(), f => f.Color == "#112233" && f.Rect.X == 0 && f.Rect.H == MenuBuilder.H);
+    }
+
+    [Fact]
+    public void MenuRenderer_StyledOp_Activated_And_CursorFrames_Render()
+    {
+        var d = new MenuDesign { Title = "FX", CursorPreset = "ring", Accent = "#38BDF8" };
+        var frames = MenuRenderer.BuiltInCursorFrames("ring", "#38BDF8");
+        Assert.NotNull(frames);
+        Assert.Equal(6, frames!.Length);
+        Assert.All(frames, f => Assert.True(File.Exists(f)));
+
+        var btn = new MenuButton("play", new Box(200, 800, 360, 100), new MenuAction("play", Playlist: 1));
+        var op = new MenuElement
+        {
+            Kind = "text", Text = "Bonjour", X = 150, Y = 200, W = 600, H = 120, Size = 60,
+            ElementOpacity = 80, Rotation = 15, ShadowColor = "#000000", ShadowBlur = 6, ShadowOffsetX = 4, ShadowOffsetY = 4,
+        }.Ops(d).First();
+        var page = new MenuPage("root", [op], [btn]);
+        var (bg, act) = MenuRenderer.Sta(() => (MenuRenderer.Background(d, page), MenuRenderer.Activated(d, page, btn)));
+        Assert.True(bg.Length > 500);
+        Assert.True(act.Length > 200);
+    }
+
+    [Fact]
+    public void Templates_FolderAutonomousLifecycle_SaveRenameDuplicateDelete()
+    {
+        var uniq = "unit-" + Guid.NewGuid().ToString("N")[..8];
+        var copyName = uniq + "-copy";
+        var renamedName = uniq + "-renamed";
+        var tmpImg = Path.Combine(Path.GetTempPath(), uniq + ".png");
+        // 1x1 PNG
+        File.WriteAllBytes(tmpImg, Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="));
+        try
+        {
+            var d = BuiltInTemplates.Blank(uniq);
+            d.Name = uniq;
+            d.BackgroundImage = tmpImg;
+            Templates.Save(d);
+            var folder = Path.Combine(Templates.Dir, uniq);
+            Assert.True(File.Exists(Path.Combine(folder, Templates.FileName)));
+            Assert.True(File.Exists(Path.Combine(folder, Templates.ThumbName)));
+            Assert.True(Directory.EnumerateFiles(Path.Combine(folder, "media")).Any());
+
+            var dup = Templates.Duplicate(uniq, copyName);
+            Assert.Equal(copyName, dup.Name);
+            Templates.Rename(copyName, renamedName);
+            Assert.DoesNotContain(Templates.Entries(), e => e.Name == copyName);
+            Assert.Contains(Templates.Entries(), e => e.Name == renamedName);
+        }
+        finally
+        {
+            Templates.Delete(uniq);
+            Templates.Delete(copyName);
+            Templates.Delete(renamedName);
+            try { if (File.Exists(tmpImg)) File.Delete(tmpImg); } catch (IOException) { }
+        }
+    }
 }

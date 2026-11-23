@@ -458,6 +458,12 @@ public static class DiscCheck
     {
         var isUhd = CheckBluRayIndex(bdmv, problems);
         foreach (var name in new[] { "index.bdmv", "MovieObject.bdmv" }) Same(Path.Combine(bdmv, name), Path.Combine(bdmv, "BACKUP", name), "BACKUP\\" + name, problems);
+        var soundFile = Path.Combine(bdmv, "AUXDATA", "sound.bdmv");
+        if (File.Exists(soundFile))
+        {
+            Starts(soundFile, "BCLK", "BDMV\\AUXDATA\\sound.bdmv", problems);
+            Same(soundFile, Path.Combine(bdmv, "BACKUP", "AUXDATA", "sound.bdmv"), "AUXDATA\\sound.bdmv", problems);
+        }
         var lists = Directory.Exists(Path.Combine(bdmv, "PLAYLIST")) ? Directory.GetFiles(Path.Combine(bdmv, "PLAYLIST"), "*.mpls") : [];
         if (lists.Length == 0) problems.Add("aucune liste de lecture (PLAYLIST\\*.mpls)");
         var clips = new Dictionary<string, ClipTracks>();

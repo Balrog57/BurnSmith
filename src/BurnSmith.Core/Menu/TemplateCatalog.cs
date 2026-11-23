@@ -101,6 +101,7 @@ public static partial class TemplateCatalog
     /// <summary>A template named on the command line: a template folder, a catalogue name, or one the user saved (« Mes modèles »).</summary>
     public static MenuDesign? Find(string? nameOrFolder) =>
         string.IsNullOrEmpty(nameOrFolder) ? null
+        : nameOrFolder.Equals("Page vierge", StringComparison.OrdinalIgnoreCase) ? BuiltInTemplates.Blank()
         : Directory.Exists(nameOrFolder) && InstalledTemplate.Load(Path.GetFullPath(nameOrFolder)) is { Unsupported: null } pack
             ? Design(Path.GetFullPath(nameOrFolder), pack)
             : Scan().Usable.Select(f => f.Design).Concat(Templates.List()).FirstOrDefault(d => d.Name.Equals(nameOrFolder, StringComparison.OrdinalIgnoreCase));

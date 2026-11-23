@@ -137,18 +137,26 @@ public static class ElementLibrary
     /// One button of the library: a look BurnSmith draws itself (<see cref="Style"/>), or a picture (<see cref="Normal"/>) with the one shown
     /// when it is selected (<see cref="Focus"/>, null = the design's accent frame).
     /// </summary>
-    public sealed record ButtonItem(string Name, string Source, string? Normal = null, string? Focus = null, string? Style = null, bool Removable = false);
+    public sealed record ButtonItem(string Name, string Source, string? Normal = null, string? Focus = null, string? Style = null, bool Removable = false, string? Active = null);
 
     public const string Styles = "Styles BurnSmith", MyButtons = "Mes boutons", DvdStyler = "DVDStyler (vectoriels)";
 
     /// <summary>The user's own buttons: Documents\BurnSmith\Templates\buttons, "name.png" and, for its selected state, "name.sub.png".</summary>
     public static string UserButtonsDir { get; } = AppFiles.UserFolder("buttons", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BurnSmith", "library", "buttons"));
 
-    static bool IsSub(string file) => System.IO.Path.GetFileNameWithoutExtension(file).EndsWith(".sub", StringComparison.OrdinalIgnoreCase);
+    static bool IsSub(string file)
+    {
+        var stem = System.IO.Path.GetFileNameWithoutExtension(file);
+        return stem.EndsWith(".sub", StringComparison.OrdinalIgnoreCase) || stem.EndsWith(".active", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>The "name.sub.*" picture beside "name.*", or null.</summary>
     static string? SubOf(string file) =>
         Directory.EnumerateFiles(System.IO.Path.GetDirectoryName(file)!, System.IO.Path.GetFileNameWithoutExtension(file) + ".sub.*").FirstOrDefault(IsPicture);
+
+    /// <summary>The "name.active.*" picture beside "name.*", or null.</summary>
+    static string? ActiveOf(string file) =>
+        Directory.EnumerateFiles(System.IO.Path.GetDirectoryName(file)!, System.IO.Path.GetFileNameWithoutExtension(file) + ".active.*").FirstOrDefault(IsPicture);
 
     /// <summary>The button pictures a template folder carries: "play\0.normal.png" with its "0.sub.png", or a single arrow picture (no selected state).</summary>
     static IEnumerable<(string Role, string Normal, string? Focus)> TemplateButtons(string dir)
@@ -176,7 +184,7 @@ public static class ElementLibrary
         var list = StyleButtons();
         if (Directory.Exists(UserButtonsDir))
             list.AddRange(Directory.EnumerateFiles(UserButtonsDir).Where(f => IsPicture(f) && !IsSub(f)).Order()
-                .Select(f => new ButtonItem(System.IO.Path.GetFileNameWithoutExtension(f), MyButtons, f, SubOf(f), Removable: true)));
+                .Select(f => new ButtonItem(System.IO.Path.GetFileNameWithoutExtension(f), MyButtons, f, SubOf(f), Removable: true, Active: ActiveOf(f))));
 
         // BurnSmith's own SVG buttons (tools/house-buttons.py draws them), one group per set: "01_Or" is listed as « BurnSmith · Or »
         if (OpenLibrary.Dir() is { } own && System.IO.Path.Combine(own, "house", "buttons") is var house && Directory.Exists(house))
@@ -216,10 +224,10 @@ public static class ElementLibrary
         }
     }
 
-    /// <summary>Copies a button picture, and the one shown when it is selected, into the user's buttons.</summary>
-    public static ButtonItem ImportButton(string normal, string? focus = null)
+    /// <summary>Copies a button picture, and the ones shown when selected/activated, into the user's buttons.</summary>
+    public static ButtonItem ImportButton(string normal, string? focus = null, string? active = null)
     {
-        foreach (var file in new[] { normal, focus }.OfType<string>())
+        foreach (var file in new[] { normal, focus, active }.OfType<string>())
             if (!IsPicture(file) || !File.Exists(file)) throw new ArgumentException($"not a picture file (jpg, png, bmp, svg): {file}");
         var target = Free(UserButtonsDir, System.IO.Path.GetFileNameWithoutExtension(normal).Replace(".sub", "", StringComparison.OrdinalIgnoreCase), System.IO.Path.GetExtension(normal));
         File.Copy(normal, target);
@@ -229,15 +237,22 @@ public static class ElementLibrary
             twin = System.IO.Path.Combine(UserButtonsDir, System.IO.Path.GetFileNameWithoutExtension(target) + ".sub" + System.IO.Path.GetExtension(focus));
             File.Copy(focus, twin, true);
         }
-        return new ButtonItem(System.IO.Path.GetFileNameWithoutExtension(target), MyButtons, target, twin, Removable: true);
+        string? actTwin = null;
+        if (active != null)
+        {
+            actTwin = System.IO.Path.Combine(UserButtonsDir, System.IO.Path.GetFileNameWithoutExtension(target) + ".active" + System.IO.Path.GetExtension(active));
+            File.Copy(active, actTwin, true);
+        }
+        return new ButtonItem(System.IO.Path.GetFileNameWithoutExtension(target), MyButtons, target, twin, Removable: true, Active: actTwin);
     }
 
-    /// <summary>Removes one of the user's own buttons (with its selected picture); the others are not the library's to delete.</summary>
+    /// <summary>Removes one of the user's own buttons (with its selected/activated twins); the others are not the library's to delete.</summary>
     public static void RemoveButton(ButtonItem b)
     {
         if (!b.Removable || b.Normal == null || !b.Normal.StartsWith(UserButtonsDir, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("only your own buttons can be removed");
         File.Delete(b.Normal);
         if (b.Focus != null && File.Exists(b.Focus)) File.Delete(b.Focus);
+        if (b.Active != null && File.Exists(b.Active)) File.Delete(b.Active);
     }
 
     /// <summary>Copies a picture into the user's library (a name that exists is kept apart with a number).</summary>

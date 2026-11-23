@@ -57,41 +57,69 @@ public static class HdmvMenu
         int Px(int v) => MenuRenderer.Px(v, scale);
         var (planeW, planeH) = (Px(MenuBuilder.W), Px(MenuBuilder.H));
 
-        var labels = new List<(string Text, List<byte[]> Commands)>
+        var pop = menu.PopupLayout ?? new();
+        var labels = new List<(string Text, List<byte[]> Commands)>();
+        if (pop.ShowResume)
+            labels.Add((string.IsNullOrWhiteSpace(menu.ResumeLabel) ? "Reprendre" : menu.ResumeLabel, [Nav.PopupOff()]));
+        if (pop.ShowMainMenu)
+            labels.Add((string.IsNullOrWhiteSpace(menu.MainMenuLabel) ? "Menu principal" : menu.MainMenuLabel, [Nav.PopupOff(), Nav.JumpTitle(0)]));
+        if (pop.ShowSettings)
         {
-            (string.IsNullOrWhiteSpace(menu.ResumeLabel) ? "Reprendre" : menu.ResumeLabel, [Nav.PopupOff()]),
-            (string.IsNullOrWhiteSpace(menu.MainMenuLabel) ? "Menu principal" : menu.MainMenuLabel, [Nav.PopupOff(), Nav.JumpTitle(0)]),
-        };
-        for (var a = 1; a <= Math.Min(audioCount, 3); a++)
-            labels.Add(($"Audio {a}", [Nav.Set(Audio, a), Nav.SelectStreams(audio: a), Nav.PopupOff()]));
-        if (subCount > 0)
-        {
-            labels.Add(("Sous-titres : Non", [Nav.Set(Subtitle, 0), Nav.SelectStreams(subtitle: 0), Nav.PopupOff()]));
-            for (var s = 1; s <= Math.Min(subCount, 2); s++)
-                labels.Add(($"Sous-titre {s}", [Nav.Set(Subtitle, s), Nav.SelectStreams(subtitle: s), Nav.PopupOff()]));
+            for (var a = 1; a <= Math.Min(audioCount, 3); a++)
+                labels.Add(($"Audio {a}", [Nav.Set(Audio, a), Nav.SelectStreams(audio: a), Nav.PopupOff()]));
+            if (subCount > 0)
+            {
+                labels.Add(("Sous-titres : Non", [Nav.Set(Subtitle, 0), Nav.SelectStreams(subtitle: 0), Nav.PopupOff()]));
+                for (var s = 1; s <= Math.Min(subCount, 2); s++)
+                    labels.Add(($"Sous-titre {s}", [Nav.Set(Subtitle, s), Nav.SelectStreams(subtitle: s), Nav.PopupOff()]));
+            }
         }
+        if (labels.Count == 0)
+            labels.Add((string.IsNullOrWhiteSpace(menu.ResumeLabel) ? "Reprendre" : menu.ResumeLabel, [Nav.PopupOff()]));
 
-        var btnW = Math.Clamp((planeW - Px(160)) / Math.Max(1, labels.Count) - Px(16), Px(140), Px(320));
-        var btnH = Px(72);
+        var dock = (pop.Dock ?? "bottom").Trim().ToLowerInvariant();
+        var vertical = dock is "left" or "right";
+        var btnH = Px(Math.Clamp(pop.ButtonHeight, 52, 160));
+        var btnW = vertical ? Px(Math.Clamp(pop.ButtonWidth, 160, 420))
+            : Math.Clamp((planeW - Px(160)) / Math.Max(1, labels.Count) - Px(16), Px(140), Px(Math.Clamp(pop.ButtonWidth, 160, 460)));
         var gap = Px(14);
-        var totalW = labels.Count * btnW + (labels.Count - 1) * gap;
-        var startX = Math.Max(Px(40), (planeW - totalW) / 2);
-        var y = planeH - btnH - Px(56);
         var shade = (byte)Math.Clamp((int)Math.Round(menu.PopupShade * 2.55), 80, 235);
         var nits = job.Uhd ? menu.HdrGraphicsNits : 0;
 
         var buttons = MenuRenderer.Sta(() =>
         {
             var list = new List<IgButton>(labels.Count);
-            for (var i = 0; i < labels.Count; i++)
+            if (vertical)
             {
-                var id = i + 1;
-                var x = startX + i * (btnW + gap);
-                var normal = MakePopupButton(labels[i].Text, btnW, btnH, shade, false, menu.Font, menu.Accent, nits);
-                var selected = MakePopupButton(labels[i].Text, btnW, btnH, Math.Min((byte)245, (byte)(shade + 35)), true, menu.Font, menu.Accent, nits);
-                var left = i > 0 ? id - 1 : labels.Count;
-                var right = i < labels.Count - 1 ? id + 1 : 1;
-                list.Add(new IgButton(id, x, y, btnW, btnH, selected, normal, id, id, left, right, labels[i].Commands));
+                var x = dock == "left" ? Px(40) : Math.Max(Px(40), planeW - btnW - Px(40));
+                var totalH = labels.Count * btnH + (labels.Count - 1) * gap;
+                var startY = Math.Max(Px(40), (planeH - totalH) / 2);
+                for (var i = 0; i < labels.Count; i++)
+                {
+                    var id = i + 1;
+                    var y = startY + i * (btnH + gap);
+                    var normal = MakePopupButton(labels[i].Text, btnW, btnH, shade, false, menu.Font, menu.Accent, nits);
+                    var selected = MakePopupButton(labels[i].Text, btnW, btnH, Math.Min((byte)245, (byte)(shade + 35)), true, menu.Font, menu.Accent, nits);
+                    var up = i > 0 ? id - 1 : labels.Count;
+                    var down = i < labels.Count - 1 ? id + 1 : 1;
+                    list.Add(new IgButton(id, x, y, btnW, btnH, selected, normal, up, down, id, id, labels[i].Commands));
+                }
+            }
+            else
+            {
+                var totalW = labels.Count * btnW + (labels.Count - 1) * gap;
+                var startX = Math.Max(Px(40), (planeW - totalW) / 2);
+                var y = dock == "top" ? Px(48) : planeH - btnH - Px(56);
+                for (var i = 0; i < labels.Count; i++)
+                {
+                    var id = i + 1;
+                    var x = startX + i * (btnW + gap);
+                    var normal = MakePopupButton(labels[i].Text, btnW, btnH, shade, false, menu.Font, menu.Accent, nits);
+                    var selected = MakePopupButton(labels[i].Text, btnW, btnH, Math.Min((byte)245, (byte)(shade + 35)), true, menu.Font, menu.Accent, nits);
+                    var left = i > 0 ? id - 1 : labels.Count;
+                    var right = i < labels.Count - 1 ? id + 1 : 1;
+                    list.Add(new IgButton(id, x, y, btnW, btnH, selected, normal, id, id, left, right, labels[i].Commands));
+                }
             }
             return list;
         });
@@ -109,7 +137,8 @@ public static class HdmvMenu
 
     internal static void Add(BluRayJob job, IReadOnlyList<MenuPage> pages, int mainCount, int defaultSubtitle,
                              IReadOnlyList<(int AudioCount, IReadOnlyList<int> Visible, IReadOnlyList<(int Audio, int Sub)> Forced)> tracks,
-                             bool intro, string work, Action<string> log)
+                             bool intro, string work, Action<string> log,
+                             IReadOnlyList<(string File, IReadOnlyList<double> Chapters, double Duration)>? titleSources = null)
     {
         var menu = job.Menu!;
         log("menu: HDMV");
@@ -118,19 +147,40 @@ public static class HdmvMenu
         var scale = Math.Min(1, videoH / 1080.0); // the graphics plane is 1920x1080 on a 4K disc too
         int Px(int v) => MenuRenderer.Px(v, scale);
         var (planeW, planeH) = (Px(MenuBuilder.W), Px(MenuBuilder.H));
-        var (fps, declared) = BluRay.DiscRate(0);
-        var musicFile = menu.ExistingMusic();
-        var animated = menu.Loop && job.Titles.Count > 0;
-        var seconds = musicFile == null && !animated ? StillSeconds : BluRay.LoopLength(menu, BluRay.MaxLoopSeconds);
-        var music = musicFile == null ? null : BluRay.PrepareMusic(menu, musicFile, seconds, work, log);
-        if (music != null) log($"menu: music from {Path.GetFileName(musicFile)}, {seconds}s on every page");
-        if (animated) log($"menu: animated HDMV background ({seconds}s)");
+        var hasSounds = menu.Sounds != null && !string.IsNullOrWhiteSpace(menu.Sounds.Pack) && !menu.Sounds.Pack.Equals("none", StringComparison.OrdinalIgnoreCase);
+        if (hasSounds) BluRay.WriteSoundFiles(job, "HDMV", log);
 
+        var mediaCache = new Dictionary<BluRay.MediaSpec, (bool Animated, int Seconds, string? MusicWav, string? MusicFile, string Fps, string Declared)>();
+        (bool Animated, int Seconds, string? MusicWav, string? MusicFile, string Fps, string Declared) PrepareSpec(BluRay.MediaSpec spec, int tag)
+        {
+            if (mediaCache.TryGetValue(spec, out var cached)) return cached;
+            var dSpec = spec.ToDesign(menu);
+            var musicFile = dSpec.ExistingMusic();
+            var anim = dSpec.Loop && job.Titles.Count > 0;
+            var (baseFps, baseDecl) = BluRay.DiscRate(0, videoH);
+            var secs = musicFile == null && !anim ? StillSeconds : BluRay.LoopLength(dSpec, BluRay.MaxLoopSeconds);
+            string? musicWav = null;
+            if (musicFile != null)
+            {
+                musicWav = BluRay.PrepareMusic(dSpec, musicFile, secs, Path.Combine(work, $"hdmv_snd_{tag}"), log);
+                log($"menu: music from {Path.GetFileName(musicFile)}, {secs}s");
+            }
+            else if (anim) log($"menu: animated HDMV background ({secs}s)");
+            return mediaCache[spec] = (anim, secs, musicWav, musicFile, baseFps, baseDecl);
+        }
+
+        var pageSpecs = pages.Select(p => BluRay.MediaSpec.From(menu, menu.MediaFor(p.Id))).ToList();
         var art = MenuRenderer.Sta(() => (
-            Backgrounds: pages.Select(p => animated ? MenuRenderer.Overlay(menu, p, scale) : MenuRenderer.Background(menu, p, scale)).ToList(),
+            Backgrounds: pages.Select((p, k) => pageSpecs[k].Loop && job.Titles.Count > 0 ? MenuRenderer.Overlay(menu, p, scale) : MenuRenderer.Background(menu, p, scale)).ToList(),
             Focus: pages.Select(p => p.Buttons.Select(b =>
             {
                 var px = MenuRenderer.Pixels(MenuRenderer.Focus(menu, p, b, scale));
+                return job.Uhd && menu.HdrGraphicsNits is > 0 and < 400 ? (ScaleArgbForHdr(px.Argb, menu.HdrGraphicsNits), px.W, px.H) : px;
+            }).ToList()).ToList(),
+            Activated: pages.Select(p => p.Buttons.Select(b =>
+            {
+                if (b.DvdSelectImage == null) return ((uint[] Argb, int W, int H)?)null;
+                var px = MenuRenderer.Pixels(MenuRenderer.Activated(menu, p, b, scale));
                 return job.Uhd && menu.HdrGraphicsNits is > 0 and < 400 ? (ScaleArgbForHdr(px.Argb, menu.HdrGraphicsNits), px.W, px.H) : px;
             }).ToList()).ToList(),
             Marker: MenuRenderer.Pixels(MenuRenderer.Marker(menu, MenuBuilder.MarkerSize, scale))));
@@ -140,14 +190,28 @@ public static class HdmvMenu
         for (var k = 0; k < pages.Count; k++)
         {
             var page = pages[k];
+            var spec = pageSpecs[k];
+            var prep = PrepareSpec(spec, k);
+            var animated = prep.Animated;
+            var seconds = prep.Seconds;
+            var music = prep.MusicWav;
+            var (fps, declared) = (prep.Fps, prep.Declared);
             var picture = Path.Combine(work, $"hdmv_{page.Id}.{(animated ? "png" : "jpg")}");
             File.WriteAllBytes(picture, art.Backgrounds[k]);
             var ts = Path.Combine(work, $"hdmv_{page.Id}.ts");
             var args = new List<string> { "-y", "-v", "warning" };
             var hasAudio = music != null;
-            if (animated)
+            var thumbClips = !animated && menu.AnimatedThumbs && titleSources != null ? BluRay.BluRayThumbnailClips(page, titleSources) : [];
+            if (thumbClips.Count > 0)
             {
-                var (_, loopSrc, _, loopInput) = BluRay.LoopSource(menu, job.Titles[0], seconds);
+                (_, declared) = BluRay.BuildAnimatedThumbsTs(job, $"hdmv_{page.Id}", picture, thumbClips, music, seconds, work, log);
+                File.Move(Path.Combine(work, $"thumbs_hdmv_{page.Id}.ts"), ts, true);
+                hasAudio = true;
+            }
+            else if (animated)
+            {
+                var dSpec = spec.ToDesign(menu);
+                var (_, loopSrc, _, loopInput) = BluRay.LoopSource(dSpec, job.Titles[0], seconds);
                 (fps, declared) = BluRay.DiscRate(BluRay.Fps(job, loopSrc), videoH);
                 var tone = !job.Uhd && BluRay.ToSdr(loopSrc.Hdr, loopSrc.Width, loopSrc.Height, videoW) is { Length: > 0 } sdr ? sdr + "," : "";
                 args.AddRange(loopInput);
@@ -161,6 +225,8 @@ public static class HdmvMenu
                 args.AddRange(["-t", seconds.ToString(Inv), "-r", fps]);
                 args.AddRange(BluRay.MenuCodec(job.Uhd, loopSrc.Hdr, fps, videoH));
                 if (hasAudio) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2", "-ar", "48000", "-af", "apad"]);
+                args.AddRange(["-sn", "-dn", ts]);
+                Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
             }
             else
             {
@@ -170,15 +236,15 @@ public static class HdmvMenu
                 args.AddRange(["-t", seconds.ToString(Inv), "-vf", $"scale={videoW}:{videoH}:out_color_matrix=bt709", "-r", fps, "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]);
                 args.AddRange(BluRay.MenuCodec(job.Uhd, "SDR", fps, videoH));
                 if (music != null) args.AddRange(["-c:a", "ac3", "-b:a", "448k", "-ac", "2", "-ar", "48000"]);
+                args.AddRange(["-sn", "-dn", ts]);
+                Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
             }
-            args.AddRange(["-sn", "-dn", ts]);
-            Tools.Run(Tools.Find("ffmpeg.exe"), args, log);
 
             var graphics = Path.Combine(work, $"hdmv_{page.Id}.igs");
-            File.WriteAllBytes(graphics, Graphics(page, art.Focus[k], art.Marker, MenuBuilder.MarkerOffset(menu), scale, planeW, planeH, IgStream.RateCode(declared),
-                                                  playlists, play.PlayAll, mainCount, log));
+            File.WriteAllBytes(graphics, Graphics(page, art.Focus[k], art.Activated[k], art.Marker, MenuBuilder.MarkerOffset(menu), scale, planeW, planeH, IgStream.RateCode(declared),
+                                                  playlists, play.PlayAll, mainCount, log, hasSounds ? (byte)0 : (byte)0xFF, hasSounds ? (byte)1 : (byte)0xFF));
             var meta = Path.Combine(work, $"hdmv_{page.Id}.meta");
-            var still = !animated && music == null;
+            var still = !animated && music == null && thumbClips.Count == 0;
             File.WriteAllLines(meta,
             [
                 // the options a native menu is known to play with in libbluray: a floor on the bit rate, or a still page of a few hundred KB is read whole at
@@ -283,8 +349,8 @@ public static class HdmvMenu
     /// stream is the one in use; last, an invisible button the page opens on, which runs by itself: it shows the right dots and selects the button of the
     /// <see cref="Selected"/> register (the one a title was started from, or the one selected when the music started again), else the first.
     /// </summary>
-    static byte[] Graphics(MenuPage page, List<(uint[] Argb, int W, int H)> focus, (uint[] Argb, int W, int H) marker, int markerOffset, double scale, int planeW, int planeH,
-                           int rateCode, Dictionary<string, int> playlists, bool playAll, int mainCount, Action<string> log)
+    static byte[] Graphics(MenuPage page, List<(uint[] Argb, int W, int H)> focus, List<(uint[] Argb, int W, int H)?> activated, (uint[] Argb, int W, int H) marker, int markerOffset, double scale, int planeW, int planeH,
+                           int rateCode, Dictionary<string, int> playlists, bool playAll, int mainCount, Action<string> log, byte moveSound = 0xFF, byte selectSound = 0xFF)
     {
         int Px(int v) => MenuRenderer.Px(v, scale);
         int Number(string? id, int own) => id != null && page.Buttons.FindIndex(b => b.Id == id) is >= 0 and var i ? i + 1 : own;
@@ -330,7 +396,14 @@ public static class HdmvMenu
                 _ => [Nav.Set(Selected, 0), Nav.Set(Page, playlists.GetValueOrDefault(a.Page ?? "", FirstPlaylist)), Nav.JumpObject(1)],
             };
             var (argb, x, y, w, h) = boxes[i];
-            buttons.Add(new IgButton(i + 1, x, y, w, h, argb, null, Number(b.Up, i + 1), Number(b.Down, i + 1), Number(b.Left, i + 1), Number(b.Right, i + 1), commands));
+            uint[]? actArgb = null;
+            if (activated[i] is { } ab)
+            {
+                var r = MenuRenderer.FocusBox(page.Buttons[i]);
+                var cropped = Crop(ab.Argb, ab.W, ab.H, Px(r.X), Px(r.Y), planeW, planeH);
+                if (cropped.W == w && cropped.H == h) actArgb = cropped.Argb;
+            }
+            buttons.Add(new IgButton(i + 1, x, y, w, h, argb, null, Number(b.Up, i + 1), Number(b.Down, i + 1), Number(b.Left, i + 1), Number(b.Right, i + 1), commands, Activated: actArgb, MoveSound: moveSound, SelectSound: selectSound));
         }
         foreach (var (_, _, id) in dots)
         {

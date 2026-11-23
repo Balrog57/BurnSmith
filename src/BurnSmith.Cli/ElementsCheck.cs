@@ -408,7 +408,7 @@ static class ElementsCheck
                 Check("un modèle enregistré se retrouve par son nom (Mes modèles), avec ses boutons image",
                       TemplateCatalog.Find(keptDesign.Name) is { } again && again.Elements.Count == keptDesign.Elements.Count && again.Elements[^3].Image == normalPic && Templates.List().Any(t => t.Name == keptDesign.Name));
             }
-            finally { File.Delete(Path.Combine(Templates.Dir, keptDesign.Name + ".json")); }
+            finally { Templates.Delete(keptDesign.Name); }
     
             // a pack written by hand (Vamp): the bonus has its picture button, a row has its own picture ({n} = its number), lit in place when chosen
             var handDir = Path.Combine(Path.GetTempPath(), "burnsmith-hand-" + Guid.NewGuid().ToString("N"));

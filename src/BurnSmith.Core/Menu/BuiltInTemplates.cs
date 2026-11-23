@@ -17,6 +17,8 @@ public static class BuiltInTemplates
 
     public static List<MenuDesign> All() =>
     [
+        T("Film minimal", 3, 2, true, "Text", true, "#0D1117", "#E50914", "Segoe UI", "#F8FAFC", "#161B22", "#000000", 0.08, 0.09, 0.025, 0.12, 0.10, 0),
+        T("Série minimal", 4, 2, true, "Outline", false, "#0A0F1A", "#38BDF8", "Segoe UI", "#F1F5F9", "#131C2E", "#000000", 0.06, 0.08, 0.020, 0.10, 0.09, 0),
         T("Nuit d'encre", 2, 3, true, "Card", false, "#0B1220", "#F59E0B", "Segoe UI", "#F8FAFC", "#131C2E", "#000000", 0.08, 0.09, 0.030, 0.13, 0.10, 10),
         T("Séries", 3, 2, true, "Card", true, "#0F172A", "#38BDF8", "Segoe UI", "#FFFFFF", "#1E293B", "#000000", 0.06, 0.07, 0.020, 0.09, 0.09, 6),
         T("Cinéma muet", 1, 4, false, "Frame", true, "#17120D", "#C9A227", "Georgia", "#F5EFE6", "#2A2118", "#000000", 0.11, 0.075, 0.022, 0.15, 0.11, 16),
@@ -43,6 +45,21 @@ public static class BuiltInTemplates
     ];
 
     /// <summary>A design over one of BurnSmith's own backgrounds (<paramref name="picture"/>: its theme folder and name in the library).</summary>
+    /// <summary>Quick-start blank canvas: empty root page ready for pure free-form authoring (with one editable title and Play button).</summary>
+    public static MenuDesign Blank(string title = "Mon disque")
+    {
+        var d = T("Page vierge", 3, 2, true, "Pill", false, "#0D1117", "#F59E0B", "Segoe UI", "#FFFFFF", "#1E293B", "#000000", 0.06, 0.08, 0.025, 0.12, 0.10, 0);
+        d.Bottom = "#161B22";
+        d.Title = title;
+        d.FreePages = ["root"];
+        d.Elements =
+        [
+            new MenuElement { Kind = "text", Page = "root", Text = title, X = 140, Y = 110, W = 1640, H = 120, Size = 92, Align = "center", Bold = true },
+            new MenuElement { Kind = "button", Page = "root", NavigationId = "u-blank-play", Text = "Lecture", Target = "movie", X = 760, Y = 820, W = 400, H = 110, Size = 48 },
+        ];
+        return d;
+    }
+
     static MenuDesign H(string name, string picture, int cols, int rows, string style, string accent, string font, string text, string fill, int dim, string glow = "#000000")
     {
         var d = T(name, cols, rows, true, style, false, fill, accent, font, text, fill, glow, 0.07, 0.08, 0.025, 0.12, 0.10, dim);
